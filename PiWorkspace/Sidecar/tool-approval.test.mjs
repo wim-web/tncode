@@ -208,8 +208,8 @@ test("Read files and Shell and edits retain their tool sets and local tools stay
   const { server, requests, endpoint } = await fixture();
   t.after(() => { server.closeAllConnections(); server.close(); });
   const modes = [
-    ["readFiles", true, ["find", "grep", "ls", "read"]],
-    ["shellAndEdits", true, ["bash", "edit", "read", "write"]],
+    ["readFiles", true, ["ask_user_questions", "find", "grep", "ls", "read"]],
+    ["shellAndEdits", true, ["ask_user_questions", "bash", "edit", "read", "write"]],
     ["supervised", false, []],
   ];
   for (const [permission, localTools, expected] of modes) {

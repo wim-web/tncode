@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { createAgentQuestions } from "./agent-questions.mjs";
 import { editingTools, installToolApproval, readTools } from "./tool-approval.mjs";
 const write = process.stdout.write.bind(process.stdout);
 process.stdout.write = process.stderr.write.bind(process.stderr);
@@ -28,6 +29,7 @@ let initializing = false;
 let connected = true;
 let active;
 let approvals;
+let questions;
 const steeredMessages = new WeakMap();
 const validID = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
 const maxAttachmentBytes = 4 * 1024 * 1024;
@@ -313,15 +315,22 @@ async function open(command) {
     return appendMessage(safeMessage);
   };
 
+  // The question tool is an SDK tool with no filesystem or shell operations.
+  // Only local models with tools explicitly enabled can ask through this bridge.
+  if (config.provider === "local" && config.localTools === true) {
+    questions = createAgentQuestions({ threadID, currentTurn, emit, redact, stopTurn: stopActive });
+  }
+  const tools = config.provider === "local" && !config.localTools
+    ? []
+    : toolPermission === "supervised" || toolPermission === "shellAndEdits" ? editingTools : readTools;
   const result = await createAgentSession({
     cwd,
     agentDir: process.env.PI_CODING_AGENT_DIR,
     model,
     thinkingLevel: config.thinkingLevel ?? "off",
     modelRuntime: runtime,
-    tools: config.provider === "local" && !config.localTools
-      ? []
-      : toolPermission === "supervised" || toolPermission === "shellAndEdits" ? editingTools : readTools,
+    tools: questions ? [...tools, questions.tool.name] : tools,
+    customTools: questions ? [questions.tool] : undefined,
     excludeTools: ["mcp__*"],
     settingsManager: SettingsManager.inMemory({
       retry: { enabled: false, provider: { maxRetries: 0 } },
@@ -351,7 +360,8 @@ async function open(command) {
   if (toolPermission === "supervised") {
     approvals = installToolApproval(session.agent, {
       threadID,
-      currentTurn: () => active?.cancelled ? undefined : active?.id,
+      currentTurn,
+      questionTool: questions?.tool.name,
       requestApproval: (request, args) => emit({
         type: "toolApproval",
         ...request,
@@ -422,6 +432,7 @@ async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, at
     if (restoreCompaction) session.setAutoCompactionEnabled(true);
     session.clearQueue();
     active = undefined;
+    questions?.cancel();
     approvals?.cancel();
     emit({ type: "finished", turnID, messages: history(), error });
     credential = undefined;
@@ -470,10 +481,20 @@ function handleQueuedInput({ type, turnID, queuedID, text, attachments }) {
   run.steering = pending;
 }
 
+function currentTurn() {
+  return active?.cancelled ? undefined : active?.id;
+}
+
 function cancelActive() {
   if (active) active.cancelled = true;
   session?.clearQueue();
+  questions?.cancel();
   approvals?.cancel();
+}
+
+function stopActive() {
+  cancelActive();
+  void session?.abort().catch(() => {});
 }
 
 input.on("line", (line) => {
@@ -504,9 +525,10 @@ input.on("line", (line) => {
     handleQueuedInput(command);
   } else if (command.type === "toolApprovalResult") {
     approvals?.respond(command);
+  } else if (command.type === "agentQuestionResult") {
+    questions?.respond(command);
   } else if (command.type === "cancel" && active && active.id === command.turnID) {
-    cancelActive();
-    void session?.abort().catch(() => {});
+    stopActive();
   }
 });
 input.on("error", () => input.close());

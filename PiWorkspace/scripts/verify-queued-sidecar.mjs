@@ -177,7 +177,8 @@ try {
   const followUp = prompt("Retry explicitly", retry);
   await receive("partial");
   assert.equal(users().filter((text) => text === "Retry explicitly").length, 1);
-  assert.deepEqual(requests.at(-1).body.tools.map(({ function: tool }) => tool.name).sort(), ["find", "grep", "ls", "read"]);
+  assert.deepEqual(requests.at(-1).body.tools.map(({ function: tool }) => tool.name).sort(),
+    ["ask_user_questions", "find", "grep", "ls", "read"]);
   complete();
   const followed = await receive("finished");
   assert.equal(followed.turnID, followUp);

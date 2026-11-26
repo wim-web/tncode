@@ -1431,7 +1431,13 @@ struct WorkspaceView: View {
                 }
                 QueuedMessagesView(model: model) { focusedComposer = thread.id }
                     .id(thread.id)
-                inputCard(project, threadID: thread.id)
+                if let question = model.pendingAgentQuestion {
+                    AgentQuestionCard(request: question.request, submitting: question.submitting, error: question.error,
+                                      respond: { model.respond(to: question.request.scope, with: $0) }, stop: model.cancel)
+                        .id(question.request.scope.requestID)
+                } else {
+                    inputCard(project, threadID: thread.id)
+                }
             }
             HStack {
                 if model.canChangeWorkspace {
@@ -1458,6 +1464,8 @@ struct WorkspaceView: View {
                 }
                 if model.pendingToolApproval != nil {
                     Text("Waiting for approval…")
+                } else if model.pendingAgentQuestion != nil {
+                    Text("Waiting for answers…")
                 } else if model.canSkipCompaction {
                     Text("Compacting conversation…")
                 } else if model.phase == .running {

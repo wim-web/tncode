@@ -21,6 +21,9 @@ enum PiEvent: Decodable {
     case partial(String)
     case activity(String)
     case toolApproval(ToolApproval)
+    case agentQuestion(AgentQuestionRequest)
+    case agentQuestionEnded(AgentQuestionEnd)
+    case agentQuestionRejected(AgentQuestionScope)
     case inputMode(turnID: UUID, PiInputMode)
     case queueRejected(turnID: UUID, queuedID: UUID, error: String? = nil)
     case compactionSkipped(turnID: UUID, queuedID: UUID)
@@ -29,11 +32,12 @@ enum PiEvent: Decodable {
     case fatal(String)
 
     private enum Field: String, CodingKey {
-        case type, requestID, operation, messages, text, error, turnID, queuedID, mode, threadID
+        case type, requestID, operation, messages, text, error, turnID, queuedID, mode, threadID, scope
     }
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
         case credential, ready, history, partial, activity, toolApproval, finished, fatal
+        case agentQuestion, agentQuestionEnded, agentQuestionRejected
         case inputMode, queueRejected, compactionSkipped, forked
     }
     private enum Operation: String, Decodable { case exists, read }
@@ -53,6 +57,10 @@ enum PiEvent: Decodable {
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
         case .toolApproval: self = .toolApproval(try ToolApproval(from: decoder))
+        case .agentQuestion: self = .agentQuestion(try AgentQuestionRequest(from: decoder))
+        case .agentQuestionEnded: self = .agentQuestionEnded(try AgentQuestionEnd(from: decoder))
+        case .agentQuestionRejected:
+            self = .agentQuestionRejected(try fields.decode(AgentQuestionScope.self, forKey: .scope))
         case .inputMode:
             self = .inputMode(turnID: try fields.decode(UUID.self, forKey: .turnID),
                               try fields.decode(PiInputMode.self, forKey: .mode))

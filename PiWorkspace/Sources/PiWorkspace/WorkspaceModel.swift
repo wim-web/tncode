@@ -32,12 +32,19 @@ final class WorkspaceModel: ObservableObject {
         let child: Conversation
     }
 
+    struct PendingAgentQuestion {
+        let request: AgentQuestionRequest
+        var submitting = false
+        var error: String?
+    }
+
     @Published private(set) var workspace = Workspace()
     @Published private(set) var phase: Phase = .closed
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var partial = ""
     @Published private(set) var activity = ""
     @Published private(set) var pendingToolApproval: ToolApproval?
+    @Published private(set) var pendingAgentQuestion: PendingAgentQuestion?
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
@@ -223,7 +230,7 @@ final class WorkspaceModel: ObservableObject {
     }
     var queuePaused: Bool { queueDelivery.paused }
     var canEditQueue: Bool { canUseQueue && phase != .connecting && forkRequest == nil }
-    var canSteer: Bool { phase == .running && queueDelivery.mode == .steer }
+    var canSteer: Bool { phase == .running && queueDelivery.mode == .steer && pendingAgentQuestion == nil }
     var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
     var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
     var canQueueDraft: Bool {
@@ -407,6 +414,7 @@ final class WorkspaceModel: ObservableObject {
         }
         activeTurnID = nil
         pendingToolApproval = nil
+        pendingAgentQuestion = nil
         queueDelivery = QueueDelivery()
         queueEdit = nil
         supportsImageInput = false
@@ -1491,6 +1499,7 @@ final class WorkspaceModel: ObservableObject {
     func cancel() {
         guard phase == .running, let process, let activeTurnID else { return }
         pendingToolApproval = nil
+        pendingAgentQuestion = nil
         queueDelivery.paused = true
         queueDelivery.skipAfterTurn = nil
         do {
@@ -1513,6 +1522,37 @@ final class WorkspaceModel: ObservableObject {
         } catch {
             shutdown()
             self.error = "The Pi helper disconnected while sending the tool decision."
+        }
+    }
+
+    func respond(to scope: AgentQuestionScope, with decision: AgentQuestionReply.Decision) {
+        guard phase == .running, let process, let pending = pendingAgentQuestion,
+              pending.request.scope == scope, scope.turnID == activeTurnID,
+              scope.threadID == conversation?.id, !pending.submitting else { return }
+        if case .answer(let answers) = decision {
+            let text = answers.compactMap { answer -> String? in
+                if case .text(let text) = answer.value { return text }
+                return nil
+            }
+            if !text.isEmpty {
+                do {
+                    if let key = try readCredential(effectiveModel.validated().account), !key.isEmpty,
+                       text.contains(where: { $0.contains(key) }) {
+                        pendingAgentQuestion?.error = "Remove the API key from your answer."
+                        return
+                    }
+                } catch {
+                    pendingAgentQuestion?.error = error.localizedDescription
+                    return
+                }
+            }
+        }
+        pendingAgentQuestion?.error = nil
+        pendingAgentQuestion?.submitting = true
+        do {
+            try process.send(AgentQuestionReply(scope: scope, decision: decision))
+        } catch {
+            connectionFailed("The Pi helper disconnected while sending the question response.")
         }
     }
 
@@ -1691,6 +1731,25 @@ final class WorkspaceModel: ObservableObject {
             guard phase == .running, approval.turnID == activeTurnID,
                   approval.threadID == conversation?.id else { return }
             pendingToolApproval = approval
+        case let .agentQuestion(request):
+            guard phase == .running, request.scope.turnID == activeTurnID,
+                  request.scope.threadID == conversation?.id,
+                  !request.questions.isEmpty, pendingAgentQuestion == nil else { return }
+            pendingAgentQuestion = PendingAgentQuestion(request: request)
+        case let .agentQuestionEnded(end):
+            guard pendingAgentQuestion?.request.scope == end.scope else { return }
+            pendingAgentQuestion = nil
+            activity = ""
+            if end.status == .expired {
+                queueDelivery.paused = true
+                queueDelivery.skipAfterTurn = nil
+                phase = .stopping
+                error = "The question expired and Pi stopped the turn. Send a new message to try again."
+            }
+        case let .agentQuestionRejected(scope):
+            guard pendingAgentQuestion?.request.scope == scope else { return }
+            pendingAgentQuestion?.submitting = false
+            pendingAgentQuestion?.error = "Pi rejected the response. Review your answers and try again."
         case let .inputMode(turnID, mode):
             guard activeTurnID == turnID, phase == .running else { return }
             queueDelivery.mode = mode
@@ -1718,6 +1777,7 @@ final class WorkspaceModel: ObservableObject {
             if let error { self.error = error }
             else if !undelivered.isEmpty && phase == .running { self.error = "The message stayed in the queue." }
             pendingToolApproval = nil
+            pendingAgentQuestion = nil
             activeTurnID = nil
             messages = history
             partial = ""

@@ -27,7 +27,7 @@ app="$staging/Pi Workspace.app"
 mkdir -p "$app/Contents/"{MacOS,Helpers,Resources/Sidecar}
 cp "$binary" "$app/Contents/MacOS/PiWorkspace"
 cp "$node_binary" "$app/Contents/Helpers/node"
-cp Sidecar/{worker,tool-approval}.mjs "$app/Contents/Resources/Sidecar/"
+cp Sidecar/{worker,tool-approval,agent-questions}.mjs "$app/Contents/Resources/Sidecar/"
 ditto Sidecar/node_modules "$app/Contents/Resources/Sidecar/node_modules"
 "$app/Contents/Helpers/node" scripts/bundle-notices.mjs "$app/Contents/Resources" "$node_binary"
 cat > "$app/Contents/Info.plist" <<'PLIST'

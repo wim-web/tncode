@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 export const readTools = ["read", "find", "grep", "ls"];
 export const editingTools = ["read", "bash", "edit", "write"];
 
-export function installToolApproval(agent, { threadID, currentTurn, requestApproval }) {
+export function installToolApproval(agent, { threadID, currentTurn, requestApproval, questionTool }) {
   let pending;
   const previousHook = agent.beforeToolCall;
 
@@ -11,7 +11,7 @@ export function installToolApproval(agent, { threadID, currentTurn, requestAppro
   agent.toolExecution = "sequential";
   agent.beforeToolCall = async (context, signal) => {
     const prior = await previousHook?.(context, signal);
-    if (prior?.block || readTools.includes(context.toolCall.name)) return prior;
+    if (prior?.block || readTools.includes(context.toolCall.name) || context.toolCall.name === questionTool) return prior;
 
     const turnID = currentTurn();
     const cancelled = { block: true, reason: "Tool approval was cancelled." };
