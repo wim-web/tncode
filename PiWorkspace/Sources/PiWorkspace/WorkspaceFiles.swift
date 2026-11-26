@@ -19,21 +19,8 @@ struct WorkspaceFileTarget: Hashable, Sendable {
     var fullPath: String { URL(fileURLWithPath: location.directory).appendingPathComponent(path).path }
 
     func composerMention() throws -> String {
-        _ = try WorkspaceFiles(directory: location.directory).fileURL(path)
-        let name = path.split(separator: "/").last ?? ""
-        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/")
-        guard let destination = path.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw WorkspaceFileError.unsupportedPath
-        }
-        let label = name.unicodeScalars.reduce(into: "") { label, scalar in
-            if CharacterSet.controlCharacters.contains(scalar) {
-                label += String(scalar).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-            } else {
-                if "\\[]*_`&<>".unicodeScalars.contains(scalar) { label += "\\" }
-                label.unicodeScalars.append(scalar)
-            }
-        }
-        return "[\(label)](./\(destination))"
+        try WorkspaceFiles(directory: location.directory).validateMentionPath(path)
+        return WorkspaceFileMention.serialize(path)
     }
 }
 
@@ -336,6 +323,17 @@ struct WorkspaceFiles: Sendable {
             let file = try openFile(in: folder, name: name)
             close(file)
             return root.appendingPathComponent(path)
+        }
+    }
+
+    func validateMentionPath(_ path: String) throws {
+        try withParent(of: path) { folder, name in
+            var metadata = stat()
+            guard fstatat(folder, name, &metadata, AT_SYMLINK_NOFOLLOW) == 0 else { throw fileError() }
+            switch metadata.st_mode & S_IFMT {
+            case S_IFREG, S_IFDIR: break
+            default: throw WorkspaceFileError.unsupportedPath
+            }
         }
     }
 

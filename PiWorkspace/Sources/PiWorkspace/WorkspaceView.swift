@@ -62,6 +62,7 @@ struct WorkspaceView: View {
     @State private var checkoutsWithBranches: Set<String> = []
     @State private var copyTask: Task<Void, Never>?
     @FocusState private var focusedComposer: UUID?
+    @State private var composerFileMentionRevision: Int?
     @State private var showingComposerStash = false
     @FocusState private var welcomeFocus: WelcomeFocus?
     @State private var focusAfterPicker: DraftProjectScope?
@@ -1383,10 +1384,10 @@ struct WorkspaceView: View {
                                canAddToComposer: model.canAddFileMention(from: location),
                                addToComposer: { target in
                                    if try model.addFileMention(target) {
-                                       showingComposerStash = false
-                                       focusedComposer = target.location.threadID
+                                       focusComposerAfterFileMention(in: target.location.threadID)
                                    }
                                },
+                               beginMentionDrag: model.beginFileMentionDrag,
                                selection: Binding(get: { selectedFiles[location] },
                                                   set: { selectedFiles[location] = $0 }))
                 .id(location)
@@ -2192,6 +2193,12 @@ struct WorkspaceView: View {
         if model.restoreStashedPrompt(id, to: scope) { showingComposerStash = false }
     }
 
+    private func focusComposerAfterFileMention(in threadID: UUID) {
+        showingComposerStash = false
+        composerFileMentionRevision = model.composerRevision
+        focusedComposer = threadID
+    }
+
     private func inputCard(threadID: UUID) -> some View {
         let target = model.attachmentTarget(for: threadID)
         func ownsComposer() -> Bool {
@@ -2200,7 +2207,14 @@ struct WorkspaceView: View {
         let drop = AttachmentDropDestination(canDrop: model.canEditAttachments, perform: { items in
             let attachments = ComposerAttachmentInput.readAttachments(from: items)
             return !attachments.isEmpty && ownsComposer() && model.canEditAttachments && model.attach(attachments, to: target)
-        }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
+        }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments },
+            fileMentionDrop: .init(accepts: { id in
+                showingFiles.contains(threadID) && model.canDropFileMention(id, in: target)
+            }, receive: { id in
+                guard model.dropFileMention(id, in: target) else { return false }
+                focusComposerAfterFileMention(in: threadID)
+                return true
+            }))
         return ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedImageOpener,
                                        openPreview: openImagePreview) {
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
@@ -2210,7 +2224,9 @@ struct WorkspaceView: View {
                     showingComposerStash = false
                     model.editDraft($0, in: threadID)
                 }
-            ), pasteboard: workspacePasteboard, drop: drop) { text, inlineLength in
+            ), pasteboard: workspacePasteboard, drop: drop,
+               fileMentionRevision: composerFileMentionRevision == model.composerRevision
+                   ? composerFileMentionRevision : nil) { text, inlineLength in
                 model.foldPastedText(text, inlineLength: inlineLength, in: target) { attachment in
                     let size = ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .binary)
                     notice = Notice(id: attachment.id,

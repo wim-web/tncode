@@ -10,6 +10,7 @@ struct WorkspaceFilesView: View {
     let close: () -> Void
     let canAddToComposer: Bool
     let addToComposer: (WorkspaceFileTarget) throws -> Void
+    let beginMentionDrag: (WorkspaceFileTarget) -> NSItemProvider?
     @Binding var selection: String?
 
     @State private var tree: Result<WorkspaceFileTree, Error>?
@@ -227,6 +228,7 @@ struct WorkspaceFilesView: View {
     }
 
     private func fileRow(_ entry: WorkspaceFileEntry) -> some View {
+        let file = WorkspaceFileTarget(location: location, path: entry.path)
         let isFolder = entry.kind == .folder
         let name = searching ? entry.path : entry.name
         let symbol = switch entry.kind {
@@ -268,9 +270,13 @@ struct WorkspaceFilesView: View {
         .accessibilityAddTraits(selection == entry.path ? .isSelected : [])
         .accessibilityIdentifier("files-row-" + entry.path)
         .contextMenu {
-            if entry.kind == .file {
-                mentionActions(for: WorkspaceFileTarget(location: location, path: entry.path), fromPreview: false)
+            if entry.kind != .link {
+                mentionActions(for: file, fromPreview: false)
             }
+        }
+        .onDrag {
+            guard entry.kind != .link, activeLocation() == file.location else { return NSItemProvider() }
+            return beginMentionDrag(file) ?? NSItemProvider()
         }
     }
 

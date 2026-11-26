@@ -18,6 +18,7 @@ struct ComposerTextField: NSViewRepresentable {
     @Binding var text: String
     let pasteboard: NSPasteboard
     let drop: AttachmentDropDestination
+    let fileMentionRevision: Int?
     let foldPastedText: (String, Int) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -38,7 +39,7 @@ struct ComposerTextField: NSViewRepresentable {
         field.cell?.isScrollable = false
         field.lineBreakMode = .byWordWrapping
         field.maximumNumberOfLines = 7
-        field.registerForDraggedTypes(AttachmentDropDestination.types)
+        field.registerForDraggedTypes(drop.dragTypes)
         field.setAccessibilityIdentifier("composer")
         return field
     }
@@ -51,8 +52,22 @@ struct ComposerTextField: NSViewRepresentable {
         field.foldPastedText = foldPastedText
         field.isEnabled = context.environment.isEnabled
         field.placeholderString = placeholder
-        if field.stringValue != text, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true {
+        let editor = field.currentEditor() as? NSTextView
+        if field.stringValue != text, editor?.hasMarkedText() != true {
             field.stringValue = text
+        }
+        if let fileMentionRevision, context.coordinator.fileMentionRevision != fileMentionRevision,
+           editor?.hasMarkedText() != true {
+            context.coordinator.fileMentionRevision = fileMentionRevision
+            let end = NSRange(location: text.utf16.count, length: 0)
+            if let editor {
+                editor.setSelectedRange(end)
+                editor.scrollRangeToVisible(end)
+            } else {
+                field.selectionOnFocus = { [weak field] in
+                    field?.stringValue.utf8.elementsEqual(text.utf8) == true ? end : nil
+                }
+            }
         }
     }
 
@@ -67,6 +82,7 @@ struct ComposerTextField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: ComposerTextField
         init(_ parent: ComposerTextField) { self.parent = parent }
+        var fileMentionRevision: Int?
 
         private var undoObservation: AnyCancellable?
 
@@ -229,7 +245,7 @@ struct ComposerTextField: NSViewRepresentable {
         }
 
         override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
-            super.acceptableDragTypes + AttachmentDropDestination.types
+            super.acceptableDragTypes + (owner?.drop?.dragTypes ?? AttachmentDropDestination.types)
         }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

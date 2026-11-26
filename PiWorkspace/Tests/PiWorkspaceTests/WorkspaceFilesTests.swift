@@ -9,6 +9,33 @@ import XCTest
 @testable import PiWorkspace
 
 final class WorkspaceFilesTests: XCTestCase {
+    func testFileMentionSpellingMatchesPinnedComposer() {
+        let cases = [
+            ("docs/My File (draft).md", "[My File (draft).md](docs/My%20File%20%28draft%29.md)"),
+            ("@scope/package.json", "[package.json](@scope/package.json)"),
+            ("icon@2x.png", "[icon@2x.png](./icon@2x.png)"),
+            ("C#/Program.cs", "[Program.cs](./C%23/Program.cs)"),
+            ("docs/R&copy;.md", #"[R\&copy;.md](./docs/R%26copy;.md)"#),
+            ("docs/Bob's notes.md", "[Bob's notes.md](./docs/Bob's%20notes.md)"),
+            ("pages/posts/[id].tsx", #"[\[id\].tsx](pages/posts/%5Bid%5D.tsx)"#),
+            ("pkg/__init__.py", #"[\_\_init\_\_.py](pkg/__init__.py)"#),
+            ("notes/*draft*.md", #"[\*draft\*.md](./notes/*draft*.md)"#),
+            ("folder\\name.md", "[name.md](folder%5Cname.md)"),
+            ("線性代數/考試.pdf", "[考試.pdf](%E7%B7%9A%E6%80%A7%E4%BB%A3%E6%95%B8/%E8%80%83%E8%A9%A6.pdf)"),
+            ("cafe\u{301}.txt", "[cafe\u{301}.txt](cafe%CC%81.txt)"),
+            ("a.\u{301}", "[a.\u{301}](a.%CC%81)"),
+            ("notes/🌱.txt", "[🌱.txt](./notes/%F0%9F%8C%B1.txt)"),
+            (".gitignore", "[.gitignore](./.gitignore)"),
+            ("README", "[README](README)"),
+            ("README.md", "[README.md](README.md)"),
+            ("Study notes", "[Study notes](./Study%20notes)"),
+            ("docs/Study notes", "[Study notes](docs/Study%20notes)")
+        ]
+        for (path, expected) in cases {
+            XCTAssertEqual(Array(WorkspaceFileMention.serialize(path).utf8), Array(expected.utf8), path)
+        }
+    }
+
     @MainActor
     func testFileMentionsStayWithTheSelectedCheckoutAndQueueEdit() throws {
         let root = try makeFixture()
@@ -41,6 +68,11 @@ final class WorkspaceFilesTests: XCTestCase {
         let target = WorkspaceFileTarget(location: worktreeLocation, path: path)
         let mention = #"[Review \[v2\] #%.md](./Study%20notes/Review%20%5Bv2%5D%20%23%25.md)"#
         XCTAssertEqual(try target.composerMention(), mention)
+        let directory = WorkspaceFileTarget(location: worktreeLocation, path: "Study notes")
+        XCTAssertEqual(try directory.composerMention(), "[Study notes](./Study%20notes)")
+        try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent("link"), withDestinationURL: notes)
+        XCTAssertThrowsError(try WorkspaceFileTarget(location: worktreeLocation, path: "link").composerMention())
+        XCTAssertThrowsError(try WorkspaceFileTarget(location: worktreeLocation, path: "link/" + name).composerMention())
 
         let localLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: local, project: project))
         XCTAssertThrowsError(try model.addFileMention(.init(location: localLocation, path: path)))
@@ -75,6 +107,67 @@ final class WorkspaceFilesTests: XCTestCase {
         model.selectConversation(local.id, in: project.id)
         XCTAssertThrowsError(try model.addFileMention(target))
         XCTAssertEqual(model.draft, "Local draft")
+    }
+
+    @MainActor
+    func testFileMentionDragBelongsToTheComposerThatStartedIt() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write("fixture", "README.md", in: root)
+        let queued = QueuedMessage(text: "Queued text")
+        let active = Conversation(id: UUID(), title: "Active", composerText: "Draft", queuedMessages: [queued])
+        let other = Conversation(id: UUID(), title: "Other", composerText: "Other draft")
+        let project = Project(id: UUID(), path: root.path, title: "Fixture",
+                              conversations: [active, other], selectedConversation: active.id)
+        let store = try folder("store", in: root)
+        try WorkspaceStore(root: store).save(Workspace(projects: [project], selectedProject: project.id, welcomeCompleted: true))
+        let model = WorkspaceModel(root: store, keychainService: UUID().uuidString, readCredential: { _ in "fixture-key" }) { _, _ in
+            throw WorkspaceError("This test edits drafts without Pi.")
+        }
+        defer { model.terminate() }
+        let location = try XCTUnwrap(WorkspaceFilesLocation(thread: active, project: project))
+        let file = WorkspaceFileTarget(location: location, path: "README.md")
+
+        func beginDrag() async throws -> UUID {
+            let provider = try XCTUnwrap(model.beginFileMentionDrag(file))
+            let type = WorkspaceFileMentionDrag.type.rawValue
+            XCTAssertEqual(provider.registeredTypeIdentifiers, [type])
+            let data = await withCheckedContinuation { continuation in
+                _ = provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                    continuation.resume(returning: data)
+                }
+            }
+            return try XCTUnwrap(data.flatMap { UUID(uuidString: String(decoding: $0, as: UTF8.self)) })
+        }
+
+        let draftTarget = model.attachmentTarget(for: active.id)
+        let beforeNavigation = try await beginDrag()
+        model.selectConversation(other.id, in: project.id)
+        XCTAssertFalse(model.dropFileMention(beforeNavigation, in: model.attachmentTarget(for: other.id)))
+        XCTAssertEqual(model.draft, "Other draft")
+        model.selectConversation(active.id, in: project.id)
+        XCTAssertFalse(model.dropFileMention(beforeNavigation, in: draftTarget))
+
+        let beforeQueue = try await beginDrag()
+        model.editQueuedMessage(queued.id)
+        let queueTarget = model.attachmentTarget(for: active.id)
+        XCTAssertFalse(model.dropFileMention(beforeQueue, in: queueTarget))
+        let editing = try await beginDrag()
+        XCTAssertTrue(model.dropFileMention(editing, in: queueTarget))
+        XCTAssertFalse(model.dropFileMention(editing, in: queueTarget))
+        XCTAssertEqual(model.draft, "Queued text [README.md](README.md) ")
+        let beforeCancel = try await beginDrag()
+        model.cancelQueuedMessageEdit()
+        XCTAssertFalse(model.dropFileMention(beforeQueue, in: draftTarget))
+        XCTAssertFalse(model.dropFileMention(beforeCancel, in: draftTarget))
+        XCTAssertEqual(model.queuedMessages, [queued])
+        XCTAssertEqual(model.draft, "Draft")
+
+        let current = try await beginDrag()
+        model.draft += " with newer text"
+        XCTAssertTrue(model.dropFileMention(current, in: draftTarget))
+        XCTAssertEqual(model.draft, "Draft with newer text [README.md](README.md) ")
+        XCTAssertTrue(model.composerAttachments.isEmpty)
     }
 
     func testTreeSearchAndRefreshStayInsideTheSelectedDirectory() throws {
@@ -1136,7 +1229,8 @@ private struct FilesPanelFixtureView: View {
     var body: some View {
         WorkspaceFilesView(location: fixture.location, saves: fixture.saves, pasteboard: .general,
                            activeLocation: { fixture.location }, close: {},
-                           canAddToComposer: false, addToComposer: { _ in }, selection: $fixture.selection)
+                           canAddToComposer: false, addToComposer: { _ in }, beginMentionDrag: { _ in nil },
+                           selection: $fixture.selection)
             .id(fixture.location)
     }
 }

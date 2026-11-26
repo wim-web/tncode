@@ -115,11 +115,22 @@ final class WorkspaceModel: ObservableObject {
     private var threadSelectionRevision = 0
     private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
     private var promotedDraftLinks: [UUID: UUID] = [:]
+    private var fileMentionDrag: FileMentionDrag?
+
+    private struct FileMentionDrag {
+        let id = UUID()
+        let file: WorkspaceFileTarget
+        let scope: DraftProjectScope
+        let composer: ComposerAttachmentTarget
+    }
 
     private(set) var composerRevision = 0
     @Published private var queueEdit: QueueEdit? {
         didSet {
-            if oldValue?.sessionID != queueEdit?.sessionID { composerRevision += 1 }
+            if oldValue?.sessionID != queueEdit?.sessionID {
+                fileMentionDrag = nil
+                composerRevision += 1
+            }
         }
     }
     @Published private var queueDelivery = QueueDelivery()
@@ -182,10 +193,32 @@ final class WorkspaceModel: ObservableObject {
             throw WorkspaceError("The chat isn’t ready to accept input right now.")
         }
         let mention = try target.composerMention()
-        let current = draft
-        let boundary = current.last?.isWhitespace == false ? " " : ""
-        return editDraft(current + boundary + mention + " ", in: target.location.threadID,
+        return editDraft(WorkspaceFileMention.append(mention, to: draft), in: target.location.threadID,
                          preserveDraftOnCredentialMatch: true)
+    }
+
+    func beginFileMentionDrag(_ file: WorkspaceFileTarget) -> NSItemProvider? {
+        guard canAddFileMention(from: file.location), let scope = draftProjectScope else { return nil }
+        let drag = FileMentionDrag(file: file, scope: scope, composer: attachmentTarget(for: scope.threadID))
+        fileMentionDrag = drag
+        return WorkspaceFileMentionDrag.itemProvider(drag.id)
+    }
+
+    func canDropFileMention(_ id: UUID, in composer: ComposerAttachmentTarget) -> Bool {
+        guard let drag = fileMentionDrag, drag.id == id, drag.scope == draftProjectScope,
+              drag.composer == composer, composer == attachmentTarget(for: composer.threadID) else { return false }
+        return canAddFileMention(from: drag.file.location)
+    }
+
+    func dropFileMention(_ id: UUID, in composer: ComposerAttachmentTarget) -> Bool {
+        guard canDropFileMention(id, in: composer), let drag = fileMentionDrag else { return false }
+        fileMentionDrag = nil
+        do {
+            return try addFileMention(drag.file)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
     }
 
     @discardableResult
@@ -2012,6 +2045,7 @@ final class WorkspaceModel: ObservableObject {
                 previousUserMessageID: messages.last { $0.role == .user }?.id, id: submissionID
             )
             try saveThread(conversation.id) { $0.composerSubmission = submission }
+            fileMentionDrag = nil
         } catch {
             self.error = error.localizedDescription
             return
@@ -2038,6 +2072,7 @@ final class WorkspaceModel: ObservableObject {
                 thread.composerText = nil
                 thread.composerAttachments = nil
             }
+            fileMentionDrag = nil
             error = nil
             if steering { sendQueuedMessageNow(item.id) }
         } catch {
