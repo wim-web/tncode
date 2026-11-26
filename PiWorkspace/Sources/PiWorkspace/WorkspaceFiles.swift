@@ -69,6 +69,8 @@ enum WorkspaceFilePreview: Sendable {
     case text(WorkspaceFileText)
     case largeText(prefix: String, size: Int64)
     case binary(prefix: Data, size: Int64)
+    case image(WorkspaceImageFile)
+    case pdf(WorkspacePDFFile)
 }
 
 struct WorkspaceFileDraft {
@@ -111,8 +113,15 @@ struct WorkspaceFiles: Sendable {
             let file = try openFile(in: folder, name: name)
             defer { close(file) }
             let metadata = try status(file)
-            let data = try read(file, limit: Self.textLimit + 1)
+            let media = WorkspaceMediaFormat(fileName: name)
+            let limit = media == nil ? Self.textLimit : WorkspaceMediaFormat.byteLimit
+            if media != nil, metadata.st_size > limit { throw WorkspaceMediaError.tooLarge }
+            let data = try read(file, limit: limit + 1, cancellable: true)
             guard FileRevision(metadata) == FileRevision(try status(file)) else { throw WorkspaceFileError.changed }
+            if let media {
+                guard data.count <= limit else { throw WorkspaceMediaError.tooLarge }
+                return try media.preview(data)
+            }
             let large = metadata.st_size > Self.textLimit || data.count > Self.textLimit
             let prefix = large ? Data(data.prefix(Self.textLimit)) : data
             if let text = decode(prefix, truncated: large) {
@@ -291,10 +300,11 @@ struct WorkspaceFiles: Sendable {
         return metadata
     }
 
-    private func read(_ descriptor: Int32, limit: Int) throws -> Data {
+    private func read(_ descriptor: Int32, limit: Int, cancellable: Bool = false) throws -> Data {
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while data.count < limit {
+            if cancellable { try Task.checkCancellation() }
             let count = Darwin.read(descriptor, &buffer, min(buffer.count, limit - data.count))
             if count < 0, errno == EINTR { continue }
             guard count >= 0 else { throw fileError() }

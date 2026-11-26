@@ -1,5 +1,10 @@
+import AppKit
+import CoreText
 import Darwin
 import Foundation
+import Observation
+import PDFKit
+import SwiftUI
 import XCTest
 @testable import PiWorkspace
 
@@ -59,6 +64,175 @@ final class WorkspaceFilesTests: XCTestCase {
             }
             XCTAssertEqual(prefix, bytes)
             XCTAssertEqual(size, 4)
+        }
+    }
+
+    @MainActor
+    func testMediaUsesLinkedCheckoutBytesAndRecoversAfterReplacement() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let local = try folder("local", in: root)
+        let linked = root.appendingPathComponent("linked", isDirectory: true)
+        let image = local.appendingPathComponent("sample.PNG")
+        let pdf = local.appendingPathComponent("sample.PDF")
+        try png(.red).write(to: image)
+        try pdfData(["Local first", "Local second"]).write(to: pdf)
+        _ = try git(local, ["init", "-q"])
+        _ = try git(local, ["add", "--", "sample.PNG", "sample.PDF"])
+        _ = try git(local, ["commit", "-qm", "Preview fixtures"])
+        _ = try git(local, ["worktree", "add", "--detach", "--", linked.path, "HEAD"])
+        let linkedImage = linked.appendingPathComponent(image.lastPathComponent)
+        let linkedPDF = linked.appendingPathComponent(pdf.lastPathComponent)
+        try png(.blue).write(to: linkedImage)
+        try pdfData(["Linked first", "Linked second"]).write(to: linkedPDF)
+
+        let project = Project(id: UUID(), path: local.path, title: "Fixture")
+        var thread = Conversation(id: UUID(), title: "Fixture Thread")
+        let localLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: thread, project: project))
+        thread.location = .worktree(path: linked.path, base: "HEAD")
+        let linkedLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: thread, project: project))
+        let saves = WorkspaceFileSaves()
+        let imageTarget = WorkspaceFileTarget(location: linkedLocation, path: image.lastPathComponent)
+        let imageSession = saves.acquire(imageTarget)
+        await imageSession.refresh()
+        let blue = try previewImage(try XCTUnwrap(imageSession.preview).get())
+        let red = try previewImage(WorkspaceFiles(directory: local.path).preview(image.lastPathComponent))
+        XCTAssertEqual(blue.size, CGSize(width: 48, height: 32))
+        XCTAssertEqual(try pixel(blue.bitmap), [0, 0, 255, 255])
+        XCTAssertEqual(try pixel(red.bitmap), [255, 0, 0, 255])
+        XCTAssertNil(imageSession.editorSource)
+        XCTAssertFalse(imageSession.isEditable)
+
+        try Data("broken image".utf8).write(to: linkedImage, options: .atomic)
+        await imageSession.refresh()
+        XCTAssertThrowsError(try XCTUnwrap(imageSession.preview).get()) {
+            XCTAssertEqual($0 as? WorkspaceMediaError, .image)
+        }
+        try png(.green).write(to: linkedImage, options: .atomic)
+        await imageSession.refresh()
+        let green = try previewImage(try XCTUnwrap(imageSession.preview).get())
+        XCTAssertEqual(try pixel(green.bitmap), [0, 255, 0, 255])
+        saves.release(imageSession)
+
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 700, height: 420),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let panel = MediaPanelFixture(location: localLocation, selection: pdf.lastPathComponent, saves: saves)
+        let host = NSHostingView(rootView: MediaPanelFixtureView(fixture: panel))
+        host.sizingOptions = []
+        window.contentView = host
+        defer { window.contentView = nil }
+        try await waitFor { self.findPDFCanvas(in: host)?.document?.page(at: 1)?.string == "Local second" }
+        let localCanvas = try XCTUnwrap(findPDFCanvas(in: host))
+        XCTAssertEqual(localCanvas.document?.page(at: 0)?.string, "Local first")
+
+        panel.location = linkedLocation
+        try await waitFor { self.findPDFCanvas(in: host)?.document?.page(at: 1)?.string == "Linked second" }
+        let linkedCanvas = try XCTUnwrap(findPDFCanvas(in: host))
+        XCTAssertFalse(localCanvas === linkedCanvas)
+        XCTAssertEqual(linkedCanvas.document?.page(at: 0)?.string, "Linked first")
+
+        let pdfSession = saves.acquire(WorkspaceFileTarget(location: linkedLocation, path: pdf.lastPathComponent))
+        defer { saves.release(pdfSession) }
+        try Data("broken PDF".utf8).write(to: linkedPDF, options: .atomic)
+        await pdfSession.refresh()
+        XCTAssertThrowsError(try XCTUnwrap(pdfSession.preview).get()) {
+            XCTAssertEqual($0 as? WorkspaceMediaError, .pdf)
+        }
+        try await waitFor { self.findPDFCanvas(in: host) == nil }
+        try pdfData(["Refreshed first", "Refreshed second"]).write(to: linkedPDF, options: .atomic)
+        await pdfSession.refresh()
+        try await waitFor { self.findPDFCanvas(in: host)?.document?.page(at: 1)?.string == "Refreshed second" }
+        XCTAssertEqual(try git(linked, ["diff", "--cached", "--name-only"]), "")
+
+        try FileManager.default.removeItem(at: linkedImage)
+        try FileManager.default.createSymbolicLink(at: linkedImage, withDestinationURL: image)
+        try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent("Escape"), withDestinationURL: local)
+        let files = WorkspaceFiles(directory: linked.path)
+        for path in [image.lastPathComponent, "Escape/\(pdf.lastPathComponent)", "../local/\(pdf.lastPathComponent)"] {
+            XCTAssertThrowsError(try files.preview(path)) { XCTAssertEqual($0 as? WorkspaceFileError, .unsupportedPath) }
+        }
+    }
+
+    @MainActor
+    func testPDFKitPagingZoomSearchAndRestoringViewOffscreen() async throws {
+        let reader = WorkspacePDFReader()
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 500, height: 320),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = reader.canvas
+        defer { window.contentView = nil }
+        let file = WorkspacePDFFile(data: try pdfData(["Token on page one", "Token on page two"]))
+        XCTAssertTrue(reader.open(file, at: nil))
+        reader.canvas.layoutSubtreeIfNeeded()
+        XCTAssertEqual(reader.pageCount, 2)
+        XCTAssertEqual(reader.canvas.scaleFactor, (500 - 32) / 612, accuracy: 0.001)
+        reader.go(to: 1)
+        XCTAssertEqual(reader.page, 1)
+        XCTAssertEqual(reader.canvas.currentPage?.string, "Token on page two")
+
+        reader.stepZoom(0.25)
+        XCTAssertEqual(try XCTUnwrap(reader.zoom), (500 - 32) / 612 + 0.25, accuracy: 0.001)
+        XCTAssertEqual(reader.page, 1)
+        let savedPosition = try XCTUnwrap(reader.position)
+        XCTAssertTrue(reader.open(file, at: savedPosition))
+        XCTAssertEqual(reader.page, 1)
+        XCTAssertEqual(reader.zoom, savedPosition.zoom)
+        reader.setZoom(nil)
+        XCTAssertNil(reader.zoom)
+        XCTAssertEqual(reader.canvas.scaleFactor, (500 - 32) / 612, accuracy: 0.001)
+
+        reader.find("tOkEn")
+        try await waitFor { !reader.searching }
+        XCTAssertEqual(reader.matchCount, 2)
+        XCTAssertEqual(reader.page, 0)
+        XCTAssertEqual(reader.canvas.highlightedSelections?.count, 2)
+        reader.nextMatch()
+        XCTAssertEqual(reader.page, 1)
+        reader.nextMatch()
+        XCTAssertEqual(reader.page, 0)
+        reader.clearSearch()
+        XCTAssertNil(reader.canvas.highlightedSelections)
+        reader.find("no match")
+        try await waitFor { !reader.searching }
+        XCTAssertEqual(reader.matchCount, 0)
+    }
+
+    func testSVGPreviewRendersLocalPixelsAndRejectsMalformedInput() throws {
+        try withFixture { root in
+            let files = WorkspaceFiles(directory: root.path)
+            let svg = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="32">
+              <rect width="48" height="32" fill="#ff0000"/>
+            </svg>
+            """
+            try write(svg, "sample.svg", in: root)
+            XCTAssertEqual(try pixel(previewImage(files.preview("sample.svg")).bitmap), [255, 0, 0, 255])
+            try write("<svg>", "broken.svg", in: root)
+            XCTAssertThrowsError(try files.preview("broken.svg"))
+            let sibling = try folder("sibling", in: root)
+            let outside = root.appendingPathComponent("outside.png")
+            try png(.red).write(to: outside)
+            let escape = sibling.appendingPathComponent("escape.png")
+            try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside)
+            try write("""
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="32">
+                  <image width="48" height="32" href="\(escape.absoluteString)"/>
+                </svg>
+                """, "external.svg", in: sibling)
+            XCTAssertThrowsError(try WorkspaceFiles(directory: sibling.path).preview("external.svg")) {
+                XCTAssertEqual($0 as? WorkspaceMediaError, .externalSVGResources)
+            }
+            let oversized = try write("", "large.png", in: root)
+            let descriptor = Darwin.open(oversized.path, O_WRONLY | O_CLOEXEC)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { Darwin.close(descriptor) }
+            XCTAssertEqual(ftruncate(descriptor, off_t(WorkspaceMediaFormat.byteLimit + 1)), 0)
+            XCTAssertThrowsError(try files.preview("large.png")) {
+                XCTAssertEqual($0 as? WorkspaceMediaError, .tooLarge)
+            }
         }
     }
 
@@ -369,6 +543,54 @@ final class WorkspaceFilesTests: XCTestCase {
         return text
     }
 
+    private func previewImage(_ preview: WorkspaceFilePreview) throws -> WorkspaceImageFile {
+        guard case let .image(image) = preview else { throw WorkspaceError("Expected an image preview.") }
+        return image
+    }
+
+    private func png(_ color: NSColor) throws -> Data {
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 48, height: 32, bitsPerComponent: 8,
+                                             bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        bitmap.setFillColor(color.cgColor)
+        bitmap.fill(CGRect(x: 0, y: 0, width: 48, height: 32))
+        let image = try XCTUnwrap(bitmap.makeImage())
+        return try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    }
+
+    private func pixel(_ image: CGImage) throws -> [UInt8] {
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                                             bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        bitmap.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return Array(UnsafeRawBufferPointer(start: try XCTUnwrap(bitmap.data), count: 4))
+    }
+
+    private func pdfData(_ pages: [String]) throws -> Data {
+        let data = NSMutableData()
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data))
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 24, nil)
+        for text in pages {
+            context.beginPDFPage(nil)
+            context.textMatrix = .identity
+            context.textPosition = CGPoint(x: 52, y: 720)
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String): font
+            ]))
+            CTLineDraw(line, context)
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return data as Data
+    }
+
+    @MainActor
+    private func findPDFCanvas(in view: NSView) -> WorkspacePDFCanvas? {
+        (view as? WorkspacePDFCanvas) ?? view.subviews.lazy.compactMap { self.findPDFCanvas(in: $0) }.first
+    }
+
     private func git(_ directory: URL, _ arguments: [String]) throws -> String {
         let command = Process()
         command.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -386,5 +608,28 @@ final class WorkspaceFilesTests: XCTestCase {
         command.waitUntilExit()
         guard command.terminationStatus == 0 else { throw WorkspaceError("Fixture git command failed.") }
         return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+@MainActor @Observable
+private final class MediaPanelFixture {
+    var location: WorkspaceFilesLocation
+    var selection: String?
+    let saves: WorkspaceFileSaves
+
+    init(location: WorkspaceFilesLocation, selection: String?, saves: WorkspaceFileSaves) {
+        self.location = location
+        self.selection = selection
+        self.saves = saves
+    }
+}
+
+private struct MediaPanelFixtureView: View {
+    @Bindable var fixture: MediaPanelFixture
+
+    var body: some View {
+        WorkspaceFilesView(location: fixture.location, saves: fixture.saves, pasteboard: .general,
+                           activeLocation: { fixture.location }, close: {}, selection: $fixture.selection)
+            .id(fixture.location)
     }
 }

@@ -4,6 +4,17 @@ import Observation
 @MainActor @Observable
 final class WorkspaceFileSaves {
     private var sessions: [WorkspaceFileTarget: WorkspaceFileSaveSession] = [:]
+    @ObservationIgnored private var pdfPositions: [(WorkspaceFileTarget, WorkspacePDFPosition)] = []
+
+    func pdfPosition(for target: WorkspaceFileTarget) -> WorkspacePDFPosition? {
+        pdfPositions.last { $0.0 == target }?.1
+    }
+
+    func rememberPDFPosition(_ position: WorkspacePDFPosition, for target: WorkspaceFileTarget) {
+        pdfPositions.removeAll { $0.0 == target }
+        if pdfPositions.count == 50 { pdfPositions.removeFirst() }
+        pdfPositions.append((target, position))
+    }
 
     func acquire(_ target: WorkspaceFileTarget) -> WorkspaceFileSaveSession {
         if let session = sessions[target] {

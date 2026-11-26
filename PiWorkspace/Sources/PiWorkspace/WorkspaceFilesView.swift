@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct WorkspaceFilesView: View {
     let location: WorkspaceFilesLocation
@@ -265,6 +266,11 @@ private struct WorkspaceFilePreviewView: View {
 
     private var pathComponents: [String] { target.path.components(separatedBy: "/") }
 
+    private var canWrap: Bool {
+        if case .success(.largeText) = session?.preview { return true }
+        return session?.editorSource != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             breadcrumbs
@@ -278,9 +284,11 @@ private struct WorkspaceFilePreviewView: View {
                         .accessibilityIdentifier("files-unsaved")
                 }
                 previewMenu
-                Button("Save") { session?.flush() }
-                    .disabled(draft == nil || session?.isEditable != true)
-                    .accessibilityIdentifier("files-save")
+                if session?.editorSource != nil {
+                    Button("Save") { session?.flush() }
+                        .disabled(draft == nil || session?.isEditable != true)
+                        .accessibilityIdentifier("files-save")
+                }
             }
             .font(.caption)
             .padding(.horizontal, 8)
@@ -373,8 +381,10 @@ private struct WorkspaceFilePreviewView: View {
                 Button("Copy Contents") { copy(text) }
                     .accessibilityIdentifier("files-copy-contents")
             }
-            Button(wraps ? "Disable Word Wrap" : "Enable Word Wrap") { wraps.toggle() }
-                .accessibilityIdentifier("files-word-wrap")
+            if canWrap {
+                Button(wraps ? "Disable Word Wrap" : "Enable Word Wrap") { wraps.toggle() }
+                    .accessibilityIdentifier("files-word-wrap")
+            }
             Divider()
             Button("Open in Default App") { openExternally(reveal: false) }
                 .accessibilityIdentifier("files-open-default-app")
@@ -409,6 +419,11 @@ private struct WorkspaceFilePreviewView: View {
                 ProgressView().controlSize(.small).padding(12)
             case .failure(let error):
                 status(error.localizedDescription, id: "files-preview-error")
+                if WorkspaceMediaFormat(fileName: pathComponents.last ?? target.path) != nil {
+                    Button("Retry") { reload += 1 }
+                        .padding(.horizontal, 8)
+                        .accessibilityIdentifier("files-preview-retry")
+                }
             case .success(.text):
                 EmptyView()
             case .success(.largeText(let prefix, let size)):
@@ -417,7 +432,28 @@ private struct WorkspaceFilePreviewView: View {
             case .success(.binary(let prefix, let size)):
                 status("Binary file (\(formattedSize(size))). Showing \(prefix.count) bytes.", id: "files-binary-preview")
                 FileTextView(text: hexadecimal(prefix), editable: false, wraps: false, identifier: "files-contents")
+            case .success(.image(let file)):
+                WorkspaceImageView(file: file, name: pathComponents.last ?? target.path)
+                    .id(file.id)
+            case .success(.pdf(let file)):
+                WorkspacePDFView(file: file, name: pathComponents.last ?? target.path,
+                                 position: { saves.pdfPosition(for: target) },
+                                 remember: { saves.rememberPDFPosition($0, for: target) },
+                                 retry: { reload += 1 }, save: { savePDF(file) })
             }
+        }
+    }
+
+    private func savePDF(_ file: WorkspacePDFFile) {
+        guard activeTarget() == target else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = pathComponents.last ?? target.path
+        panel.allowedContentTypes = [.pdf]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try file.data.write(to: url, options: .atomic)
+        } catch {
+            actionError = error.localizedDescription
         }
     }
 
@@ -461,8 +497,8 @@ private struct WorkspaceFilePreviewView: View {
     }
 }
 
-private func fileButton(_ label: String, _ symbol: String, id: String,
-                        action: @escaping () -> Void) -> some View {
+func fileButton(_ label: String, _ symbol: String, id: String,
+                action: @escaping () -> Void) -> some View {
     Button(action: action) { Image(systemName: symbol).frame(width: 18, height: 18) }
         .buttonStyle(.plain)
         .help(label)
