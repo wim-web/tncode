@@ -132,7 +132,7 @@ struct CommandPaletteView: View {
     }
 }
 
-private struct CommandPaletteKeys: NSViewRepresentable {
+struct CommandPaletteKeys: NSViewRepresentable {
     let handle: (NSEvent, NSWindow) -> Bool
 
     final class Coordinator {

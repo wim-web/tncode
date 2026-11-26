@@ -19,11 +19,12 @@ export async function verifyCommandPalette({ press, visible, value, setField, tr
   keyFor(field, 40, "cmd");
   await until(() => closed() && visible("composer").includes("focused=true"), "Command-K closes and restores composer focus");
   await openMenu();
-  await setField(field, "new thread in");
+  const chooserQuery = "New thread in...";
+  await setField(field, chooserQuery);
   keyFor(field, 36);
   await until(() => visible("command-palette-back"), "project choices");
   keyFor(field, 51);
-  await until(() => value(field).includes('value="new thread in"') && visible("command-palette-new-thread-in"), "empty Backspace restores the parent query");
+  await until(() => value(field).includes("value=" + JSON.stringify(chooserQuery)) && visible("command-palette-new-thread-in"), "empty Backspace restores the parent query");
   keyFor(field, 53);
   await until(() => closed() && value("composer").includes("Keep this palette test draft"), "Escape preserves the prior composer");
   assert.equal(index().selectedProject, original.id);

@@ -128,6 +128,14 @@ struct WorkspaceView: View {
             if model.showingWelcome { welcome }
         }
         .tint(accent)
+        .background {
+            CommandPaletteKeys { event, window in
+                guard !event.isARepeat, case .toggle? = CommandPaletteSession.Key(event) else { return false }
+                return openCommandPalette(in: window)
+            }
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
         .background(ThreadTerminalKeyboard())
         .onReceive(model.sidebarCommand) { command in
             switch command {
@@ -1507,14 +1515,16 @@ struct WorkspaceView: View {
         (try? ProjectFolder.existing(at: URL(fileURLWithPath: project.path, isDirectory: true))) != nil
     }
 
-    private func openCommandPalette() {
+    @discardableResult
+    private func openCommandPalette(in eventWindow: NSWindow? = nil) -> Bool {
         guard model.canOpenCommandPalette, !model.showingCommandPalette,
-              let window = NSApp.keyWindow, window === NSApp.mainWindow,
+              let window = eventWindow ?? NSApp.keyWindow, window === NSApp.mainWindow,
               window.attachedSheet == nil, NSApp.modalWindow == nil, !ThreadTerminal.hasFocus(in: window),
               !choosingWorkspace, !choosingThreadProject, terminalWorkspaceChange == nil,
-              draftSettingsProject == nil, rename == nil, removingProject == nil else { return }
+              draftSettingsProject == nil, rename == nil, removingProject == nil else { return false }
         paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         model.showingCommandPalette = true
+        return true
     }
 
     private func finishCommandPalette() {
