@@ -27,6 +27,7 @@ struct WorkspaceView: View {
     @FocusState private var searchFocused: Bool
     @State private var showingDetails = false
     @State private var showingChanges = false
+    @State private var browserPanels: [UUID: BrowserPanel] = [:]
     @State private var showingTerminal = false
     @State private var choosingWorkspace = false
     @State private var confirmingTerminalClose = false
@@ -50,6 +51,12 @@ struct WorkspaceView: View {
         let thread: UUID
         let path: String
         var id: Self { self }
+    }
+
+    @MainActor
+    private struct BrowserPanel {
+        let preview = ThreadBrowserPreview()
+        var isVisible = true
     }
 
     private var orderedProjects: [Project] { SidebarProjectFilter.orderedProjects(model.projects) }
@@ -560,17 +567,20 @@ struct WorkspaceView: View {
     private var detail: some View {
         VStack(spacing: 0) {
             if let project = model.project, let thread = model.conversation {
-                header(project, thread)
+                let browser = browserPanels[thread.id]
+                header(project, thread, browser: browser)
                 Divider()
-                if showingChanges, !thread.workingLocation.needsWorktree, let directory = model.workingDirectory {
-                    HSplitView {
-                        conversation(project, thread).frame(minWidth: 260)
+                HSplitView {
+                    conversation(project, thread).frame(minWidth: 260)
+                    if let browser, browser.isVisible {
+                        BrowserPreviewView(preview: browser.preview)
+                            .frame(minWidth: 290, idealWidth: 380, maxWidth: 495)
+                    } else if showingChanges, !thread.workingLocation.needsWorktree,
+                              let directory = model.workingDirectory {
                         SourceControlView(directory: directory, model: model)
                             .id(directory)
                             .frame(minWidth: 290, idealWidth: 355, maxWidth: 495)
                     }
-                } else {
-                    conversation(project, thread)
                 }
             } else {
                 readyScreen
@@ -608,8 +618,9 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func header(_ project: Project, _ thread: Conversation) -> some View {
-        HStack(spacing: 8) {
+    private func header(_ project: Project, _ thread: Conversation, browser: BrowserPanel?) -> some View {
+        let browserIsVisible = browser?.isVisible == true
+        return HStack(spacing: 8) {
             let canSwitchProject = model.canSwitchDraftProject &&
                 !openTerminals.contains { $0.thread == thread.id } &&
                 (!project.isScratch || !model.projects.isEmpty)
@@ -659,14 +670,37 @@ struct WorkspaceView: View {
             .tint(.primary)
             .accessibilityIdentifier("conversation-title")
             Spacer()
-            Button { showingChanges.toggle() } label: {
-                Image(systemName: showingChanges ? "doc.text.fill" : "doc.text")
+            Button {
+                if browserIsVisible {
+                    browserPanels[thread.id]?.isVisible = false
+                    showingChanges = true
+                } else {
+                    showingChanges.toggle()
+                }
+            } label: {
+                Image(systemName: showingChanges && !browserIsVisible ? "doc.text.fill" : "doc.text")
             }
             .buttonStyle(.plain)
             .help("Changes")
             .accessibilityLabel("Changes")
             .accessibilityIdentifier("toggle-changes")
             .disabled(thread.workingLocation.needsWorktree)
+
+            Button {
+                if browser != nil {
+                    browserPanels[thread.id]?.isVisible.toggle()
+                } else {
+                    browserPanels[thread.id] = BrowserPanel()
+                }
+            } label: {
+                Image(systemName: "globe")
+                    .foregroundStyle(browserIsVisible ? Color.accentColor : Color.primary)
+            }
+            .buttonStyle(.plain)
+            .help(browserIsVisible ? "Hide Browser" : "Show Browser")
+            .accessibilityLabel("Browser")
+            .accessibilityAddTraits(browserIsVisible ? .isSelected : [])
+            .accessibilityIdentifier("toggle-browser")
 
             Button(action: toggleTerminal) {
                 Image(systemName: terminalIsVisible ? "terminal.fill" : "terminal")
