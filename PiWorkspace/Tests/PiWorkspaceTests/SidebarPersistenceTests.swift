@@ -101,28 +101,35 @@ final class SidebarPersistenceTests: XCTestCase {
             selectOnly: { exclusiveSelections += 1 }
         ).padding())
         defer { window.close() }
+        try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
+                      "AppKit needs a WindowServer connection to route mouse events to the fixture panel.")
         let choice = "project-filter-choice-\(project.id)"
-        for _ in 0..<50 where window.element(choice) == nil {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let frame = try XCTUnwrap(window.element(choice)?.accessibilityFrame?())
+        let button = try await window.waitForElement(choice)
+        let frame = try XCTUnwrap(button.accessibilityFrame?())
         let center = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
-        for modifiers: NSEvent.ModifierFlags in [[], .shift] {
+        func click(_ modifiers: NSEvent.ModifierFlags) throws {
             for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
                 let event = try XCTUnwrap(NSEvent.mouseEvent(
                     with: type, location: center, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
                 ))
-                app.postEvent(event, atStart: false)
-            }
-            while let event = app.nextEvent(matching: [.leftMouseDown, .leftMouseUp], until: .now, inMode: .default, dequeue: true) {
+                // Dequeuing sets NSApp.currentEvent. Dispatch the original because the queue
+                // can remap an offscreen event's window coordinates on a scaled display.
+                app.postEvent(event, atStart: true)
+                let queued = try XCTUnwrap(app.nextEvent(matching: type == .leftMouseDown ? .leftMouseDown : .leftMouseUp,
+                                                         until: .now, inMode: .default, dequeue: true))
+                XCTAssertEqual(queued.windowNumber, window.windowNumber)
                 app.sendEvent(event)
             }
-            try await Task.sleep(for: .milliseconds(50))
         }
+        try click([])
+        XCTAssertEqual(exclusiveSelections, 1)
+        XCTAssertEqual(toggles, [])
+        try click(.shift)
         XCTAssertEqual(exclusiveSelections, 1)
         XCTAssertEqual(toggles, [false])
         XCTAssertTrue(window.element("project-filter-\(project.id)")?.accessibilityPerformPress?() == true)
+        XCTAssertEqual(exclusiveSelections, 1)
         XCTAssertEqual(toggles, [false, false])
     }
 
