@@ -1,5 +1,5 @@
-import { mkdirSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { editingTools, installToolApproval, readTools } from "./tool-approval.mjs";
 const write = process.stdout.write.bind(process.stdout);
@@ -9,6 +9,7 @@ const {
   createAgentSession,
   createExtensionRuntime,
   ModelRuntime,
+  parseSessionEntries,
   SessionManager,
   SettingsManager,
 } = await import("@earendil-works/pi-coding-agent");
@@ -76,14 +77,61 @@ function messageText(message) {
   return message.content?.filter((block) => block.type === "text").map((block) => block.text).join("") ?? "";
 }
 
+function isForkableReply(entry) {
+  return entry?.type === "message" && entry.message.role === "assistant" &&
+    ["stop", "length", "error", "aborted"].includes(entry.message.stopReason) &&
+    Boolean(messageText(entry.message));
+}
+
 function history() {
   return manager.getBranch().flatMap((entry) => {
     if (entry.type !== "message") return [];
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
     const text = redact(messageText(entry.message));
-    return text ? [{ id: entry.id, role, text, queuedID: entry.message.workspaceQueuedID }] : [];
+    return text ? [{
+      id: entry.id, role, text, queuedID: entry.message.workspaceQueuedID, canFork: isForkableReply(entry),
+    }] : [];
   });
+}
+
+function forkConversation({ threadID, messageID }) {
+  if (!validID(threadID) || typeof messageID !== "string") return;
+  const finish = (error) => emit({ type: "forked", threadID, error });
+  if (!session || active) return finish("Wait for the current turn to finish before forking.");
+  if (threadID === manager.getSessionId()) return finish("Choose a new conversation for the fork.");
+  const branch = manager.getBranch();
+  const cutoff = branch.findIndex((entry) => entry.id === messageID);
+  if (!isForkableReply(branch[cutoff])) return finish("This response is no longer available on the active conversation branch.");
+
+  const sourceFile = manager.getSessionFile();
+  let prefix;
+  try {
+    const [header, ...saved] = parseSessionEntries(readFileSync(sourceFile, "utf8"));
+    if (header?.type !== "session" || header.id !== manager.getSessionId()) throw new Error();
+    const byID = new Map(saved.map((entry) => [entry.id, entry]));
+    prefix = branch.slice(0, cutoff + 1).map(({ id, parentId }, index, path) => {
+      const entry = byID.get(id);
+      if (!entry || entry.parentId !== parentId || parentId !== (path[index - 1]?.id ?? null)) throw new Error();
+      if (entry.type !== "message") return entry;
+      const { workspaceQueuedID, ...message } = entry.message;
+      return { ...entry, message };
+    });
+    if (!isForkableReply(prefix.at(-1))) throw new Error();
+  } catch {
+    return finish("The source history is missing or incomplete. Reconnect before trying again.");
+  }
+
+  try {
+    // Pi's createBranchedSession switches the manager and assigns its own session ID.
+    const header = SessionManager.inMemory(manager.getCwd(), { id: threadID, parentSession: sourceFile }).getHeader();
+    const destination = join(dirname(manager.getSessionDir()), threadID, threadID + ".jsonl");
+    const contents = [header, ...prefix].map((entry) => JSON.stringify(entry) + "\n").join("");
+    writeFileSync(destination, contents, { flag: "wx", mode: 0o600, flush: true });
+    finish();
+  } catch {
+    finish("Could not save the fork history. Try again.");
+  }
 }
 
 function localModel(runtime, config) {
@@ -110,7 +158,7 @@ function localModel(runtime, config) {
 }
 
 async function open(command) {
-  const { cwd, sessionDir, threadID, config, toolPermission } = command;
+  const { cwd, sessionDir, threadID, config, toolPermission, forkMessageID } = command;
   if (!/^[a-f0-9-]{36}$/i.test(threadID) ||
       !["local", "openai", "anthropic"].includes(config.provider) ||
       typeof config.model !== "string" || !config.model.trim() ||
@@ -142,13 +190,24 @@ async function open(command) {
   const model = runtime.getModel(config.provider, config.model);
   if (!model) throw new Error("This model is unavailable for the selected provider in the bundled Pi catalog.");
 
-  mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+  if (forkMessageID) {
+    if (!existsSync(sessionDir)) throw new Error("The fork history is missing.");
+  } else {
+    mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+  }
   const files = readdirSync(sessionDir).filter((name) => name.endsWith(".jsonl"));
   if (files.length > 1) throw new Error("This conversation has more than one history file.");
-  manager = files.length
-    ? SessionManager.open(join(sessionDir, files[0]), sessionDir, cwd)
+  const historyFile = files[0] && join(sessionDir, files[0]);
+  if (forkMessageID && (!historyFile || statSync(historyFile).size === 0)) {
+    throw new Error("The fork history is missing.");
+  }
+  manager = historyFile
+    ? SessionManager.open(historyFile, sessionDir, cwd)
     : SessionManager.create(cwd, sessionDir, { id: threadID });
   if (manager.getSessionId() !== threadID) throw new Error("Conversation history does not match its ID.");
+  if (forkMessageID && !manager.getBranch().some((entry) => entry.id === forkMessageID && isForkableReply(entry))) {
+    throw new Error("The fork history is incomplete.");
+  }
   const appendMessage = manager.appendMessage.bind(manager);
   manager.appendMessage = (message) => {
     const safeMessage = redactValue(message);
@@ -319,6 +378,8 @@ input.on("line", (line) => {
     });
   } else if (command.type === "prompt") {
     void prompt(command);
+  } else if (command.type === "fork") {
+    forkConversation(command);
   } else if (command.type === "steer" || command.type === "skipCompaction") {
     handleQueuedInput(command);
   } else if (command.type === "toolApprovalResult") {

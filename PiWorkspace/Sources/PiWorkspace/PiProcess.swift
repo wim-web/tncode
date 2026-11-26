@@ -7,6 +7,7 @@ struct ChatMessage: Decodable, Identifiable {
     let role: Role
     let text: String
     var queuedID: UUID? = nil
+    var canFork: Bool? = nil
 }
 
 enum PiEvent: Decodable {
@@ -19,13 +20,16 @@ enum PiEvent: Decodable {
     case inputMode(turnID: UUID, PiInputMode)
     case queueRejected(turnID: UUID, queuedID: UUID)
     case compactionSkipped(turnID: UUID, queuedID: UUID)
+    case forked(threadID: UUID, error: String?)
     case finished(turnID: UUID, [ChatMessage], error: String?)
     case fatal(String)
 
-    private enum Field: String, CodingKey { case type, requestID, operation, messages, text, error, turnID, queuedID, mode }
+    private enum Field: String, CodingKey {
+        case type, requestID, operation, messages, text, error, turnID, queuedID, mode, threadID
+    }
     private enum Kind: String, Decodable {
         case credential, ready, history, partial, activity, toolApproval, finished, fatal
-        case inputMode, queueRejected, compactionSkipped
+        case inputMode, queueRejected, compactionSkipped, forked
     }
     private enum Operation: String, Decodable { case exists, read }
 
@@ -50,6 +54,9 @@ enum PiEvent: Decodable {
             self = kind == .queueRejected
                 ? .queueRejected(turnID: turnID, queuedID: queuedID)
                 : .compactionSkipped(turnID: turnID, queuedID: queuedID)
+        case .forked:
+            self = .forked(threadID: try fields.decode(UUID.self, forKey: .threadID),
+                           error: try fields.decodeIfPresent(String.self, forKey: .error))
         case .finished:
             self = .finished(turnID: try fields.decode(UUID.self, forKey: .turnID),
                              try fields.decode([ChatMessage].self, forKey: .messages),
@@ -66,6 +73,13 @@ struct OpenConversation: Encodable {
     let threadID: String
     let config: ModelSettings
     let toolPermission: ToolPermission
+    var forkMessageID: String?
+}
+
+struct ForkConversation: Encodable {
+    let type = "fork"
+    let threadID: UUID
+    let messageID: String
 }
 
 struct SendPrompt: Encodable {

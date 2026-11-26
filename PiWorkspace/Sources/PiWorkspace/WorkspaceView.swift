@@ -1064,7 +1064,7 @@ struct WorkspaceView: View {
                     composer(project, thread)
                 }
             } else {
-                transcript(jump)
+                transcript(jump, project: project, thread: thread)
                 composer(project, thread).padding(.vertical, 12)
             }
         }
@@ -1132,8 +1132,11 @@ struct WorkspaceView: View {
         }
     }
 
-    private func transcript(_ jump: MessageJump?) -> some View {
+    private func transcript(_ jump: MessageJump?, project: Project, thread: Conversation) -> some View {
         let target = jump.flatMap { request in model.messages.contains { $0.id == request.messageID } ? request : nil }
+        let forks = Dictionary(grouping: project.conversations.filter { $0.forkOrigin?.threadID == thread.id }) {
+            $0.forkOrigin?.messageID
+        }
         return ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 23) {
@@ -1144,12 +1147,35 @@ struct WorkspaceView: View {
                     }
                     ForEach(model.messages) { message in
                         let isMatch = message.id == target?.messageID
-                        messageRow(message.text, role: message.role)
-                            .background(isMatch ? accent.opacity(0.18) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 11))
-                            .accessibilityIdentifier("transcript-message-\(message.id)")
-                            .accessibilityAddTraits(isMatch ? .isSelected : [])
-                            .id(TranscriptAnchor.message(message.id))
+                        VStack(alignment: .leading, spacing: 8) {
+                            messageRow(message.text, role: message.role)
+                                .background(isMatch ? accent.opacity(0.18) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 11))
+                                .accessibilityIdentifier("transcript-message-\(message.id)")
+                                .accessibilityAddTraits(isMatch ? .isSelected : [])
+                            if message.canFork == true && !thread.archived {
+                                Button { model.forkResponse(message.id) } label: {
+                                    Image(systemName: "arrow.triangle.branch")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Fork from this response")
+                                .accessibilityLabel("Fork from this response")
+                                .accessibilityIdentifier("fork-from-response-\(message.id)")
+                                .disabled(!model.canForkResponse(message))
+                            }
+                            if let origin = thread.forkOrigin, origin.messageID == message.id {
+                                forkHistoryLink("Open source conversation", threadID: origin.threadID, source: true)
+                            }
+                            ForEach(forks[message.id] ?? []) { child in
+                                forkHistoryLink("Open fork", threadID: child.id, source: false)
+                                    .help(child.title)
+                            }
+                        }
+                        .id(TranscriptAnchor.message(message.id))
+                    }
+                    if let origin = thread.forkOrigin, model.phase == .closed,
+                       !model.messages.contains(where: { $0.id == origin.messageID }) {
+                        forkHistoryLink("Open source conversation", threadID: origin.threadID, source: true)
                     }
                     if !model.partial.isEmpty {
                         messageRow(model.partial, role: .assistant)
@@ -1172,6 +1198,16 @@ struct WorkspaceView: View {
                 if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
             }
         }
+    }
+
+    private func forkHistoryLink(_ title: String, threadID: UUID, source: Bool) -> some View {
+        Button { model.openForkLink(threadID) } label: {
+            Label(title, systemImage: "arrow.triangle.branch")
+                .font(.callout)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier(source ? "open-source-conversation" : "open-fork-\(threadID)")
+        .disabled(!model.canOpenForkLink(threadID))
     }
 
     private func messageRow(_ text: String, role: ChatMessage.Role) -> some View {

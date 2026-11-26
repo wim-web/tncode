@@ -25,6 +25,11 @@ final class WorkspaceModel: ObservableObject {
         var skipAfterTurn: UUID?
     }
 
+    private struct ForkRequest {
+        let destination: PendingConversationFork
+        let child: Conversation
+    }
+
     @Published private(set) var workspace = Workspace()
     @Published private(set) var phase: Phase = .closed
     @Published private(set) var messages: [ChatMessage] = []
@@ -45,6 +50,7 @@ final class WorkspaceModel: ObservableObject {
 
     @Published private var queueEdit: QueueEdit?
     @Published private var queueDelivery = QueueDelivery()
+    @Published private var forkRequest: ForkRequest?
 
     var draft: String {
         get { queueEdit?.text ?? conversation?.composerText ?? "" }
@@ -116,7 +122,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
     var queuePaused: Bool { queueDelivery.paused }
-    var canEditQueue: Bool { canUseQueue && phase != .connecting }
+    var canEditQueue: Bool { canUseQueue && phase != .connecting && forkRequest == nil }
     var canSteer: Bool { phase == .running && queueDelivery.mode == .steer }
     var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
     var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
@@ -170,6 +176,7 @@ final class WorkspaceModel: ObservableObject {
         do {
             let store = try WorkspaceStore(root: root)
             workspace = try store.load(restoringPrevious: restoringPrevious)
+            try? store.recoverFork(in: workspace)
             self.store = store
             showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
             startupFailure = nil
@@ -190,7 +197,7 @@ final class WorkspaceModel: ObservableObject {
         guard let project, let conversation else { return nil }
         return conversation.workingLocation.directory(in: project)
     }
-    var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree }
+    var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree || forkRequest != nil }
     var canOpenCommandPalette: Bool {
         store != nil && !showingWelcome && !operationsInProgress &&
             !showingSettings && !showingQuitSaveFailure && projectPicker == nil
@@ -237,7 +244,7 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil else { return }
-        if let conversation, project?.isScratch == true || conversation.composerText != nil ||
+        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.composerText != nil ||
             conversation.worktreeLaunch != nil || !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
             connect()
@@ -259,6 +266,10 @@ final class WorkspaceModel: ObservableObject {
     func shutdown() {
         process?.close()
         process = nil
+        if forkRequest != nil {
+            forkRequest = nil
+            try? store?.recoverFork(in: workspace)
+        }
         activeTurnID = nil
         pendingToolApproval = nil
         queueDelivery = QueueDelivery()
@@ -547,6 +558,64 @@ final class WorkspaceModel: ObservableObject {
             $0.selectedProject = projectID
             $0.projects[index].selectedConversation = id
         }) else { return }
+        connect()
+    }
+
+    func canOpenForkLink(_ id: UUID) -> Bool {
+        !operationsInProgress && project?.conversations.contains { $0.id == id } == true
+    }
+
+    func openForkLink(_ id: UUID) {
+        guard canOpenForkLink(id), let project else { return }
+        selectConversation(id, in: project.id)
+        if conversation?.id == id { showArchive = conversation?.archived == true }
+    }
+
+    func canForkResponse(_ message: ChatMessage) -> Bool {
+        message.canFork == true && phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil
+            && conversation?.workingLocation.needsWorktree == false
+    }
+
+    func forkResponse(_ messageID: String) {
+        guard let message = messages.first(where: { $0.id == messageID }), canForkResponse(message),
+              let project, let source = conversation, let store, let process else { return }
+        let destination = PendingConversationFork(projectID: project.id, threadID: UUID())
+        let child = Conversation(id: destination.threadID, title: source.title + " fork",
+                                 lastActiveAt: Date(), location: source.location, isDraft: false,
+                                 forkOrigin: .init(threadID: source.id, messageID: messageID))
+        do {
+            try store.prepareFork(destination, in: workspace)
+            error = nil
+            forkRequest = ForkRequest(destination: destination, child: child)
+            try process.send(ForkConversation(threadID: child.id, messageID: messageID))
+        } catch {
+            forkRequest = nil
+            try? store.recoverFork(in: workspace)
+            self.error = "Could not create the conversation fork. \(error.localizedDescription)"
+        }
+    }
+
+    private func finishFork(_ threadID: UUID, failure: String?) {
+        guard let request = forkRequest, request.child.id == threadID, let store else { return }
+        forkRequest = nil
+        do {
+            if let failure { throw WorkspaceError(failure) }
+            guard let index = selectedProjectIndex, project?.id == request.destination.projectID,
+                  conversation?.id == request.child.forkOrigin?.threadID,
+                  try store.forkHasHistory(request.destination) else {
+                throw WorkspaceError("The fork history was not saved. Try again.")
+            }
+            var updated = workspace
+            updated.projects[index].conversations.insert(request.child, at: 0)
+            updated.projects[index].selectedConversation = threadID
+            try persist(updated)
+        } catch {
+            try? store.recoverFork(in: workspace)
+            self.error = error.localizedDescription
+            return
+        }
+        try? store.recoverFork(in: workspace)
+        showArchive = false
         connect()
     }
 
@@ -1086,7 +1155,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
-        guard worktreeTask == nil else { return }
+        guard worktreeTask == nil, forkRequest == nil else { return }
         shutdown()
         messages = []
         partial = ""
@@ -1122,7 +1191,8 @@ final class WorkspaceModel: ObservableObject {
                 sessionDir: store.history(project: project.id, conversation: conversation.id).path,
                 threadID: conversation.id.uuidString,
                 config: settings,
-                toolPermission: project.toolPermission
+                toolPermission: project.toolPermission,
+                forkMessageID: conversation.forkOrigin?.messageID
             ))
         } catch {
             connectionFailed(error.localizedDescription)
@@ -1245,6 +1315,8 @@ final class WorkspaceModel: ObservableObject {
         case let .compactionSkipped(turnID, queuedID):
             guard activeTurnID == turnID, phase == .running, queueDelivery.inFlight.contains(queuedID) else { return }
             queueDelivery.skipAfterTurn = queuedID
+        case let .forked(threadID, error):
+            finishFork(threadID, failure: error)
         case let .finished(turnID, history, error):
             guard activeTurnID == turnID else { return }
             let skipped = queueDelivery.skipAfterTurn

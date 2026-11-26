@@ -150,6 +150,11 @@ struct Conversation: Codable, Identifiable {
         let previousUserMessageID: String?
     }
 
+    struct ForkOrigin: Codable {
+        let threadID: UUID
+        let messageID: String
+    }
+
     let id: UUID
     var title: String
     var archived = false
@@ -161,6 +166,7 @@ struct Conversation: Codable, Identifiable {
     var composerText: String?
     var composerSubmission: ComposerSubmission?
     var queuedMessages: [QueuedMessage]?
+    var forkOrigin: ForkOrigin?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -278,6 +284,11 @@ struct Workspace: Codable {
     var welcomeCompleted: Bool?
 }
 
+struct PendingConversationFork: Codable {
+    let projectID: UUID
+    let threadID: UUID
+}
+
 struct WorkspaceError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
@@ -335,6 +346,7 @@ final class WorkspaceStore {
 
     private var index: URL { root.appendingPathComponent("workspace.json") }
     private var previousIndex: URL { root.appendingPathComponent("workspace.previous.json") }
+    private var pendingFork: URL { root.appendingPathComponent(".pending-fork.json") }
     var config: URL { root.appendingPathComponent("pi-config", isDirectory: true) }
 
     func load(restoringPrevious: Bool = false) throws -> Workspace {
@@ -425,6 +437,51 @@ final class WorkspaceStore {
         Self.historyComponents(project: project, conversation: conversation).reduce(root) {
             $0.appendingPathComponent($1, isDirectory: true)
         }
+    }
+
+    func prepareFork(_ fork: PendingConversationFork, in workspace: Workspace) throws {
+        try recoverFork(in: workspace)
+        let directory = try forkDirectory(fork)
+        guard !FileManager.default.fileExists(atPath: directory.path) else {
+            throw WorkspaceError("A history folder already exists for this fork. Try again.")
+        }
+        try write(JSONEncoder().encode(fork), to: pendingFork)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+    }
+
+    func forkHasHistory(_ fork: PendingConversationFork) throws -> Bool {
+        let file = try forkDirectory(fork).appendingPathComponent(fork.threadID.uuidString + ".jsonl")
+        let info = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        return info.isRegularFile == true && (info.fileSize ?? 0) > 0
+    }
+
+    func recoverFork(in workspace: Workspace) throws {
+        guard let data = try read(pendingFork) else { return }
+        let fork = try JSONDecoder().decode(PendingConversationFork.self, from: data)
+        let saved = workspace.projects.contains { project in
+            project.id == fork.projectID && project.conversations.contains { $0.id == fork.threadID }
+        }
+        if !saved {
+            let directory = try forkDirectory(fork)
+            let file = directory.appendingPathComponent(fork.threadID.uuidString + ".jsonl")
+            if unlink(file.path) != 0 && errno != ENOENT { throw Self.accessError(file, errno) }
+            if rmdir(directory.path) != 0 && errno != ENOENT {
+                throw Self.accessError(directory, errno)
+            }
+        }
+        try FileManager.default.removeItem(at: pendingFork)
+    }
+
+    private func forkDirectory(_ fork: PendingConversationFork) throws -> URL {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        let directory = Self.historyComponents(project: fork.projectID, conversation: fork.threadID).reduce(root) {
+            $0.appendingPathComponent($1, isDirectory: true)
+        }
+        guard directory.resolvingSymlinksInPath().path == directory.path else {
+            throw WorkspaceError("The fork history folder must be inside this workspace.")
+        }
+        return directory
     }
 
     static func historyComponents(project: UUID, conversation: UUID) -> [String] {
