@@ -61,6 +61,7 @@ struct WorkspaceView: View {
     @State private var createdProject: UUID?
     @State private var draftCheckoutBranches: [String: String] = [:]
     @FocusState private var focusedComposer: UUID?
+    @State private var showingComposerStash = false
     @FocusState private var welcomeFocus: WelcomeFocus?
     @State private var focusAfterPicker: DraftProjectScope?
     @State private var targetingProjectDrop = false
@@ -149,12 +150,24 @@ struct WorkspaceView: View {
         .tint(accent)
         .background {
             WindowKeyMonitor { event, window in
+                if showingComposerStash, event.keyCode == kVK_Escape,
+                   event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+                   acceptsWorkspaceKeys(in: window),
+                   (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true {
+                    showingComposerStash = false
+                    return true
+                }
                 if handleFindKey(event, in: window) { return true }
                 guard !event.isARepeat else { return false }
                 if case .toggle? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window)
                 }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "s",
+                   acceptsWorkspaceKeys(in: window), model.conversation?.archived == false,
+                   (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true {
+                    return handleComposerStashShortcut()
+                }
                 if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "u",
                    acceptsWorkspaceCommands(in: window) {
                     model.openSettings(.usage)
@@ -206,6 +219,7 @@ struct WorkspaceView: View {
         }
         .onChange(of: model.draftProjectScope) { _, scope in
             if let draftProjectPicker, draftProjectPicker.scope != scope { self.draftProjectPicker = nil }
+            showingComposerStash = false
         }
         .onChange(of: model.messages.last?.id) { _, _ in
             if model.activeThreadFind != nil { model.threadFind?.refresh() }
@@ -1483,6 +1497,9 @@ struct WorkspaceView: View {
                 }
                 QueuedMessagesView(model: model) { focusedComposer = thread.id }
                     .id(thread.id)
+                if let scope = model.draftProjectScope {
+                    composerStash(in: scope)
+                }
                 if let question = model.pendingAgentQuestion {
                     AgentQuestionCard(request: question.request, submitting: question.submitting, error: question.error,
                                       respond: { model.respond(to: question.request.scope, with: $0) }, stop: model.cancel)
@@ -1534,6 +1551,49 @@ struct WorkspaceView: View {
         .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
     }
 
+    @ViewBuilder
+    private func composerStash(in scope: DraftProjectScope) -> some View {
+        let entries = model.stashedPrompts
+        if !entries.isEmpty {
+            Button { showingComposerStash = true } label: {
+                Label("Stash \(entries.count)", systemImage: "bookmark")
+            }
+            .buttonStyle(.borderless)
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityLabel("Stashed prompts: \(entries.count). Open stash.")
+            .accessibilityIdentifier("open-composer-stash")
+        }
+        if showingComposerStash {
+            ComposerStashView(entries: entries, canRestore: model.canMoveStashedPrompt, restore: { id in
+                restoreStashedPrompt(id, to: scope)
+            }, delete: { id in
+                if model.deleteStashedPrompt(id), model.stashedPrompts.isEmpty { showingComposerStash = false }
+            }, close: { showingComposerStash = false })
+        }
+    }
+
+    private func handleComposerStashShortcut() -> Bool {
+        guard let scope = model.draftProjectScope, model.conversation?.worktreeLaunch == nil else { return false }
+        if model.canMoveStashedPrompt {
+            if model.hasStashablePrompt || model.isImportingComposerAttachments {
+                if model.stashCurrentPrompt() { showingComposerStash = false }
+                return true
+            }
+            let entries = model.stashedPrompts
+            if entries.count == 1, let entry = entries.first {
+                restoreStashedPrompt(entry.id, to: scope)
+                return true
+            }
+        }
+        showingComposerStash.toggle()
+        return true
+    }
+
+    private func restoreStashedPrompt(_ id: UUID, to scope: DraftProjectScope) {
+        if model.restoreStashedPrompt(id, to: scope) { showingComposerStash = false }
+    }
+
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         let target = model.attachmentTarget(for: threadID)
         func ownsComposer() -> Bool {
@@ -1545,18 +1605,22 @@ struct WorkspaceView: View {
         }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
         return VStack(alignment: .leading, spacing: 0) {
             ComposerAttachmentsView(model: model, threadID: threadID)
-                .id(threadID)
+                .id(target)
                 .padding(.bottom, 6)
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
-                set: { if ownsComposer() { model.editDraft($0, in: threadID) } }
+                set: {
+                    guard ownsComposer() else { return }
+                    showingComposerStash = false
+                    model.editDraft($0, in: threadID)
+                }
             ), pasteboard: workspacePasteboard, drop: drop) { text, inlineLength in
                 model.foldPastedText(text, inlineLength: inlineLength, in: target)
             }
-                .id(threadID)
+                .id(target)
                 .focused($focusedComposer, equals: threadID)
                 .focusedValue(\.editingComposer, true)
-                .task(id: threadID) {
+                .task(id: target) {
                     await Task.yield()
                     if !Task.isCancelled && model.conversation?.id == threadID &&
                         !model.showingWelcome && model.projectPicker == nil && draftProjectPicker == nil &&
@@ -1590,24 +1654,7 @@ struct WorkspaceView: View {
         }
         .background { drop.accessibilityHidden(true) }
         .onPasteCommand(of: ComposerAttachmentInput.contentTypes) { providers in
-            guard model.canEditAttachments else { return }
-            Task {
-                var items: [ComposerAttachmentInput] = []
-                for provider in providers.prefix(ComposerAttachment.maxCount + 1) {
-                    let loaded = await withCheckedContinuation { continuation in
-                        _ = provider.loadTransferable(type: ComposerAttachmentInput.self) { result in
-                            continuation.resume(returning: result)
-                        }
-                    }
-                    if case .success(let item) = loaded { items.append(item) }
-                }
-                let attached = !items.isEmpty && model.attach(items, to: target)
-                if model.error == nil && items.count < min(providers.count, ComposerAttachment.maxCount + 1) {
-                    model.error = "Some pasted files or images could not be read."
-                } else if !attached && !items.isEmpty && model.error == nil {
-                    model.error = "The attachment target is no longer editable."
-                }
-            }
+            model.pasteAttachments(providers, to: target)
         }
     }
 

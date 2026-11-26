@@ -58,6 +58,8 @@ final class WorkspaceModel: ObservableObject {
     private var projectCloneTask: Task<Void, Error>?
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
+    private var composerDraftGenerations: [UUID: UUID] = [:]
+    private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
     private var threadSelectionRevision = 0
 
     private(set) var composerRevision = 0
@@ -133,7 +135,8 @@ final class WorkspaceModel: ObservableObject {
 
     var editingQueuedMessageID: UUID? { queueEdit?.id }
     func attachmentTarget(for threadID: UUID) -> ComposerAttachmentTarget {
-        .init(threadID: threadID, queueEditID: conversation?.id == threadID ? queueEdit?.sessionID : nil)
+        .init(threadID: threadID, queueEditID: conversation?.id == threadID ? queueEdit?.sessionID : nil,
+              draftGeneration: composerDraftGenerations[threadID])
     }
     var composerAttachments: [ComposerAttachment] {
         if let queueEdit { return queueEdit.attachments ?? [] }
@@ -141,6 +144,99 @@ final class WorkspaceModel: ObservableObject {
     }
     var canEditAttachments: Bool { canUseQueue }
     var attachmentSendError: String? { attachmentSendError(for: composerAttachments) }
+
+    var stashedPrompts: [StashedPrompt] { workspace.stashedPrompts ?? [] }
+    var canMoveStashedPrompt: Bool { canUseQueue && queueEdit == nil && pendingAgentQuestion == nil }
+    var hasStashablePrompt: Bool { !StashedPrompt.trimmed(draft).isEmpty || !composerAttachments.isEmpty }
+    var isImportingComposerAttachments: Bool {
+        guard let id = conversation?.id else { return false }
+        return pendingAttachmentImports[attachmentTarget(for: id)] != nil
+    }
+
+    @discardableResult
+    func stashCurrentPrompt() -> Bool {
+        guard canMoveStashedPrompt, let thread = conversation,
+              attachmentImportsFinished(), hasStashablePrompt else { return false }
+        let attachments = thread.composerAttachments ?? []
+        guard attachments.allSatisfy({ $0.payload != nil }) else {
+            error = "Attach unavailable files again or remove them before stashing."
+            return false
+        }
+        let prompt = StashedPrompt(prompt: StashedPrompt.trimmed(draft), attachments: attachments)
+        let limit = StashedPrompt.maxCount
+        let evictsOldest = stashedPrompts.count >= limit
+        let entries = [prompt] + stashedPrompts.prefix(limit - 1)
+        guard saveStash(entries, threadID: thread.id, text: "", attachments: []) else { return false }
+        if evictsOldest { error = "The stash holds \(limit) prompts. The oldest prompt was removed." }
+        return true
+    }
+
+    @discardableResult
+    func restoreStashedPrompt(_ id: UUID, to scope: DraftProjectScope) -> Bool {
+        guard canMoveStashedPrompt, draftProjectScope == scope, let thread = conversation,
+              let entry = stashedPrompts.first(where: { $0.id == id }),
+              attachmentImportsFinished() else { return false }
+
+        var attachments = thread.composerAttachments ?? []
+        for attachment in entry.attachments where !attachments.contains(attachment) {
+            if attachments.contains(where: { $0.id == attachment.id }) {
+                attachments.append(ComposerAttachment(name: attachment.name, payload: attachment.payload))
+            } else {
+                attachments.append(attachment)
+            }
+        }
+        guard attachments.count <= ComposerAttachment.maxCount,
+              attachments.reduce(0, { $0 + ($1.payload?.data.count ?? 0) }) <= ComposerAttachment.maxBytes else {
+            error = "This prompt is still in the stash. Remove some composer attachments and try again."
+            return false
+        }
+        let text = entry.appending(to: draft)
+        do {
+            let key = try readCredential(((try? effectiveModel.validated()) ?? effectiveModel).account)
+            if let key, !key.isEmpty {
+                if entry.prompt.contains(key) || entry.attachments.contains(where: { $0.name.contains(key) }) {
+                    throw WorkspaceError("Remove the API key before restoring this prompt.")
+                }
+                for attachment in entry.attachments {
+                    try Self.validateAttachment(attachment.payload, key: key, alongside: [])
+                }
+            }
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        return saveStash(stashedPrompts.filter { $0.id != id }, threadID: thread.id, text: text, attachments: attachments)
+    }
+
+    @discardableResult
+    func deleteStashedPrompt(_ id: UUID) -> Bool {
+        guard stashedPrompts.contains(where: { $0.id == id }) else { return false }
+        let entries = stashedPrompts.filter { $0.id != id }
+        error = nil
+        return save { $0.stashedPrompts = entries.isEmpty ? nil : entries }
+    }
+
+    private func saveStash(_ entries: [StashedPrompt], threadID: UUID, text: String,
+                           attachments: [ComposerAttachment]) -> Bool {
+        guard let p = selectedProjectIndex,
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return false }
+        error = nil
+        guard save({ workspace in
+            workspace.stashedPrompts = entries.isEmpty ? nil : entries
+            workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
+            workspace.projects[p].conversations[t].composerAttachments = attachments.isEmpty ? nil : attachments
+        }) else { return false }
+        composerDraftGenerations[threadID] = UUID()
+        return true
+    }
+
+    private func attachmentImportsFinished() -> Bool {
+        guard !isImportingComposerAttachments else {
+            error = "Wait for attachments to finish pasting, then try again."
+            return false
+        }
+        return true
+    }
 
     private func attachmentSendError(for attachments: [ComposerAttachment]) -> String? {
         if attachments.contains(where: { $0.payload == nil }) {
@@ -209,6 +305,35 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func pasteAttachments(_ providers: [NSItemProvider], to target: ComposerAttachmentTarget) {
+        guard canEditAttachments, conversation?.id == target.threadID,
+              attachmentTarget(for: target.threadID) == target, !providers.isEmpty else { return }
+        pendingAttachmentImports[target, default: 0] += 1
+        let inputs = Array(providers.prefix(ComposerAttachment.maxCount + 1))
+        Task {
+            defer {
+                let remaining = pendingAttachmentImports[target, default: 1] - 1
+                pendingAttachmentImports[target] = remaining == 0 ? nil : remaining
+            }
+            var items: [ComposerAttachmentInput] = []
+            for provider in inputs {
+                let loaded = await withCheckedContinuation { continuation in
+                    _ = provider.loadTransferable(type: ComposerAttachmentInput.self) { result in
+                        continuation.resume(returning: result)
+                    }
+                }
+                if case .success(let item) = loaded { items.append(item) }
+            }
+            let attached = !items.isEmpty && attach(items, to: target)
+            guard conversation?.id == target.threadID, error == nil else { return }
+            if items.count < inputs.count {
+                error = "Some pasted files or images could not be read."
+            } else if !attached && !items.isEmpty {
+                error = "The attachment target is no longer editable."
+            }
+        }
+    }
+
     func removeAttachment(_ id: UUID, in target: ComposerAttachmentTarget) {
         _ = editAttachments(in: target) { attachments, _ in attachments.removeAll { $0.id == id } }
     }
@@ -230,7 +355,8 @@ final class WorkspaceModel: ObservableObject {
         }), let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == target.threadID }) else { return false }
         let project = workspace.projects[p]
         let thread = project.conversations[t]
-        guard !thread.archived, thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
+        guard target.draftGeneration == composerDraftGenerations[thread.id],
+              !thread.archived, thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
         if let id = target.queueEditID {
             guard conversation?.id == thread.id, queueEdit?.sessionID == id else { return false }
         }

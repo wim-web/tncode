@@ -33,8 +33,8 @@ struct ComposerAttachmentsView: View {
                 }
                 .accessibilityIdentifier("attach-files")
                 .disabled(!model.canEditAttachments)
-                PasteButton(payloadType: ComposerAttachmentInput.self) {
-                    model.attach($0, to: pasteTarget)
+                PasteButton(supportedContentTypes: ComposerAttachmentInput.contentTypes) {
+                    model.pasteAttachments($0, to: pasteTarget)
                 }
                 .help("Paste files or images")
                 .accessibilityLabel("Paste files or images")

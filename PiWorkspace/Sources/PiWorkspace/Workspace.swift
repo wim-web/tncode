@@ -362,6 +362,7 @@ struct Workspace: Codable {
     var addProjectBaseDirectory: String?
     var worktreesDirectory: String?
     var newWorktreesStartFromRemote: Bool?
+    var stashedPrompts: [StashedPrompt]?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
 }

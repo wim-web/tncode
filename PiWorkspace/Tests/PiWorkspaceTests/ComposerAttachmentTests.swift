@@ -143,6 +143,7 @@ final class ComposerAttachmentTests: XCTestCase {
             }
         }
         let threadID: UUID
+        let stashID: UUID
         let removed: UUID
         let kept: UUID
         do {
@@ -161,7 +162,9 @@ final class ComposerAttachmentTests: XCTestCase {
             XCTAssertEqual(attachments[0].payload?.data, try Data(contentsOf: first))
             XCTAssertEqual(attachments[1].payload?.data, try Data(contentsOf: second))
             XCTAssertNotEqual(try previewColor(attachments[0]), try previewColor(attachments[1]))
-            model.removeAttachment(removed, in: ComposerAttachmentTarget(threadID: threadID))
+            XCTAssertTrue(model.stashCurrentPrompt())
+            stashID = try XCTUnwrap(model.stashedPrompts.first?.id)
+            XCTAssertTrue(model.composerAttachments.isEmpty)
             XCTAssertTrue(model.terminate())
         }
 
@@ -169,6 +172,9 @@ final class ComposerAttachmentTests: XCTestCase {
         model.start()
         await wait(for: .ready, in: model)
         XCTAssertEqual(model.conversation?.id, threadID)
+        XCTAssertTrue(model.restoreStashedPrompt(stashID, to: try XCTUnwrap(model.draftProjectScope)))
+        XCTAssertEqual(model.composerAttachments.map(\.id).prefix(2), [removed, kept])
+        model.removeAttachment(removed, in: model.attachmentTarget(for: threadID))
         XCTAssertEqual(model.composerAttachments.map(\.name), ["same.png", "note.txt"])
         XCTAssertEqual(model.composerAttachments.first?.id, kept)
         XCTAssertTrue(model.canSend)
@@ -219,7 +225,7 @@ final class ComposerAttachmentTests: XCTestCase {
         textOnly.localImages = false
         try model.applySettings(textOnly, in: .workspace, newKey: "", removeKey: false)
         await wait(for: .ready, in: model)
-        model.attach([.file(first)], to: ComposerAttachmentTarget(threadID: threadID))
+        model.attach([.file(first)], to: model.attachmentTarget(for: threadID))
         XCTAssertFalse(model.supportsImageInput)
         XCTAssertFalse(model.canSend)
         XCTAssertNotNil(model.attachmentSendError)

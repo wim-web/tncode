@@ -4,9 +4,10 @@ import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 
-struct ComposerAttachmentTarget: Equatable {
+struct ComposerAttachmentTarget: Hashable {
     let threadID: UUID
     var queueEditID: UUID?
+    var draftGeneration: UUID?
 }
 
 enum ComposerAttachmentInput: Transferable {
