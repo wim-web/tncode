@@ -300,29 +300,13 @@ struct WorkspaceView: View {
         .background(ThreadTerminalKeyboard())
     }
 
-    private var workspaceBody: some View {
+    private var workspaceContent: some View {
         let findRequest = model.activeThreadFind?.request
-        let branchRequest = copyBranchReadRequest
         let images = imagePreview.map { previewImages(for: $0.opener.owner) } ?? []
         let imageIndex = imagePreview?.index(in: images)
         return workspaceSurface(images: images, imageIndex: imageIndex)
         .onReceive(model.sidebarCommand) { command in
-            guard imageIndex == nil else { return }
-            switch command {
-            case .commandPalette: openCommandPalette()
-            case .newThread, .newScratchThread:
-                guard let window = NSApp.mainWindow, acceptsWorkspaceKeys(in: window),
-                      !model.operationsInProgress else { return }
-                if command == .newThread {
-                    openNewThread(in: window)
-                } else {
-                    startScratchThread()
-                }
-            case .search:
-                guard !model.showingWelcome, !model.showingCommandPalette,
-                      NSApp.mainWindow?.attachedSheet == nil else { return }
-                searchFocused = true
-            }
+            if imageIndex == nil { handleSidebarCommand(command) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshSnoozes()
@@ -366,6 +350,29 @@ struct WorkspaceView: View {
                 focusCurrentComposer()
             }
         }
+    }
+
+    private func handleSidebarCommand(_ command: WorkspaceModel.SidebarCommand) {
+        switch command {
+        case .commandPalette: openCommandPalette()
+        case .newThread, .newScratchThread:
+            guard let window = NSApp.mainWindow, acceptsWorkspaceKeys(in: window),
+                  !model.operationsInProgress else { return }
+            if command == .newThread {
+                openNewThread(in: window)
+            } else {
+                startScratchThread()
+            }
+        case .search:
+            guard !model.showingWelcome, !model.showingCommandPalette,
+                  NSApp.mainWindow?.attachedSheet == nil else { return }
+            searchFocused = true
+        }
+    }
+
+    private var workspaceBody: some View {
+        let branchRequest = copyBranchReadRequest
+        return workspaceContent
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
                                choosingProject: paletteChoosingProject,
