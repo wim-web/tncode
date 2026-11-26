@@ -52,6 +52,34 @@ struct GitWorkspace: Sendable {
         self.path = path
     }
 
+    static func createRepository(named input: String, in parent: URL) async throws -> URL {
+        let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.utf8.contains(0) else {
+            throw WorkspaceError.invalidProjectName
+        }
+        let folder = parent.appendingPathComponent(name, isDirectory: true)
+        let staging = parent.appendingPathComponent(".pi-workspace-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        var moved = false
+        defer {
+            if !moved { try? FileManager.default.removeItem(at: staging) }
+        }
+        _ = try await GitWorkspace(path: staging.path).run(["init", "--quiet", "--template="])
+        try staging.withUnsafeFileSystemRepresentation { source in
+            try folder.withUnsafeFileSystemRepresentation { destination in
+                guard let source, let destination else { throw WorkspaceError.invalidProjectName }
+                guard renamex_np(source, destination, UInt32(RENAME_EXCL)) == 0 else {
+                    let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+                    if code == .EEXIST || code == .ENOTEMPTY { throw WorkspaceError.projectFolderExists }
+                    throw POSIXError(code)
+                }
+            }
+        }
+        moved = true
+        return folder
+    }
+
     func state() async throws -> GitRepositoryState {
         let files = try await changes()
         let head = try await run(["symbolic-ref", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
@@ -307,8 +335,12 @@ struct GitWorkspace: Sendable {
         process.standardError = errorOutput
 
         var environment = ProcessInfo.processInfo.environment
-        for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_PREFIX"] {
-            environment.removeValue(forKey: key)
+        if arguments[0] == "init" {
+            environment = environment.filter { !$0.key.hasPrefix("GIT_") }
+        } else {
+            for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_PREFIX"] {
+                environment.removeValue(forKey: key)
+            }
         }
         environment["GIT_INDEX_FILE"] = index?.path
         environment["GIT_TERMINAL_PROMPT"] = "0"
@@ -394,6 +426,8 @@ struct GitWorkspace: Sendable {
         case indexLocked
         case indexInstallFailed(POSIXError)
         case invalidArgument
+        case invalidProjectName
+        case projectFolderExists
         case invalidOutput(command: String)
         case commandFailed(command: String, status: Int32, message: String)
 
@@ -413,6 +447,10 @@ struct GitWorkspace: Sendable {
                 return "Git created the commit, but could not save the updated index. \(error.localizedDescription)"
             case .invalidArgument:
                 return "A Git argument contains a NUL character."
+            case .invalidProjectName:
+                return "Enter a name that can be used for a new folder."
+            case .projectFolderExists:
+                return "That name is already in use in the chosen folder."
             case .invalidOutput(let command):
                 return "Git returned unreadable output for \(command)."
             case .commandFailed(let command, let status, let message):

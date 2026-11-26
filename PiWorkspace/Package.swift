@@ -10,6 +10,7 @@ let package = Package(
     targets: [
         .executableTarget(name: "PiWorkspace", dependencies: [
             .product(name: "SwiftTerm", package: "SwiftTerm")
-        ])
+        ]),
+        .testTarget(name: "PiWorkspaceTests", dependencies: ["PiWorkspace"])
     ]
 )

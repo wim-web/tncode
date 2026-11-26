@@ -130,20 +130,61 @@ final class WorkspaceModel: ObservableObject {
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
         guard !operationsInProgress else { return }
         projectPicker = ProjectPickerRequest(relinking: id, startThread: startThread,
-                                             initialPath: projects.first(where: { $0.id == id })?.path ?? "")
+                                             initialPath: projects.first(where: { $0.id == id })?.path ?? "",
+                                             basePath: project?.path)
+    }
+
+    func openProject(_ source: ProjectSource, request: ProjectPickerRequest) async throws {
+        switch source {
+        case .localFolder(let folder):
+            try openProject(folder, request: request)
+        case .newProject(let name, let parent):
+            try checkCanOpenProject()
+            let parent = try ProjectFolder.existing(at: parent)
+            let folder = try await runGitMutation {
+                try await GitWorkspace.createRepository(named: name, in: parent)
+            }
+            do {
+                try openProject(folder, request: request)
+            } catch {
+                throw WorkspaceError("""
+                    The repository was created at \(folder.path). \(error.localizedDescription)
+                    After resolving the error, add the repository with Local folder.
+                    """)
+            }
+        }
     }
 
     func openProject(_ url: URL, request: ProjectPickerRequest? = nil) throws {
+        try checkCanOpenProject()
+        let folder = try ProjectFolder.existing(at: url)
+        try registerProject(folder, relinking: request?.relinking, startThread: request?.startThread == true)
+    }
+
+    func openDroppedProjects(_ urls: [URL]) throws -> Bool {
+        try checkCanOpenProject()
+        var opened = false
+        for url in urls {
+            guard let folder = try? ProjectFolder.existing(at: url) else { continue }
+            try registerProject(folder)
+            opened = true
+        }
+        return opened
+    }
+
+    private func checkCanOpenProject() throws {
         guard !operationsInProgress else {
             throw WorkspaceError("Wait for the current operation before switching projects.")
         }
-        let folder = url.resolvingSymlinksInPath().standardizedFileURL
-        guard folder.isFileURL, (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-            throw WorkspaceError("Choose an existing folder.")
+        guard store != nil else {
+            throw WorkspaceError(error ?? "Could not open the workspace.")
         }
+    }
+
+    private func registerProject(_ folder: URL, relinking: UUID? = nil, startThread: Bool = false) throws {
         let existing = workspace.projects.firstIndex { $0.path == folder.path }
         let index: Int?
-        if let relinking = request?.relinking {
+        if let relinking {
             index = workspace.projects.firstIndex { $0.id == relinking }
             guard let index, existing == nil || existing == index else {
                 throw WorkspaceError("That folder already belongs to another project.")
@@ -159,8 +200,8 @@ final class WorkspaceModel: ObservableObject {
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
                 $0.selectedProject = $0.projects[index].id
-                if request?.startThread == true || $0.projects[index].selectedConversation == nil ||
-                    (request?.relinking == nil && previous?.id != $0.selectedProject) {
+                if startThread || $0.projects[index].selectedConversation == nil ||
+                    (relinking == nil && previous?.id != $0.selectedProject) {
                     $0.projects[index].selectDraft(occupied: occupied)
                 }
             } else {

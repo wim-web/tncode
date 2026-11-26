@@ -1,5 +1,19 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
+
+struct DroppedProjectFolder: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .fileURL) { data in
+            guard let url = URL(dataRepresentation: data, relativeTo: nil), url.isFileURL else {
+                throw WorkspaceError("Choose a local folder.")
+            }
+            return Self(url: url)
+        }
+    }
+}
 
 struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
@@ -21,6 +35,7 @@ struct WorkspaceView: View {
     @State private var removingProject: Project?
     @FocusState private var focusedComposer: UUID?
     @State private var focusAfterPicker = false
+    @State private var targetingProjectDrop = false
 
     private enum RenameTarget {
         case project(UUID)
@@ -97,11 +112,10 @@ struct WorkspaceView: View {
             if focusAfterPicker { focusedComposer = model.conversation?.id }
             focusAfterPicker = false
         }) { request in
-            ProjectFolderView(request: request) { url, request in
-                try model.openProject(url, request: request)
+            ProjectFolderView(request: request) { source in
+                try await model.openProject(source, request: request)
                 focusAfterPicker = true
-                projectFilter = nil
-                if let id = model.project?.id { collapsed.remove(id) }
+                revealOpenedProject()
             }
         }
         .alert("Rename", isPresented: Binding(get: { rename != nil }, set: { if !$0 { rename = nil } })) {
@@ -160,10 +174,10 @@ struct WorkspaceView: View {
                         .contentShape(Rectangle())
                 }
                     .buttonStyle(.plain)
-                    .help("Open Project")
-                    .accessibilityLabel("Open Project")
+                    .help("Add Project")
+                    .accessibilityLabel("Add Project")
                     .accessibilityIdentifier("open-project")
-                    .disabled(model.phase.isRunning)
+                    .disabled(model.operationsInProgress)
                 Button { newThread() } label: {
                     Image(systemName: "square.and.pencil")
                         .frame(width: 25, height: 25)
@@ -249,6 +263,45 @@ struct WorkspaceView: View {
             .padding(13)
         }
         .background(rail)
+        .contentShape(Rectangle())
+        .overlay {
+            if targetingProjectDrop && !model.operationsInProgress {
+                Label("Drop folders to add projects", systemImage: "folder.badge.plus")
+                    .font(.callout.weight(.medium))
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8).strokeBorder(accent, lineWidth: 2)
+                    }
+                    .padding(5)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .dropDestination(for: DroppedProjectFolder.self) { items, _ in
+            openDroppedProjects(items.map(\.url))
+        } isTargeted: {
+            targetingProjectDrop = $0
+        }
+    }
+
+    private func openDroppedProjects(_ urls: [URL]) -> Bool {
+        do {
+            guard try model.openDroppedProjects(urls) else { return false }
+            revealOpenedProject()
+            focusedComposer = model.conversation?.id
+            return true
+        } catch {
+            model.error = error.localizedDescription
+            return false
+        }
+    }
+
+    private func revealOpenedProject() {
+        projectFilter = nil
+        if let id = model.project?.id { collapsed.remove(id) }
     }
 
     private var sidebarOptions: some View {

@@ -142,6 +142,37 @@ struct ProjectPickerRequest: Identifiable {
     let relinking: UUID?
     let startThread: Bool
     let initialPath: String
+    let basePath: String?
+}
+
+enum ProjectSource {
+    case localFolder(URL)
+    case newProject(name: String, parent: URL)
+}
+
+enum ProjectFolder {
+    static func resolve(_ input: String, relativeTo basePath: String?) throws -> URL {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.utf8.contains(0) else {
+            throw WorkspaceError("Enter a folder path.")
+        }
+        let path = (trimmed as NSString).expandingTildeInPath
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path, isDirectory: true) }
+        guard let basePath else {
+            throw WorkspaceError("Enter an absolute path or open a project to use a relative path.")
+        }
+        let base = URL(fileURLWithPath: basePath, isDirectory: true)
+        return URL(fileURLWithPath: path, isDirectory: true, relativeTo: base).absoluteURL
+    }
+
+    static func existing(at url: URL) throws -> URL {
+        guard url.isFileURL else { throw WorkspaceError("Choose a local folder.") }
+        let folder = url.resolvingSymlinksInPath().standardizedFileURL
+        guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            throw WorkspaceError("Choose an existing folder.")
+        }
+        return folder
+    }
 }
 
 struct Project: Codable, Identifiable {

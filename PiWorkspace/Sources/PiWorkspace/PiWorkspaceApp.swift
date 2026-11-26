@@ -66,9 +66,9 @@ struct PiWorkspaceApp: App {
         .defaultSize(width: 1080, height: 720)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Open Project…") { model.openFolder() }
+                Button("Add Project…") { model.openFolder() }
                     .keyboardShortcut("o")
-                    .disabled(model.phase.isRunning)
+                    .disabled(model.operationsInProgress)
                 Button("New Thread") { model.addConversation() }
                     .keyboardShortcut("n")
                     .disabled(model.phase.isRunning)
