@@ -1420,6 +1420,12 @@ struct WorkspaceView: View {
                 }
                 .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
+                .overlay {
+                    ComposerFieldDropTarget(canAttach: { model.canEditAttachments },
+                                            attach: { model.attach($0, to: target) },
+                                            isTargeted: { targetingComposerDrop = $0 })
+                        .accessibilityHidden(true)
+                }
                 .accessibilityIdentifier("composer")
                 .disabled(model.conversation?.worktreeLaunch != nil || model.conversation?.composerSubmission != nil)
             ViewThatFits(in: .horizontal) {

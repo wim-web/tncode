@@ -15,6 +15,23 @@ enum ComposerAttachmentInput: Transferable {
 
     static let contentTypes: [UTType] = [.fileURL, .png, .jpeg, .tiff]
 
+    init?(pasteboardItem item: NSPasteboardItem) {
+        for type in Self.contentTypes {
+            let format = NSPasteboard.PasteboardType(type.identifier)
+            guard item.types.contains(format) else { continue }
+            if type == .fileURL {
+                guard let string = item.string(forType: format), let url = URL(string: string),
+                      ComposerAttachment.isLocalFile(url) else { return nil }
+                self = .file(url)
+            } else {
+                guard let data = item.data(forType: format) else { return nil }
+                self = .image(data, type)
+            }
+            return
+        }
+        return nil
+    }
+
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(importedContentType: .fileURL) { data in
             guard let url = URL(dataRepresentation: data, relativeTo: nil), ComposerAttachment.isLocalFile(url) else {
