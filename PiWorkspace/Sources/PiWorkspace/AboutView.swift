@@ -4,7 +4,8 @@ import SwiftUI
 struct AboutView: View {
     static let windowID = "about"
 
-    @State private var showingLicenses = false
+    @Binding var showingLicenses: Bool
+    var settingsFocus: FocusState<SettingsFocus?>.Binding? = nil
     @State private var notices = DependencyNotice.load()
     private let info = AboutInfo()
 
@@ -18,7 +19,7 @@ struct AboutView: View {
                         Text("Open source licenses").font(.headline)
                     }
                     if let notices {
-                        LicensesView(notices: notices)
+                        LicensesView(notices: notices, settingsFocus: settingsFocus)
                     } else {
                         VStack(spacing: 12) {
                             Text("Open-source notices are unavailable in this app bundle.")
@@ -34,8 +35,6 @@ struct AboutView: View {
                 appInformation
             }
         }
-        .frame(minWidth: 660, minHeight: 420)
-        .onDisappear { showingLicenses = false }
     }
 
     private var appInformation: some View {
@@ -86,6 +85,7 @@ struct AboutView: View {
 
 private struct LicensesView: View {
     let notices: [DependencyNotice]
+    var settingsFocus: FocusState<SettingsFocus?>.Binding?
     @State private var query = ""
     @State private var selection: DependencyNotice.ID?
 
@@ -98,11 +98,18 @@ private struct LicensesView: View {
         }
     }
 
+    private var searchField: some View {
+        TextField("Search licenses", text: $query)
+    }
+
     var body: some View {
         let filtered = filteredNotices
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Search licenses", text: $query)
-                .accessibilityIdentifier("licenses-search")
+            if let settingsFocus {
+                searchField.settingsTarget(.licenses, focus: settingsFocus)
+            } else {
+                searchField.accessibilityIdentifier("licenses-search")
+            }
             if filtered.isEmpty {
                 Text("No licenses match that search.")
                     .accessibilityIdentifier("licenses-empty")
@@ -127,15 +134,15 @@ private struct LicensesView: View {
                         .tag(notice.id)
                     }
                     .accessibilityIdentifier("licenses-list")
-                    .frame(minWidth: 220, idealWidth: 270)
+                    .frame(minWidth: settingsFocus == nil ? 220 : 170, idealWidth: settingsFocus == nil ? 270 : 226)
                     if let notice = filtered.first(where: { $0.id == selection }) {
                         noticeDetail(notice)
                             .id(notice.id)
-                            .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minWidth: settingsFocus == nil ? 340 : 285, maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         Text("Select a dependency to read its notices.")
                             .foregroundStyle(.secondary)
-                            .frame(minWidth: 340, maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minWidth: settingsFocus == nil ? 340 : 285, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
@@ -168,5 +175,15 @@ private struct LicensesView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+struct AboutWindow: View {
+    @State private var showingLicenses = false
+
+    var body: some View {
+        AboutView(showingLicenses: $showingLicenses)
+            .frame(minWidth: 660, minHeight: 420)
+            .onDisappear { showingLicenses = false }
     }
 }

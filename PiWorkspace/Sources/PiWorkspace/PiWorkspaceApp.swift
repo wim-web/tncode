@@ -11,8 +11,6 @@ struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @StateObject private var appearance: AppearanceSettings
     @State private var launched = false
-    @State private var showingBrowserSettings = false
-    @State private var showingAppearanceSettings = false
     private let browserDefaults: UserDefaults
     private let workspacePasteboard: NSPasteboard
     private let launchProject: URL?
@@ -73,8 +71,12 @@ struct PiWorkspaceApp: App {
                         .onAppear(perform: launchWorkspace)
                 }
             }
-                .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView(defaults: browserDefaults) }
-                .sheet(isPresented: $showingAppearanceSettings) { AppearanceSettingsView(settings: appearance) }
+                .sheet(item: $model.settingsRequest) { request in
+                    SettingsView(model: model, appearance: appearance, browserDefaults: browserDefaults,
+                                 request: request)
+                        .defaultAppStorage(browserDefaults)
+                }
+                .defaultAppStorage(browserDefaults)
                 .alert(model.quitFileSaveError == nil ? "Your draft couldn’t be saved" : "A file couldn’t be saved",
                        isPresented: $model.showingQuitSaveFailure) {
                     Button("Keep Editing", role: .cancel) {}
@@ -91,22 +93,25 @@ struct PiWorkspaceApp: App {
         }
         .defaultSize(width: 1080, height: 720)
         .commands {
-            WorkspaceSidebarCommands(model: model, showingAppSettings: showingBrowserSettings || showingAppearanceSettings)
+            WorkspaceSidebarCommands(model: model)
             CommandGroup(replacing: .appInfo) {
                 Button("About \(AboutInfo().name)") { openWindow(id: AboutView.windowID) }
                     .accessibilityIdentifier("about-menu")
             }
-            CommandGroup(after: .appSettings) {
-                Button("Model Settings…") { model.showingSettings = true }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { model.openSettings() }
                     .keyboardShortcut(",")
-                    .disabled(model.startupFailure != nil || model.phase.isRunning || model.showingCommandPalette
-                              || showingBrowserSettings || showingAppearanceSettings)
-                Button("Appearance Settings…") { showingAppearanceSettings = true }
+                    .accessibilityIdentifier("settings-menu")
+                    .disabled(model.showingSettings || model.showingCommandPalette)
+                Button("Model Settings…") { model.openSettings(.model) }
+                    .accessibilityIdentifier("model-settings-menu")
+                    .disabled(!model.canOpenModelSettings || model.showingSettings || model.showingCommandPalette)
+                Button("Appearance Settings…") { model.openSettings(.appearance) }
                     .accessibilityIdentifier("appearance-settings-menu")
-                    .disabled(model.showingSettings || model.showingCommandPalette || showingBrowserSettings || showingAppearanceSettings)
-                Button("Browser Settings…") { showingBrowserSettings = true }
+                    .disabled(model.showingSettings || model.showingCommandPalette)
+                Button("Browser Settings…") { model.openSettings(.browser) }
                     .accessibilityIdentifier("browser-settings-menu")
-                    .disabled(model.showingSettings || model.showingCommandPalette || showingBrowserSettings || showingAppearanceSettings)
+                    .disabled(model.showingSettings || model.showingCommandPalette)
             }
             CommandGroup(after: .help) {
                 Button("Show Welcome") { model.showingWelcome = true }
@@ -116,7 +121,7 @@ struct PiWorkspaceApp: App {
         }
 
         Window("About \(AboutInfo().name)", id: AboutView.windowID) {
-            AboutView()
+            AboutWindow()
         }
         .defaultSize(width: 760, height: 520)
         .windowResizability(.contentMinSize)
@@ -150,10 +155,9 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
 
 private struct WorkspaceSidebarCommands: Commands {
     @ObservedObject var model: WorkspaceModel
-    let showingAppSettings: Bool
 
     private var workspaceOpen: Bool {
-        model.startupFailure == nil && !model.showingWelcome && !model.showingCommandPalette
+        model.startupFailure == nil && !model.showingWelcome && !model.showingCommandPalette && !model.showingSettings
     }
 
     var body: some Commands {
@@ -174,158 +178,10 @@ private struct WorkspaceSidebarCommands: Commands {
             Button("Command Palette…", action: model.requestCommandPalette)
                 .keyboardShortcut("k")
                 .accessibilityIdentifier("open-command-palette")
-                .disabled(!model.canOpenCommandPalette || model.showingCommandPalette || showingAppSettings)
+                .disabled(!model.canOpenCommandPalette || model.showingCommandPalette)
             Button("Search Threads") { model.sidebarCommand.send(.search) }
                 .keyboardShortcut("f")
                 .disabled(!workspaceOpen)
-        }
-    }
-}
-
-struct ModelSettingsView: View {
-    @ObservedObject var model: WorkspaceModel
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openWindow) private var openWindow
-    @State private var scope: ModelSettingsScope
-    @State private var settings: ModelSettings
-    @State private var key = ""
-    @State private var removeKey = false
-    @State private var error: String?
-    private let projectID: UUID?
-
-    init(model: WorkspaceModel, projectID: UUID? = nil) {
-        self.model = model
-        let project = projectID.flatMap { id in model.projects.first { $0.id == id } } ?? model.project
-        self.projectID = project?.isScratch == false ? project?.id : nil
-        _scope = State(initialValue: self.projectID.map { .project($0) } ?? .workspace)
-        _settings = State(initialValue: project?.modelOverride ?? model.workspace.model)
-    }
-
-    private var scopedProject: Project? {
-        guard case .project(let id) = scope else { return nil }
-        return model.projects.first { $0.id == id }
-    }
-
-    var body: some View {
-        let hasKey = model.hasKey(for: settings)
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("Model Settings").font(.title2.weight(.semibold))
-                Spacer()
-                Button("About") { openWindow(id: AboutView.windowID) }
-                    .accessibilityIdentifier("settings-about")
-            }
-            Form {
-                if let project = model.projects.first(where: { $0.id == projectID }) {
-                    Picker("Scope", selection: Binding(get: { scope }, set: selectScope)) {
-                        Text("Workspace default").tag(ModelSettingsScope.workspace)
-                        Text("Project: \(project.title)").tag(ModelSettingsScope.project(project.id))
-                    }
-                    .accessibilityIdentifier("model-settings-scope")
-                }
-                if let project = scopedProject {
-                    Text(project.modelOverride == nil ? "Inherits Workspace default" : "Project override")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("model-settings-source")
-                }
-                Picker("Provider", selection: Binding(get: { settings.provider }, set: selectProvider)) {
-                    ForEach(Provider.allCases) { provider in Text(provider.label).tag(provider) }
-                }
-                .accessibilityIdentifier("provider")
-                TextField("Model ID", text: $settings.model)
-                    .accessibilityIdentifier("model-id")
-                if settings.provider == .local {
-                    TextField("Base URL", text: Binding(get: { settings.endpoint }, set: setEndpoint))
-                        .accessibilityIdentifier("endpoint")
-                    TextField("Context window", value: $settings.contextWindow, format: .number)
-                        .accessibilityIdentifier("context-window")
-                    Toggle("Model supports coding tools", isOn: Binding(
-                        get: { settings.localTools == true }, set: { settings.localTools = $0 }
-                    ))
-                    .accessibilityIdentifier("local-tools")
-                    Toggle("Model supports image input", isOn: Binding(
-                        get: { settings.localImages == true }, set: { settings.localImages = $0 }
-                    ))
-                    .accessibilityIdentifier("local-images")
-                } else {
-                    Picker("Thinking level", selection: Binding(
-                        get: { settings.thinkingLevel ?? .off }, set: { settings.thinkingLevel = $0 }
-                    )) {
-                        ForEach(ModelSettings.ThinkingLevel.allCases) { level in Text(level.label).tag(level) }
-                    }
-                    .accessibilityIdentifier("thinking-level")
-                    .help("Pi adjusts the requested level to the model’s supported levels.")
-                }
-                SecureField(hasKey ? "Replace saved API key" : "API key", text: $key)
-                    .accessibilityIdentifier("key-input")
-                    .help("Projects using this provider share its saved API key.")
-                if hasKey {
-                    Toggle("Remove saved key", isOn: $removeKey)
-                        .accessibilityIdentifier("remove-api-key")
-                        .help("Remove the key for every project using this provider account.")
-                }
-            }
-            if let error { Text(error).foregroundStyle(.red) }
-            HStack {
-                if let project = scopedProject, project.modelOverride != nil {
-                    Button("Reset to Workspace default") { reset(project.id) }
-                        .accessibilityIdentifier("reset-model-override")
-                }
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("save-settings")
-            }
-        }
-        .padding(24)
-        .frame(width: 470)
-    }
-
-    private func selectScope(_ selection: ModelSettingsScope) {
-        guard scope != selection else { return }
-        scope = selection
-        settings = scopedProject?.modelOverride ?? model.workspace.model
-        clearCredentialEdit()
-        error = nil
-    }
-
-    private func selectProvider(_ provider: Provider) {
-        guard settings.provider != provider else { return }
-        settings.provider = provider
-        settings.model = provider.defaultModel
-        clearCredentialEdit()
-    }
-
-    private func setEndpoint(_ endpoint: String) {
-        guard settings.endpoint != endpoint else { return }
-        settings.endpoint = endpoint
-        clearCredentialEdit()
-    }
-
-    private func clearCredentialEdit() {
-        key = ""
-        removeKey = false
-    }
-
-    private func save() {
-        do {
-            try model.applySettings(settings, in: scope, newKey: key, removeKey: removeKey)
-            clearCredentialEdit()
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func reset(_ project: UUID) {
-        do {
-            try model.resetProjectModel(project)
-            settings = model.workspace.model
-            clearCredentialEdit()
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 }

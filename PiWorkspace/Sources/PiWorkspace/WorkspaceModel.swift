@@ -243,7 +243,7 @@ final class WorkspaceModel: ObservableObject {
 
     @Published var error: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
-    @Published var showingSettings = false
+    @Published var settingsRequest: SettingsRequest?
     @Published var showingWelcome = false
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
@@ -301,6 +301,15 @@ final class WorkspaceModel: ObservableObject {
         return ThreadPullRequestScope(project: project, thread: conversation)
     }
     var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree || forkRequest != nil }
+    var showingSettings: Bool { settingsRequest != nil }
+    var canOpenModelSettings: Bool { startupFailure == nil && !phase.isRunning }
+
+    func openSettings(_ page: SettingsPage = .general, anchor: SettingsAnchor? = nil, projectID: UUID? = nil) {
+        guard settingsRequest == nil else { return }
+        let project = projects.first { $0.id == (projectID ?? self.project?.id) }
+        settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id)
+    }
+
     var canOpenCommandPalette: Bool {
         store != nil && !showingWelcome && !operationsInProgress &&
             !showingSettings && !showingQuitSaveFailure && projectPicker == nil
@@ -1140,7 +1149,7 @@ final class WorkspaceModel: ObservableObject {
         if let reason = attachmentSendError(for: attachments ?? []) { throw WorkspaceError(reason) }
         let settings = try effectiveModel.validated()
         guard let key = try readCredential(settings.account) else {
-            showingSettings = true
+            openSettings(.model, anchor: .apiKey)
             return false
         }
         guard key.isEmpty || !text.contains(key) else {

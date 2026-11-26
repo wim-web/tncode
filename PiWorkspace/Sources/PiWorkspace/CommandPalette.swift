@@ -7,6 +7,7 @@ enum CommandPaletteAction: Hashable {
     case newScratchThread
     case addProject
     case home
+    case settings
     case searchThreads
     case openProject(UUID)
     case openThread(UUID, project: UUID)
@@ -18,6 +19,7 @@ enum CommandPaletteAction: Hashable {
         case .newScratchThread: "no-project"
         case .addProject: "add-project"
         case .home: "home"
+        case .settings: "settings"
         case .searchThreads: "search-threads"
         case .openProject(let id): "project-\(id)"
         case .openThread(let id, _): "thread-\(id)"
@@ -83,6 +85,7 @@ struct CommandPaletteContents {
         if preferredProject != nil {
             rows.append(.init(action: .home, title: "Go to home", icon: "house"))
         }
+        rows.append(.init(action: .settings, title: "Settings", icon: "gearshape", searchTerms: "preferences"))
         return rows
     }
 

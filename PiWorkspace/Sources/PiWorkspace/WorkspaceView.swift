@@ -21,7 +21,7 @@ struct WorkspaceView: View {
     var browserDefaults: UserDefaults = .standard
     var workspacePasteboard: NSPasteboard = .general
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("groupThreadsByProject") private var grouped = false
+    @AppStorage(SidebarPreference.groupByProject) private var grouped = false
     @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
     @GestureState private var sidebarDrag: CGFloat = 0
     @State private var rightPanelWidths: [UUID: CGFloat] = [:]
@@ -50,7 +50,6 @@ struct WorkspaceView: View {
     @State private var title = ""
     @State private var removingProject: Project?
     @State private var createdProject: UUID?
-    @State private var draftSettingsProject: Project?
     @State private var draftCheckoutBranches: [String: String] = [:]
     @FocusState private var focusedComposer: UUID?
     @State private var focusAfterPicker = false
@@ -129,7 +128,7 @@ struct WorkspaceView: View {
         }
         .tint(accent)
         .background {
-            CommandPaletteKeys { event, window in
+            WindowKeyMonitor { event, window in
                 guard !event.isARepeat, case .toggle? = CommandPaletteSession.Key(event) else { return false }
                 return openCommandPalette(in: window)
             }
@@ -168,8 +167,6 @@ struct WorkspaceView: View {
         .onChange(of: model.phase.isRunning) { _, running in
             if running { messageJump = nil }
         }
-        .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
-        .sheet(item: $draftSettingsProject) { ModelSettingsView(model: model, projectID: $0.id) }
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents) { action in
                 guard model.showingCommandPalette else { return }
@@ -274,7 +271,7 @@ struct WorkspaceView: View {
             Text("Connect a model to send messages with Pi. You can open projects before setting up a model.")
                 .foregroundStyle(.secondary)
             LabeledContent("Model", value: model.workspace.model.model)
-            Button("Model Settings…") { model.showingSettings = true }
+            Button("Model Settings…") { model.openSettings(.model) }
                 .accessibilityIdentifier("model-settings")
             if let error = model.error { Text(error).foregroundStyle(.red) }
             Button(ready ? "Start" : "Start without an agent", action: model.finishWelcome)
@@ -395,14 +392,13 @@ struct WorkspaceView: View {
             }
 
             Divider()
-            Button { model.showingSettings = true } label: {
+            Button { model.openSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
                     .font(.system(size: 12, weight: .medium))
             }
             .buttonStyle(.plain)
-            .help("Model Settings")
+            .help("Settings")
             .accessibilityIdentifier("model-settings")
-            .disabled(model.phase.isRunning)
             .padding(13)
         }
         .background(rail)
@@ -726,7 +722,7 @@ struct WorkspaceView: View {
         if project.isScratch {
             turnIntoProject(thread, project: project)
         } else {
-            Button("Project settings") { draftSettingsProject = project }
+            Button("Project settings") { model.openSettings(.model, projectID: project.id) }
                 .accessibilityIdentifier("draft-project-settings")
                 .disabled(model.operationsInProgress)
         }
@@ -1428,7 +1424,7 @@ struct WorkspaceView: View {
             }
             Spacer()
             Button {
-                model.showingSettings = true
+                model.openSettings(.model)
             } label: {
                 Label(model.effectiveModel.model, systemImage: "cpu")
                     .lineLimit(1)
@@ -1521,7 +1517,7 @@ struct WorkspaceView: View {
               let window = eventWindow ?? NSApp.keyWindow, window === NSApp.mainWindow,
               window.attachedSheet == nil, NSApp.modalWindow == nil, !ThreadTerminal.hasFocus(in: window),
               !choosingWorkspace, !choosingThreadProject, terminalWorkspaceChange == nil,
-              draftSettingsProject == nil, rename == nil, removingProject == nil else { return false }
+              rename == nil, removingProject == nil else { return false }
         paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         model.showingCommandPalette = true
         return true
@@ -1561,6 +1557,8 @@ struct WorkspaceView: View {
             model.showHome()
         case .searchThreads:
             searchFocused = true
+        case .settings:
+            model.openSettings()
         case .openProject(let id):
             model.selectProject(id)
             if model.project?.id == id {

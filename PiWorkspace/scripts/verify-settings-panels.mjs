@@ -25,7 +25,7 @@ export async function verifyAbout({ menuItem, press, visible, value, until, clos
   press("licenses-back");
   await until(matchesBundle, "return to About");
   closeWindow("about");
-  press("model-settings");
+  menuItem("Model Settings…");
   await until(() => visible("settings-about"), "About in Model Settings");
   press("settings-about");
   await until(matchesBundle, "About from settings");
