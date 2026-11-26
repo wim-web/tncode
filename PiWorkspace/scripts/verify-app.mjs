@@ -8,6 +8,9 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
 import { restoreAppearance, verifyAbout, verifyAppearance } from "./verify-settings-panels.mjs";
+import { verifyFiles } from "./verify-workspace-files.mjs";
+import { verifyQueue } from "./verify-message-queue.mjs";
+import { verifyCommandPalette } from "./verify-command-palette.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -35,6 +38,7 @@ let releaseFirst;
 const firstPartialCanFinish = new Promise(resolve => { releaseFirst = resolve; });
 let rejectNextRequest = false;
 let holdForStop = false;
+let nextQueueResponse;
 let streamClosed = false;
 let requestedWrite;
 let rejected = 0;
@@ -118,6 +122,15 @@ const server = createServer(async (request, response) => {
     const body = await new Response(request).text();
     const target = { body: JSON.parse(body), fragments: [] };
     targets.push(target);
+    if (nextQueueResponse) {
+      const wait = nextQueueResponse;
+      nextQueueResponse = undefined;
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(fixtureChunk(targets.length, { role: "assistant", content: "Queue fixture is waiting." }));
+      await Promise.race([wait, once(response, "close")]);
+      if (!response.destroyed) response.end(fixtureChunk(targets.length, {}, "stop") + "data: [DONE]\n\n");
+      return;
+    }
     if (requestedWrite && target.body.messages.at(-1)?.role === "user") {
       const call = { index: 0, id: "write-" + targets.length, type: "function",
         function: { name: "write", arguments: JSON.stringify({ path: requestedWrite, content: "Approved fixture write.\n" }) } };
@@ -196,10 +209,12 @@ function pressDismissal(id) {
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings,
   value: id => drive("get", [id, "--values"]),
+  checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", [name]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
+  keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers]),
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
   webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
   drag: (id, x, y, dx, dy) => drive("drag", [id, ...[x, y, dx, dy].map(String)]),
@@ -832,7 +847,7 @@ try {
   if (worktreeTest) {
     await verifyCheckout(checkout);
     await verifyPullRequests(panelDriver, forgeState, forgeLog, checkout);
-    record("Mock gh returned PR 42 and its checks from the selected checkout. Refresh displayed the new head and updated checks.");
+    record("The mock forge read PRs and Issues only from the selected checkout. Label search, distinct pages, a changed head and Issue body, page retry, and recovery from signed-out and missing-Issue responses passed.");
   }
   if (fixtureModel) {
     let previewShellPID;
@@ -847,11 +862,13 @@ try {
         return id;
       }, "live terminal before undocking");
     }
-    await verifyPreview(panelDriver, new URL(endpoint).origin, previewNetwork);
+    await verifyPreview(panelDriver, new URL(endpoint).origin, previewNetwork,
+      worktreeTest ? () => verifyFiles(panelDriver, checkout, project, git) : undefined);
     if (worktreeTest) {
       assert.equal(Number(readFileSync(shellProof, "utf8")), previewShellPID);
       process.kill(previewShellPID, 0);
       assert(drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."));
+      record("Files searched and refreshed the checkout tree, showed binary and large-text previews, and saved only the working file. Git's staged bytes, parent checkout, browser page, composer text, and live PTY survived. Read-only and externally changed files retained their pending edits.");
       press("close-terminal");
     }
     record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
@@ -913,7 +930,14 @@ try {
     holdForStop = false;
     record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
     await verifyApprovals(checkout ?? project);
+    await verifyQueue(panelDriver, {
+      workspace, projectID: previous.selectedProject, threadID, requestCount: () => targets.length, send, quit, launch,
+      gate() { let release; nextQueueResponse = new Promise(resolve => { release = resolve; }); return release; }
+    });
+    record("Five queued instructions collapsed and expanded without changing the total. Cancel/edit, reorder and removal kept their item IDs. Two steers arrived during the active run and the remaining items ran in order. Stop and relaunch held pending items until explicitly started or resumed; Pi recorded eight distinct delivery IDs exactly once.");
     await verifySidebar(threadID);
+    await verifyCommandPalette(panelDriver, index, () => targets.length);
+    record("Command-K opened and closed the palette; Escape, Backspace and Return preserved focus and draft ownership. The project selector created one draft, the modal folder picker kept the shortcut, and Home and Search opened their workspace destinations.");
     if (worktreeTest) await verifyExistingDraft(previous.selectedProject, threadID, checkout);
     await verifyScratch(threadID);
   }

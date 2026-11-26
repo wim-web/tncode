@@ -163,7 +163,7 @@ function send(run, command) {
   run.child.stdin.write(JSON.stringify(command) + "\n");
 }
 
-async function receive(run, type, result) {
+async function receive(run, type, result, turnID) {
   for (;;) {
     const { value: line, done } = await run.output.next();
     if (fixtureError) throw fixtureError;
@@ -174,6 +174,9 @@ async function receive(run, type, result) {
       result.credentialOperations.push(event.operation);
       const credential = event.operation === "read" ? { key } : { exists: true };
       send(run, { type: "credentialResult", requestID: event.requestID, ...credential });
+    } else if (event.type === "inputMode") {
+      assert(turnID && event.turnID.toLowerCase() === turnID);
+      assert(["steer", "waiting"].includes(event.mode));
     } else if (event.type === type) {
       return event;
     } else {
@@ -196,8 +199,10 @@ async function exercise(name, config, { dir = join(root, name), threadID = rando
   await delay(idleMs);
   if (turn) {
     result.phases.push("explicit-turn");
-    send(run, { type: "prompt", turnID: randomUUID(), text: prompt });
-    const finished = await receive(run, "finished", result);
+    const turnID = randomUUID();
+    send(run, { type: "prompt", turnID, text: prompt });
+    const finished = await receive(run, "finished", result, turnID);
+    assert.equal(finished.turnID, turnID);
     assert.equal(finished.error, undefined);
     assert.deepEqual(finished.messages.map(({ role, text }) => [role, text]),
       [["user", prompt], ["assistant", answer]]);

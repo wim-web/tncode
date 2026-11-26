@@ -430,7 +430,7 @@ private func run(_ arguments: [String]) throws {
         try requireKeyboardAccess()
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
-        let characters: [CGKeyCode: UInt16] = [3: 0x66, 36: 0x0D, 48: 0x09, 51: 0x7F, 53: 0x1B,
+        let characters: [CGKeyCode: UInt16] = [3: 0x66, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
                                                 123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
         try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: true)
     case .webFrame(let id):
