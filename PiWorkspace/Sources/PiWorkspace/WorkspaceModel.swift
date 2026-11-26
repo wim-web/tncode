@@ -31,25 +31,34 @@ final class WorkspaceModel: ObservableObject {
         thread.isDraft != true || composerText[thread.id] != nil
     }
     @Published var error: String?
+    @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published var showingSettings = false
     @Published var showingWelcome = false
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
 
+    let root: URL
     private var store: WorkspaceStore?
     private let vault: KeyVault
     private var process: PiProcess?
     private var activeTurnID: UUID?
 
     init(root: URL, keychainService: String) {
+        self.root = root
         vault = KeyVault(service: keychainService)
+        openWorkspace()
+    }
+
+    func openWorkspace(restoringPrevious: Bool = false) {
+        guard store == nil else { return }
         do {
             let store = try WorkspaceStore(root: root)
-            workspace = try store.load()
+            workspace = try store.load(restoringPrevious: restoringPrevious)
             self.store = store
             showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
+            startupFailure = nil
         } catch {
-            self.error = error.localizedDescription
+            startupFailure = error as? WorkspaceStoreError ?? .access(root, error)
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Darwin
 
 enum Provider: String, Codable, CaseIterable, Identifiable {
@@ -262,20 +263,49 @@ struct WorkspaceError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+enum WorkspaceStoreError: LocalizedError {
+    case inUse
+    case access(URL, Error)
+    case invalidIndex(missing: Bool, canRestore: Bool)
+
+    var canRestore: Bool {
+        if case .invalidIndex(_, let canRestore) = self { return canRestore }
+        return false
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .inUse:
+            "This workspace is open in another Pi Workspace process."
+        case let .access(file, error):
+            "Could not access \(file.lastPathComponent). \(error.localizedDescription)"
+        case let .invalidIndex(missing, canRestore):
+            (missing ? "The workspace index is missing." : "The workspace index is damaged.")
+                + (canRestore ? "" : " A readable, valid previous index is unavailable.")
+        }
+    }
+}
+
 final class WorkspaceStore {
     let root: URL
     private let lock: Int32
 
     init(root: URL) throws {
         self.root = root
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        let file = root.appendingPathComponent(".lock").path
-        let lock = Darwin.open(file, O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-        guard lock >= 0 else { throw WorkspaceError("The workspace directory is not writable.") }
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+        } catch {
+            throw WorkspaceStoreError.access(root, error)
+        }
+        let file = root.appendingPathComponent(".lock")
+        let lock = Darwin.open(file.path, O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard lock >= 0 else { throw Self.accessError(file, errno) }
         guard flock(lock, LOCK_EX | LOCK_NB) == 0 else {
+            let code = errno
             Darwin.close(lock)
-            throw WorkspaceError("This workspace is open in another Pi Workspace process.")
+            if code == EWOULDBLOCK { throw WorkspaceStoreError.inUse }
+            throw Self.accessError(file, code)
         }
         self.lock = lock
     }
@@ -283,18 +313,91 @@ final class WorkspaceStore {
     deinit { Darwin.close(lock) }
 
     private var index: URL { root.appendingPathComponent("workspace.json") }
+    private var previousIndex: URL { root.appendingPathComponent("workspace.previous.json") }
     var config: URL { root.appendingPathComponent("pi-config", isDirectory: true) }
 
-    func load() throws -> Workspace {
-        do {
-            return try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            return Workspace()
+    func load(restoringPrevious: Bool = false) throws -> Workspace {
+        let current = try read(index)
+        if let current, let workspace = try? JSONDecoder().decode(Workspace.self, from: current) {
+            return workspace
         }
+
+        let previous: Data?
+        if current == nil {
+            previous = try read(previousIndex)
+            if previous == nil && !restoringPrevious { return Workspace() }
+        } else {
+            previous = try? read(previousIndex)
+        }
+        let workspace = previous.flatMap { try? JSONDecoder().decode(Workspace.self, from: $0) }
+        guard restoringPrevious, let previous, let workspace else {
+            throw WorkspaceStoreError.invalidIndex(missing: current == nil, canRestore: workspace != nil)
+        }
+
+        if let current { try archiveCorruptIndex(current) }
+        try write(previous, to: index)
+        return workspace
     }
 
     func save(_ workspace: Workspace) throws {
-        try JSONEncoder().encode(workspace).write(to: index, options: .atomic)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let updated = try encoder.encode(workspace)
+        if let current = try read(index) {
+            guard let saved = try? JSONDecoder().decode(Workspace.self, from: current) else {
+                throw WorkspaceError("The workspace index is damaged. Reopen the workspace to recover it.")
+            }
+            if try encoder.encode(saved) == updated { return }
+            try write(current, to: previousIndex)
+        } else if try read(previousIndex) != nil {
+            throw WorkspaceError("The workspace index is missing. Reopen the workspace to recover it.")
+        }
+        try write(updated, to: index)
+    }
+
+    private func archiveCorruptIndex(_ data: Data) throws {
+        // Reuse the archive if a prior recovery stopped before replacing the index.
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let archive = root.appendingPathComponent("workspace.corrupt-\(digest).json")
+        if let saved = try read(archive) {
+            guard saved == data else {
+                throw WorkspaceStoreError.access(archive, WorkspaceError("The archive already contains different data."))
+            }
+        } else {
+            try write(data, to: archive)
+        }
+    }
+
+    private func read(_ file: URL) throws -> Data? {
+        let fd = Darwin.open(file.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else {
+            let code = errno
+            if code == ENOENT { return nil }
+            throw Self.accessError(file, code)
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw Self.accessError(file, errno) }
+        guard info.st_mode & S_IFMT == S_IFREG else {
+            throw WorkspaceStoreError.access(file, WorkspaceError("Expected a regular file."))
+        }
+        do {
+            return try handle.readToEnd() ?? Data()
+        } catch {
+            throw WorkspaceStoreError.access(file, error)
+        }
+    }
+
+    private func write(_ data: Data, to file: URL) throws {
+        do {
+            try data.write(to: file, options: .atomic)
+        } catch {
+            throw WorkspaceStoreError.access(file, error)
+        }
+    }
+
+    private static func accessError(_ file: URL, _ code: Int32) -> WorkspaceStoreError {
+        .access(file, POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO))
     }
 
     func history(project: UUID, conversation: UUID) -> URL {

@@ -49,16 +49,15 @@ struct PiWorkspaceApp: App {
 
     var body: some Scene {
         Window("Pi Workspace", id: "workspace") {
-            WorkspaceView(model: model)
-                .frame(minWidth: 800, minHeight: 540)
-                .onAppear {
-                    guard !launched else { return }
-                    launched = true
-                    if let launchProject {
-                        do { try model.openProject(launchProject) }
-                        catch { model.error = error.localizedDescription }
-                    } else { model.start() }
+            Group {
+                if let failure = model.startupFailure {
+                    WorkspaceStartupRecoveryView(model: model, failure: failure)
+                } else {
+                    WorkspaceView(model: model)
+                        .onAppear(perform: launchWorkspace)
                 }
+            }
+                .frame(minWidth: 800, minHeight: 540)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     model.shutdown()
                 }
@@ -69,13 +68,23 @@ struct PiWorkspaceApp: App {
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
-                    .disabled(model.phase.isRunning)
+                    .disabled(model.startupFailure != nil || model.phase.isRunning)
             }
             CommandGroup(after: .help) {
                 Button("Show Welcome") { model.showingWelcome = true }
-                    .disabled(model.operationsInProgress || model.showingSettings || model.projectPicker != nil)
+                    .disabled(model.startupFailure != nil || model.operationsInProgress
+                              || model.showingSettings || model.projectPicker != nil)
             }
         }
+    }
+
+    private func launchWorkspace() {
+        guard !launched else { return }
+        launched = true
+        if let launchProject {
+            do { try model.openProject(launchProject) }
+            catch { model.error = error.localizedDescription }
+        } else { model.start() }
     }
 }
 
@@ -103,7 +112,7 @@ private struct WorkspaceSidebarCommands: Commands {
         CommandGroup(after: .newItem) {
             Button("Add Project…") { model.openFolder() }
                 .keyboardShortcut("o")
-                .disabled(model.operationsInProgress)
+                .disabled(model.startupFailure != nil || model.operationsInProgress)
             Button("New Thread") { actions?.newThread?() }
                 .keyboardShortcut("n")
                 .disabled(actions?.newThread == nil)
