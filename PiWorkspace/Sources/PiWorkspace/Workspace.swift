@@ -165,6 +165,7 @@ struct Conversation: Codable, Identifiable {
     var shelf: ThreadShelf?
     var isDraft: Bool?
     var worktreeLaunch: WorktreeLaunch?
+    var worktreeStartsFromRemote: Bool?
     var composerText: String?
     var composerAttachments: [ComposerAttachment]?
     var composerSubmission: ComposerSubmission?
@@ -360,6 +361,9 @@ struct Workspace: Codable {
     var welcomeCompleted: Bool?
     var addProjectBaseDirectory: String?
     var worktreesDirectory: String?
+    var newWorktreesStartFromRemote: Bool?
+
+    var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
 }
 
 struct PendingConversationFork: Codable {

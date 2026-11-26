@@ -195,6 +195,199 @@ final class WorktreeLaunchTests: XCTestCase {
                        "original edit\n")
     }
 
+    func testNewWorktreeDefaultsAndExplicitRefsUseTheExpectedCommits() async throws {
+        let fixture = try await Fixture()
+        let remote = try fixture.installRemote()
+        let model = fixture.open()
+        defer { model.terminate() }
+        try model.openProject(fixture.repo)
+        let projectID = try XCTUnwrap(model.project?.id)
+        let status = try fixture.git(["status", "--porcelain"])
+        XCTAssertTrue(model.workspace.startNewWorktreesFromRemote)
+
+        let base = try await fixture.defaultBase()
+        try await model.changeThreadLocation(.create(branch: "from-default", base: base))
+        await ready(model)
+        XCTAssertEqual(model.conversation?.workingLocation, .newWorktree(branch: "from-default", base: "refs/heads/stable"))
+        XCTAssertEqual(model.conversation?.worktreeStartsFromRemote, true)
+        _ = try await GitWorkspace(path: fixture.repo.path).branchChoices()
+        XCTAssertEqual(try fixture.git(["rev-parse", "refs/remotes/origin/stable"]), remote.cachedHead)
+        try await fixture.assertCheckouts([fixture.repo.path])
+        model.draft = Fixture.draft
+        model.send()
+        await recorded(model)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: fixture.target()), remote.remoteHead)
+        XCTAssertEqual(try fixture.git(["rev-parse", "refs/remotes/origin/stable"]), remote.remoteHead)
+
+        try model.updateNewWorktreesStartFromRemote(false)
+        model.addConversation(in: projectID)
+        try await model.changeThreadLocation(.create(branch: "from-local", base: base))
+        await ready(model)
+        XCTAssertEqual(model.conversation?.worktreeStartsFromRemote, false)
+        try model.updateNewWorktreesStartFromRemote(true)
+        model.draft = Fixture.draft
+        model.send()
+        await recorded(model)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: fixture.target()), remote.localHead)
+
+        model.addConversation(in: projectID)
+        try await model.changeThreadLocation(.create(branch: "from-tracking-ref", base: base))
+        await ready(model)
+        let scope = try XCTUnwrap(model.branchPickerScope)
+        try model.updateWorktreeStartsFromRemote(false, in: scope)
+        try await model.changeThreadBranch(.existing("refs/remotes/origin/stable"), in: scope)
+        XCTAssertEqual(try fixture.savedThread().workingLocation,
+                       .newWorktree(branch: "from-tracking-ref", base: "refs/remotes/origin/stable"))
+        XCTAssertEqual(try fixture.savedThread().worktreeStartsFromRemote, false)
+        try fixture.git(["remote", "set-url", "origin", fixture.root.appendingPathComponent("missing.git").absoluteString])
+        model.draft = Fixture.draft
+        model.send()
+        await recorded(model)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: fixture.target()), remote.remoteHead)
+        XCTAssertEqual(try fixture.git(["status", "--porcelain"]), status)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"]), remote.cachedHead)
+        XCTAssertEqual(try String(contentsOf: fixture.repo.appendingPathComponent("README.md"), encoding: .utf8),
+                       "original edit\n")
+    }
+
+    func testRemoteStartsFallBackToTheLocalRefWhenTheRemoteBranchIsMissing() async throws {
+        let fixture = try await Fixture()
+        let remote = try fixture.installRemote()
+        try fixture.git(["update-ref", "-d", "refs/heads/stable"], at: remote.url)
+        let model = fixture.open()
+        defer { model.terminate() }
+        try model.openProject(fixture.repo)
+        let base = try await fixture.defaultBase()
+        try await model.changeThreadLocation(.create(branch: "from-missing-remote-branch", base: base))
+        await ready(model)
+        model.draft = Fixture.draft
+        model.send()
+        await recorded(model)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: fixture.target()), remote.localHead)
+        XCTAssertEqual(try fixture.git(["rev-parse", "refs/remotes/origin/stable"]), remote.cachedHead)
+
+        try fixture.git(["update-ref", "refs/heads/release", remote.remoteHead.trimmingCharacters(in: .newlines)], at: remote.url)
+        try fixture.git(["remote", "add", "upstream", remote.url.absoluteString])
+        try fixture.git(["config", "branch.stable.remote", "upstream"])
+        try fixture.git(["config", "branch.stable.merge", "refs/heads/release"])
+        model.addConversation()
+        try await model.changeThreadLocation(.create(branch: "from-tracked-release", base: base))
+        await ready(model)
+        model.draft = Fixture.draft
+        model.send()
+        await recorded(model)
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: fixture.target()), remote.remoteHead)
+        XCTAssertEqual(try fixture.git(["rev-parse", "refs/remotes/upstream/release"]), remote.remoteHead)
+    }
+
+    func testRemoteRetryKeepsTheSelectedRefAndThenThePinnedCommitAndPath() async throws {
+        let fixture = try await Fixture()
+        let remote = try fixture.installRemote()
+        let custom = fixture.root.appendingPathComponent("Remote Worktrees")
+        let missing = fixture.root.appendingPathComponent("missing.git").absoluteString
+        let threadID: UUID
+        let target: URL
+        let fetchFailure: String
+        do {
+            let model = fixture.open()
+            defer { model.terminate() }
+            try model.openProject(fixture.repo)
+            try model.updateWorktreesDirectory(custom.path)
+            try await model.changeThreadLocation(.create(branch: "retry-remote", base: "refs/remotes/origin/stable"))
+            await ready(model)
+            threadID = try XCTUnwrap(model.conversation?.id)
+            target = try fixture.target(in: custom)
+            try fixture.git(["remote", "set-url", "origin", missing])
+            model.draft = Fixture.draft
+            model.send()
+            await failed(model)
+            fetchFailure = try XCTUnwrap(fixture.savedThread().worktreeLaunch?.failure)
+            XCTAssertTrue(fetchFailure.contains("missing.git"), fetchFailure)
+            XCTAssertNil(try fixture.savedThread().worktreeLaunch?.checkout)
+            XCTAssertTrue(model.canRetryWorktree)
+            XCTAssertEqual(try fixture.prompts(), [])
+            try model.updateNewWorktreesStartFromRemote(false)
+        }
+
+        try fixture.git(["remote", "set-url", "origin", remote.url.absoluteString])
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let obstruction = Data("occupied".utf8)
+        try obstruction.write(to: target)
+        do {
+            let model = fixture.open()
+            defer { model.terminate() }
+            model.start()
+            XCTAssertEqual(model.conversation?.id, threadID)
+            XCTAssertEqual(model.conversation?.workingLocation,
+                           .newWorktree(branch: "retry-remote", base: "refs/remotes/origin/stable"))
+            XCTAssertEqual(model.conversation?.worktreeStartsFromRemote, true)
+            XCTAssertFalse(model.workspace.startNewWorktreesFromRemote)
+            model.retryWorktree()
+            let pinned = expectation(description: "Fresh remote commit was pinned")
+            let observation = model.$workspace.filter {
+                $0.activeProject?.conversations.first?.worktreeLaunch?.checkout?.head ==
+                    remote.remoteHead.trimmingCharacters(in: .newlines)
+            }.first().sink { _ in pinned.fulfill() }
+            await fulfillment(of: [pinned], timeout: 10)
+            observation.cancel()
+            await failed(model, after: fetchFailure)
+            XCTAssertEqual(try fixture.savedThread().worktreeLaunch?.checkout?.path, target.path)
+            XCTAssertEqual(try Data(contentsOf: target), obstruction)
+            XCTAssertEqual(try fixture.prompts(), [])
+            try model.updateWorktreesDirectory("")
+        }
+
+        try fixture.git(["remote", "set-url", "origin", missing])
+        try fixture.git(["update-ref", "refs/remotes/origin/stable", remote.cachedHead.trimmingCharacters(in: .newlines)])
+        try FileManager.default.removeItem(at: target)
+        let reopened = fixture.open()
+        defer { reopened.terminate() }
+        reopened.start()
+        XCTAssertTrue(reopened.canRetryWorktree, reopened.error ?? "")
+        XCTAssertEqual(reopened.conversation?.worktreeLaunch?.checkout?.head,
+                       remote.remoteHead.trimmingCharacters(in: .newlines))
+        reopened.retryWorktree()
+        await recorded(reopened)
+        XCTAssertEqual(reopened.workingDirectory, target.path,
+                       reopened.conversation?.worktreeLaunch?.failure ?? reopened.error ?? "")
+        XCTAssertEqual(try fixture.git(["rev-parse", "HEAD"], at: target), remote.remoteHead)
+        XCTAssertEqual(try fixture.prompts(), [.init(cwd: target.path, text: Fixture.prompt)])
+        XCTAssertEqual(try String(contentsOf: fixture.repo.appendingPathComponent("README.md"), encoding: .utf8),
+                       "original edit\n")
+    }
+
+    func testRelaunchKeepsAnEmptyDraftsSelectedRefAndToggle() async throws {
+        let fixture = try await Fixture()
+        _ = try fixture.installRemote()
+        let threadID: UUID
+        do {
+            let model = fixture.open()
+            defer { model.terminate() }
+            try model.openProject(fixture.repo)
+            try await model.changeThreadLocation(.create(branch: "saved", base: "refs/heads/stable"))
+            let scope = try XCTUnwrap(model.branchPickerScope)
+            try model.updateWorktreeStartsFromRemote(false, in: scope)
+            try await model.changeThreadBranch(.existing("refs/remotes/origin/stable"), in: scope)
+            threadID = try XCTUnwrap(model.conversation?.id)
+        }
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var workspace = try store.load()
+            workspace.projects.append(Project(id: UUID(), path: fixture.root.path, title: "Recent", createdAt: .distantFuture))
+            try store.save(workspace)
+        }
+
+        let reopened = fixture.open()
+        defer { reopened.terminate() }
+        XCTAssertNil(reopened.startupFailure)
+        reopened.start()
+        await ready(reopened)
+        XCTAssertEqual(reopened.conversation?.id, threadID)
+        XCTAssertEqual(reopened.conversation?.workingLocation, .newWorktree(branch: "saved", base: "refs/remotes/origin/stable"))
+        XCTAssertEqual(reopened.conversation?.worktreeStartsFromRemote, false)
+        try await fixture.assertCheckouts([fixture.repo.path])
+    }
+
     func testRelaunchDoesNotResendAnUnconfirmedLocalFallback() async throws {
         let fixture = try await Fixture()
         try fixture.mark("fail-pi")
@@ -285,10 +478,11 @@ final class WorktreeLaunchTests: XCTestCase {
         await ready(model)
     }
 
-    private func failed(_ model: WorkspaceModel) async {
+    private func failed(_ model: WorkspaceModel, after previous: String? = nil) async {
         let failure = expectation(description: "The preparation failure was saved")
         let observation = model.$workspace.filter {
-            $0.activeProject?.conversations.first?.worktreeLaunch?.failure != nil
+            guard let message = $0.activeProject?.conversations.first?.worktreeLaunch?.failure else { return false }
+            return message != previous
         }.first().sink { _ in failure.fulfill() }
         await fulfillment(of: [failure], timeout: 10)
         observation.cancel()
@@ -298,6 +492,13 @@ final class WorktreeLaunchTests: XCTestCase {
         struct Prompt: Equatable {
             let cwd: String
             let text: String
+        }
+
+        struct Remote {
+            let url: URL
+            let cachedHead: String
+            let localHead: String
+            let remoteHead: String
         }
 
         static let prompt = "Use the original prompt"
@@ -399,11 +600,38 @@ final class WorktreeLaunchTests: XCTestCase {
             try git(["for-each-ref", "--format=%(refname:short)", "refs/heads"]).split(separator: "\n").map(String.init)
         }
 
+        func defaultBase() async throws -> String {
+            let choices = try await GitWorkspace(path: repo.path).branchChoices()
+            return try XCTUnwrap(GitBranchRef.defaultWorktreeBase(in: choices.refs, current: choices.current)?.id)
+        }
+
+        func installRemote() throws -> Remote {
+            let bare = root.appendingPathComponent("remote.git")
+            let publisher = root.appendingPathComponent("publisher")
+            try git(["init", "--bare", "-b", "stable", bare.path])
+            try git(["remote", "add", "origin", bare.absoluteString])
+            try git(["push", "origin", "HEAD:refs/heads/stable"])
+            try git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/stable"])
+            let cachedHead = try git(["rev-parse", "HEAD"])
+            try git(["branch", "stable"])
+            try git(["switch", "stable"])
+            try git(["commit", "--allow-empty", "--no-gpg-sign", "-m", "Local only"])
+            let localHead = try git(["rev-parse", "HEAD"])
+            try git(["switch", "-"])
+            try git(["clone", bare.absoluteString, publisher.path])
+            try Data("remote commit\n".utf8).write(to: publisher.appendingPathComponent("README.md"))
+            try git(["commit", "-a", "--no-gpg-sign", "-m", "Remote only"], at: publisher)
+            try git(["push", "origin", "stable"], at: publisher)
+            let remoteHead = try git(["rev-parse", "HEAD"], at: publisher)
+            XCTAssertNotEqual(localHead, remoteHead)
+            return Remote(url: bare, cachedHead: cachedHead, localHead: localHead, remoteHead: remoteHead)
+        }
+
         @discardableResult
-        func git(_ arguments: [String]) throws -> String {
+        func git(_ arguments: [String], at directory: URL? = nil) throws -> String {
             let command = Process()
             command.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            command.arguments = ["-C", repo.path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"]
+            command.arguments = ["-C", (directory ?? repo).path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"]
                 + arguments
             let output = Pipe()
             command.standardOutput = output

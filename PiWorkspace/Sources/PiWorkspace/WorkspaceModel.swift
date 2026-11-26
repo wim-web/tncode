@@ -388,6 +388,7 @@ final class WorkspaceModel: ObservableObject {
         guard !showingWelcome, process == nil else { return }
         if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasDraftContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
+            (conversation.isDraft == true && conversation.workingLocation != .project) ||
             !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
             connect()
@@ -488,6 +489,13 @@ final class WorkspaceModel: ObservableObject {
         guard preference != workspace.worktreesDirectory else { return }
         var updated = workspace
         updated.worktreesDirectory = preference
+        try persist(updated)
+    }
+
+    func updateNewWorktreesStartFromRemote(_ enabled: Bool) throws {
+        guard workspace.startNewWorktreesFromRemote != enabled else { return }
+        var updated = workspace
+        updated.newWorktreesStartFromRemote = enabled ? nil : false
         try persist(updated)
     }
 
@@ -1065,6 +1073,11 @@ final class WorkspaceModel: ObservableObject {
             return location
         }
         try saveThread(conversation.id) { thread in
+            if !location.needsWorktree {
+                thread.worktreeStartsFromRemote = nil
+            } else if !thread.workingLocation.needsWorktree {
+                thread.worktreeStartsFromRemote = workspace.startNewWorktreesFromRemote
+            }
             if thread.workingLocation != location, var launch = thread.worktreeLaunch {
                 launch.stage = location.needsWorktree ? .createCheckout : .openThread
                 launch.failure = nil
@@ -1109,6 +1122,14 @@ final class WorkspaceModel: ObservableObject {
     enum BranchChoice {
         case existing(String)
         case create(name: String, base: String)
+    }
+
+    func updateWorktreeStartsFromRemote(_ enabled: Bool, in scope: BranchPickerScope) throws {
+        guard branchPickerScope == scope, scope.location.needsWorktree else {
+            throw WorkspaceError("The selected thread or checkout changed. Open the branch picker again.")
+        }
+        if let reason = branchChangeBlocked { throw WorkspaceError(reason) }
+        try saveThread(scope.threadID) { $0.worktreeStartsFromRemote = enabled }
     }
 
     func changeThreadBranch(_ choice: BranchChoice, in scope: BranchPickerScope) async throws {
@@ -1410,7 +1431,8 @@ final class WorkspaceModel: ObservableObject {
                             let target = try store.worktree(project: project.id, conversation: thread.id,
                                                             directory: worktreesDirectory)
                             checkout = try await git.pinWorktree(at: target.path, branch: branch, base: base,
-                                                                owner: launch.id ?? thread.id, legacy: launch.id == nil)
+                                                                owner: launch.id ?? thread.id, legacy: launch.id == nil,
+                                                                startFromRemote: thread.worktreeStartsFromRemote == true)
                             try Task.checkCancellation()
                             try saveThread(thread.id) { $0.worktreeLaunch?.checkout = checkout }
                         }
@@ -1474,6 +1496,7 @@ final class WorkspaceModel: ObservableObject {
                 try saveThread(conversation.id) { thread in
                     if interruption == .workLocally {
                         thread.location = .project
+                        thread.worktreeStartsFromRemote = nil
                         thread.worktreeLaunch?.id = UUID()
                         thread.worktreeLaunch?.stage = .openThread
                         thread.worktreeLaunch?.checkout = nil

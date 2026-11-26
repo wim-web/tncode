@@ -29,7 +29,7 @@ struct ThreadLocationView: View {
                 Text("New worktree").font(.callout.weight(.semibold))
                 Picker("Base branch", selection: $base) {
                     if !refs.contains(where: { $0.id == base }) {
-                        Text(GitBranchRef.displayName(base)).tag(base)
+                        Text(base.isEmpty ? "Select ref" : GitBranchRef.displayName(base)).tag(base)
                     }
                     ForEach(refs) { ref in Text(ref.name).tag(ref.id) }
                 }
@@ -95,8 +95,7 @@ struct ThreadLocationView: View {
                 let current = try await git.currentBranch()
                 checkouts = try await git.worktrees()
                 refs = branches
-                base = current.flatMap { name in branches.first { !$0.isRemote && $0.name == name }?.id }
-                    ?? branches.first?.id ?? ""
+                base = GitBranchRef.defaultWorktreeBase(in: branches, current: current)?.id ?? ""
                 branch = "thread-" + (model.conversation?.id.uuidString.prefix(8).lowercased() ?? "work")
                 if case let .newWorktree(savedBranch, savedBase) = model.conversation?.workingLocation {
                     branch = savedBranch

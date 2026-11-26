@@ -38,6 +38,7 @@ enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
     case addProjectStartsIn = "add-project-starts-in"
     case worktreeLocation = "storage-worktrees-location"
+    case startFromRemote = "start-from-origin"
     case colorScheme = "appearance-color-scheme"
     case chatWidth = "appearance-chat-width"
     case restoreAppearance = "appearance-restore-defaults"
@@ -156,6 +157,7 @@ struct SettingsSearch {
         .init(page: .model, anchor: .resetModelOverride, title: "Reset to Workspace default", keywords: "project override restore inherited model"),
         .init(page: .worktrees, title: "Worktrees", keywords: "checkout storage"),
         .init(page: .worktrees, anchor: .worktreeLocation, title: "Worktree location", keywords: "folder directory path drive external disk"),
+        .init(page: .worktrees, anchor: .startFromRemote, title: "Start from remote", keywords: "new worktrees default origin upstream branch fetch"),
         .init(page: .usage, title: "Usage", keywords: "Pi assistant tokens cost providers billing limits"),
         .init(page: .browser, title: "Browser Settings", keywords: "web preview WKWebView browsing"),
         .init(page: .browser, anchor: .searchEngine, title: "Search engine", keywords: "browser address DuckDuckGo Google Bing Brave Kagi Ecosia Custom"),

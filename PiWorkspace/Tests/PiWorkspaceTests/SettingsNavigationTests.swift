@@ -41,6 +41,8 @@ final class SettingsNavigationTests: XCTestCase {
         search.query = "external disk"
         XCTAssertEqual(search.results(available: availability).first?.page, .worktrees)
         XCTAssertEqual(search.results(available: availability).first?.anchor, .worktreeLocation)
+        search.query = "start from remote"
+        XCTAssertEqual(search.results(available: availability).first?.anchor, .startFromRemote)
     }
 
     func testResultSelectionWrapsAndNewQuerySelectsFirstMatch() {

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ThreadBranchButton: View {
     let branch: String?
+    var label: String?
     var fallback = "Detached HEAD"
     var identifier = "git-branch"
     let open: () -> Void
@@ -10,7 +11,7 @@ struct ThreadBranchButton: View {
 
     var body: some View {
         Button(action: open) {
-            Label(branch ?? fallback, systemImage: "arrow.triangle.branch")
+            Label(label ?? branch ?? fallback, systemImage: "arrow.triangle.branch")
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -81,6 +82,18 @@ struct BranchPickerView: View {
                     .accessibilityIdentifier("git-branch-search")
                     .onChange(of: query) { highlightedRef = nil }
                 refList
+                if pendingBase != nil {
+                    Divider()
+                    Toggle("Start from remote", isOn: Binding(
+                        get: { model.conversation?.worktreeStartsFromRemote == true },
+                        set: updateStartFromRemote
+                    ))
+                    .toggleStyle(.switch)
+                    .help("Fetches the tracked remote branch or the same branch on origin when the worktree is created.")
+                    .disabled(!canChange)
+                    .accessibilityLabel("Start worktree from remote")
+                    .accessibilityIdentifier("git-start-from-remote")
+                }
             }
             if let reason = model.branchChangeBlocked, !applying {
                 Text(reason).font(.callout).foregroundStyle(.secondary)
@@ -268,6 +281,15 @@ struct BranchPickerView: View {
                 failure = "\(title) \(error.localizedDescription)"
                 await loadBranches()
             }
+        }
+    }
+
+    private func updateStartFromRemote(_ enabled: Bool) {
+        do {
+            try model.updateWorktreeStartsFromRemote(enabled, in: scope)
+            failure = nil
+        } catch {
+            failure = error.localizedDescription
         }
     }
 

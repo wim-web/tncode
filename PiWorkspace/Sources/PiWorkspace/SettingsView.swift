@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var projectBaseDirectoryError: String?
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
+    @State private var startFromRemoteError: String?
     @State private var showingLicenses = false
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
@@ -223,6 +224,8 @@ struct SettingsView: View {
             ModelSettingsView(model: model, draft: $modelDraft, settingsFocus: $focus)
         case .worktrees:
             worktreeDirectorySetting
+            Divider()
+            startFromRemoteSetting
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
         case .about, .usage:
@@ -313,6 +316,44 @@ struct SettingsView: View {
         } catch {
             worktreeDirectoryError = error.localizedDescription
             return false
+        }
+    }
+
+    private var startFromRemoteSetting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Toggle("Start from remote", isOn: Binding(
+                    get: { model.workspace.startNewWorktreesFromRemote },
+                    set: updateStartFromRemote
+                ))
+                .toggleStyle(.switch)
+                .accessibilityLabel("Start new worktrees from remote by default")
+                .settingsTarget(.startFromRemote, focus: $focus)
+                if !model.workspace.startNewWorktreesFromRemote {
+                    Spacer()
+                    Button("Reset") { updateStartFromRemote(true) }
+                        .accessibilityLabel("Reset new worktrees start from remote to default")
+                        .accessibilityIdentifier("reset-start-from-origin")
+                }
+            }
+            Text("Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let startFromRemoteError {
+                Text(startFromRemoteError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("start-from-origin-error")
+            }
+        }
+    }
+
+    private func updateStartFromRemote(_ enabled: Bool) {
+        do {
+            try model.updateNewWorktreesStartFromRemote(enabled)
+            startFromRemoteError = nil
+        } catch {
+            startFromRemoteError = error.localizedDescription
         }
     }
 

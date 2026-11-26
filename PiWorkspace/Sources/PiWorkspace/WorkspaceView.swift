@@ -1498,7 +1498,7 @@ struct WorkspaceView: View {
                     Label(thread.workingLocation.label, systemImage: "desktopcomputer")
                 }
                 if let display = branchDisplay {
-                    ThreadBranchButton(branch: display.branch, fallback: display.fallback,
+                    ThreadBranchButton(branch: display.branch, label: display.label,
                                        identifier: "composer-branch", open: { openBranchPicker() }, copy: copyBranch)
                 }
                 Spacer()
@@ -1876,13 +1876,16 @@ struct WorkspaceView: View {
         }
     }
 
-    private var branchDisplay: (branch: String?, fallback: String)? {
+    private var branchDisplay: (branch: String?, label: String?)? {
         guard let scope = model.branchPickerScope else { return nil }
         if case let .newWorktree(_, base) = scope.location {
-            return (GitBranchRef.displayName(base), "Choose base branch")
+            let branch = GitBranchRef.displayName(base)
+            let useRemote = model.conversation?.worktreeStartsFromRemote == true
+            let label = useRemote && base.hasPrefix("refs/heads/") ? "From \(branch) (remote)" : "From \(branch)"
+            return (branch, label)
         }
         guard let loadedBranch, loadedBranch.scope == scope else { return nil }
-        return (loadedBranch.branch, "Detached HEAD")
+        return (loadedBranch.branch, nil)
     }
 
     @discardableResult

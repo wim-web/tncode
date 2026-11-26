@@ -34,6 +34,11 @@ struct GitBranchRef: Identifiable, Sendable {
         }
         return ref
     }
+
+    static func defaultWorktreeBase(in refs: [Self], current: String?) -> Self? {
+        refs.first(where: \.isDefault)
+            ?? refs.first { !$0.isRemote && $0.name == current }
+    }
 }
 
 struct GitBranchChoices: Sendable {
@@ -352,14 +357,24 @@ struct GitWorkspace: Sendable {
         let output = try Self.decode(result.output.bytes, command: "for-each-ref")
         let rows = output.split(separator: "\n").map { $0.split(separator: "\0", omittingEmptySubsequences: false) }
         guard rows.allSatisfy({ $0.count == 3 }) else { throw WorkspaceError.invalidOutput(command: "for-each-ref") }
-        let defaults = Set(rows.compactMap { row -> Substring? in
-            guard row[0].hasPrefix("refs/remotes/"), row[0].hasSuffix("/HEAD"), !row[1].isEmpty else { return nil }
-            return row[1]
-        })
+        var defaultRef: Substring?
+        var defaultBranch: Substring?
+        if rows.contains(where: { $0[0].hasPrefix("refs/remotes/") && !$0[1].isEmpty }) {
+            let remotes = try await remoteNames(in: path)
+            if let primary = remotes.first(where: { $0 == "origin" }) ?? remotes.first {
+                let prefix = "refs/remotes/\(primary)/"
+                let head = rows.first { $0[0] == prefix + "HEAD" }?[1]
+                if let head, head.hasPrefix(prefix), rows.contains(where: { $0[0] == head && $0[1].isEmpty }) {
+                    defaultRef = head
+                    defaultBranch = head.dropFirst(prefix.count)
+                }
+            }
+        }
         return rows.compactMap { row in
             guard row[1].isEmpty || row[0].hasPrefix("refs/heads/") else { return nil }
+            let localDefault = defaultBranch.map { row[0] == "refs/heads/" + $0 } ?? false
             return GitBranchRef(id: String(row[0]), upstream: String(row[2]),
-                                isDefault: defaults.contains(row[0]) || defaults.contains(row[2]))
+                                isDefault: localDefault || row[0] == defaultRef)
         }
     }
 
@@ -395,11 +410,15 @@ struct GitWorkspace: Sendable {
     }
 
     func pinWorktree(at target: String, branch: String, base: String, owner: UUID,
-                     legacy: Bool = false) async throws -> PendingCheckout {
+                     legacy: Bool = false, startFromRemote: Bool = false) async throws -> PendingCheckout {
         let root = try await repositoryRoot()
         let checked = try await run(["check-ref-format", "--branch", branch], in: root)
         guard checked.output.bytes == Data((branch + "\n").utf8) else { throw WorkspaceError.invalidBranch }
-        let commit = try await revParse(["--verify", "--end-of-options", base + "^{commit}"], in: root)
+        var startRef = base
+        if startFromRemote, let remoteRef = try await fetchWorktreeBase(base, in: root) {
+            startRef = remoteRef
+        }
+        let commit = try await revParse(["--verify", "--end-of-options", startRef + "^{commit}"], in: root)
         let checkout = PendingCheckout(path: target, branch: branch, head: commit, owner: owner)
         if try await branchExists(checkout) {
             guard legacy, try await worktrees().contains(where: { $0.path == target && $0.branch == branch }) else {
@@ -407,6 +426,51 @@ struct GitWorkspace: Sendable {
             }
         }
         return checkout
+    }
+
+    private func remoteNames(in directory: String) async throws -> [String] {
+        let result = try await run(["remote"], in: directory)
+        return try Self.decode(result.output.bytes, command: "remote").split(separator: "\n").map(String.init)
+    }
+
+    private func fetchWorktreeBase(_ base: String, in root: String) async throws -> String? {
+        let remotes = try await remoteNames(in: root)
+        let name = GitBranchRef.displayName(base)
+        var remote = "origin"
+        var branch = name
+        var hasLocalRef = base.hasPrefix("refs/heads/")
+        if !base.hasPrefix("refs/remotes/") {
+            let localRef = "refs/heads/" + name
+            let result = try await run(["for-each-ref", "--format=%(refname)%00%(upstream:remotename)%00%(upstream:remoteref)",
+                                        localRef], in: root)
+            let output = try Self.decode(result.output.bytes, command: "for-each-ref")
+            let upstream = output.split(separator: "\n").map { $0.split(separator: "\0", omittingEmptySubsequences: false) }
+                .first { $0.count == 3 && $0[0].utf8.elementsEqual(localRef.utf8) }
+            hasLocalRef = hasLocalRef || upstream != nil
+            if let upstream, remotes.contains(String(upstream[1])), upstream[2].hasPrefix("refs/heads/") {
+                remote = String(upstream[1])
+                branch = String(upstream[2].dropFirst("refs/heads/".count))
+            }
+        }
+        if !hasLocalRef, let matching = remotes.filter({ name.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
+            remote = matching
+            branch = String(name.dropFirst(matching.count + 1))
+        } else if base.hasPrefix("refs/remotes/") {
+            return nil
+        }
+        guard remotes.contains(remote), branch != "HEAD", !branch.hasPrefix("-") else { return nil }
+        let source = "refs/heads/" + branch
+        let valid = try await run(["check-ref-format", source], in: root, acceptedStatuses: [0, 1])
+        guard valid.status == 0 else { return nil }
+        let tracking = "refs/remotes/\(remote)/\(branch)"
+        let fetched = try await run(["fetch", "--quiet", "--no-tags", "--no-recurse-submodules",
+                                     "--", remote, "+\(source):\(tracking)"],
+                                    in: root, acceptedStatuses: [0, 128])
+        if fetched.status == 0 { return tracking }
+        if fetched.errorMessage.split(separator: "\n").contains("fatal: couldn't find remote ref \(source)") {
+            return nil
+        }
+        throw WorkspaceError.commandFailed(command: "fetch", status: fetched.status, message: fetched.errorMessage)
     }
 
     func createWorktree(_ checkout: PendingCheckout, legacy: Bool = false) async throws -> String {
@@ -753,6 +817,7 @@ struct GitWorkspace: Sendable {
         process.arguments = ["--no-pager", "--literal-pathspecs", "-C", directory] + arguments
 
         let cloning = arguments[0] == "clone"
+        let fetching = arguments[0] == "fetch"
         var environment = ProcessInfo.processInfo.environment
         if arguments[0] == "init" || cloning {
             environment = environment.filter { !$0.key.hasPrefix("GIT_") }
@@ -768,10 +833,17 @@ struct GitWorkspace: Sendable {
         if cloning {
             environment["GIT_ALLOW_PROTOCOL"] = "file:git:http:https:ssh"
         }
+        if fetching {
+            environment["LC_ALL"] = "C"
+            environment["GIT_ASKPASS"] = ""
+            environment["SSH_ASKPASS_REQUIRE"] = "never"
+            environment["GCM_INTERACTIVE"] = "never"
+        }
         process.environment = environment
 
         let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit,
-                                                        cancelOnTaskCancellation: cloning)
+                                                        timeout: fetching ? .seconds(300) : nil,
+                                                        cancelOnTaskCancellation: cloning || fetching)
         if !result.exitedNormally || !acceptedStatuses.contains(result.status) {
             throw WorkspaceError.commandFailed(command: arguments[0], status: result.status, message: result.errorMessage)
         }
