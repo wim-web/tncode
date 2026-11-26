@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct PullRequestsButton: View {
-    let directory: String
+    let workspace: WorkspaceModel
+    let scope: ThreadPullRequestScope
+    let pasteboard: NSPasteboard
     @State private var presented = false
 
     var body: some View {
@@ -13,7 +15,7 @@ struct PullRequestsButton: View {
         .accessibilityLabel("Pull Requests and Issues")
         .accessibilityIdentifier("pull-requests")
         .sheet(isPresented: $presented) {
-            GitHubBrowserView(directory: directory)
+            GitHubBrowserView(workspace: workspace, scope: scope, pasteboard: pasteboard)
         }
     }
 }
@@ -25,15 +27,24 @@ private enum GitHubDetailLoad<Value> {
 }
 
 private struct GitHubBrowserView: View {
-    let directory: String
+    private enum Tab: Hashable {
+        case pullRequests, issues, linkedItems
+    }
+
+    let workspace: WorkspaceModel
+    let scope: ThreadPullRequestScope
+    let pasteboard: NSPasteboard
     @Environment(\.dismiss) private var dismiss
-    @State private var tab: GitHubBrowseKind = .pullRequests
+    @State private var tab: Tab
     @StateObject private var pullRequests: GitHubBrowserModel
     @StateObject private var issues: GitHubBrowserModel
 
-    init(directory: String) {
-        self.directory = directory
-        let reader = GitHubReader(directory: directory)
+    init(workspace: WorkspaceModel, scope: ThreadPullRequestScope, pasteboard: NSPasteboard) {
+        self.workspace = workspace
+        self.scope = scope
+        self.pasteboard = pasteboard
+        _tab = State(initialValue: scope.canReadRepository ? .pullRequests : .linkedItems)
+        let reader = GitHubReader(directory: scope.directory)
         _pullRequests = StateObject(wrappedValue: .init(kind: .pullRequests, reader: reader))
         _issues = StateObject(wrappedValue: .init(kind: .issues, reader: reader))
     }
@@ -41,31 +52,38 @@ private struct GitHubBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                tabButton("Pull Requests", kind: .pullRequests, id: "github-tab-pull-requests")
-                tabButton("Issues", kind: .issues, id: "github-tab-issues")
+                if scope.canReadRepository {
+                    tabButton("Pull Requests", for: .pullRequests, id: "github-tab-pull-requests")
+                    tabButton("Issues", for: .issues, id: "github-tab-issues")
+                }
+                tabButton("Linked items", for: .linkedItems, id: "github-tab-linked-items")
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("pr-close")
             }
             .padding([.horizontal, .top], 16)
-            GitHubListView(directory: directory, model: tab == .pullRequests ? pullRequests : issues)
-                .id(tab)
+            if tab == .linkedItems {
+                ThreadPullRequestsView(workspace: workspace, scope: scope, pasteboard: pasteboard)
+            } else {
+                GitHubListView(directory: scope.directory, model: tab == .pullRequests ? pullRequests : issues)
+                    .id(tab)
+            }
         }
         .frame(minWidth: 660, idealWidth: 730, minHeight: 425, idealHeight: 510)
     }
 
-    private func tabButton(_ title: String, kind: GitHubBrowseKind, id: String) -> some View {
-        Button { tab = kind } label: {
+    private func tabButton(_ title: String, for destination: Tab, id: String) -> some View {
+        Button { tab = destination } label: {
             Text(title)
-                .fontWeight(tab == kind ? .semibold : .regular)
+                .fontWeight(tab == destination ? .semibold : .regular)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(tab == kind ? Color.accentColor.opacity(0.16) : .clear,
+                .background(tab == destination ? Color.accentColor.opacity(0.16) : .clear,
                             in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(tab == kind ? .isSelected : [])
+        .accessibilityAddTraits(tab == destination ? .isSelected : [])
         .accessibilityIdentifier(id)
     }
 }
@@ -353,10 +371,11 @@ private struct IssueDetailsView: View {
     }
 }
 
-private struct PullRequestDetailsView: View {
+struct PullRequestDetailsView: View {
     let directory: String
     let repository: GitHubRepository
     let number: Int
+    @State private var retry = 0
     @State private var content: GitHubDetailLoad<GitHubPullRequestDetails> = .loading
 
     var body: some View {
@@ -365,10 +384,14 @@ private struct PullRequestDetailsView: View {
             case .loading:
                 ProgressView("Loading #\(number)…")
             case .failed(let message):
-                Text(message)
-                    .multilineTextAlignment(.center)
-                    .padding(24)
-                    .accessibilityIdentifier("pr-detail-error")
+                VStack(spacing: 12) {
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("pr-detail-error")
+                    Button("Retry") { retry += 1 }
+                        .accessibilityIdentifier("pr-detail-retry")
+                }
+                .padding(24)
             case .loaded(let details):
                 ScrollView {
                     summary(details)
@@ -376,7 +399,7 @@ private struct PullRequestDetailsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await load() }
+        .task(id: retry) { await load() }
     }
 
     private func summary(_ details: GitHubPullRequestDetails) -> some View {
@@ -445,6 +468,8 @@ private struct PullRequestDetailsView: View {
 
     @MainActor
     private func load() async {
+        guard !Task.isCancelled else { return }
+        content = .loading
         do {
             let details = try await GitHubReader(directory: directory).pullRequestDetails(for: number, in: repository)
             guard !Task.isCancelled else { return }

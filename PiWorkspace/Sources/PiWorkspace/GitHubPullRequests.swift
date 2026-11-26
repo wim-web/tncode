@@ -6,6 +6,14 @@ struct GitHubRepository: Hashable, Sendable {
 
     var cliName: String { "github.com/" + slug }
 
+    fileprivate init?(owner: Substring, name: Substring) {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        guard [owner, name].allSatisfy({
+            !$0.isEmpty && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy(allowed.contains)
+        }) else { return nil }
+        slug = "\(owner)/\(name)".lowercased()
+    }
+
     fileprivate init?(remote: String) {
         let path: String
         if remote.lowercased().hasPrefix("git@github.com:") {
@@ -20,13 +28,44 @@ struct GitHubRepository: Hashable, Sendable {
         }
         let parts = path.split(separator: "/")
         guard parts.count == 2 else { return nil }
-        let owner = parts[0]
-        let name = parts[1].hasSuffix(".git") ? parts[1].dropLast(4) : parts[1]
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-        guard [owner, name].allSatisfy({
-            !$0.isEmpty && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy(allowed.contains)
-        }) else { return nil }
-        slug = "\(owner)/\(name)"
+        let name = parts[1].lowercased().hasSuffix(".git") ? parts[1].dropLast(4) : parts[1]
+        self.init(owner: parts[0], name: name)
+    }
+}
+
+struct GitHubPullRequestReference: Codable, Hashable, Sendable {
+    let repository: GitHubRepository
+    let number: Int
+    let url: URL
+
+    init?(repository: GitHubRepository, number: Int) {
+        guard number > 0, let url = URL(string: "https://\(repository.cliName)/pull/\(number)") else { return nil }
+        self.repository = repository
+        self.number = number
+        self.url = url
+    }
+
+    init?(url: String) {
+        guard let components = URLComponents(string: url), components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "github.com", components.port == nil,
+              components.user == nil, components.password == nil,
+              let path = components.percentEncodedPath.wholeMatch(of: #/\/([^\/]+)\/([^\/]+)\/pull\/([0-9]+)(?:\/(?:files|commits|checks))?\/?/#),
+              let repository = GitHubRepository(owner: path.1, name: path.2),
+              let number = Int(path.3) else { return nil }
+        self.init(repository: repository, number: number)
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        guard let reference = Self(url: try value.decode(String.self)) else {
+            throw DecodingError.dataCorruptedError(in: value, debugDescription: "Invalid GitHub pull request URL")
+        }
+        self = reference
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        try value.encode(url.absoluteString)
     }
 }
 
@@ -48,11 +87,13 @@ struct GitHubPullRequest: Decodable, Sendable {
 
 struct GitHubPullRequestDetails: Sendable {
     let pullRequest: GitHubPullRequest
-    let url: URL
+    let reference: GitHubPullRequestReference
     let headRef: String
     let baseRef: String
     let body: String
     let checks: [GitHubCheck]
+
+    var url: URL { reference.url }
 }
 
 struct GitHubCheck: Decodable, Sendable {
@@ -115,20 +156,23 @@ struct GitHubReader: Sendable {
     }
 
     func pullRequestDetails(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubPullRequestDetails {
-        guard number > 0 else { throw ReadError.invalidResponse(.pullRequests) }
+        guard let reference = GitHubPullRequestReference(repository: expectedRepository, number: number) else {
+            throw ReadError.invalidResponse(.pullRequests)
+        }
         let repository = try await repository(matching: expectedRepository)
         let response: DetailResponse = try await read(
             ["pr", "view", String(number), "--json",
-             GitHubPullRequest.fields + ",headRefName,baseRefName,body,statusCheckRollup", "--repo", repository.cliName],
+             GitHubPullRequest.fields + ",headRefName,baseRefName,body,statusCheckRollup,url", "--repo", repository.cliName],
             for: .pullRequests
         )
         guard response.pullRequest.number == number,
-              let url = URL(string: "https://\(repository.cliName)/pull/\(number)") else {
+              GitHubPullRequestReference(url: response.url) == reference else {
             throw ReadError.invalidResponse(.pullRequests)
         }
+        _ = try await self.repository(matching: repository)
         return GitHubPullRequestDetails(
             pullRequest: response.pullRequest,
-            url: url,
+            reference: reference,
             headRef: response.headRefName,
             baseRef: response.baseRefName,
             body: response.body ?? "",
@@ -138,6 +182,7 @@ struct GitHubReader: Sendable {
 
     func repository(matching expected: GitHubRepository? = nil) async throws -> GitHubRepository {
         let repository = try await checkoutRepository()
+        try Task.checkCancellation()
         guard expected == nil || repository == expected else { throw ReadError.repositoryChanged }
         return repository
     }
@@ -154,7 +199,7 @@ struct GitHubReader: Sendable {
         for remote in remotes {
             guard let repository = GitHubRepository(remote: remote.url) else { continue }
             if remote.name == "origin" { return repository }
-            if !repositories.contains(where: { $0.slug.caseInsensitiveCompare(repository.slug) == .orderedSame }) {
+            if !repositories.contains(repository) {
                 repositories.append(repository)
             }
         }
@@ -234,9 +279,10 @@ struct GitHubReader: Sendable {
         let baseRefName: String
         let body: String?
         let statusCheckRollup: [GitHubCheck]?
+        let url: String
 
         private enum CodingKeys: CodingKey {
-            case headRefName, baseRefName, body, statusCheckRollup
+            case headRefName, baseRefName, body, statusCheckRollup, url
         }
 
         init(from decoder: Decoder) throws {
@@ -246,6 +292,7 @@ struct GitHubReader: Sendable {
             baseRefName = try fields.decode(String.self, forKey: .baseRefName)
             body = try fields.decodeIfPresent(String.self, forKey: .body)
             statusCheckRollup = try fields.decodeIfPresent([GitHubCheck].self, forKey: .statusCheckRollup)
+            url = try fields.decode(String.self, forKey: .url)
         }
     }
 

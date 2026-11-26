@@ -49,6 +49,7 @@ final class WorkspaceModel: ObservableObject {
     private var worktreeTask: Task<Void, Never>?
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
+    private var pullRequestSelectionRevision = 0
 
     @Published private var queueEdit: QueueEdit?
     @Published private var queueDelivery = QueueDelivery()
@@ -232,7 +233,7 @@ final class WorkspaceModel: ObservableObject {
     private var hasPrompt: Bool { !promptText.isEmpty || !composerAttachments.isEmpty }
 
     func showsInSidebar(_ thread: Conversation) -> Bool {
-        thread.isDraft != true || thread.hasComposerContent || thread.worktreeLaunch != nil
+        thread.isDraft != true || thread.hasComposerContent || thread.worktreeLaunch != nil || !thread.pullRequestLinks.isEmpty
     }
 
     func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
@@ -253,16 +254,19 @@ final class WorkspaceModel: ObservableObject {
     private let vault: KeyVault
     private let readCredential: (String) throws -> String?
     private let makeProcess: (URL, String) throws -> any PiConnection
+    private let makeGitHubReader: (String) -> GitHubReader
     private var process: (any PiConnection)?
     private var activeTurnID: UUID?
 
     init(root: URL, keychainService: String, readCredential: ((String) throws -> String?)? = nil,
-         makeProcess: ((URL, String) throws -> any PiConnection)? = nil) {
+         makeProcess: ((URL, String) throws -> any PiConnection)? = nil,
+         makeGitHubReader: @escaping (String) -> GitHubReader = { GitHubReader(directory: $0) }) {
         self.root = root
         let vault = KeyVault(service: keychainService)
         self.vault = vault
         self.readCredential = readCredential ?? vault.read
         self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1) }
+        self.makeGitHubReader = makeGitHubReader
         openWorkspace()
     }
 
@@ -291,6 +295,10 @@ final class WorkspaceModel: ObservableObject {
     var workingDirectory: String? {
         guard let project, let conversation else { return nil }
         return conversation.workingLocation.directory(in: project)
+    }
+    var pullRequestScope: ThreadPullRequestScope? {
+        guard let project, let conversation else { return nil }
+        return ThreadPullRequestScope(project: project, thread: conversation)
     }
     var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree || forkRequest != nil }
     var canOpenCommandPalette: Bool {
@@ -341,7 +349,7 @@ final class WorkspaceModel: ObservableObject {
         guard !showingWelcome, process == nil else { return }
         if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasComposerContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
-            !(conversation.queuedMessages ?? []).isEmpty {
+            !(conversation.queuedMessages ?? []).isEmpty || !conversation.pullRequestLinks.isEmpty {
             showArchive = conversation.archived
             connect()
             return
@@ -405,7 +413,9 @@ final class WorkspaceModel: ObservableObject {
         composerDirty = false
         composerSaveError = nil
         composerCredential = nil
+        let previousScope = pullRequestScope
         workspace = updated
+        if pullRequestScope != previousScope { pullRequestSelectionRevision += 1 }
     }
 
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
@@ -660,6 +670,55 @@ final class WorkspaceModel: ObservableObject {
 
     func canOpenForkLink(_ id: UUID) -> Bool {
         !operationsInProgress && project?.conversations.contains { $0.id == id } == true
+    }
+
+    func pullRequestRepository(in scope: ThreadPullRequestScope) async throws -> GitHubRepository {
+        guard scope == pullRequestScope, scope.canReadRepository else {
+            throw WorkspaceError("Reopen Linked items for the current thread.")
+        }
+        return try await makeGitHubReader(scope.directory).repository()
+    }
+
+    func linkPullRequest(_ input: String, in scope: ThreadPullRequestScope, repository: GitHubRepository) async throws {
+        guard scope == pullRequestScope, scope.canReadRepository else {
+            throw WorkspaceError("Reopen Linked items for the current thread.")
+        }
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = GitHubPullRequestReference(url: text)
+        let digits = text.wholeMatch(of: #/#?([0-9]+)/#)?.1
+        guard let number = url?.number ?? digits.flatMap({ Int($0) }), number > 0 else {
+            throw WorkspaceError("Enter a GitHub pull request URL or a positive number such as #42.")
+        }
+        let revision = pullRequestSelectionRevision
+        let reader = makeGitHubReader(scope.directory)
+        if let url, url.repository != repository {
+            throw WorkspaceError("This thread’s checkout uses \(repository.slug). Enter a pull request from that repository.")
+        }
+        let details: GitHubPullRequestDetails
+        do {
+            details = try await reader.pullRequestDetails(for: number, in: repository)
+        } catch GitHubReader.ReadError.repositoryChanged {
+            throw WorkspaceError("The checkout’s GitHub repository changed. Reopen Link pull request to use the current checkout.")
+        }
+        try Task.checkCancellation()
+        guard scope == pullRequestScope, revision == pullRequestSelectionRevision, let conversation else {
+            throw WorkspaceError("The selected thread or checkout changed. Reopen Linked items and try again.")
+        }
+        guard !conversation.pullRequestLinks.contains(where: { $0.id == details.reference }) else { return }
+        try saveThread(scope.threadID) { thread in
+            thread.linkedPullRequests = thread.pullRequestLinks + [
+                ThreadPullRequestLink(reference: details.reference, title: details.pullRequest.title)
+            ]
+        }
+    }
+
+    func unlinkPullRequest(_ reference: GitHubPullRequestReference, in scope: ThreadPullRequestScope) throws {
+        guard scope == pullRequestScope, let conversation else {
+            throw WorkspaceError("Reopen Linked items for the current thread.")
+        }
+        let remaining = conversation.pullRequestLinks.filter { $0.id != reference }
+        guard remaining.count != conversation.pullRequestLinks.count else { return }
+        try saveThread(scope.threadID) { $0.linkedPullRequests = remaining.isEmpty ? nil : remaining }
     }
 
     func openForkLink(_ id: UUID) {

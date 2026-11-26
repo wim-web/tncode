@@ -207,17 +207,20 @@ case "$*" in
     "issue view 73 --json number,title,state,author,labels,body --repo $expected_repo")
         printf '%s\n' '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":""}'
         ;;
-    "pr view 42 --json $fields,headRefName,baseRefName,body,statusCheckRollup --repo $expected_repo")
+    "pr view 42 --json $fields,headRefName,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
         if [ "$mode" = missing ]; then
             printf '%s\n' "GraphQL: Could not resolve to a PullRequest with the number of 42." >&2
             exit 1
         fi
+        pr_url="https://$expected_repo/pull/42"
+        if [ "$mode" = wrong-repo ]; then pr_url="https://github.com/fixture/unrelated/pull/42"; fi
         if [ "$mode" = updated ]; then
-            printf '%s\n' '{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"},"headRefName":"new-head","baseRefName":"main","body":"Fixture description","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://checks.example.invalid/build-new"}]}'
+            printf '{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"},"headRefName":"new-head","baseRefName":"main","body":"Fixture description","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://checks.example.invalid/build-new"}],"url":"%s"}\n' "$pr_url"
         else
-            /bin/cat <<'JSON'
+            /bin/cat <<JSON
 {
   "number": 42,
+  "url": "$pr_url",
   "title": "Update checkout",
   "state": "OPEN",
   "isDraft": true,
@@ -235,8 +238,8 @@ case "$*" in
 JSON
         fi
         ;;
-    "pr view 43 --json $fields,headRefName,baseRefName,body,statusCheckRollup --repo $expected_repo")
-        printf '%s\n' '{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null,"headRefName":"new-branch","baseRefName":"main","body":"","statusCheckRollup":null}'
+    "pr view 43 --json $fields,headRefName,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
+        printf '{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null,"headRefName":"new-branch","baseRefName":"main","body":"","statusCheckRollup":null,"url":"https://%s/pull/43"}\n' "$expected_repo"
         ;;
     *) printf '%s\n' "Unexpected mock gh arguments: $*" >&2; exit 64 ;;
 esac

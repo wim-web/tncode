@@ -1007,9 +1007,9 @@ struct WorkspaceView: View {
             .tint(.primary)
             .accessibilityIdentifier("conversation-title")
             Spacer()
-            if !thread.workingLocation.needsWorktree, let directory = model.workingDirectory {
-                PullRequestsButton(directory: directory)
-                    .id(directory)
+            if let scope = model.pullRequestScope, scope.canReadRepository || !thread.pullRequestLinks.isEmpty {
+                PullRequestsButton(workspace: model, scope: scope, pasteboard: workspacePasteboard)
+                    .id(scope)
             }
             Button {
                 if showingFiles.remove(thread.id) != nil || browserIsVisible {
