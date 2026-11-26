@@ -23,7 +23,7 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
-To start from an existing Git repository, choose **Add Project → Git URL**, enter its URL and choose a new destination folder. **Clone** opens the resulting checkout and its draft.
+To start from an existing Git repository, choose **Add Project → Git URL** and enter its URL. Choose an empty folder or a new path. **Clone** creates any missing parent folders and opens the checkout. Cloning into an empty folder already registered as a project keeps its conversations.
 
 During a turn, choose **Queue** or press ⌘Return to send a follow-up after Pi finishes. **Steer** sends an instruction into the current run. A queued row’s menu lets you edit, reorder, or remove it. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
 
@@ -33,7 +33,7 @@ Choose **Fork from this response** on a completed reply to start a separate conv
 
 Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
 
-Choose a hit under **In messages** to open the conversation at that message. The Find field keeps the search, and the arrows move to other matches in that conversation.
+Choose a hit under **In messages** to open the conversation at that message. Press ⌘F to search the current thread. Return and ⇧Return move between matching messages on its active Pi branch. Escape returns to the composer. Press ⌘⇧F to search the sidebar.
 
 If a project folder moves, use **Relink Folder** in its context menu to point the project at the new path and retain its conversations.
 
@@ -43,11 +43,17 @@ Unsent composer text stays with its thread when you switch threads or quit. If s
 
 Pi can read files with models that support tools. Choose **Supervised** to approve or decline individual shell and edit requests. **Shell and edits** enables those tools for the project. They use the permissions of your macOS user.
 
+A local model with tools enabled can ask a question during its turn. Select the options or type an answer, use **Next** and **Previous** to review the pages, then select **Submit**. **Dismiss** sends the model a declined response. **Stop** ends the turn. A supervised write requested after an answer still needs its own approval.
+
 The macOS app keeps API keys in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/Pi Workspace`. **Model Settings** removes or replaces a saved key.
 
 In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
 
 Open **Settings** from the sidebar or press ⌘, to search the available controls. For example, search for **Model ID** and press Return to edit the selected project's model, or search for **Open source licenses** to read the packaged notices.
+
+**Settings → General → Add project starts in** sets the initial folder for adding or cloning a project. **Help → Show Welcome** or **Settings → About → Welcome page** reopens onboarding. Closing it returns to the selected draft.
+
+**Settings → Usage** shows token counts and USD costs recorded in local Pi conversation histories. Select a period, filter by project or provider, and select a model to inspect input, output and cache tokens. **Refresh usage** includes newly recorded replies. A total marked **+ unreported** includes only messages with a recorded value.
 
 If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
 
@@ -55,13 +61,17 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 
 ## Work in a Git checkout
 
-1. In a draft, use the workspace control below the composer. Choose the project folder, an existing worktree, or a new worktree and its base branch.
+1. In a draft, use the workspace control below the composer or press ⌘⇧X. Choose the project folder, an existing worktree, or a new worktree and its base branch. **Settings → Worktrees → Worktree location** sets the storage folder for new checkouts. An existing checkout or a checkout awaiting Retry keeps its saved path.
 2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch. Before Pi starts the turn, **Cancel** returns the text to the draft. **Work locally** sends it from the project folder.
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
-4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
-5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Use **New Terminal** for another tab or split a tab horizontally or vertically. Press ⌘⇧[ or ⌘⇧] to move between panes. Hiding the drawer keeps its shells running. Confirm **Close Terminal** to end the selected shell.
+4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds.
+5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Use **New Terminal** for another tab or split a tab horizontally or vertically. Press ⌘⇧[ or ⌘⇧] to move between panes. Drag the top edge to adjust the drawer height for that thread. Hiding the drawer keeps its height and shells. Confirm **Close Terminal** to end the selected shell.
+
+Use the branch button or ⌘⇧G to search local and cached remote refs. **New Branch** creates a branch at the base you choose. Selecting a branch that already has a linked checkout moves the thread to that checkout.
 
 Open **Files** to search or browse the selected checkout. Small text files save after a short pause in typing. **Save** writes immediately. A read-only file keeps pending edits until write access returns. If another program replaces or edits the file, copy your pending text or choose **Discard Edits** to reload the disk version.
+
+In Markdown files, select **Show rendered markdown** to read headings and links, then **Show markdown source** to edit. CSV and TSV files open as tables. **Show source** opens the original text, including quoting and line breaks.
 
 If a worktree moves while an edit is pending, select its new path in the draft's workspace menu. The editor reconnects the draft to the same checkout. **Folder Actions → Unsaved Files** also lets you copy or discard pending text from an old location.
 
@@ -74,6 +84,8 @@ Open **Browser** in the thread header. Enter a URL, a host such as `localhost:51
 Choose **Open Mini Player** to keep the page over the conversation. Drag the arrow handle to move it or drag an edge to resize it. **Open in Browser Panel** returns the page to its tab. **Open in Floating Window** moves it to a separate macOS window.
 
 Open **Pull Requests** in the header and choose **Pull Requests** or **Issues** for the selected checkout. Search by text or a filter such as `label:bug`, choose a state, and use **Load more** for the next page. Choose a PR to read its description, branches, and checks, or an Issue to read its author, labels, and body.
+
+In the PR list, **Author** and **Labels** let you search the repository's available choices. Choose **Anyone** or **Clear labels** to remove that filter while keeping the others.
 
 In **Linked items**, choose **Link pull request** and enter a PR number or URL for the checkout's GitHub repository. The link stays with the selected thread across relaunch. Its menu can copy the URL or number, open GitHub, or unlink the PR from that thread.
 
@@ -94,9 +106,14 @@ swift test -c release
 swiftc -module-cache-path .build/ax-cache scripts/ax.swift -o .build/ax
 node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model
 node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model --worktree
+node scripts/verify-app.mjs "$PWD/.build/ax" --usage-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --workspace-controls-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --conversation-controls-only
+node scripts/verify-file-drops.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
+node scripts/verify-attachments.mjs --release-suite "dist/Pi Workspace.app"
 ```
 
-The verifier writes its report under `dist/verification-*/logs`. It uses an isolated workspace and a disposable Keychain item. The worktree run also checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
+The app verifier writes its report under `dist/verification-*/logs`. Model turns use an isolated workspace and a disposable Keychain item. The worktree run checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. The file-drop verifier moves the pointer across a disposable source window and the app. The release suite supplies loopback providers for both the attachment and question tests. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
 
 To test which network connections the packaged Pi helper attempts during startup, idle time, an explicit local turn, and shutdown, run `node scripts/verify-default-telemetry.mjs`. It checks the Node network and child-process APIs against a loopback receiver and applies a macOS process sandbox. Native app and WebKit traffic require separate observation.
 

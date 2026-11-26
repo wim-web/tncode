@@ -1,7 +1,7 @@
 stage	id	title	audit_status	result	evidence_ref
 01	CFG-038	Project overview	部分	未評価	-
-01	CFG-122	Add project starts in	未対応	未評価	-
-01	CFG-135	Welcome page	未対応	未評価	-
+01	CFG-122	Add project starts in	未対応	合格	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs, ProjectSourcesTests / General で開始フォルダーを保存。配布版の Local folder 欄はそのパスを表示し、Browse はそこにだけある子フォルダーを選択できた。Git URL にも同じ親を使い、Reset で既定へ復帰。
+01	CFG-135	Welcome page	未対応	合格	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs / Settings 検索で Welcome page を選び、About の実ボタンから案内を表示。閉じると同じスレッドと下書き本文が戻り、入力欄にフォーカスが戻った。
 01	CHAT-002	下書きを開く	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 別プロジェクトの未送信下書きに戻り、コンポーザーに同じ入力を確認
 01	CHAT-003	下書きを破棄	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 下書きメニューから破棄し、対応する UUID が保存一覧から消え、他プロジェクトの未送信本文が残ることを確認
 01	CHAT-004	下書きのパスをコピー	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Copy → Path を通常フォルダー・作成予定・既存 worktree の下書きで実行し、macOS の検証専用ペーストボード上の各実パスと照合
@@ -21,11 +21,11 @@ stage	id	title	audit_status	result	evidence_ref
 01	CHAT-285	下書きをプロジェクトなしへ切り替える	未対応	未評価	-
 01	CHAT-286	下書き見出しからプロジェクト追加へ進む	部分	未評価	-
 01	DEV-001	フォルダーをプロジェクトに登録する	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 取消・無効パスでは0件。通常パス、Browse、シンボリックリンクは同一登録
-01	DEV-002	ローカルフォルダーをドロップして登録する	未対応	未評価	-
+01	DEV-002	ローカルフォルダーをドロップして登録する	未対応	合格	e9f968e PiWorkspace/scripts/verify-file-drops.mjs / macOS の NSDraggingSession から未登録フォルダーをサイドバーへ落とし、専用プロジェクトの実体パス、選択状態と新しいスレッドを確認。元の2件の添付下書きも保持。
 01	DEV-262	名前からGitプロジェクトを新規作成する	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 占有済みの名前を拒否。空いている名前で親フォルダー内に Git リポジトリと下書きを作成
 01	NAV-002	チャットの共通レイアウト	同等候補	未評価	-
 01	NAV-003	ホームから最近のプロジェクトの下書きへ移動	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数の登録先で、再起動直後に最近活動したプロジェクトの新規下書き、その後に元の履歴を選択
-01	NAV-004	ウェルカムを開く	部分	未評価	-
+01	NAV-004	ウェルカムを開く	部分	未検証	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs / ネイティブ Help と Settings から Welcome を表示。フォルダー追加の取消と Close で元の下書きに戻った。URL の /welcome と未認証環境の /pair 遷移は未実装。
 01	NAV-014	下書きスレッドを開く	部分	未評価	-
 01	NAV-131	新規スレッドを始める	部分	未評価	-
 01	NAV-132	ローカル新規スレッドを始める	部分	未評価	-
@@ -44,7 +44,7 @@ stage	id	title	audit_status	result	evidence_ref
 01	UI-1480	チャット・スレッド・IndexDraftLanding（_chat.index）	部分	未評価	-
 01	UI-1481	チャット・スレッド・DraftStartError（_chat.index）	未対応	未評価	-
 01	UI-1488	認証・初期設定・WelcomeRouteView（welcome）（操作候補）	未対応	未評価	-
-01	UI-149	プロジェクト・スクリプト・NoProjectsHero	部分	未評価	-
+01	UI-149	プロジェクト・スクリプト・NoProjectsHero	部分	合格	ca81b7b NoProjectsHero.tsx:42,47–50、97e53bd PiWorkspace/scripts/verify-app.mjs / 空ホームの Add project から登録・Browse を確認。Start without a project は専用フォルダーに下書きを作り、Discard 後に空ホームと登録0件へ戻った。
 01	UI-154	プロジェクト・スクリプト・ProjectFavicon（操作候補）	構成差	未評価	-
 01	UI-155	プロジェクト・スクリプト・AutomaticProjectFavicon（操作候補）	構成差	未評価	-
 01	UI-156	プロジェクト・スクリプト・ProjectFaviconImage（操作候補）	構成差	未評価	-
@@ -53,7 +53,7 @@ stage	id	title	audit_status	result	evidence_ref
 01	UI-212	アプリ共通・WorkspacePageHeader（操作候補）	構成差	未評価	-
 01	UI-320	チャット・スレッド・DraftHeroHeadline	部分	未評価	-
 01	UI-689	認証・初期設定・FirstRunRecovery	未対応	未評価	-
-01	UI-690	認証・初期設定・WelcomePage	部分	未評価	-
+01	UI-690	認証・初期設定・WelcomePage	部分	未検証	ca81b7b onboarding/WelcomePage.tsx:295–322 (UI-E2432 UI-E2433)、PiWorkspace/scripts/verify-app.mjs / 初回 Start と Start without an agent から進み、登録と初回応答を確認。インポート選択が残る。
 01	UI-691	認証・初期設定・TelemetryNotice	未対応	未評価	-
 01	UI-692	認証・初期設定・AgentsSection	部分	未評価	-
 01	UI-693	認証・初期設定・ProjectsSection	部分	未評価	-
@@ -117,7 +117,7 @@ stage	id	title	audit_status	result	evidence_ref
 03	CFG-032	Keep worktrees with local changes	未対応	未評価	-
 03	CFG-033	Delete now	未対応	未評価	-
 03	CFG-034	Worktree cleanup	未対応	未評価	-
-03	CFG-035	Worktree location	未対応	未評価	-
+03	CFG-035	Worktree location	未対応	合格	1c1e901,97e53bd PiWorkspace/scripts/verify-app.mjs, WorktreeDirectoryTests / Settings → Worktrees でローカル環境の保存先を指定。占有した保存先での失敗・再起動でも設定と送信文を保持した。作成済み worktree の編集は Reset 後もその場所で読めた。
 03	CFG-079	Fast worktree checkout	未対応	未評価	-
 03	CFG-119	New threads	未対応	未評価	-
 03	CFG-120	Submodules	未対応	未評価	-
@@ -133,7 +133,7 @@ stage	id	title	audit_status	result	evidence_ref
 03	CFG-256	Approve worktree layout command	未対応	未評価	-
 03	CHAT-055	同じブランチ・作業領域に下書きを作成	部分	未評価	-
 03	CHAT-214	現在のチェックアウトを作業領域に指定	同等候補	未評価	-
-03	CHAT-215	新規 worktree を指定	同等候補	未評価	-
+03	CHAT-215	新規 worktree を指定	同等候補	未検証	84e132a, 89f8cf8 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 配布版の New worktree から初回送信して独立した checkout に Pi を起動。元の HEAD・編集、再起動後の作業先、失敗時の Retry と Work locally を照合。独自レイアウトの承認は未実装。
 03	CHAT-216	以前の worktree を再使用	部分	未評価	-
 03	CHAT-217	ベースブランチ・参照を選ぶ	部分	未評価	-
 03	CHAT-218	リモート参照を worktree の起点にする	未対応	未評価	-
@@ -141,8 +141,8 @@ stage	id	title	audit_status	result	evidence_ref
 03	CHAT-222	worktree 準備の進行・失敗を確認	部分	未評価	-
 03	CHAT-223	worktree セットアップの端末を開く	未対応	未評価	-
 03	CHAT-224	worktree 準備を取り消す	未対応	未評価	-
-03	CHAT-225	worktree 準備をやめローカルで送る	部分	未評価	-
-03	CHAT-226	失敗した worktree 準備を再試行	部分	未評価	-
+03	CHAT-225	worktree 準備をやめローカルで送る	部分	合格	84e132a, 89f8cf8 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree, WorktreeLaunchTests / 実機でブランチ衝突後に Work locally を選択し、元のプロンプト1件がプロジェクト直下に到着。既存 checkout と編集も照合。Git 処理中の取消と遅延通知は一時リポジトリの試験で確認。
+03	CHAT-226	失敗した worktree 準備を再試行	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 枝名を直しても保存先の障害で再度失敗し、要求は0。障害除去後に再起動し同じスレッドの Retry を押すと1つの checkout と Pi の最初の往復だけが作成された。
 03	CHAT-227	スレッドの記録ブランチを復元	部分	未評価	-
 03	DEV-003	ドラフトをローカル作業にする	同等候補	未評価	-
 03	DEV-004	ドラフトで新規worktreeを選ぶ	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 worktree の選択だけでは checkout は1件。保存した base は main
@@ -176,16 +176,16 @@ stage	id	title	audit_status	result	evidence_ref
 03	DEV-032	処理が落ち着いたworktreeを期限で清掃する	未対応	未評価	-
 03	DEV-033	既定branchを超えるコミットのないworktreeを清掃する	未対応	未評価	-
 03	DEV-034	ローカル変更のあるworktreeを保持する方針を変更する	未対応	未評価	-
-03	DEV-035	worktreeの保存先を設定・リセットする	部分	未評価	-
+03	DEV-035	worktreeの保存先を設定・リセットする	部分	合格	1c1e901,97e53bd PiWorkspace/scripts/verify-app.mjs, WorktreeDirectoryTests / 配布版でカスタム保存先の障害を除去して Retry。設定を先に戻しても保存済みの場所で1回だけ送信され、次のスレッドは既定の workspace/worktrees 配下で1回実行。git worktree list と各 Pi cwd、既存編集を照合。
 03	DEV-036	worktreeの既定起点をremoteにする	未対応	未評価	-
 03	DEV-037	現在のスレッドをエージェントからworktreeへ移す	未対応	未評価	-
 03	DEV-038	スレッドに紐付くworktreeの状態を調べる	構成差	未評価	-
 03	DEV-040	タスクフォルダーに別repoのworktreeを追加する	未対応	未評価	-
 03	DEV-041	ローカルのrepo pinを外す	未対応	未評価	-
-03	DEV-043	参照を検索して既存branchへ切り替える	部分	未評価	-
-03	DEV-044	別worktreeにcheckout済みのbranchへ移る	部分	未評価	-
-03	DEV-045	新規branchを作り切り替える	部分	未評価	-
-03	DEV-046	branch名をクリップボードにコピーする	未対応	未評価	-
+03	DEV-043	参照を検索して既存branchへ切り替える	部分	合格	d7a2ed9,97e53bd PiWorkspace/scripts/verify-workspace-controls.mjs, BranchPickerTests / 配布版で参照の0件・一致を確認。競合時は HEAD・index・編集を保持。妨げとなる試験変更を戻した後 alternate と main を往復し Git の現在の branch と表示を照合。取得済みリモートからの追跡は実 Git の個別試験で確認。
+03	DEV-044	別worktreeにcheckout済みのbranchへ移る	部分	合格	d7a2ed9 PiWorkspace/scripts/verify-workspace-controls.mjs, BranchPickerTests / 既に別 worktree にあるブランチを選ぶと元の下書き UUID と本文のままそのパスに切替。両方の branch と元 index を照合。実行中の切替拒否と checkout 重複防止も一時 Git 試験で確認。
+03	DEV-045	新規branchを作り切り替える	部分	合格	d7a2ed9 PiWorkspace/scripts/verify-workspace-controls.mjs, BranchPickerTests / 配布版で異なる基点 alternate を選んで fixture/selected-base を作成。新しい HEAD とファイル内容が alternate と一致し、元の編集のステージ状態を保持。無効名はモデル試験でも拒否。
+03	DEV-046	branch名をクリップボードにコピーする	未対応	未検証	96cced3,97e53bd PiWorkspace/scripts/verify-workspace-controls.mjs / 現在の main と検索候補 alternate のそれぞれを実際に右クリックして Copy branch name。専用ペーストボード上のプレーンテキストが各名前と一致し HEAD は main のまま。ペーストボード書込失敗時の表示は未検証。
 03	DEV-047	スレッドに記録されたbranchへ戻す	部分	未評価	-
 03	DEV-263	worktree branchの命名方式を選ぶ	部分	未評価	-
 03	DEV-264	プロジェクトの独自worktreeレイアウトを使用する	未対応	未評価	-
@@ -197,22 +197,22 @@ stage	id	title	audit_status	result	evidence_ref
 03	DEV-343	submodule初期化の不成功を警告表示する	未対応	未評価	-
 03	DEV-344	前回に使ったworktreeがない場合に候補を省く	部分	未評価	-
 03	NAV-035	Worktrees	未対応	未評価	-
-03	NAV-128	ワークスペースの選択を開く	部分	未評価	-
-03	NAV-129	ブランチ選択を開く	部分	未評価	-
+03	NAV-128	ワークスペースの選択を開く	部分	合格	8807ad1,d7a2ed9 PiWorkspace/scripts/verify-workspace-controls.mjs / 署名済みアプリの composer から ⌘⇧X で作業先ピッカーが開き、Use Project Folder を選択。端末フォーカス中はピッカーが開かずシェルがフォーカスを保持。
+03	NAV-129	ブランチ選択を開く	部分	合格	d7a2ed9 PiWorkspace/scripts/verify-workspace-controls.mjs / 下書きで ⌘⇧G を押すとブランチの検索入力にフォーカス。存在しない名前・既存参照を検索した。端末フォーカス中は開かない。
 03	NAV-130	直前のワークツリーを選ぶ	未対応	未評価	-
 03	NAV-196	現ブランチで新規スレッドを開く	部分	未評価	-
 03	RPC-038	作業フォルダーの検索とレイアウト	部分	未評価	-
 03	RPC-043	VCS ブランチと参照の操作	部分	未評価	-
 03	RPC-044	作業ツリーの作成・引き渡し・削除	部分	未評価	-
 03	SRC-S55	Worktree の作成、ブランチ、クリーンアップを設定する	部分	未評価	-
-03	UI-026	ブランチ・ワークツリー・Git・BranchPicker	部分	未評価	-
-03	UI-027	ブランチ・ワークツリー・Git・BranchPickerRefItem	部分	未評価	-
+03	UI-026	ブランチ・ワークツリー・Git・BranchPicker	部分	未検証	ca81b7b BranchPicker.tsx:109–132,149,175–180 (UI-E0098 UI-E0101)、PiWorkspace/scripts/verify-workspace-controls.mjs / ⌘⇧G から参照検索を開き、衝突時に HEAD・index・編集を保持。ページング、IME、リモート起点の切替が残る。
+03	UI-027	ブランチ・ワークツリー・Git・BranchPickerRefItem	部分	未検証	ca81b7b BranchPicker.tsx:233–240、BranchToolbarBranchSelector.tsx:804–824、96cced3,97e53bd PiWorkspace/scripts/verify-workspace-controls.mjs / 候補行の右クリックで別 branch 名をコピー。使用中の候補を選ぶと既存 worktree に同じ下書きで移った。無効化した候補行の表示が残る。
 03	UI-028	ブランチ・ワークツリー・Git・showWorkspaceContextMenu	未対応	未評価	-
 03	UI-029	ブランチ・ワークツリー・Git・RunContextSelector	部分	未評価	-
 03	UI-030	ブランチ・ワークツリー・Git・BranchToolbar（操作候補）	部分	未評価	-
 03	UI-031	ブランチ・ワークツリー・Git・BranchToolbarBranchSelector › handleBranchContextMenu	未対応	未評価	-
-03	UI-032	ブランチ・ワークツリー・Git・BranchToolbarBranchSelector	部分	未評価	-
-03	UI-033	ブランチ・ワークツリー・Git・BranchToolbarEnvModeSelector	部分	未評価	-
+03	UI-032	ブランチ・ワークツリー・Git・BranchToolbarBranchSelector	部分	未検証	ca81b7b BranchToolbarBranchSelector.tsx:784–789,804–841 (UI-E0129 UI-E0130 UI-E0131)、PiWorkspace/scripts/verify-workspace-controls.mjs / 基点 alternate からの新規ブランチと、使用中の別 checkout への遷移を確認。リモート追跡・PR レビューの入口は未検証。
+03	UI-033	ブランチ・ワークツリー・Git・BranchToolbarEnvModeSelector	部分	未検証	ca81b7b BranchToolbarEnvModeSelector.tsx:111–118,129–154,163–180 (UI-E0141 UI-E0143 UI-E0145 UI-E0147)、PiWorkspace/scripts/verify-workspace-controls.mjs / ⌘⇧X で下書きの作業先候補を開き、端末フォーカス中は操作を消費しなかった。直前 worktree の専用候補と固定状態が残る。
 03	UI-1030	設定・CheckoutRepositories	未対応	未評価	-
 03	UI-1031	設定・AddTrackedFolderDialog	未対応	未評価	-
 03	UI-1034	設定・CheckoutWorktreeLayout	未対応	未評価	-
@@ -253,7 +253,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-115	Auto へ変更	構成差	未評価	-
 04	CHAT-116	Full access へ変更	構成差	未評価	-
 04	CHAT-117	ファイル選択で添付	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-attachment-ui.mjs / 配布版の OS パネルで同名 PNG 2個と UTF-8 テキストを選択。選び残した画像の全バイトと本文全文をループバックで照合し、送信済み名前2件も確認。
-04	CHAT-118	ドラッグ・貼り付けで画像やファイルを添付	未対応	未検証	083e303 PiWorkspace/Tests/PiWorkspaceTests/ComposerAttachmentTests.swift / 転送表現と対象行・編集中のキューの所有権は検証。Finder からの実ドロップと macOS の貼り付け操作が残る。
+04	CHAT-118	ドラッグ・貼り付けで画像やファイルを添付	未対応	未検証	c298281 PiWorkspace/scripts/verify-file-drops.mjs, ComposerFieldDropTests / 署名済みアプリの入力欄に red.png、別スレッド行に blue.png を実ドラッグ。別々の添付 ID・元の名前・PNG バイト・下書き本文を照合し、フォルダーのドロップ後にも保持。共有クリップボードの実キー貼付けと大きい画像の圧縮経路は未検証。
 04	CHAT-119	巨大な貼り付けを添付に変換	未対応	未評価	-
 04	CHAT-120	ローカルフォルダを文脈として追加	未対応	未評価	-
 04	CHAT-121	アップロード失敗を再試行	未対応	未評価	-
@@ -283,10 +283,10 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-163	承認要求をキャンセル	未対応	未評価	-
 04	CHAT-164	プロバイダー独自の承認に応答	未対応	未評価	-
 04	CHAT-165	入力を送って承認を拒否・方向転換	未対応	未評価	-
-04	CHAT-166	エージェントの質問に回答	未対応	未評価	-
-04	CHAT-167	複数質問を前後に移動	未対応	未評価	-
-04	CHAT-168	質問本文の表示を切り替え	未対応	未評価	-
-04	CHAT-169	質問を回答せず閉じる	未対応	未評価	-
+04	CHAT-166	エージェントの質問に回答	未対応	合格	e182f0e,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs, AgentQuestionTests / ローカル Pi の2問で North・West と自由入力 Night shift を Submit。実際のツール応答の値を照合し、続く書込要求は別途承認するまでファイルを作らなかった。無効な回答の修正・再送も SDK 試験で確認。
+04	CHAT-167	複数質問を前後に移動	未対応	合格	e182f0e,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 選択のない1問目では Next が無効。2件選択して2問目に入力し、Previous と Next で往復して選択と自由入力を保持。
+04	CHAT-168	質問本文の表示を切り替え	未対応	合格	e182f0e,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 選択後に質問を折りたたむと本文が消え、展開すると同じ質問から先へ進めた。最終ツール応答に元の2選択が残った。
+04	CHAT-169	質問を回答せず閉じる	未対応	合格	e182f0e,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs, Sidecar/agent-questions.test.mjs / 空の質問を Dismiss すると Pi に declined が一度届いた。別の質問の Stop・再起動では保留中の書込は発生せず、同じスレッドは一度だけ継続。
 04	CHAT-177	履歴のユーザーメッセージを全表示	部分	未評価	-
 04	CHAT-178	メッセージ本文をコピー	部分	未評価	-
 04	CHAT-179	プロンプトリンクをコピー	未対応	未評価	-
@@ -647,10 +647,10 @@ stage	id	title	audit_status	result	evidence_ref
 05	CHAT-060	アーカイブ済みプロジェクトを開き直す	部分	未評価	-
 05	CHAT-070	プロンプトリンクで下書きを開く	未対応	未評価	-
 05	CHAT-071	T3 Code の問題を調査する下書き	未対応	未評価	-
-05	CHAT-155	スレッド全体から語句を検索	未対応	未評価	-
-05	CHAT-156	スレッド内の一致箇所を前後へ移動	未対応	未評価	-
-05	CHAT-157	スレッド内検索を再試行	未対応	未評価	-
-05	CHAT-158	スレッド内検索を閉じる	未対応	未評価	-
+05	CHAT-155	スレッド全体から語句を検索	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 配布版で有効な Pi 履歴の30往復を隔てた2発言に同じ語句を照合。大文字小文字の異なる検索で2件、破棄した分岐の語句は0件。
+05	CHAT-156	スレッド内の一致箇所を前後へ移動	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs, ThreadFindTests / 以前の利用者発言と後のアシスタント応答を Pi ID で確認。Return と Next・Previous で 1 of 2 と 2 of 2 を循環。
+05	CHAT-157	スレッド内検索を再試行	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 隔離したスレッドに2個目の履歴ファイルを置くと Search failed。重複を除き Retry を押すと同じ語句で 1 of 2 に復帰。
+05	CHAT-158	スレッド内検索を閉じる	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 一致がある状態で Escape で閉じ、スレッドメニューから開き直して同じ語句を再検索。Close ボタンでも元の入力フォーカスと未送信の本文に戻った。
 05	CHAT-159	ミニマップで指定ターンへ移動	未対応	未評価	-
 05	CHAT-228	論理プロジェクトの名前を変更	部分	未評価	-
 05	CHAT-229	scratch プロジェクト名を既定へ戻す	未対応	未評価	-
@@ -721,7 +721,7 @@ stage	id	title	audit_status	result	evidence_ref
 05	NAV-087	ルート履歴を戻る	未対応	未評価	-
 05	NAV-088	ルート履歴を進む	未対応	未評価	-
 05	NAV-111	コマンドパレットを開閉	未対応	合格	e583877, e52add2 PiWorkspace/scripts/verify-command-palette.mjs / 作業画面で ⌘K を送ると検索欄がフォーカスされ、再入力で閉じた。端末の実行時は端末のフォーカスを維持。
-05	NAV-134	スレッド内を検索する	未対応	未評価	-
+05	NAV-134	スレッド内を検索する	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / 実際の ⌘F で選択中スレッドの Find 欄にフォーカスし、その履歴の結果と一致数を照合。
 05	NAV-139	前のスレッドへ移動	未対応	未評価	-
 05	NAV-140	次のスレッドへ移動	未対応	未評価	-
 05	NAV-141	スレッド参照をコピー	未対応	未評価	-
@@ -767,7 +767,7 @@ stage	id	title	audit_status	result	evidence_ref
 05	NAV-220	本体ページから外部リンクを開く	未判定	未評価	-
 05	NAV-225	レンダラー定義のメニューをネイティブで選ぶ	構成差	未評価	-
 05	NAV-230	Escape でスレッドの複数選択を解除	未対応	未評価	-
-05	NAV-231	Escape でスレッド内検索を閉じる	未対応	未評価	-
+05	NAV-231	Escape でスレッド内検索を閉じる	未対応	合格	d327e49,97e53bd PiWorkspace/scripts/verify-conversation-controls.mjs / Find が一致を示す状態で実際の Escape を押すと検索欄が消え、同じスレッドの入力欄にフォーカスが戻り下書きも保持。
 05	NAV-233	ショートカットを追加または編集	未対応	未評価	-
 05	NAV-234	カスタムのショートカットを削除	未対応	未評価	-
 05	NAV-235	既定のショートカットを無効化	未対応	未評価	-
@@ -967,9 +967,9 @@ stage	id	title	audit_status	result	evidence_ref
 06	DEV-140	書き込み権限のないファイルを表示する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 書込禁止で編集中の本文を保ち、パネルを閉じて戻しても保持。権限復帰後に自動保存。 9874e58, 89f8cf8 / worktree を移した後も別 checkout から保留本文をコピーでき、同じ実ファイルの権限を戻すと保存。置換時は明示破棄まで原本を保護。
 06	DEV-141	テキスト内容をコピーする	部分	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 編集後の全文をコピーし、隔離した macOS ペーストボードの内容と改行を照合。
 06	DEV-142	ファイル内容の横幅折り返しを切り替える	未対応	未検証	a4899a0 PiWorkspace/Sources/PiWorkspace/WorkspaceFilesView.swift / 操作を実装。長い行を用いた折り返し切替の表示寸法は配布アプリで未検証。
-06	DEV-143	Markdownをレンダリング表示へ切り替える	未対応	未評価	-
+06	DEV-143	Markdownをレンダリング表示へ切り替える	未対応	合格	e173cf5 PiWorkspace/scripts/verify-workspace-files.mjs, WorkspaceFilesTests / 配布版で見出しとリンクを含む Markdown を編集して表示切替。記法が消え表示文字列と追記を保持し、開き直すと表示の好みが復元された。ソースに戻すと保存済みの全文と一致。
 06	DEV-144	Mermaidの図とソースを切り替える	未対応	未評価	-
-06	DEV-145	CSVなどを表として表示する	未対応	未評価	-
+06	DEV-145	CSVなどを表として表示する	未対応	合格	e173cf5 PiWorkspace/scripts/verify-workspace-files.mjs, WorkspaceFilesTests / 配布版の表で引用したコンマ・日本語と複数行を別々の CSV セルに表示。ソースでは CRLF を保持。TSV への切替に好みを引き継ぎ、表に戻すと引用されたタブが単一のセルに残った。
 06	DEV-146	HTMLをファイルパネル内で表示する	未対応	未評価	-
 06	DEV-148	ファイルプレビューからエクスプローラーを開閉する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / プレビューから Explorer を閉じて開き、検索欄とツリーの再表示を確認。
 06	DEV-149	PDFをプレビューする	未対応	合格	608c930, 00a46f5 PiWorkspace/scripts/verify-media-files.mjs, WorkspaceFilesTests / 異なる本文の2ページを持つ PDF で前後移動、倍率・幅合わせ、2ページ目の文字列検索を配布版で確認。壊れたファイルを置換して Retry した後、保存ダイアログの取消で元の PDF 全バイトが一致。
@@ -986,7 +986,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	DEV-160	端末を垂直方向に分割する	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs, ThreadTerminalTests / 垂直分割で同一グループの3シェルが上中下に並び、矩形と各 PID を照合。
 06	DEV-161	前後の端末にフォーカスを移す	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs / ⌘⇧[ と ⌘⇧] で選択した PID が切り替わり、3文字の入力は対象 PTY だけに現れた。
 06	DEV-162	端末を閉じる	部分	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs / Close の取消で4個の PID は生存。順次確定して各回で指定した PID だけが消え、最後に drawer が閉じた。
-06	DEV-163	端末drawerの高さを変更する	未対応	未評価	-
+06	DEV-163	端末drawerの高さを変更する	未対応	合格	56f166a, ec9b912 PiWorkspace/scripts/verify-terminal-panes.mjs, ThreadTerminalTests / 配布版で上端をドラッグし280→360→280ポイントを数値とペイン高で照合。隠す・開く操作で360と同じ PID を維持。小窓での上下限と復元はネイティブ試験で確認。
 06	DEV-164	端末の選択内容をチャットに追加する	未対応	未評価	-
 06	DEV-165	端末テキストをコピーする	部分	未評価	-
 06	DEV-166	クリップボードを端末へ貼る	部分	未評価	-
@@ -1094,7 +1094,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-206	ターミナル・TerminalActionButton	構成差	合格	原本 ca81b7b ThreadTerminalDrawer.tsx:1295,1886,1899,1908 / Swift 76041dc ThreadTerminalDrawer.toolbarButton / PiWorkspace/scripts/verify-terminal-panes.mjs / New と横・縦の各分割ボタンで別 PID にフォーカスし、Close の確定で選択 PID だけが終了。対象は有効なツールバーボタンから各操作への引き渡し
 06	UI-207	ターミナル・TerminalSplitPanes	未対応	未検証	原本 ca81b7b ThreadTerminalDrawer.tsx:1350–1390 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / 横2面の同じ Y と左右の境界、縦3面の先頭2面の X と上中下の Y を AX で比較。前後キーで選んだ PID だけに fff を入力。非選択面のポインター押下とシェルからの自発終了は未検証
 06	UI-208	ターミナル・TerminalSidebarGroup	未対応	未検証	原本 ca81b7b ThreadTerminalDrawer.tsx:1449,1481,1492 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / タブ1から2へ戻ると各グループ先頭の元 PID に再フォーカス。グループ内の各端末行を直接選択する操作と行単位の閉じるボタンは未検証
-06	UI-209	ターミナル・ThreadTerminalDrawer	部分	要修正	原本 ca81b7b ThreadTerminalDrawer.tsx:1706–1725,1823 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / 新規・横分割・縦分割で異なる4 PID。Close 取消は全 PID が生存し、確定ごとに指定 PID だけが終了。drawer の高さは固定で、原本のドラッグ調整は未実装
+06	UI-209	ターミナル・ThreadTerminalDrawer	部分	合格	原本 ca81b7b ThreadTerminalDrawer.tsx:1706–1725,1823 / Swift 56f166a ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / 実ポインターで高さを80ポイント動かし、再表示して同じ値。2タブで計5個のシェル、1グループ4分割時の両ボタン無効と1面を閉じた後の有効化を確認。
 06	UI-244	ターミナル・ChatTerminalDrawers（操作候補）	部分	未評価	-
 06	UI-246	チャット・スレッド・CommandOutputPanel	未対応	未評価	-
 06	UI-372	チャット・スレッド・PanelLayoutControls	部分	未評価	-
@@ -1366,9 +1366,9 @@ stage	id	title	audit_status	result	evidence_ref
 07	HOST-046	ACP の既存セッション一覧・インポート・削除	未対応	未評価	-
 07	HOST-047	ACP のエージェント固有プロバイダーを設定	未対応	未評価	-
 07	HOST-048	非対応プロバイダーバージョンの診断	未対応	未評価	-
-07	HOST-133	モデル使用量の期間と指標を選択	未対応	未評価	-
-07	HOST-134	使用量の環境・プロバイダーを絞り込む	未対応	未評価	-
-07	HOST-135	使用量を手動更新・モデル詳細を確認	未対応	未評価	-
+07	HOST-133	モデル使用量の期間と指標を選択	未対応	未検証	80abe8d, 5f7a08c PiWorkspace/scripts/verify-usage-ui.mjs, verify-app.mjs --usage-only / 配布版で24時間・7日・30日・90日の既知トークン310・350・480・720と費用を照合。未報告値を表示し、7日・Cost が再起動後も復元。Limits は利用不可の表示までで、プロバイダーの利用枠表示は未実装。
+07	HOST-134	使用量の環境・プロバイダーを絞り込む	未対応	未検証	80abe8d PiWorkspace/scripts/verify-usage-ui.mjs / 配布版の同じ30日間でプロジェクト別に330・150、すべてで480既知トークン。local を外すと340、戻すと480。複数リモート環境の絞り込みと接続障害は未実装。
+07	HOST-135	使用量を手動更新・モデル詳細を確認	未対応	未検証	80abe8d, 5f7a08c, ac14b4a, 97e53bd PiWorkspace/scripts/verify-usage-ui.mjs, WorkspaceUsageTests / 同名モデルをプロバイダー別に表示。OpenAI の実測は入力125、出力55、キャッシュ読取15、書込5、保存費用USD 0.0037。日別表示に切替え、Refresh で30日合計480→503。保存済み fork の欠落で443と警告を表示し、戻して更新すると503に復帰。外部の価格表更新は未実装。
 07	HOST-136	モデル価格を上書き・別モデルへ対応付け	未対応	未評価	-
 07	HOST-137	プロバイダーの利用枠を表示・更新	未対応	未評価	-
 07	HOST-138	利用枠のリセットクレジットを使用	未対応	未評価	-
@@ -1489,9 +1489,9 @@ stage	id	title	audit_status	result	evidence_ref
 07	UI-1112	設定・DiffColorsSettingsRow	未対応	未評価	-
 07	UI-1113	設定・DiffsSettingsPanel	未対応	未評価	-
 07	UI-1114	設定・ScopedCompactIdleThreadsRow	未対応	未評価	-
-07	UI-1115	設定・ThreadsSettingsPanel	未対応	未評価	-
+07	UI-1115	設定・ThreadsSettingsPanel	未対応	未検証	ca81b7b settings/SettingsPanels.tsx:2001–2025 (UI-E4611 UI-E4612 UI-E4613)、PiWorkspace/scripts/verify-workspace-controls.mjs / 開始フォルダーの設定・Reset まで確認。Browse と Git URL の双方が設定を使用。保持期間・テンプレート・複数スコープは未検証。
 07	UI-1116	設定・MaintenanceSettingsPanel	未対応	未評価	-
-07	UI-1117	設定・AboutSettingsPanel	未対応	未評価	-
+07	UI-1117	設定・AboutSettingsPanel	未対応	未検証	ca81b7b settings/SettingsPanels.tsx:2572–2576,2602–2607 (UI-E4653 UI-E4654 UI-E4660)、PiWorkspace/scripts/verify-workspace-controls.mjs / About から Welcome を開いて同じ下書きに戻り、ライセンス検索で同梱 SwiftTerm の本文を照合。サポート・プライバシーの外部リンクが残る。
 07	UI-1118	設定・SettingsScopeNotice	未対応	未評価	-
 07	UI-1119	設定・SettingsScopeSentence（操作候補）	未対応	未評価	-
 07	UI-1120	設定・ScopeMenu	未対応	未評価	-
@@ -1556,12 +1556,12 @@ stage	id	title	audit_status	result	evidence_ref
 07	UI-1446	利用状況・SegmentTriggers	未対応	未評価	-
 07	UI-1447	利用状況・LegendRow	未対応	未評価	-
 07	UI-1448	利用状況・UsageLimitsPooled	未対応	未評価	-
-07	UI-1449	利用状況・UsageModelDialog	未対応	未評価	-
-07	UI-1450	利用状況・UsageModelDialogHost	未対応	未評価	-
-07	UI-1451	利用状況・UsagePage	未対応	未評価	-
-07	UI-1452	利用状況・UsageOverview	未対応	未評価	-
+07	UI-1449	利用状況・UsageModelDialog	未対応	未検証	ca81b7b usage/UsageModelDialog.tsx:54–78,129–132,145–154 (UI-E5566 UI-E5567 UI-E5570 UI-E5571)、PiWorkspace/scripts/verify-usage-ui.mjs / OpenAI の同名モデルに対し、入力125・出力55・キャッシュ読取15・書込5、USD 0.0037 を確認。価格入力・キャッシュヒット率・個別グラフ操作は未検証。
+07	UI-1450	利用状況・UsageModelDialogHost	未対応	未検証	ca81b7b usage/UsagePage.tsx:149–174,576 (UI-E5572)、PiWorkspace/scripts/verify-usage-ui.mjs / モデルを開いて内訳を照合し、Back で一覧の日別表示へ戻った。価格編集への遷移は未実装。
+07	UI-1451	利用状況・UsagePage	未対応	未検証	80abe8d,5f7a08c PiWorkspace/scripts/verify-usage-ui.mjs / 原本 UsagePage.tsx の期間と指標の選択を配布版で実行。4期間の合計と Cost の変更を確認。外部環境と利用上限の表示が残る。
+07	UI-1452	利用状況・UsageOverview	未対応	未検証	80abe8d,5f7a08c PiWorkspace/scripts/verify-usage-ui.mjs / UsageOverview の表示切替に対応する Model・Day を選択し、モデル別トークンと日別の値を確認。料金表の編集入口は未実装。
 07	UI-1453	利用状況・UsageEnvironmentFilter	未対応	未評価	-
-07	UI-1454	利用状況・UsageProviderFilter	未対応	未評価	-
+07	UI-1454	利用状況・UsageProviderFilter	未対応	合格	80abe8d PiWorkspace/scripts/verify-usage-ui.mjs / 原本 UsagePage.tsx の UsageProviderFilter に対応。local を非表示にすると全体480から340既知トークンへ、All providers で480へ戻った。
 07	UI-1455	利用状況・UsagePriceOverrides	未対応	未評価	-
 07	UI-1456	利用状況・UsageChartPlot	未対応	未評価	-
 07	UI-1457	利用状況・UsageShareBar（操作候補）	未対応	未評価	-
@@ -1702,8 +1702,8 @@ stage	id	title	audit_status	result	evidence_ref
 08	DEV-053	既定branchへの操作を確認してfeature branchへ振り替える	未対応	未評価	-
 08	DEV-054	リポジトリをforgeに公開する	未対応	未評価	-
 08	DEV-073	forge上のPR一覧を検索する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-github-pull-requests.swift --public-cli, verify-panels.mjs / cli/cli で PR 検索・ラベル・先頭50件と続く別の50件・詳細を照合。配布版の模擬 gh で同じ checkout の操作とページ取得失敗後の Retry を確認。
-08	DEV-074	PR一覧を著者で絞る	未対応	未評価	-
-08	DEV-075	PR一覧をラベルで絞る	未対応	要修正	f36b7f1 PiWorkspace/scripts/verify-github-pull-requests.swift --public-cli / 入力した label: 条件で実 GitHub を検索。原本の Labels 候補からの選択は未実装。
+08	DEV-074	PR一覧を著者で絞る	未対応	合格	2633138 PiWorkspace/scripts/verify-panels.mjs, verify-github-pull-requests.swift --public-cli / All の PR 3件から候補 fixture-author を選ぶと #42 だけに絞られ、Anyone で3件に戻った。実 GitHub の候補一覧と選択した著者に一致する PR も照合。
+08	DEV-075	PR一覧をラベルで絞る	未対応	合格	2633138 PiWorkspace/scripts/verify-panels.mjs, verify-github-pull-requests.swift --public-cli / Labels の候補で bug を検索・選択し、ラベルのない #41 が消え、Clear labels で復帰。実 GitHub のラベル検索と別リポジトリの同名候補も検証。
 08	DEV-076	branchからPRを作成する	未対応	未評価	-
 08	DEV-077	pushしてPRを開く	未対応	未評価	-
 08	DEV-078	コミット・push・PR作成を連続実行する	未対応	未評価	-
@@ -1757,7 +1757,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	DEV-126	レビューしたファイルをViewedにする	未対応	未評価	-
 08	DEV-127	PR差分をコミットで絞る	未対応	未評価	-
 08	DEV-128	PRコメントの種類と並び順を変更する	未対応	未評価	-
-08	DEV-261	Git URLからプロジェクトをクローンする	未対応	要修正	970d252, 194ec4e, 89f8cf8 PiWorkspace/scripts/verify-project-clone.mjs / 配布版の Git URL にローカル bare リポジトリの file URL を入力。占有済みを拒否し、新しい保存先の HEAD・ブランチ・origin・ファイルを照合。再起動で同じプロジェクトと下書き ID へ復帰。外部の認証付き通信は未検証。 原本 ca81b7b SourceControlRepositoryService.ts:258–290 は空の既存保存先と欠けた親階層も扱う。これらの対応待ち。
+08	DEV-261	Git URLからプロジェクトをクローンする	未対応	合格	c70b50c PiWorkspace/scripts/verify-project-clone.mjs, ProjectSourcesTests / 配布版で file URL から欠けている2階層を作り HEAD・ブランチ・origin とファイルを照合。登録済み空フォルダーではディレクトリの inode・権限、既存プロジェクト ID と下書き本文を保持。非空の保存先は保護。外部認証付き通信は未検証。
 08	DEV-292	スレッドの関連PRを一括で把握する	未対応	未評価	-
 08	DEV-309	保留中のPR行コメントを破棄する	未対応	未評価	-
 08	DEV-311	PRの既存コメントを編集する	未対応	未評価	-
