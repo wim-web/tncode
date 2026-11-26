@@ -117,6 +117,10 @@ enum ThreadShelf: String, Codable {
 }
 
 struct WorktreeLaunch: Codable {
+    enum Interruption: String, Codable {
+        case cancel, workLocally
+    }
+
     enum Stage: String, Codable {
         case createCheckout, openThread, sendPrompt
 
@@ -130,10 +134,15 @@ struct WorktreeLaunch: Codable {
     }
 
     let prompt: String
+    var id: UUID? = UUID()
+    var originalDraft: String?
     var stage: Stage = .createCheckout
     var failure: String?
+    var checkout: GitWorkspace.PendingCheckout?
+    var interruption: Interruption?
 
     var awaitingHistory: Bool { stage == .sendPrompt && failure == nil }
+    var canInterrupt: Bool { interruption == nil && !awaitingHistory }
 }
 
 struct Conversation: Codable, Identifiable {
@@ -448,10 +457,14 @@ final class WorkspaceStore {
     }
 
     func worktree(project: UUID, conversation: UUID) throws -> URL {
-        let parent = root.appendingPathComponent("worktrees", isDirectory: true)
+        let workspace = root.resolvingSymlinksInPath().standardizedFileURL
+        let parent = workspace.appendingPathComponent("worktrees", isDirectory: true)
             .appendingPathComponent(project.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        guard parent.resolvingSymlinksInPath().path == parent.path else {
+            throw WorkspaceError("The worktree folder must be inside this workspace.")
+        }
         return parent.appendingPathComponent(conversation.uuidString, isDirectory: true)
     }
 }

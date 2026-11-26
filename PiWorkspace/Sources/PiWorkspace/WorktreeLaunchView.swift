@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorktreeLaunchView: View {
+    let threadID: UUID
     let launch: WorktreeLaunch
     @ObservedObject var model: WorkspaceModel
 
@@ -25,12 +26,26 @@ struct WorktreeLaunchView: View {
                 ScrollView { prompt }
             }
             .frame(maxHeight: 120)
-            if model.canRetryWorktree {
-                Button("Retry", action: model.retryWorktree)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("retry-worktree")
-            } else if launch.awaitingHistory && model.phase == .ready && model.conversation?.archived == false {
-                Button("Dismiss Pending Message", action: model.dismissUnconfirmedWorktreePrompt)
+            HStack {
+                if model.canRetryWorktree {
+                    Button("Retry", action: model.retryWorktree)
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("retry-worktree")
+                } else if launch.awaitingHistory && model.phase == .ready && model.conversation?.archived == false {
+                    Button("Dismiss Pending Message", action: model.dismissUnconfirmedWorktreePrompt)
+                }
+                if model.canWorkLocally {
+                    Button("Work locally") {
+                        model.interruptWorktree(.workLocally, threadID: threadID, launchID: launch.id)
+                    }
+                    .accessibilityIdentifier("worktree-launch-work-locally")
+                }
+                if model.canInterruptWorktree {
+                    Button("Cancel") {
+                        model.interruptWorktree(.cancel, threadID: threadID, launchID: launch.id)
+                    }
+                    .accessibilityIdentifier("worktree-launch-cancel")
+                }
             }
         }
         .padding(12)

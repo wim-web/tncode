@@ -143,7 +143,7 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        model?.shutdown()
+        model?.terminate()
     }
 }
 

@@ -1174,7 +1174,7 @@ struct WorkspaceView: View {
                 .font(.callout)
             }
             if let launch = thread.worktreeLaunch, !model.phase.isRunning {
-                WorktreeLaunchView(launch: launch, model: model)
+                WorktreeLaunchView(threadID: thread.id, launch: launch, model: model)
             }
             if thread.archived {
                 Button("Restore Thread") {
@@ -1200,8 +1200,13 @@ struct WorkspaceView: View {
                     Label(thread.workingLocation.label, systemImage: "desktopcomputer")
                 }
                 Spacer()
-                if model.preparingWorktree { Text("Preparing worktree…") }
-                if model.phase == .connecting && !model.preparingWorktree { Text("Opening thread…") }
+                if model.preparingWorktree && thread.worktreeLaunch?.interruption != nil {
+                    Text("Cancelling setup…")
+                } else if model.preparingWorktree && thread.workingLocation != .project {
+                    Text("Preparing worktree…")
+                } else if model.phase == .connecting {
+                    Text("Opening thread…")
+                }
                 if model.pendingToolApproval != nil {
                     Text("Waiting for approval…")
                 } else if model.phase == .running {
@@ -1237,7 +1242,7 @@ struct WorkspaceView: View {
                 .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
                 .accessibilityIdentifier("composer")
-                .disabled(model.preparingWorktree || model.conversation?.composerSubmission != nil)
+                .disabled(model.conversation?.worktreeLaunch != nil || model.conversation?.composerSubmission != nil)
             HStack(spacing: 13) {
                 if model.effectiveModel.supportsTools {
                     Menu {

@@ -25,6 +25,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var composerSaveError: String?
     @Published var showingQuitSaveFailure = false
     private var composerDirty = false
+    private var worktreeTask: Task<Void, Never>?
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
 
@@ -38,7 +39,7 @@ final class WorkspaceModel: ObservableObject {
 
     func editDraft(_ text: String, in threadID: UUID) {
         guard let conversation, conversation.id == threadID, !conversation.archived,
-              conversation.composerSubmission == nil, text != draft,
+              conversation.worktreeLaunch == nil, conversation.composerSubmission == nil, text != draft,
               let p = selectedProjectIndex,
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return }
         var text = text
@@ -80,7 +81,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func showsInSidebar(_ thread: Conversation) -> Bool {
-        thread.isDraft != true || thread.composerText != nil
+        thread.isDraft != true || thread.composerText != nil || thread.worktreeLaunch != nil
     }
 
     func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
@@ -150,7 +151,9 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress,
               let store, let project, let conversation, !conversation.archived,
               conversation.composerSubmission == nil else { return false }
-        if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout { return false }
+        if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout || !launch.canInterrupt {
+            return false
+        }
         let history = store.history(project: project.id, conversation: conversation.id)
         do {
             return try !FileManager.default.contentsOfDirectory(atPath: history.path)
@@ -171,10 +174,18 @@ final class WorkspaceModel: ObservableObject {
               let launch = conversation.worktreeLaunch else { return false }
         return !launch.awaitingHistory
     }
+    var canInterruptWorktree: Bool {
+        !phase.isRunning && (!gitMutationInProgress || worktreeTask != nil) &&
+        conversation?.archived == false && conversation?.worktreeLaunch?.canInterrupt == true
+    }
+    var canWorkLocally: Bool {
+        canInterruptWorktree && conversation?.workingLocation != .project
+    }
 
     func start() {
         guard !showingWelcome, process == nil else { return }
-        if let conversation, project?.isScratch == true || conversation.composerText != nil {
+        if let conversation, project?.isScratch == true || conversation.composerText != nil ||
+            conversation.worktreeLaunch != nil {
             showArchive = conversation.archived
             connect()
             return
@@ -203,6 +214,9 @@ final class WorkspaceModel: ObservableObject {
     @discardableResult
     func terminate() -> Bool {
         guard savePendingComposer() else { return false }
+        worktreeTask?.cancel()
+        worktreeTask = nil
+        preparingWorktree = false
         shutdown()
         return true
     }
@@ -586,23 +600,31 @@ final class WorkspaceModel: ObservableObject {
         }
         let git = GitWorkspace(path: project.path)
         let location: ThreadLocation = try await performGitMutation {
+            let location: ThreadLocation
             switch choice {
             case .project:
-                return .project
+                location = .project
             case let .existing(path):
                 guard let checkout = try await git.worktrees().first(where: { $0.path == path }) else {
                     throw WorkspaceError("This worktree is no longer registered with the repository.")
                 }
-                return .worktree(path: checkout.path, base: nil)
+                location = .worktree(path: checkout.path, base: nil)
             case let .create(branch, base):
                 let branch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-                return .newWorktree(branch: branch, base: base)
+                location = .newWorktree(branch: branch, base: base)
             }
+            if location != conversation.workingLocation, let checkout = conversation.worktreeLaunch?.checkout,
+               checkout.path != location.directory(in: project) {
+                try await git.discardPendingCheckout(checkout, attached: false)
+            }
+            return location
         }
         try saveThread(conversation.id) { thread in
             if thread.workingLocation != location, var launch = thread.worktreeLaunch {
                 launch.stage = location.needsWorktree ? .createCheckout : .openThread
                 launch.failure = nil
+                launch.checkout = nil
+                launch.id = UUID()
                 thread.worktreeLaunch = launch
             }
             thread.location = location
@@ -640,9 +662,9 @@ final class WorkspaceModel: ObservableObject {
         do {
             guard try canUsePrompt(text, fromComposer: true) else { return }
             if conversation.workingLocation.needsWorktree {
-                let launch = WorktreeLaunch(prompt: text)
+                let launch = WorktreeLaunch(prompt: text, originalDraft: draft)
                 try saveThread(conversation.id) {
-                    $0.recordPrompt(text)
+                    $0.composerText = nil
                     $0.worktreeLaunch = launch
                 }
                 startWorktreeLaunch(launch, in: conversation)
@@ -664,6 +686,10 @@ final class WorkspaceModel: ObservableObject {
 
     func retryWorktree() {
         guard canRetryWorktree, let conversation, let launch = conversation.worktreeLaunch else { return }
+        if launch.interruption != nil {
+            finishWorktreeInterruption()
+            return
+        }
         do {
             guard try canUsePrompt(launch.prompt) else { return }
             startWorktreeLaunch(launch, in: conversation)
@@ -688,39 +714,124 @@ final class WorkspaceModel: ObservableObject {
 
     private func startWorktreeLaunch(_ launch: WorktreeLaunch, in thread: Conversation) {
         guard let store, let project else { return }
+        shutdown()
         preparingWorktree = true
         error = nil
-        Task {
-            var stage = WorktreeLaunch.Stage.openThread
+        worktreeTask = Task {
+            let stage: WorktreeLaunch.Stage = thread.workingLocation.needsWorktree ? .createCheckout : .openThread
+            var failure: Error?
             do {
+                try Task.checkCancellation()
                 var location = thread.workingLocation
                 if case let .newWorktree(branch, base) = location {
-                    stage = .createCheckout
                     let git = GitWorkspace(path: project.path)
                     let path = try await runGitMutation {
-                        let destination = try store.worktree(project: project.id, conversation: thread.id)
-                        let canonical = destination.resolvingSymlinksInPath().standardizedFileURL.path
-                        return try await git.createWorktree(at: canonical, branch: branch, base: base, for: thread.id)
+                        let checkout: GitWorkspace.PendingCheckout
+                        if let pinned = launch.checkout {
+                            checkout = pinned
+                        } else {
+                            let target = try store.worktree(project: project.id, conversation: thread.id)
+                            checkout = try await git.pinWorktree(at: target.path, branch: branch, base: base,
+                                                                owner: launch.id ?? thread.id, legacy: launch.id == nil)
+                            try Task.checkCancellation()
+                            try saveThread(thread.id) { $0.worktreeLaunch?.checkout = checkout }
+                        }
+                        return try await git.createWorktree(checkout, legacy: launch.id == nil)
                     }
                     location = .worktree(path: path, base: base)
                 }
+                try Task.checkCancellation()
                 try saveThread(thread.id) {
                     $0.location = location
-                    $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: .openThread)
+                    $0.worktreeLaunch?.stage = .openThread
+                    $0.worktreeLaunch?.failure = nil
                 }
-                connect()
-            } catch let failure {
+            } catch {
+                failure = error
+            }
+            guard worktreeTask != nil else { return }
+            worktreeTask = nil
+            if conversation?.worktreeLaunch?.interruption != nil {
+                finishWorktreeInterruption()
+            } else if let failure {
                 failWorktreeLaunch(at: stage, message: failure.localizedDescription)
+            } else {
+                connect()
+            }
+        }
+    }
+
+    func interruptWorktree(_ interruption: WorktreeLaunch.Interruption, threadID: UUID, launchID: UUID?) {
+        guard canInterruptWorktree, let conversation, conversation.id == threadID,
+              conversation.worktreeLaunch?.id == launchID,
+              interruption == .cancel || canWorkLocally else { return }
+        do {
+            try saveThread(conversation.id) {
+                $0.worktreeLaunch?.interruption = interruption
+                $0.worktreeLaunch?.failure = nil
+            }
+        } catch { return }
+        shutdown()
+        if let worktreeTask {
+            worktreeTask.cancel()
+        } else {
+            finishWorktreeInterruption()
+        }
+    }
+
+    private func finishWorktreeInterruption() {
+        guard worktreeTask == nil, let project, let conversation,
+              let launch = conversation.worktreeLaunch, let interruption = launch.interruption else { return }
+        preparingWorktree = true
+        error = nil
+        worktreeTask = Task {
+            do {
+                if let checkout = launch.checkout {
+                    try await runGitMutation {
+                        try await GitWorkspace(path: project.path)
+                            .discardPendingCheckout(checkout, attached: !conversation.workingLocation.needsWorktree)
+                    }
+                }
+                try Task.checkCancellation()
+                try saveThread(conversation.id) { thread in
+                    if interruption == .workLocally {
+                        thread.location = .project
+                        thread.worktreeLaunch?.id = UUID()
+                        thread.worktreeLaunch?.stage = .openThread
+                        thread.worktreeLaunch?.checkout = nil
+                        thread.worktreeLaunch?.interruption = nil
+                        thread.worktreeLaunch?.failure = nil
+                    } else {
+                        if let checkout = launch.checkout,
+                           case let .worktree(path, base) = thread.workingLocation, path == checkout.path {
+                            thread.location = .newWorktree(branch: checkout.branch, base: base ?? checkout.head)
+                        }
+                        thread.composerText = thread.composerText ?? launch.originalDraft ?? launch.prompt
+                        thread.worktreeLaunch = nil
+                    }
+                }
+                worktreeTask = nil
+                preparingWorktree = false
+                if interruption == .workLocally {
+                    retryWorktree()
+                } else {
+                    connect()
+                }
+            } catch {
+                guard worktreeTask != nil else { return }
+                worktreeTask = nil
+                failWorktreeLaunch(at: launch.stage, message: error.localizedDescription)
             }
         }
     }
 
     private func failWorktreeLaunch(at stage: WorktreeLaunch.Stage, message: String) {
-        preparingWorktree = false
-        guard let conversation, let launch = conversation.worktreeLaunch else { return }
+        defer { preparingWorktree = false }
+        guard let conversation, conversation.worktreeLaunch != nil else { return }
         do {
             try saveThread(conversation.id) {
-                $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: stage, failure: message)
+                $0.worktreeLaunch?.stage = stage
+                $0.worktreeLaunch?.failure = message
             }
         } catch {
             self.error = error.localizedDescription
@@ -768,6 +879,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
+        guard worktreeTask == nil else { return }
         shutdown()
         messages = []
         partial = ""
@@ -775,6 +887,10 @@ final class WorkspaceModel: ObservableObject {
         repositoryRevision += 1
         guard let store, let project, let conversation, let directory = workingDirectory else { return }
         error = nil
+        if conversation.worktreeLaunch?.interruption != nil {
+            finishWorktreeInterruption()
+            return
+        }
         if let launch = conversation.worktreeLaunch, !preparingWorktree, !launch.awaitingHistory { return }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -816,16 +932,22 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func submitWorktreePrompt(using worker: PiProcess) {
-        guard let conversation, let launch = conversation.worktreeLaunch else { return }
+        guard let conversation, let launch = conversation.worktreeLaunch,
+              launch.stage == .openThread, launch.canInterrupt else { return }
         do {
             try saveThread(conversation.id) {
-                $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: .sendPrompt)
+                $0.worktreeLaunch?.stage = .sendPrompt
             }
-            try beginTurn(launch.prompt, using: worker)
-            preparingWorktree = false
         } catch {
             shutdown()
-            failWorktreeLaunch(at: .sendPrompt, message: error.localizedDescription)
+            failWorktreeLaunch(at: .openThread, message: error.localizedDescription)
+            return
+        }
+        preparingWorktree = false
+        do {
+            try beginTurn(launch.prompt, using: worker)
+        } catch {
+            connectionFailed("Pi disconnected while sending the message. Reconnect to check its history.")
         }
     }
 
@@ -834,7 +956,12 @@ final class WorkspaceModel: ObservableObject {
         guard let conversation, let launch = conversation.worktreeLaunch,
               history.first(where: { $0.role == .user })?.text == launch.prompt else { return false }
         preparingWorktree = false
-        try? saveThread(conversation.id) { $0.worktreeLaunch = nil }
+        try? saveThread(conversation.id) {
+            let nextDraft = $0.composerText
+            $0.recordPrompt(launch.prompt)
+            $0.composerText = nextDraft
+            $0.worktreeLaunch = nil
+        }
         return true
     }
 
@@ -878,6 +1005,7 @@ final class WorkspaceModel: ObservableObject {
                 connectionFailed("The Pi helper disconnected during Keychain access.")
             }
         case let .ready(history):
+            guard phase == .connecting else { return }
             messages = history
             phase = .ready
             reconcileComposerSubmission(in: history, ended: true)

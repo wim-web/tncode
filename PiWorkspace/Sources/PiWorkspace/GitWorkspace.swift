@@ -47,6 +47,17 @@ struct GitFileChange: Identifiable, Hashable, Sendable {
 }
 
 struct GitWorkspace: Sendable {
+    struct PendingCheckout: Codable, Sendable {
+        let path: String
+        let branch: String
+        let head: String
+        let owner: UUID
+
+        fileprivate var lockReason: String { "Pi Workspace preparing " + owner.uuidString }
+        fileprivate var receipt: Data { Data((owner.uuidString + "\n" + head + "\n").utf8) }
+        fileprivate var branchRef: String { "refs/heads/" + branch }
+    }
+
     private let path: String
     private static let patchLimit = 256 * 1024
 
@@ -185,40 +196,112 @@ struct GitWorkspace: Sendable {
         return result.output.truncated ? output + "\n[Diff truncated after 256 KiB]\n" : output
     }
 
-    func createWorktree(at path: String, branch: String, base: String, for thread: UUID) async throws -> String {
+    func pinWorktree(at target: String, branch: String, base: String, owner: UUID,
+                     legacy: Bool = false) async throws -> PendingCheckout {
         let root = try await repositoryRoot()
-        let absolute = path.hasPrefix("/") ? path : root + "/" + path
-        let target = URL(fileURLWithPath: absolute).resolvingSymlinksInPath().standardizedFileURL.path
-        let prepared = try await worktrees().first { $0.path == target }
         let checked = try await run(["check-ref-format", "--branch", branch], in: root)
         guard checked.output.bytes == Data((branch + "\n").utf8) else { throw WorkspaceError.invalidBranch }
-        let existingRef = try await run(["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
-                                        in: root, acceptedStatuses: [0, 1])
-        guard existingRef.status == 1 || prepared?.branch == branch else { throw WorkspaceError.branchExists(branch) }
         let commit = try await revParse(["--verify", "--end-of-options", base + "^{commit}"], in: root)
-        let reason = "Pi Workspace preparing " + thread.uuidString
+        let checkout = PendingCheckout(path: target, branch: branch, head: commit, owner: owner)
+        if try await branchExists(checkout) {
+            guard legacy, try await worktrees().contains(where: { $0.path == target && $0.branch == branch }) else {
+                throw WorkspaceError.branchExists(branch)
+            }
+        }
+        return checkout
+    }
+
+    func createWorktree(_ checkout: PendingCheckout, legacy: Bool = false) async throws -> String {
+        let target = checkout.path
+        guard Self.isCanonicalWorktree(target) else { throw WorkspaceError.worktreeChanged }
+        let prepared = try await worktrees().first { $0.path == target }
+        let hasBranch = try await branchExists(checkout)
+        if hasBranch, !(legacy && prepared?.branch == checkout.branch) {
+            guard try await ownsBranch(checkout) else { throw WorkspaceError.branchExists(checkout.branch) }
+        }
+        try Task.checkCancellation()
         if let prepared {
-            guard prepared.head == commit, prepared.branch == nil || prepared.branch == branch,
-                  prepared.lockReason == nil || prepared.lockReason == reason else {
+            guard try await ownsCheckout(prepared, for: checkout) else {
                 throw WorkspaceError.worktreeChanged
             }
         } else {
-            _ = try await run(["worktree", "add", "--detach", "--lock", "--reason", reason, "--", target, commit], in: root)
+            var entry = stat()
+            guard lstat(target, &entry) == -1, errno == ENOENT else { throw WorkspaceError.worktreeChanged }
+            _ = try await run(["worktree", "add", "--detach", "--lock", "--reason",
+                               checkout.lockReason, "--", target, checkout.head])
         }
-        let admin = try await revParse(["--absolute-git-dir"], in: target)
-        let receipt = URL(fileURLWithPath: admin).appendingPathComponent("pi-workspace-owner")
-        let owner = Data((thread.uuidString + "\n" + commit + "\n").utf8)
-        let ownsLock = prepared == nil || prepared?.lockReason == reason
+        try Task.checkCancellation()
+        let ownsLock = prepared == nil || prepared?.lockReason == checkout.lockReason
         if ownsLock {
-            try owner.write(to: receipt, options: .atomic)
-        } else {
-            guard (try? Data(contentsOf: receipt)) == owner else { throw WorkspaceError.worktreeChanged }
+            let receipt = try await worktreeReceipt(at: target)
+            try checkout.receipt.write(to: receipt, options: .atomic)
         }
-        if prepared?.branch != branch {
-            _ = try await run(["switch", "--no-guess", "-c", branch], in: target)
+        try Task.checkCancellation()
+        if !hasBranch {
+            let absent = String(repeating: "0", count: checkout.head.count)
+            _ = try await run(["update-ref", "--create-reflog", "-m", checkout.lockReason,
+                               checkout.branchRef, checkout.head, absent])
         }
-        if ownsLock { _ = try await run(["worktree", "unlock", "--", target], in: root) }
-        return try await repositoryRoot(in: target)
+        try Task.checkCancellation()
+        if prepared?.branch != checkout.branch {
+            _ = try await run(["switch", "--no-guess", "--", checkout.branch], in: target)
+        }
+        guard try await worktrees().contains(where: {
+            $0.path == target && $0.head == checkout.head && $0.branch == checkout.branch
+        }) else { throw WorkspaceError.worktreeChanged }
+        if ownsLock { _ = try await run(["worktree", "unlock", "--", target]) }
+        return target
+    }
+
+    func discardPendingCheckout(_ checkout: PendingCheckout, attached: Bool) async throws {
+        guard Self.isCanonicalWorktree(checkout.path) else { return }
+        if let prepared = try await worktrees().first(where: { $0.path == checkout.path }) {
+            guard !attached || prepared.branch == checkout.branch,
+                  try await ownsCheckout(prepared, for: checkout) else { return }
+            if prepared.branch != nil {
+                guard try await ownsBranch(checkout) else { return }
+            }
+            let status = try await run(["status", "--porcelain=v1", "-z", "--untracked-files=all",
+                                        "--ignored", "--ignore-submodules=none"], in: checkout.path, outputLimit: 1)
+            guard status.output.bytes.isEmpty, !status.output.truncated else { return }
+            try Task.checkCancellation()
+            if prepared.lockReason == checkout.lockReason {
+                _ = try await run(["worktree", "unlock", "--", checkout.path])
+            }
+            _ = try await run(["worktree", "remove", "--", checkout.path])
+        }
+        guard try await ownsBranch(checkout),
+              try await !worktrees().contains(where: { $0.branch == checkout.branch }) else { return }
+        try Task.checkCancellation()
+        _ = try await run(["update-ref", "-d", checkout.branchRef, checkout.head])
+    }
+
+    private static func isCanonicalWorktree(_ target: String) -> Bool {
+        target.hasPrefix("/") && URL(fileURLWithPath: target).resolvingSymlinksInPath().standardizedFileURL.path == target
+    }
+
+    private func branchExists(_ checkout: PendingCheckout) async throws -> Bool {
+        try await run(["show-ref", "--verify", "--quiet", checkout.branchRef],
+                      acceptedStatuses: [0, 1]).status == 0
+    }
+
+    private func ownsBranch(_ checkout: PendingCheckout) async throws -> Bool {
+        guard try await branchExists(checkout) else { return false }
+        let lastUpdate = try await run(["reflog", "show", "-1", "--format=%H%x00%gs", checkout.branchRef, "--"])
+        return lastUpdate.output.bytes == Data((checkout.head + "\0" + checkout.lockReason + "\n").utf8)
+    }
+
+    private func ownsCheckout(_ prepared: GitCheckout, for checkout: PendingCheckout) async throws -> Bool {
+        guard prepared.head == checkout.head, prepared.branch == nil || prepared.branch == checkout.branch,
+              prepared.lockReason == nil || prepared.lockReason == checkout.lockReason else { return false }
+        if prepared.lockReason == checkout.lockReason { return true }
+        let receipt = try await worktreeReceipt(at: checkout.path)
+        return (try? Data(contentsOf: receipt)) == checkout.receipt
+    }
+
+    private func worktreeReceipt(at target: String) async throws -> URL {
+        let admin = try await revParse(["--absolute-git-dir"], in: target)
+        return URL(fileURLWithPath: admin).appendingPathComponent("pi-workspace-owner")
     }
 
     func switchBranch(_ branch: String) async throws {

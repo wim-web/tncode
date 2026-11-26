@@ -3,7 +3,8 @@ import XCTest
 
 final class GitWorktreeTests: XCTestCase {
     func testRetryAfterObstructedDestinationAndInterruptedCheckout() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
         let repo = try await GitWorkspace.createRepository(named: "original", in: root)
@@ -11,9 +12,10 @@ final class GitWorktreeTests: XCTestCase {
         let workspace = GitWorkspace(path: repo.path)
         let path = root.appendingPathComponent("checkout")
         let thread = UUID()
+        let pending = try await workspace.pinWorktree(at: path.path, branch: "topic", base: "HEAD", owner: thread)
         try Data("keep".utf8).write(to: path)
         do {
-            _ = try await workspace.createWorktree(at: path.path, branch: "topic", base: "HEAD", for: thread)
+            _ = try await workspace.createWorktree(pending)
             XCTFail("A regular file cannot be a checkout.")
         } catch {
             XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), "keep")
@@ -25,19 +27,45 @@ final class GitWorktreeTests: XCTestCase {
         let edit = path.appendingPathComponent("note")
         try Data("keep this edit".utf8).write(to: edit)
         do {
-            _ = try await workspace.createWorktree(at: path.path, branch: "topic", base: "HEAD", for: thread)
+            _ = try await workspace.createWorktree(pending)
             XCTFail("An unrelated detached checkout must not be adopted.")
         } catch {
             let list = try await workspace.worktrees()
             XCTAssertNil(list.first { $0.path == path.resolvingSymlinksInPath().path }?.branch)
         }
         try git(repo, ["worktree", "lock", "--reason", "Pi Workspace preparing " + thread.uuidString, "--", path.path])
-        _ = try await workspace.createWorktree(at: path.path, branch: "topic", base: "HEAD", for: thread)
-        _ = try await workspace.createWorktree(at: path.path, branch: "topic", base: "HEAD", for: thread)
+        _ = try await workspace.createWorktree(pending)
+        _ = try await workspace.createWorktree(pending)
         let checkouts = try await workspace.worktrees()
         XCTAssertEqual(checkouts.count, 2)
         XCTAssertEqual(checkouts.first { $0.path == path.resolvingSymlinksInPath().path }?.branch, "topic")
         XCTAssertEqual(try String(contentsOf: edit, encoding: .utf8), "keep this edit")
+    }
+
+    func testCleanupPreservesAChangedHeadAndABranchRecreatedAtThePinnedHead() async throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try await GitWorkspace.createRepository(named: "original", in: root)
+        try git(repo, ["commit", "--allow-empty", "-m", "Base"])
+        let workspace = GitWorkspace(path: repo.path)
+        let path = root.appendingPathComponent("checkout")
+        let pending = try await workspace.pinWorktree(at: path.path, branch: "topic", base: "HEAD", owner: UUID())
+        _ = try await workspace.createWorktree(pending)
+        try git(path, ["commit", "--allow-empty", "-m", "User commit"])
+        try await workspace.discardPendingCheckout(pending, attached: true)
+        let checkouts = try await workspace.worktrees()
+        let checkout = try XCTUnwrap(checkouts.first { $0.path == path.path })
+        XCTAssertNotEqual(checkout.head, pending.head)
+        XCTAssertEqual(checkout.branch, "topic")
+
+        try git(repo, ["worktree", "remove", "--", path.path])
+        try git(repo, ["branch", "-D", "topic"])
+        try git(repo, ["branch", "topic", pending.head])
+        try await workspace.discardPendingCheckout(pending, attached: true)
+        let state = try await workspace.state()
+        XCTAssertTrue(state.branches.contains("topic"))
     }
 
     private func git(_ directory: URL, _ arguments: [String]) throws {
