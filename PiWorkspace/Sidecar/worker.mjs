@@ -276,6 +276,22 @@ function localModel(runtime, config) {
   });
 }
 
+function hasForkHistory(manager, cutoffID) {
+  const visited = new Set();
+  let id = manager.getLeafId();
+  let found = false;
+  while (id) {
+    const entry = manager.getEntry(id);
+    if (!entry || visited.has(id)) return false;
+    visited.add(id);
+    // Older forks can end at an interrupted or whitespace-only reply.
+    if (id === cutoffID && forkReplyStatus(entry)) found = true;
+    if (entry.parentId === null) return found;
+    id = entry.parentId;
+  }
+  return false;
+}
+
 async function open(command) {
   const { cwd, sessionDir, threadID, config, toolPermission, forkMessageID } = command;
   if (!/^[a-f0-9-]{36}$/i.test(threadID) ||
@@ -309,23 +325,24 @@ async function open(command) {
   const model = runtime.getModel(config.provider, config.model);
   if (!model) throw new Error("This model is unavailable for the selected provider in the bundled Pi catalog.");
 
-  if (forkMessageID) {
-    if (!existsSync(sessionDir)) throw new Error("The fork history is missing.");
+  const requireHistory = command.requireHistory || forkMessageID;
+  const missingHistory = forkMessageID ? "The fork history is missing." : "The linked thread’s history is missing.";
+  if (requireHistory) {
+    if (!existsSync(sessionDir)) throw new Error(missingHistory);
   } else {
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
   }
   const files = readdirSync(sessionDir).filter((name) => name.endsWith(".jsonl"));
   if (files.length > 1) throw new Error("This conversation has more than one history file.");
   const historyFile = files[0] && join(sessionDir, files[0]);
-  if (forkMessageID && (!historyFile || statSync(historyFile).size === 0)) {
-    throw new Error("The fork history is missing.");
+  if (requireHistory && (!historyFile || statSync(historyFile).size === 0)) {
+    throw new Error(missingHistory);
   }
   manager = historyFile
     ? SessionManager.open(historyFile, sessionDir, cwd)
     : SessionManager.create(cwd, sessionDir, { id: threadID });
   if (manager.getSessionId() !== threadID) throw new Error("Conversation history does not match its ID.");
-  // Earlier versions also allowed incomplete and whitespace-only replies as fork origins.
-  if (forkMessageID && !manager.getBranch().some((entry) => entry.id === forkMessageID && forkReplyStatus(entry))) {
+  if (forkMessageID && !hasForkHistory(manager, forkMessageID)) {
     throw new Error("The fork history is incomplete.");
   }
   const appendMessage = manager.appendMessage.bind(manager);

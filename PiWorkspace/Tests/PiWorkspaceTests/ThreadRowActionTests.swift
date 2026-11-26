@@ -154,7 +154,7 @@ final class ThreadRowActionTests: XCTestCase {
         let host = OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         XCTAssertEqual(model.conversation?.id, fixture.scratchThread.id)
-        model.openThreadLink(from: board)
+        await model.openThreadLink(from: board)
         XCTAssertNil(model.threadLinkError)
         XCTAssertEqual(model.project?.title, "Renamed project")
         XCTAssertEqual(model.conversation?.id, localID)
@@ -163,7 +163,8 @@ final class ThreadRowActionTests: XCTestCase {
             model.messages.last?.text == "Latest active fixture reply mentions local-history."
                 && host.element("conversation-title")?.accessibilityLabel?() == "Renamed local thread" ? true : nil
         }
-        XCTAssertTrue(model.openThreadLink(linkedText))
+        let opened = await model.openThreadLink(linkedText)
+        XCTAssertTrue(opened)
         XCTAssertEqual(model.workingDirectory, fixture.checkout.path)
         _ = try await host.waitFor("linked checkout’s Pi history") {
             model.messages.last?.text == "Latest active fixture reply mentions worktree-history." ? true : nil
@@ -185,6 +186,7 @@ final class ThreadRowActionTests: XCTestCase {
             let store = try WorkspaceStore(root: fixture.workspace)
             var index = try store.load()
             index.threadLinkID = linkID
+            index.model = ModelSettings(provider: .local, model: "palette-fixture")
             index.projects[0].conversations[0].queuedMessages = [queued]
             try store.save(index)
         }
@@ -260,7 +262,96 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertEqual(savedSource?.queuedMessages, [queued])
     }
 
-    func testRejectedLinksKeepTheDraftAndActiveTurn() throws {
+    func testPendingLinkRechecksTargetAndKeepsNewSourceTurn() async throws {
+        let fixture = try Fixture()
+        let linkID = UUID()
+        let target = fixture.linked.id
+        let projectID = fixture.project.id
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var workspace = try store.load()
+            workspace.threadLinkID = linkID
+            workspace.projects[0].modelOverride = ModelSettings(provider: .local, model: "target-model")
+            workspace.selectedProject = fixture.scratch.id
+            try store.save(workspace)
+        }
+        try Data("{\"type\":\"session\",\"version\":3,\"id\":\"\(target)\"}\n".utf8).write(to: fixture.historyFile)
+        let link = ThreadLink(workspaceID: linkID, root: fixture.workspace, projectID: projectID, threadID: target)
+        let source = ControlledConnection()
+        var sourceOpens = 0
+        var opening: XCTestExpectation?
+        var candidate: ControlledConnection?
+        let model = WorkspaceModel(root: fixture.workspace, keychainService: fixture.root.lastPathComponent,
+                                   readCredential: { _ in "fixture-key" }) { _, cwd in
+            guard cwd == fixture.checkout.path else {
+                sourceOpens += 1
+                return source
+            }
+            let worker = ControlledConnection()
+            candidate = worker
+            opening?.fulfill()
+            return worker
+        }
+        defer { model.terminate() }
+        model.connect()
+        let sourceLink = ThreadLink(workspaceID: linkID, root: fixture.workspace,
+                                    projectID: fixture.scratch.id, threadID: fixture.scratchThread.id)
+        Task { source.onEvent?(.ready([])) }
+        let openedCurrent = await model.openThreadLink(sourceLink.text)
+        XCTAssertTrue(openedCurrent)
+        XCTAssertEqual(sourceOpens, 1)
+        model.draft = "Send from the source"
+        func beginLink() async throws -> (Task<Bool, Never>, ControlledConnection) {
+            let started = expectation(description: "Started opening the linked thread")
+            opening = started
+            let task = Task { await model.openThreadLink(link.text) }
+            await fulfillment(of: [started], timeout: 2)
+            return (task, try XCTUnwrap(candidate))
+        }
+        var selections: [UUID?] = []
+        let subscription = model.$workspace.sink { selections.append($0.selectedProject) }
+        defer { subscription.cancel() }
+
+        let (oldModel, first) = try await beginLink()
+        XCTAssertEqual(first.command?.config.model, "target-model")
+        try model.resetProjectModel(projectID)
+        first.onEvent?(.ready([]))
+        let acceptedOldModel = await oldModel.value
+        XCTAssertFalse(acceptedOldModel)
+        XCTAssertTrue(first.closed)
+
+        let (nowArchived, second) = try await beginLink()
+        model.archiveConversation(target, in: projectID, archived: true)
+        second.onEvent?(.ready([]))
+        let openedArchived = await nowArchived.value
+        XCTAssertFalse(openedArchived)
+        XCTAssertTrue(second.closed)
+        XCTAssertTrue(model.threadLinkError?.contains("archived") == true)
+        model.archiveConversation(target, in: projectID, archived: false)
+
+        let (superseded, staleWorker) = try await beginLink()
+        let stayedOnSource = await model.openThreadLink(sourceLink.text)
+        XCTAssertTrue(stayedOnSource)
+        let openedStale = await superseded.value
+        XCTAssertFalse(openedStale)
+        XCTAssertTrue(staleWorker.closed)
+        staleWorker.onEvent?(.ready([]))
+
+        let (duringTurn, third) = try await beginLink()
+        model.send()
+        let turn = try XCTUnwrap(source.turnID)
+        third.onEvent?(.ready([]))
+        let interruptedTurn = await duringTurn.value
+        XCTAssertFalse(interruptedTurn)
+        XCTAssertTrue(third.closed)
+        XCTAssertFalse(source.closed)
+        XCTAssertEqual(model.phase, .running)
+        source.onEvent?(.finished(turnID: turn, [], error: nil))
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(Set(selections), [fixture.scratch.id])
+    }
+
+    func testRejectedLinksKeepTheDraftAndActiveTurn() async throws {
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
@@ -288,14 +379,16 @@ final class ThreadRowActionTests: XCTestCase {
                                    (wrongProject.text, "unavailable"),
                                    (missingThread.text, "unavailable"),
                                    (text, "history is missing or invalid")] {
-            XCTAssertFalse(model.openThreadLink(input))
+            let opened = await model.openThreadLink(input)
+            XCTAssertFalse(opened)
             XCTAssertTrue(model.threadLinkError?.contains(errorText) == true, model.threadLinkError ?? "No error")
             XCTAssertEqual(model.conversation?.id, fixture.local.id)
             XCTAssertEqual(model.draft, "Keep me in this thread")
         }
 
         try FileManager.default.removeItem(at: fixture.historyFile)
-        XCTAssertFalse(model.openThreadLink(text))
+        let missingHistory = await model.openThreadLink(text)
+        XCTAssertFalse(missingHistory)
         XCTAssertTrue(model.threadLinkError?.contains("history is missing or invalid") == true)
         XCTAssertEqual(model.draft, "Keep me in this thread")
 
@@ -303,19 +396,22 @@ final class ThreadRowActionTests: XCTestCase {
             try Data("{\"type\":\"session\",\"version\":3,\"id\":\"\(id)\"}\n".utf8).write(to: fixture.historyFile)
         }
         try writeHeader(id: fixture.local.id)
-        XCTAssertFalse(model.openThreadLink(text))
+        let wrongID = await model.openThreadLink(text)
+        XCTAssertFalse(wrongID)
         XCTAssertTrue(model.threadLinkError?.contains("history is missing or invalid") == true)
         try writeHeader(id: id)
         let movedCheckout = fixture.root.appendingPathComponent("Moved checkout")
         try FileManager.default.moveItem(at: fixture.checkout, to: movedCheckout)
-        XCTAssertFalse(model.openThreadLink(text))
+        let missingCheckout = await model.openThreadLink(text)
+        XCTAssertFalse(missingCheckout)
         XCTAssertTrue(model.threadLinkError?.contains("checkout is unavailable") == true)
         try FileManager.default.moveItem(at: movedCheckout, to: fixture.checkout)
 
         model.archiveConversation(id, in: projectID, archived: true)
         try model.copyThreadReference(id, in: projectID, to: board)
         XCTAssertEqual(board.string(forType: .string), text)
-        XCTAssertFalse(model.openThreadLink(text))
+        let archived = await model.openThreadLink(text)
+        XCTAssertFalse(archived)
         XCTAssertTrue(model.threadLinkError?.contains("Restore it from the archive") == true)
         XCTAssertEqual(model.draft, "Keep me in this thread")
         model.archiveConversation(id, in: projectID, archived: false)
@@ -323,7 +419,8 @@ final class ThreadRowActionTests: XCTestCase {
         model.send()
         XCTAssertEqual(model.phase, .running)
         let runningDraft = model.draft
-        XCTAssertFalse(model.openThreadLink(text))
+        let running = await model.openThreadLink(text)
+        XCTAssertFalse(running)
         XCTAssertTrue(model.threadLinkError?.contains("Finish the current operation") == true)
         XCTAssertEqual(model.conversation?.id, fixture.local.id)
         XCTAssertEqual(model.phase, .running)
@@ -607,6 +704,21 @@ final class ThreadRowActionTests: XCTestCase {
             process.waitUntilExit()
             guard process.terminationStatus == 0 else { throw WorkspaceError("Fixture Git command failed.") }
         }
+    }
+
+    private final class ControlledConnection: PiConnection {
+        var onEvent: ((PiEvent) -> Void)?
+        var onClose: (() -> Void)?
+        var command: OpenConversation?
+        var turnID: UUID?
+        var closed = false
+
+        func send(_ command: any Encodable) throws {
+            if let open = command as? OpenConversation { self.command = open }
+            if let prompt = command as? SendPrompt { turnID = prompt.turnID }
+        }
+
+        func close() { closed = true }
     }
 
     private final class Connection: PiConnection {

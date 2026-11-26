@@ -87,7 +87,7 @@ enum PiEvent: Decodable {
     }
 }
 
-struct OpenConversation: Encodable {
+struct OpenConversation: Encodable, Equatable {
     var type = "open"
     let cwd: String
     let sessionDir: String
@@ -95,6 +95,7 @@ struct OpenConversation: Encodable {
     let config: ModelSettings
     let toolPermission: ToolPermission
     var forkMessageID: String?
+    var requireHistory = false
 }
 
 struct ForkConversation: Encodable {

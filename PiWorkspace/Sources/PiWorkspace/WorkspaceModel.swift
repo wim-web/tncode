@@ -449,6 +449,7 @@ final class WorkspaceModel: ObservableObject {
     private let makeProcess: (URL, String) throws -> any PiConnection
     private let makeGitHubReader: (String) -> GitHubReader
     private var process: (any PiConnection)?
+    private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Never>)?
     private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
 
@@ -592,6 +593,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func shutdown() {
+        rejectPendingThreadLink()
         process?.close()
         process = nil
         let requests = sentImageRequests
@@ -1036,16 +1038,17 @@ final class WorkspaceModel: ObservableObject {
               let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
               workspace.projects[index].conversations.contains(where: { $0.id == id }),
               project?.id != projectID || conversation?.id != id else { return }
-        do { try selectConversation(id, at: index) }
-        catch { self.error = error.localizedDescription }
+        do {
+            try persistSelection(id, at: index)
+            connect()
+        } catch { self.error = error.localizedDescription }
     }
 
-    private func selectConversation(_ id: UUID, at projectIndex: Int) throws {
+    private func persistSelection(_ id: UUID, at projectIndex: Int) throws {
         var updated = workspace
         updated.selectedProject = updated.projects[projectIndex].id
         updated.projects[projectIndex].selectedConversation = id
         try persist(updated)
-        connect()
     }
 
     func copyThreadReference(_ id: UUID, in projectID: UUID, to pasteboard: NSPasteboard) throws {
@@ -1064,26 +1067,88 @@ final class WorkspaceModel: ObservableObject {
     }
 
     @discardableResult
-    func openThreadLink(_ text: String) -> Bool {
+    func openThreadLink(_ text: String) async -> Bool {
+        rejectPendingThreadLink()
         do {
-            try navigateToThreadLink(text)
-            threadLinkError = nil
-            showingWelcome = false
-            showArchive = false
-            return true
+            guard let link = ThreadLink(text: text) else { throw WorkspaceError("Enter a Pi Workspace thread link.") }
+            guard let store else { throw WorkspaceError("Finish opening the workspace and try the thread link again.") }
+            let (index, thread) = try linkedThread(link)
+            let project = workspace.projects[index]
+            if self.project?.id == project.id, conversation?.id == thread.id, phase != .closed {
+                if phase == .connecting, let process {
+                    return await withCheckedContinuation { pendingThreadLink = (process, $0) }
+                }
+                finishOpeningThreadLink()
+                return true
+            }
+            let command = try linkedOpenCommand(project: project, thread: thread, store: store)
+            try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
+            let worker = try makeProcess(store.config, command.cwd)
+            return await withCheckedContinuation { result in
+                pendingThreadLink = (worker, result)
+                worker.onClose = { [weak self, weak worker] in
+                    guard let self, let worker, self.pendingThreadLink?.worker === worker else { return }
+                    self.rejectPendingThreadLink("The Pi helper exited while opening the linked thread.")
+                }
+                worker.onEvent = { [weak self, weak worker] event in
+                    guard let self, let worker else { return }
+                    self.receiveOpeningThreadLink(event, link: link, command: command, store: store, worker: worker)
+                }
+                do { try worker.send(command) }
+                catch { rejectPendingThreadLink(error.localizedDescription) }
+            }
         } catch {
             threadLinkError = error.localizedDescription
             return false
         }
     }
 
-    func openThreadLink(from pasteboard: NSPasteboard) {
-        openThreadLink(pasteboard.string(forType: .string) ?? "")
+    private func receiveOpeningThreadLink(_ event: PiEvent, link: ThreadLink, command: OpenConversation,
+                                          store: WorkspaceStore, worker: any PiConnection) {
+        guard let pending = pendingThreadLink, pending.worker === worker else { return }
+        do {
+            switch event {
+            case let .credential(id, read):
+                try replyToCredential(id, read: read, account: command.config.account, worker: worker)
+            case .ready:
+                let (index, thread) = try linkedThread(link)
+                guard try linkedOpenCommand(project: workspace.projects[index], thread: thread, store: store) == command else {
+                    throw WorkspaceError("The linked thread changed. Open the link again.")
+                }
+                try persistSelection(thread.id, at: index)
+                pendingThreadLink = nil
+                resetConnection()
+                error = nil
+                attach(worker, account: command.config.account)
+                receive(event, from: worker, account: command.config.account)
+                finishOpeningThreadLink()
+                pending.result.resume(returning: true)
+            case let .fatal(message):
+                rejectPendingThreadLink(message)
+            default: break
+            }
+        } catch { rejectPendingThreadLink(error.localizedDescription) }
     }
 
-    private func navigateToThreadLink(_ text: String) throws {
-        guard let link = ThreadLink(text: text) else { throw WorkspaceError("Enter a Pi Workspace thread link.") }
-        guard store != nil else { throw WorkspaceError("Finish opening the workspace and try the thread link again.") }
+    private func rejectPendingThreadLink(_ message: String? = nil) {
+        guard let pending = pendingThreadLink else { return }
+        pendingThreadLink = nil
+        if pending.worker !== process { pending.worker.close() }
+        if let message { threadLinkError = message }
+        pending.result.resume(returning: false)
+    }
+
+    private func finishOpeningThreadLink() {
+        threadLinkError = nil
+        showingWelcome = false
+        showArchive = false
+    }
+
+    func openThreadLink(from pasteboard: NSPasteboard) async {
+        await openThreadLink(pasteboard.string(forType: .string) ?? "")
+    }
+
+    private func linkedThread(_ link: ThreadLink) throws -> (Int, Conversation) {
         guard let workspaceID = workspace.threadLinkID,
               link.workspace == ThreadLink.workspaceScope(id: workspaceID, root: root) else {
             throw WorkspaceError("This thread link belongs to a different Pi Workspace.")
@@ -1092,21 +1157,23 @@ final class WorkspaceModel: ObservableObject {
               let thread = workspace.projects[index].conversations.first(where: { $0.id == link.threadID }),
               thread.isDraft != true else { throw WorkspaceError("The linked thread is unavailable.") }
         guard !thread.archived else { throw WorkspaceError("The linked thread is archived. Restore it from the archive and try again.") }
-        let selected = project?.id == link.projectID && conversation?.id == link.threadID
-        if selected, phase != .closed { return }
+        return (index, thread)
+    }
+
+    private func linkedOpenCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
         guard !operationsInProgress, queueEdit == nil else {
             throw WorkspaceError("Finish the current operation or queued message edit and try the thread link again.")
         }
-        let directory = thread.workingLocation.directory(in: workspace.projects[index])
+        let directory = thread.workingLocation.directory(in: project)
         var isDirectory: ObjCBool = false
         guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil,
               directory.hasPrefix("/"), !directory.utf8.contains(0),
               FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw WorkspaceError("The linked thread’s checkout is unavailable.")
         }
-        try WorkspaceHistory.checkThread(in: root, projectID: link.projectID, threadID: link.threadID)
-        if selected { connect() }
-        else { try selectConversation(link.threadID, at: index) }
+        var command = try openCommand(project: project, thread: thread, store: store)
+        command.requireHistory = true
+        return command
     }
 
     func canOpenForkLink(_ id: UUID) -> Bool {
@@ -1911,13 +1978,17 @@ final class WorkspaceModel: ObservableObject {
         workspace.projects.firstIndex { $0.id == workspace.selectedProject }
     }
 
-    func connect() {
-        guard worktreeTask == nil, forkRequest == nil else { return }
+    private func resetConnection() {
         shutdown()
         messages = []
         partial = ""
         activity = ""
         repositoryRevision += 1
+    }
+
+    func connect() {
+        guard worktreeTask == nil, forkRequest == nil else { return }
+        resetConnection()
         guard let store, let project, let conversation, let directory = workingDirectory else { return }
         error = nil
         if conversation.worktreeLaunch?.interruption != nil {
@@ -1930,33 +2001,38 @@ final class WorkspaceModel: ObservableObject {
             connectionFailed("The thread’s workspace folder is no longer available.")
             return
         }
-        phase = .connecting
         do {
-            let settings = try effectiveModel.validated()
+            let command = try openCommand(project: project, thread: conversation, store: store)
             let worker = try makeProcess(store.config, directory)
-            process = worker
-            worker.onEvent = { [weak self, weak worker] event in
-                guard let self, let worker, self.process === worker else { return }
-                self.receive(event, from: worker, account: settings.account)
-            }
-            worker.onClose = { [weak self, weak worker] in
-                guard let self, let worker, self.process === worker else { return }
-                self.connectionFailed(self.error ?? "The Pi helper exited. Reconnect to this conversation.")
-            }
-            try worker.send(OpenConversation(
-                cwd: directory,
-                sessionDir: store.history(project: project.id, conversation: conversation.id).path,
-                threadID: conversation.id.uuidString,
-                config: settings,
-                toolPermission: project.toolPermission,
-                forkMessageID: conversation.forkOrigin?.messageID
-            ))
+            attach(worker, account: command.config.account)
+            try worker.send(command)
         } catch {
             connectionFailed(error.localizedDescription)
         }
     }
 
+    private func openCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
+        try OpenConversation(cwd: thread.workingLocation.directory(in: project),
+                             sessionDir: store.history(project: project.id, conversation: thread.id).path,
+                             threadID: thread.id.uuidString, config: (project.modelOverride ?? workspace.model).validated(),
+                             toolPermission: project.toolPermission, forkMessageID: thread.forkOrigin?.messageID)
+    }
+
+    private func attach(_ worker: any PiConnection, account: String) {
+        phase = .connecting
+        process = worker
+        worker.onEvent = { [weak self, weak worker] event in
+            guard let self, let worker, self.process === worker else { return }
+            self.receive(event, from: worker, account: account)
+        }
+        worker.onClose = { [weak self, weak worker] in
+            guard let self, let worker, self.process === worker else { return }
+            self.connectionFailed(self.error ?? "The Pi helper exited. Reconnect to this conversation.")
+        }
+    }
+
     private func connectionFailed(_ message: String) {
+        if let pending = pendingThreadLink, pending.worker === process { rejectPendingThreadLink(message) }
         shutdown()
         if preparingWorktree {
             failWorktreeLaunch(at: .openThread, message: message)
@@ -2043,20 +2119,24 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private func replyToCredential(_ id: String, read: Bool, account: String, worker: any PiConnection) throws {
+        var result = CredentialResult(requestID: id)
+        do {
+            if read { result.key = try readCredential(account) }
+            else { result.exists = try vault.exists(account) }
+        } catch {
+            result.error = true
+        }
+        try worker.send(result)
+    }
+
     private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
         switch event {
         case let .sentImage(requestID, image):
             sentImageRequests.removeValue(forKey: requestID)?.resume(returning: image)
         case let .credential(id, read):
-            var result = CredentialResult(requestID: id)
             do {
-                if read { result.key = try readCredential(account) }
-                else { result.exists = try vault.exists(account) }
-            } catch {
-                result.error = true
-            }
-            do {
-                try worker.send(result)
+                try replyToCredential(id, read: read, account: account, worker: worker)
             } catch {
                 connectionFailed("The Pi helper disconnected during Keychain access.")
             }
@@ -2066,6 +2146,11 @@ final class WorkspaceModel: ObservableObject {
             supportsImageInput = supportsImages
             reconcileQueue(history)
             phase = .ready
+            if let pending = pendingThreadLink, pending.worker === worker {
+                pendingThreadLink = nil
+                finishOpeningThreadLink()
+                pending.result.resume(returning: true)
+            }
             reconcileComposerSubmission(in: history, ended: true)
             if !confirmWorktreePrompt(in: history), preparingWorktree {
                 submitWorktreePrompt(using: worker)

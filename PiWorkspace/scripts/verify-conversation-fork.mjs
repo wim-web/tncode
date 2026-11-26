@@ -63,7 +63,7 @@ function send(command) {
 let closed;
 let events;
 let stderr;
-function open(threadID, forkMessageID) {
+function open(threadID, forkMessageID, requireHistory = false) {
   child = spawn(process.execPath, [join(sidecar, "worker.mjs")], {
     cwd,
     env: {
@@ -81,7 +81,7 @@ function open(threadID, forkMessageID) {
   stderr = "";
   child.stderr.setEncoding("utf8").on("data", (text) => { stderr += text; });
   send({
-    type: "open", cwd, sessionDir: join(sessions, threadID), threadID, forkMessageID,
+    type: "open", cwd, sessionDir: join(sessions, threadID), threadID, forkMessageID, requireHistory,
     toolPermission: "readFiles",
     config: {
       provider: "local", model, contextWindow: 8192, endpoint: `http://127.0.0.1:${server.address().port}/v1`,
@@ -293,11 +293,33 @@ try {
   await close();
   assert.equal(requests.length, 4);
 
+  const lines = copied.trimEnd().split("\n");
+  const cutoffEntry = JSON.parse(lines.at(-1));
+  assert.equal(cutoffEntry.id, cutoff.id);
+  for (const damaged of [
+    [lines[0], ...lines.slice(2)], // cutoff present, ancestor missing
+    [...lines, JSON.stringify({ ...cutoffEntry, id: "other", parentId: null })], // different active branch
+  ]) {
+    writeFileSync(destination.file, damaged.join("\n") + "\n");
+    open(childID, cutoff.id);
+    assert.match((await receive("fatal")).error, /fork history is incomplete/);
+    await close(1);
+  }
+  cutoffEntry.message.content = [{ type: "text", text: "   " }];
+  writeFileSync(destination.file, [...lines.slice(0, -1), JSON.stringify(cutoffEntry)].join("\n") + "\n");
+  open(childID, cutoff.id);
+  assert.equal((await receive("ready")).messages.at(-1).canFork, false);
+  await close();
+
   const missing = reserve();
   open(missing.threadID, cutoff.id);
   assert.match((await receive("fatal")).error, /fork history is missing/);
   await close(1);
   assert(!existsSync(missing.file));
+  open(missing.threadID, undefined, true);
+  assert.match((await receive("fatal")).error, /linked thread’s history is missing/);
+  await close(1);
+  assert.deepEqual(readdirSync(join(sessions, missing.threadID)), []);
   await verifyInterruptedForks();
   console.log("PASS replayable cutoffs, active-branch checks, and durable legacy forks after abort and provider error");
 } finally {

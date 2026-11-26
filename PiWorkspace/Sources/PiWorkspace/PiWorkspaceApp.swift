@@ -11,6 +11,7 @@ struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @StateObject private var appearance: AppearanceSettings
     @State private var launched = false
+    @State private var openingURL: UUID?
     @State private var showWelcomeAfterSettings = false
     private let browserDefaults: UserDefaults
     private let workspacePasteboard: NSPasteboard
@@ -74,7 +75,14 @@ struct PiWorkspaceApp: App {
             }
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
                 .onOpenURL { url in
-                    if model.openThreadLink(url.absoluteString) { launched = true }
+                    let request = UUID()
+                    openingURL = request
+                    Task {
+                        let opened = await model.openThreadLink(url.absoluteString)
+                        guard request == openingURL else { return }
+                        openingURL = nil
+                        if opened { launched = true } else { launchWorkspace() }
+                    }
                 }
                 .safeAreaInset(edge: .top) {
                     if let error = model.threadLinkError {
@@ -157,7 +165,7 @@ struct PiWorkspaceApp: App {
     }
 
     private func launchWorkspace() {
-        guard !launched else { return }
+        guard !launched, openingURL == nil else { return }
         launched = true
         if let launchProject {
             do { try model.openProject(launchProject) }
@@ -220,7 +228,9 @@ private struct WorkspaceSidebarCommands: Commands {
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
             .disabled(editingComposer != true)
-            Button("Open Thread Link from Clipboard") { model.openThreadLink(from: workspacePasteboard) }
+            Button("Open Thread Link from Clipboard") {
+                Task { await model.openThreadLink(from: workspacePasteboard) }
+            }
                 .accessibilityIdentifier("open-thread-link-from-clipboard")
                 .disabled(!workspaceOpen || model.projectPicker != nil)
             Button("Command Palette…", action: model.requestCommandPalette)
