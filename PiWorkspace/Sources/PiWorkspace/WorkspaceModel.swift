@@ -58,7 +58,7 @@ final class WorkspaceModel: ObservableObject {
     private var projectCloneTask: Task<Void, Error>?
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
-    private var pullRequestSelectionRevision = 0
+    private var threadSelectionRevision = 0
 
     @Published private var queueEdit: QueueEdit?
     @Published private var queueDelivery = QueueDelivery()
@@ -347,6 +347,10 @@ final class WorkspaceModel: ObservableObject {
     var canSwitchDraftProject: Bool {
         conversation?.canDiscardDraft == true && canChangeWorkingDirectory
     }
+    var draftProjectScope: DraftProjectScope? {
+        guard let project, let conversation else { return nil }
+        return DraftProjectScope(projectID: project.id, threadID: conversation.id, revision: threadSelectionRevision)
+    }
     private var canChangeWorkingDirectory: Bool {
         guard !operationsInProgress,
               let store, let project, let conversation, !conversation.archived,
@@ -464,7 +468,7 @@ final class WorkspaceModel: ObservableObject {
         composerCredential = nil
         let previousScope = pullRequestScope
         workspace = updated
-        if pullRequestScope != previousScope { pullRequestSelectionRevision += 1 }
+        if pullRequestScope != previousScope { threadSelectionRevision += 1 }
     }
 
     func updateAddProjectBaseDirectory(_ input: String) throws {
@@ -487,18 +491,20 @@ final class WorkspaceModel: ObservableObject {
         try persist(updated)
     }
 
-    func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
-        guard !operationsInProgress else { return }
+    func openFolder(relinking id: UUID? = nil, startThread: Bool = false, draftOrigin: DraftProjectScope? = nil) {
+        guard !operationsInProgress, draftOrigin == nil ||
+              (id == nil && !startThread && draftOrigin == draftProjectScope && canSwitchDraftProject) else { return }
         let initialPath = if let id {
             projects.first(where: { $0.id == id })?.path ?? ""
         } else {
             ProjectFolder.addProjectInitialPath(workspace.addProjectBaseDirectory)
         }
         projectPicker = ProjectPickerRequest(relinking: id, startThread: startThread,
-                                             initialPath: initialPath, basePath: project?.path)
+                                             initialPath: initialPath, basePath: project?.path, draftOrigin: draftOrigin)
     }
 
     func openProject(_ source: ProjectSource, request: ProjectPickerRequest) async throws {
+        try checkDraftProjectRequest(request)
         switch source {
         case .localFolder(let url):
             try openProject(url, request: request)
@@ -548,7 +554,9 @@ final class WorkspaceModel: ObservableObject {
             guard existing.path == folder.path else {
                 throw WorkspaceError("The destination changed before it could be added.")
             }
-            try registerProject(existing, relinking: request.relinking, startThread: request.startThread)
+            try registerProject(existing, request: request)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw WorkspaceError("""
                 The repository is ready at \(folder.path). \(error.localizedDescription)
@@ -560,7 +568,7 @@ final class WorkspaceModel: ObservableObject {
     func openProject(_ url: URL, request: ProjectPickerRequest? = nil) throws {
         try checkCanOpenProject()
         let folder = try ProjectFolder.existing(at: url)
-        try registerProject(folder, relinking: request?.relinking, startThread: request?.startThread == true)
+        try registerProject(folder, request: request)
     }
 
     func openDroppedProjects(_ urls: [URL]) throws -> Bool {
@@ -583,7 +591,11 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func registerProject(_ folder: URL, relinking: UUID? = nil, startThread: Bool = false) throws {
+    private func registerProject(_ folder: URL, request: ProjectPickerRequest? = nil) throws {
+        try checkDraftProjectRequest(request)
+        let draftOrigin = request?.draftOrigin
+        let relinking = request?.relinking
+        let startThread = request?.startThread == true
         let existing = workspace.projects.firstIndex { $0.path == folder.path }
         let index: Int?
         if let relinking {
@@ -604,6 +616,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
+                guard draftOrigin == nil else { return }
                 $0.selectedProject = $0.projects[index].id
                 if startThread || $0.projects[index].selectedConversation == nil ||
                     (relinking == nil && previous?.id != $0.selectedProject) {
@@ -613,15 +626,21 @@ final class WorkspaceModel: ObservableObject {
                 var project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date())
                 project.selectDraft()
                 $0.projects.append(project)
-                $0.selectedProject = project.id
+                if draftOrigin == nil { $0.selectedProject = project.id }
             }
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
         showingWelcome = false
-        if previous?.id != project?.id || previous?.path != project?.path ||
-            previous?.selectedConversation != project?.selectedConversation || process == nil {
+        if draftOrigin == nil && (previous?.id != project?.id || previous?.path != project?.path ||
+            previous?.selectedConversation != project?.selectedConversation || process == nil) {
             showArchive = conversation?.archived == true
             connect()
         }
+    }
+
+    private func checkDraftProjectRequest(_ request: ProjectPickerRequest?) throws {
+        guard let request, let origin = request.draftOrigin else { return }
+        guard projectPicker?.id == request.id, draftProjectScope == origin else { throw CancellationError() }
+        try Task.checkCancellation()
     }
 
     func selectProject(_ id: UUID) {
@@ -733,17 +752,27 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    func switchDraftProject(to projectID: UUID?) {
+    func switchDraftProject(to projectID: UUID?, from scope: DraftProjectScope? = nil) {
         guard canSwitchDraftProject, let store, let source = selectedProjectIndex, let project,
-              var thread = conversation, project.id != projectID else { return }
+              var thread = conversation, project.id != projectID,
+              scope == nil || scope == draftProjectScope else { return }
         let target = workspace.projects.firstIndex { $0.id == projectID && !$0.isScratch && $0.detached != true }
         guard projectID == nil ? !project.isScratch : target != nil else { return }
+        if let target, (try? ProjectFolder.existing(at: URL(fileURLWithPath: workspace.projects[target].path))) == nil {
+            error = "The project folder is no longer available."
+            return
+        }
+        if !thread.hasDraftContent, let target {
+            guard save({
+                $0.projects[target].openSavedDraft()
+                $0.selectedProject = $0.projects[target].id
+            }) else { return }
+            showArchive = false
+            connect()
+            return
+        }
         if !thread.hasDraftContent {
-            if let projectID {
-                addConversation(in: projectID)
-            } else {
-                startScratchThread()
-            }
+            startScratchThread()
             return
         }
 
@@ -813,7 +842,7 @@ final class WorkspaceModel: ObservableObject {
         guard let number = url?.number ?? digits.flatMap({ Int($0) }), number > 0 else {
             throw WorkspaceError("Enter a GitHub pull request URL or a positive number such as #42.")
         }
-        let revision = pullRequestSelectionRevision
+        let revision = threadSelectionRevision
         let reader = makeGitHubReader(scope.directory)
         if let url, url.repository != repository {
             throw WorkspaceError("This thread’s checkout uses \(repository.slug). Enter a pull request from that repository.")
@@ -825,7 +854,7 @@ final class WorkspaceModel: ObservableObject {
             throw WorkspaceError("The checkout’s GitHub repository changed. Reopen Link pull request to use the current checkout.")
         }
         try Task.checkCancellation()
-        guard scope == pullRequestScope, revision == pullRequestSelectionRevision, let conversation else {
+        guard scope == pullRequestScope, revision == threadSelectionRevision, let conversation else {
             throw WorkspaceError("The selected thread or checkout changed. Reopen Linked items and try again.")
         }
         guard !conversation.pullRequestLinks.contains(where: { $0.id == details.reference }) else { return }

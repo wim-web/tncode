@@ -48,6 +48,7 @@ struct WorkspaceView: View {
     @State private var restoreBranchComposerFocus = false
     @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
+    @State private var draftProjectPicker: DraftProjectPickerPresentation?
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
     @State private var openTerminals: [ThreadTerminalDrawerState] = []
@@ -60,7 +61,7 @@ struct WorkspaceView: View {
     @State private var draftCheckoutBranches: [String: String] = [:]
     @FocusState private var focusedComposer: UUID?
     @FocusState private var welcomeFocus: WelcomeFocus?
-    @State private var focusAfterPicker = false
+    @State private var focusAfterPicker: DraftProjectScope?
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
     @State private var targetingComposerDrop = false
@@ -74,6 +75,12 @@ struct WorkspaceView: View {
         case search
         case composer(UUID)
         case threadFind
+    }
+
+    private struct DraftProjectPickerPresentation: Identifiable {
+        let id = UUID()
+        let scope: DraftProjectScope
+        let restoreComposerFocus: Bool
     }
 
     private enum WelcomeFocus: Hashable {
@@ -195,6 +202,9 @@ struct WorkspaceView: View {
         .onChange(of: model.threadFindScope) { _, scope in
             if model.threadFind?.thread != scope { model.threadFind = nil }
         }
+        .onChange(of: model.draftProjectScope) { _, scope in
+            if let draftProjectPicker, draftProjectPicker.scope != scope { self.draftProjectPicker = nil }
+        }
         .onChange(of: model.messages.last?.id) { _, _ in
             if model.activeThreadFind != nil { model.threadFind?.refresh() }
         }
@@ -291,13 +301,16 @@ struct WorkspaceView: View {
             .frame(width: 340)
         }
         .sheet(item: $model.projectPicker, onDismiss: {
-            if focusAfterPicker { focusedComposer = model.conversation?.id }
+            if let focusAfterPicker, focusAfterPicker == model.draftProjectScope {
+                focusedComposer = focusAfterPicker.threadID
+            }
             if model.showingWelcome { welcomeFocus = .addProject }
-            focusAfterPicker = false
+            focusAfterPicker = nil
         }) { request in
             ProjectFolderView(request: request) { source in
                 try await model.openProject(source, request: request)
-                focusAfterPicker = true
+                guard request.draftOrigin == nil else { return }
+                focusAfterPicker = model.draftProjectScope
                 revealOpenedProject()
                 if request.relinking == nil {
                     searchFocused = false
@@ -1035,23 +1048,12 @@ struct WorkspaceView: View {
     private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool,
                         filesAreVisible: Bool, detailsFitInline: Bool) -> some View {
         return HStack(spacing: 8) {
-            let canSwitchProject = model.canSwitchDraftProject &&
-                !openTerminals.contains { $0.id.thread == thread.id } &&
-                (!project.isScratch || !model.projects.isEmpty)
+            let canSwitchProject = canChooseDraftProject(thread.id)
             if canSwitchProject || !project.isScratch {
                 Menu {
                     if canSwitchProject {
-                        Menu("Draft project") {
-                            ForEach(model.projects.filter { $0.id != project.id }) { target in
-                                Button(target.title) { switchDraftProject(to: target.id) }
-                                    .accessibilityIdentifier("draft-project-\(target.id)")
-                            }
-                            if !project.isScratch {
-                                Button("No project") { switchDraftProject(to: nil) }
-                                    .accessibilityIdentifier("draft-no-project")
-                            }
-                        }
-                        .accessibilityIdentifier("draft-project-picker")
+                        Button("Draft project…") { openDraftProjectPicker(for: thread.id) }
+                            .accessibilityIdentifier("draft-project-picker")
                     }
                     if !project.isScratch {
                         projectActions(project)
@@ -1166,7 +1168,7 @@ struct WorkspaceView: View {
             if let find { transcriptFind(find) }
             if drafting {
                 DraftComposerLayout {
-                    Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
+                    draftHeadline(project, thread: thread)
                         .font(.system(size: 27, weight: .semibold))
                         .multilineTextAlignment(.center)
                         .reservesRoomAboveTerminal(terminalIsVisible, inset: DraftComposerLayout.bottomInset)
@@ -1182,6 +1184,45 @@ struct WorkspaceView: View {
         .frame(width: layout.composerWidth)
         .padding(.leading, layout.composerLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private func draftHeadline(_ project: Project, thread: Conversation) -> some View {
+        VStack(spacing: 8) {
+            if canChooseDraftProject(thread.id) {
+                if project.isScratch { Text("What should we work on?") }
+                HStack(spacing: 4) {
+                    if !project.isScratch { Text("What should we build in") }
+                    Button { openDraftProjectPicker(for: thread.id) } label: {
+                        HStack(spacing: 5) {
+                            Text(project.title).lineLimit(1)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(accent)
+                    .font(project.isScratch ? .callout.weight(.medium) : nil)
+                    .help("Choose a project")
+                    .accessibilityIdentifier("draft-project-trigger")
+                    if !project.isScratch { Text("?").padding(.leading, -4) }
+                }
+            } else {
+                Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
+            }
+        }
+        .popover(item: Binding(
+            get: { draftProjectPicker },
+            set: { if $0 == nil, let session = draftProjectPicker { finishDraftProjectPicker(session, with: nil) } }
+        ), arrowEdge: .bottom) { session in
+            let projects = model.projects.sorted { lhs, rhs in
+                if (lhs.pinned == true) != (rhs.pinned == true) { return lhs.pinned == true }
+                return lhs.lastActivity > rhs.lastActivity
+            }
+            DraftProjectPicker(projects: projects, currentProject: project.id, isScratch: project.isScratch) {
+                finishDraftProjectPicker(session, with: $0)
+            }
+        }
     }
 
     private func inspector(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
@@ -1511,7 +1552,8 @@ struct WorkspaceView: View {
                 .focused($focusedComposer, equals: threadID)
                 .task(id: threadID) {
                     await Task.yield()
-                    if !Task.isCancelled && !model.showingWelcome && model.projectPicker == nil &&
+                    if !Task.isCancelled && model.conversation?.id == threadID &&
+                        !model.showingWelcome && model.projectPicker == nil && draftProjectPicker == nil &&
                         !model.showingSettings && !model.showingCommandPalette && model.activeThreadFind == nil {
                         focusedComposer = threadID
                     }
@@ -1674,7 +1716,7 @@ struct WorkspaceView: View {
 
     private func acceptsWorkspaceKeys(in window: NSWindow) -> Bool {
         !model.showingWelcome && !model.showingSettings && !model.showingCommandPalette &&
-            !model.showingQuitSaveFailure && model.projectPicker == nil &&
+            !model.showingQuitSaveFailure && model.projectPicker == nil && draftProjectPicker == nil &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
             rename == nil && removingProject == nil
@@ -1910,14 +1952,37 @@ struct WorkspaceView: View {
         query = ""
     }
 
-    private func switchDraftProject(to projectID: UUID?) {
-        guard !openTerminals.contains(where: { $0.id.thread == model.conversation?.id }) else { return }
-        let previousProject = model.project?.id
-        model.switchDraftProject(to: projectID)
-        guard let project = model.project, project.id != previousProject else { return }
-        projectFilter.clear()
-        collapsed.remove(project.id)
-        focusedComposer = model.conversation?.id
+    private func canChooseDraftProject(_ threadID: UUID) -> Bool {
+        model.canSwitchDraftProject && !openTerminals.contains { $0.id.thread == threadID }
+    }
+
+    private func openDraftProjectPicker(for threadID: UUID) {
+        guard canChooseDraftProject(threadID), let scope = model.draftProjectScope, scope.threadID == threadID,
+              draftProjectPicker == nil, model.projectPicker == nil else { return }
+        draftProjectPicker = DraftProjectPickerPresentation(scope: scope, restoreComposerFocus: focusedComposer == threadID)
+    }
+
+    private func finishDraftProjectPicker(_ session: DraftProjectPickerPresentation,
+                                          with destination: DraftProjectPicker.Destination?) {
+        guard draftProjectPicker?.id == session.id else { return }
+        draftProjectPicker = nil
+        guard model.draftProjectScope == session.scope else { return }
+        if let destination, canChooseDraftProject(session.scope.threadID) {
+            switch destination {
+            case .addProject:
+                model.openFolder(draftOrigin: session.scope)
+                if model.projectPicker?.draftOrigin == session.scope {
+                    focusAfterPicker = session.restoreComposerFocus ? session.scope : nil
+                    return
+                }
+            case .project(let id):
+                model.switchDraftProject(to: id, from: session.scope)
+            case .noProject:
+                model.switchDraftProject(to: nil, from: session.scope)
+            }
+            if model.project?.id != session.scope.projectID { revealOpenedProject() }
+        }
+        if session.restoreComposerFocus { focusedComposer = model.conversation?.id }
     }
 
     private func beginRename(_ target: RenameTarget, title: String) {

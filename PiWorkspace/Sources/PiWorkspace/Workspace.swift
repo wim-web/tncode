@@ -193,12 +193,19 @@ struct Conversation: Codable, Identifiable {
     }
 }
 
+struct DraftProjectScope: Equatable {
+    let projectID: UUID
+    let threadID: UUID
+    let revision: Int
+}
+
 struct ProjectPickerRequest: Identifiable {
     let id = UUID()
     let relinking: UUID?
     let startThread: Bool
     let initialPath: String
     let basePath: String?
+    var draftOrigin: DraftProjectScope? = nil
 }
 
 enum ProjectSource {
@@ -316,6 +323,17 @@ struct Project: Codable, Identifiable {
         let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
         conversations.insert(thread, at: 0)
         selectedConversation = thread.id
+    }
+
+    mutating func openSavedDraft() {
+        let saved = conversations.filter {
+            $0.isDraft == true && !$0.archived && ($0.hasDraftContent || $0.worktreeLaunch != nil)
+        }
+        if let draft = saved.first(where: { $0.id == selectedConversation }) ?? saved.first {
+            selectedConversation = draft.id
+        } else {
+            selectDraft()
+        }
     }
 
     var toolPermission: ToolPermission {
