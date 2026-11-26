@@ -2,6 +2,8 @@
 
 T3 Code (Beta) 0.1.12 を Swift／SwiftUI の macOS アプリへ移植するための調査・実装引き継ぎ。既存の Swift コードは比較の出発点として [PiWorkspace](PiWorkspace/README.md) に収録した。
 
+**実装を担当する人は [準備から完成までの実装手順書](IMPLEMENTATION.md) から始める。** 全12工程の実装順、依存関係、各工程の終了条件を記載した。[工程別の作業表](docs/implementation-order.tsv) から担当する機能・画面の ID を引ける。
+
 | 実装時に調べたいこと | 資料 |
 |---|---|
 | 機能、入口、途中状態、失敗・復帰、外部への作用 | [機能台帳の索引](T3Audit-0.1.12/inventory/README.md) · [全機能と Swift の差分](T3Audit-0.1.12/inventory/features.tsv) |
@@ -17,7 +19,7 @@ T3 Code (Beta) 0.1.12 を Swift／SwiftUI の macOS アプリへ移植するた�
 - エージェントは補助プロセス内の Pi SDK を使う。API キーは Swift 側が macOS Keychain に保存し、補助プロセスの CredentialStore がプロセス間通信で読み出す。[Keychain](PiWorkspace/Sources/PiWorkspace/KeyVault.swift) · [Pi の起動](PiWorkspace/Sources/PiWorkspace/PiProcess.swift) · [SDK への組み込み](PiWorkspace/Sidecar/worker.mjs) · [認証の先行試作](pi-keychain-probe/README.md)
 - **Swift 版のテレメトリは既定オフ。** 新規データで利用統計や診断の外部送信を自動で有効にしない。現行版は `PI_TELEMETRY=0` と `PI_OFFLINE=1` を補助プロセスに渡す。利用者が選んだモデル API に対する会話の送信は別の機能である。SDK の判定は同梱版で確認済み。起動・初回送信・再起動時の全プロセスの通信先照合は、今後の受入項目。[設定箇所](PiWorkspace/Sources/PiWorkspace/PiProcess.swift#L77-L82) · [判定結果](T3Audit-0.1.12/results/pi-telemetry.json) · [原本の送信仕様](https://github.com/pingdotgg/t3code/blob/ca81b7b97a1c4b91e5ac25768d0f6629f37732fd/docs/user/telemetry.md)
 
-## 最初の実装単位
+## 最初に通す3つの操作
 
 1. **既存フォルダーを開く**（CHAT-058、DEV-001、NAV-232）。空の状態から登録、下書きの表示、入力フォーカス、キャンセルまで照合する。現行 Swift 版はパス直接入力による登録が成功した。Browse は OS パネルが開くところまで確認済み。
 2. **会話を送って続ける**（CHAT-001、088、089、100）。初回送信で中央の下書きから会話画面へ移ること、先頭の応答、停止、失敗、再起動後のスレッド ID と履歴を照合する。原本で再起動直後に開いたのは直近のプロジェクトの新規下書き。保存済みの会話は一覧から開いて続行できた。

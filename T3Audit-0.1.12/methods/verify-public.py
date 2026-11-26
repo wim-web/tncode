@@ -1,4 +1,4 @@
-"""Validate the public handoff in a fresh recursive checkout. Read-only, no network."""
+"""Validate the public handoff with its pinned first-level submodule. Read-only, no network."""
 import collections
 import csv
 import hashlib
@@ -42,6 +42,22 @@ def pointers(base, value):
 def git(*args):
     return subprocess.check_output(["git",*args],text=True).strip()
 
+def verify_implementation_order(features, screens, runtime_only):
+    baseline = {key: row["swift_status"] for key, row in features.items()}
+    baseline.update({key: row["status"] for key, row in screens.items()})
+    baseline.update({key: row["status"] for key, row in runtime_only.items()})
+    work = indexed(ROOT / "docs/implementation-order.tsv")
+    assert work.keys() == baseline.keys(), f"roadmap ID mismatch: {sorted(work.keys() ^ baseline.keys())}"
+    guide = (ROOT / "IMPLEMENTATION.md").read_text()
+    stages = set(re.findall(r"^### (\d{2})\s", guide, re.MULTILINE))
+    assert {row["stage"] for row in work.values()} == stages - {"00"}, "roadmap stage mismatch"
+    for key, row in work.items():
+        assert row["audit_status"] == baseline[key], f"stale audit status: {key}"
+        assert row["result"] in {"未評価", "未検証", "要修正", "合格", "合意差", "適用外"}, key
+        if row["result"] != "未評価":
+            assert row["evidence_ref"].strip() not in {"", "-"}, f"missing outcome reference: {key}"
+    return len(work)
+
 def main():
     frozen=json.loads((AUDIT/"inventory/freeze.json").read_text())
     assert git("-C",str(UPSTREAM),"rev-parse","HEAD")==frozen["commit"],"Run git -c submodule.recurse=false submodule update --init --depth 1 -- T3Audit-0.1.12/.source"
@@ -66,7 +82,9 @@ def main():
         assert r["feature_id"] in features.keys() | rt.keys(),r
         assert r["entry_id"]=="-" or entries[r["entry_id"]]["feature_id"]==r["feature_id"],r
     states=indexed(AUDIT/"screens/states.tsv","screen_id")
-    assert len(states)==61 and states.keys()==indexed(AUDIT/"comparison/screens.tsv","state_id").keys()
+    screen_comparisons=indexed(AUDIT/"comparison/screens.tsv","state_id")
+    assert len(states)==61 and states.keys()==screen_comparisons.keys()
+    roadmap_count=verify_implementation_order(features,screen_comparisons,rt)
     captures=indexed(AUDIT/"screens/captures.tsv","capture_id")
     assert len(captures)==181
     native_caps=indexed(AUDIT/"screens/swift-captures.tsv","capture_id")
@@ -106,5 +124,5 @@ def main():
             links+=1
     print(f"Verified {len(features)} source rows, {len(entries)} registrations, {len(live)} runtime IDs, "
           f"{len(states)} screen specifications, {len(captures)} renderer and {len(native_caps)} native geometry samples, "
-          f"{len(transitions)} transition records, and {links} local Markdown links.")
+          f"{len(transitions)} transition records, {roadmap_count} roadmap assignments, and {links} local Markdown links.")
 if __name__=="__main__":main()
