@@ -5,6 +5,12 @@ struct GitRepositoryState: Sendable {
     let branch: String?
     let branches: [String]
     let files: [GitFileChange]
+    let directoryPrefix: String
+
+    func workspacePath(for file: GitFileChange) -> String? {
+        guard file.path.hasPrefix(directoryPrefix) else { return nil }
+        return String(file.path.dropFirst(directoryPrefix.count))
+    }
 }
 
 struct GitCheckout: Sendable {
@@ -119,7 +125,8 @@ struct GitWorkspace: Sendable {
             .split(separator: "\n")
             .map(String.init)
 
-        return GitRepositoryState(branch: branch, branches: branches, files: files)
+        let directoryPrefix = try await revParse(["--show-prefix"], in: nil)
+        return GitRepositoryState(branch: branch, branches: branches, files: files, directoryPrefix: directoryPrefix)
     }
 
     func currentBranch() async throws -> String? {

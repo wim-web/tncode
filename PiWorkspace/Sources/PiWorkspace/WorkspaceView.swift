@@ -37,6 +37,9 @@ struct WorkspaceView: View {
     @State private var showingDetails = false
     @State private var showingChanges = false
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
+    @State private var showingFiles: Set<UUID> = []
+    @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
+    @State private var fileDrafts = WorkspaceFileDrafts()
     @State private var showingTerminal = false
     @State private var choosingWorkspace = false
     @State private var confirmingTerminalClose = false
@@ -762,9 +765,10 @@ struct WorkspaceView: View {
             get: { browserPanels[thread.id] ?? ThreadBrowserPreview(searchDefaults: browserDefaults) },
             set: { browserPanels[thread.id] = $0 }
         )
-        let browserIsVisible = browser.wrappedValue.isVisible
+        let filesAreVisible = showingFiles.contains(thread.id)
+        let browserIsVisible = !filesAreVisible && browser.wrappedValue.isVisible
         let changesDirectory = showingChanges && !thread.workingLocation.needsWorktree ? model.workingDirectory : nil
-        let hasRightPanel = browserIsVisible || changesDirectory != nil
+        let hasRightPanel = filesAreVisible || browserIsVisible || changesDirectory != nil
         let preferredWidth = rightPanelWidths[thread.id] ?? WorkspaceLayout.defaultRightPanelWidth
         let layout = WorkspaceLayout(
             viewportWidth: viewportWidth,
@@ -776,7 +780,8 @@ struct WorkspaceView: View {
             chatWidthMode: chatWidthMode
         )
         return VStack(spacing: 0) {
-            header(project, thread, browserIsVisible: browserIsVisible, detailsFitInline: layout.detailsFitInline)
+            header(project, thread, browserIsVisible: browserIsVisible, filesAreVisible: filesAreVisible,
+                   detailsFitInline: layout.detailsFitInline)
                 .overlay(alignment: .bottom) { Divider() }
 
             // Keep the conversation in the same slot as the panel opens, closes, or overlays it.
@@ -822,10 +827,18 @@ struct WorkspaceView: View {
                                 .zIndex(1)
                             }
                             Group {
-                                if browserIsVisible {
+                                if filesAreVisible {
+                                    filesPanel(project, thread)
+                                } else if browserIsVisible {
                                     BrowserPreviewView(preview: browser)
                                 } else if let changesDirectory {
-                                    SourceControlView(directory: changesDirectory, model: model)
+                                    SourceControlView(directory: changesDirectory, model: model) { path in
+                                        guard let location = selectedFilesLocation,
+                                              location.threadID == thread.id, location.directory == changesDirectory
+                                        else { return }
+                                        selectedFiles[location] = path
+                                        showingFiles.insert(thread.id)
+                                    }
                                         .id(changesDirectory)
                                 }
                             }
@@ -848,6 +861,29 @@ struct WorkspaceView: View {
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
             }
+        }
+    }
+
+    private var selectedFilesLocation: WorkspaceFilesLocation? {
+        guard let project = model.project, let thread = model.conversation else { return nil }
+        return WorkspaceFilesLocation(thread: thread, project: project)
+    }
+
+    @ViewBuilder
+    private func filesPanel(_ project: Project, _ thread: Conversation) -> some View {
+        if let location = WorkspaceFilesLocation(thread: thread, project: project) {
+            WorkspaceFilesView(location: location, drafts: fileDrafts,
+                               activeLocation: { showingFiles.contains(thread.id) ? selectedFilesLocation : nil },
+                               close: { showingFiles.remove(thread.id) },
+                               selection: Binding(get: { selectedFiles[location] },
+                                                  set: { selectedFiles[location] = $0 }))
+                .id(location)
+        } else {
+            Text("Files will be available when the worktree is ready.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(12)
+                .accessibilityIdentifier("files-pending-worktree")
         }
     }
 
@@ -879,7 +915,8 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool, detailsFitInline: Bool) -> some View {
+    private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool,
+                        filesAreVisible: Bool, detailsFitInline: Bool) -> some View {
         return HStack(spacing: 8) {
             let canSwitchProject = model.canSwitchDraftProject &&
                 !openTerminals.contains { $0.thread == thread.id } &&
@@ -935,14 +972,14 @@ struct WorkspaceView: View {
                     .id(directory)
             }
             Button {
-                if browserIsVisible {
+                if showingFiles.remove(thread.id) != nil || browserIsVisible {
                     browserPanels[thread.id]?.isVisible = false
                     showingChanges = true
                 } else {
                     showingChanges.toggle()
                 }
             } label: {
-                Image(systemName: showingChanges && !browserIsVisible ? "doc.text.fill" : "doc.text")
+                Image(systemName: showingChanges && !browserIsVisible && !filesAreVisible ? "doc.text.fill" : "doc.text")
             }
             .buttonStyle(.plain)
             .help("Changes")
@@ -951,7 +988,21 @@ struct WorkspaceView: View {
             .disabled(thread.workingLocation.needsWorktree)
 
             Button {
-                browserPanels[thread.id, default: ThreadBrowserPreview(searchDefaults: browserDefaults)].togglePanel()
+                if showingFiles.remove(thread.id) == nil { showingFiles.insert(thread.id) }
+            } label: {
+                Image(systemName: filesAreVisible ? "folder.fill" : "folder")
+            }
+            .buttonStyle(.plain)
+            .help(filesAreVisible ? "Hide Files" : "Show Files")
+            .accessibilityLabel("Files")
+            .accessibilityAddTraits(filesAreVisible ? .isSelected : [])
+            .accessibilityIdentifier("toggle-files")
+
+            Button {
+                let wasShowingFiles = showingFiles.remove(thread.id) != nil
+                if !wasShowingFiles || browserPanels[thread.id]?.isVisible != true {
+                    browserPanels[thread.id, default: ThreadBrowserPreview(searchDefaults: browserDefaults)].togglePanel()
+                }
             } label: {
                 Image(systemName: "globe")
                     .foregroundStyle(browserIsVisible ? Color.accentColor : Color.primary)

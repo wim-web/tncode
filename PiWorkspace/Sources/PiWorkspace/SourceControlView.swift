@@ -3,6 +3,7 @@ import SwiftUI
 struct SourceControlView: View {
     let directory: String
     @ObservedObject var model: WorkspaceModel
+    let openFile: (String) -> Void
     @State private var state: GitRepositoryState?
     @State private var selected: GitFileChange?
     @State private var excludedPaths: Set<String> = []
@@ -216,14 +217,22 @@ struct SourceControlView: View {
 
     private var diffHeader: some View {
         HStack {
-            Text(selected?.path ?? "All files")
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            if selected != nil {
+            if let file = selected {
+                if let path = state?.workspacePath(for: file) {
+                    Button { openFile(path) } label: {
+                        Text(file.path).lineLimit(1).truncationMode(.middle)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open Source File")
+                    .accessibilityIdentifier("git-open-source")
+                } else {
+                    Text(file.path).lineLimit(1).truncationMode(.middle)
+                }
                 Button { selected = nil } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Show all changes")
+            } else {
+                Text("All files").font(.caption.weight(.medium))
             }
             Spacer()
             Picker("Changes", selection: $staged) {
@@ -235,6 +244,7 @@ struct SourceControlView: View {
             .fixedSize()
             .accessibilityIdentifier("git-diff-mode")
         }
+        .font(.caption.weight(.medium))
         .padding(8)
     }
 
