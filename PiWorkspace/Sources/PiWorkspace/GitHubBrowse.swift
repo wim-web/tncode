@@ -16,16 +16,43 @@ enum GitHubStateFilter: String, Hashable, Identifiable, Sendable {
     var title: String { rawValue.capitalized }
 }
 
+enum GitHubPullRequestFilterKind: String, Hashable, Sendable {
+    case author, label
+}
+
+struct GitHubPullRequestFilters: Hashable, Sendable {
+    let repository: GitHubRepository
+    var author: String?
+    var labels: [String] = []
+
+    var isEmpty: Bool { author == nil && labels.isEmpty }
+
+    fileprivate var qualifiers: [String] {
+        let author = author.map { ["author:\(Self.quoted($0))"] } ?? []
+        return author + labels.map { "label:\(Self.quoted($0))" }
+    }
+
+    private static func quoted(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+}
+
 struct GitHubListQuery: Hashable, Sendable {
     let kind: GitHubBrowseKind
     let filter: GitHubStateFilter
     let text: String
+    let pullRequestFilters: GitHubPullRequestFilters?
 
-    init(_ kind: GitHubBrowseKind, _ filter: GitHubStateFilter = .open, text: String = "") {
+    init(_ kind: GitHubBrowseKind, _ filter: GitHubStateFilter = .open, text: String = "",
+         pullRequestFilters: GitHubPullRequestFilters? = nil) {
         self.kind = kind
         self.filter = filter
         self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.pullRequestFilters = kind == .pullRequests && pullRequestFilters?.isEmpty == false ? pullRequestFilters : nil
     }
+
+    var isSearching: Bool { !text.isEmpty || pullRequestFilters != nil }
 
     fileprivate func search(in repository: GitHubRepository) throws -> String {
         let terms = try scopedSearchTerms()
@@ -35,7 +62,8 @@ struct GitHubListQuery: Hashable, Sendable {
         case .closed where kind == .pullRequests: "is:closed is:unmerged"
         default: "is:\(filter.rawValue)"
         }
-        return (["repo:\(repository.slug)", type, state, "sort:created-desc"] + terms)
+        let qualifiers = pullRequestFilters?.qualifiers ?? []
+        return (["repo:\(repository.slug)", type, state, "sort:created-desc"] + terms + qualifiers)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
     }
@@ -77,6 +105,7 @@ struct GitHubListItem: Decodable, Identifiable, Sendable {
     let title: String
     let state: String
     let isDraft: Bool?
+    let author: GitHubAuthor?
     fileprivate let repository: Repository
     fileprivate let labels: Labels?
 
@@ -107,19 +136,34 @@ struct GitHubIssueDetails: Sendable {
     let url: URL
 }
 
+struct GitHubPullRequestFilterOptions: Sendable {
+    let values: [String]
+    let hasMore: Bool
+
+    static func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    fileprivate static func isValid(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && value.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
+    }
+}
+
 extension GitHubReader {
     func list(_ query: GitHubListQuery, after next: GitHubListPage.Next? = nil) async throws -> GitHubListPage {
         let kind = query.kind
         guard kind.filters.contains(query.filter), next == nil || next?.query == query else {
             throw ReadError.invalidResponse(kind)
         }
-        let repository = try await repository(matching: next?.repository)
+        let repository = try await repository(matching: next?.repository ?? query.pullRequestFilters?.repository)
         let node = kind == .pullRequests ? "PullRequest" : "Issue"
         let fields = """
             pageInfo { hasNextPage endCursor }
             nodes {
                 ... on \(node) {
-                    number title state \(kind == .pullRequests ? "isDraft" : "")
+                    number title state \(kind == .pullRequests ? "isDraft author { login }" : "")
                     repository { nameWithOwner }
                     labels(first: 10) { nodes { name } }
                 }
@@ -127,7 +171,7 @@ extension GitHubReader {
             """
         let document: String
         let variables: [String]
-        if query.text.isEmpty {
+        if !query.isSearching {
             let parts = repository.slug.split(separator: "/", maxSplits: 1)
             let states = query.filter == .all ? "" : "states: [\(query.filter.rawValue.uppercased())], "
             document = """
@@ -175,7 +219,41 @@ extension GitHubReader {
         } else {
             continuation = nil
         }
+        _ = try await self.repository(matching: repository)
         return GitHubListPage(repository: repository, items: items, next: continuation)
+    }
+
+    func pullRequestFilterOptions(
+        _ kind: GitHubPullRequestFilterKind, matching text: String, in expectedRepository: GitHubRepository
+    ) async throws -> GitHubPullRequestFilterOptions {
+        let repository = try await repository(matching: expectedRepository)
+        let parts = repository.slug.split(separator: "/", maxSplits: 1)
+        let connection = switch kind {
+        case .author: "mentionableUsers(first: 50, query: $text) { pageInfo { hasNextPage } nodes { value: login } }"
+        case .label: "labels(first: 100, query: $text, orderBy: {field: NAME, direction: ASC}) { pageInfo { hasNextPage } nodes { value: name } }"
+        }
+        let document = """
+            query($owner: String!, $name: String!, $text: String) {
+                repository(owner: $owner, name: $name) {
+                    nameWithOwner
+                    options: \(connection)
+                }
+            }
+            """
+        let filter = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let variables = filter.isEmpty ? [] : ["--raw-field", "text=\(filter.replacingOccurrences(of: "\0", with: ""))"]
+        let response: FilterOptionsResponse = try await read(
+            ["api", "graphql", "--hostname", "github.com", "--raw-field", "query=\(document)",
+             "--raw-field", "owner=\(parts[0])", "--raw-field", "name=\(parts[1])"] + variables,
+            for: .pullRequests
+        )
+        guard let result = response.data.repository,
+              result.nameWithOwner.caseInsensitiveCompare(repository.slug) == .orderedSame else {
+            throw ReadError.invalidResponse(.pullRequests)
+        }
+        _ = try await self.repository(matching: repository)
+        let values = result.options.nodes.compactMap { $0?.value }.filter(GitHubPullRequestFilterOptions.isValid)
+        return .init(values: GitHubPullRequestFilterOptions.unique(values), hasMore: result.options.pageInfo.hasNextPage)
     }
 
     func issueDetails(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubIssueDetails {
@@ -211,6 +289,27 @@ extension GitHubReader {
 
             let pageInfo: PageInfo
             let nodes: [GitHubListItem?]
+        }
+
+        let data: Data
+    }
+
+    private struct FilterOptionsResponse: Decodable {
+        struct Data: Decodable {
+            struct Repository: Decodable {
+                struct Options: Decodable {
+                    struct Node: Decodable { let value: String }
+                    struct PageInfo: Decodable { let hasNextPage: Bool }
+
+                    let nodes: [Node?]
+                    let pageInfo: PageInfo
+                }
+
+                let nameWithOwner: String
+                let options: Options
+            }
+
+            let repository: Repository?
         }
 
         let data: Data
@@ -258,6 +357,8 @@ final class GitHubBrowserModel: ObservableObject {
     @Published private(set) var request: Request?
     @Published private(set) var listing = Listing.loading
     @Published private(set) var selection: Selection?
+    @Published private(set) var repository: GitHubRepository?
+    @Published private(set) var loadedFilterValues: [GitHubPullRequestFilterKind: Set<String>] = [:]
     @Published var searchText = ""
 
     init(kind: GitHubBrowseKind, reader: GitHubReader) {
@@ -268,7 +369,42 @@ final class GitHubBrowserModel: ObservableObject {
     }
 
     func applySearch(filter: GitHubStateFilter) {
-        let updated = GitHubListQuery(kind, filter, text: searchText)
+        apply(.init(kind, filter, text: searchText, pullRequestFilters: query.pullRequestFilters))
+    }
+
+    func setAuthor(_ author: String?, in repository: GitHubRepository) {
+        guard kind == .pullRequests, repository == self.repository,
+              author.map(GitHubPullRequestFilterOptions.isValid) ?? true else { return }
+        var filters = query.pullRequestFilters ?? GitHubPullRequestFilters(repository: repository)
+        filters.author = author
+        apply(.init(kind, query.filter, text: query.text, pullRequestFilters: filters))
+    }
+
+    func toggleLabel(_ label: String, in repository: GitHubRepository) {
+        guard kind == .pullRequests, repository == self.repository,
+              GitHubPullRequestFilterOptions.isValid(label) else { return }
+        var filters = query.pullRequestFilters ?? GitHubPullRequestFilters(repository: repository)
+        if let index = filters.labels.firstIndex(where: { $0.caseInsensitiveCompare(label) == .orderedSame }) {
+            filters.labels.remove(at: index)
+        } else {
+            filters.labels.append(label)
+        }
+        apply(.init(kind, query.filter, text: query.text, pullRequestFilters: filters))
+    }
+
+    func clearLabels(in repository: GitHubRepository) {
+        guard repository == self.repository, var filters = query.pullRequestFilters else { return }
+        filters.labels = []
+        apply(.init(kind, query.filter, text: query.text, pullRequestFilters: filters))
+    }
+
+    func filterOptions(
+        _ kind: GitHubPullRequestFilterKind, matching text: String, in repository: GitHubRepository
+    ) async throws -> GitHubPullRequestFilterOptions {
+        try await reader.pullRequestFilterOptions(kind, matching: text, in: repository)
+    }
+
+    private func apply(_ updated: GitHubListQuery) {
         guard query != updated else { return }
         query = updated
         selection = nil
@@ -295,6 +431,18 @@ final class GitHubBrowserModel: ObservableObject {
         do {
             let page = try await reader.list(work.query, after: work.next)
             guard work == request, !Task.isCancelled else { return }
+            if repository != page.repository {
+                repository = page.repository
+                loadedFilterValues = [:]
+            }
+            if kind == .pullRequests {
+                loadedFilterValues[.author, default: []].formUnion(
+                    page.items.compactMap { $0.author?.login }.filter(GitHubPullRequestFilterOptions.isValid)
+                )
+                loadedFilterValues[.label, default: []].formUnion(
+                    page.items.flatMap(\.labelNames).filter(GitHubPullRequestFilterOptions.isValid)
+                )
+            }
             if work.next != nil, case .loaded(let current, _) = listing {
                 let existing = Set(current.items.map(\.number))
                 let items = current.items + page.items.filter { !existing.contains($0.number) }
@@ -310,6 +458,13 @@ final class GitHubBrowserModel: ObservableObject {
             }
         } catch {
             guard work == request, !Task.isCancelled else { return }
+            if case GitHubReader.ReadError.repositoryChanged = error,
+               work.next == nil, work.query.pullRequestFilters != nil {
+                repository = nil
+                loadedFilterValues = [:]
+                apply(.init(kind, query.filter, text: query.text))
+                return
+            }
             if work.next != nil, case .loaded(let page, _) = listing {
                 listing = .loaded(page, .failed(error.localizedDescription))
             } else {

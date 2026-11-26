@@ -160,6 +160,12 @@ private struct GitHubListView: View {
                 .accessibilityLabel("Refresh \(itemName)s")
                 .accessibilityIdentifier("\(prefix)-refresh")
             }
+            if model.kind == .pullRequests {
+                HStack(spacing: 8) {
+                    PullRequestFilterButton(kind: .author, model: model)
+                    PullRequestFilterButton(kind: .label, model: model)
+                }
+            }
         }
         .padding(16)
     }
@@ -194,7 +200,7 @@ private struct GitHubListView: View {
             Divider()
             if list.items.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(model.query.text.isEmpty ? "No \(itemName)s" : "No matching \(itemName)s")
+                    Text(model.query.isSearching ? "No matching \(itemName)s" : "No \(itemName)s")
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("\(prefix)-list-empty")
                     if !model.query.text.isEmpty {
@@ -233,9 +239,15 @@ private struct GitHubListView: View {
                 Text(verbatim: item.title)
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
-                Text("#\(item.number) · \(item.stateLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("#\(item.number) · \(item.stateLabel)")
+                    if let login = item.author?.login, !login.isEmpty {
+                        Text(verbatim: "· @\(login)")
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 let labels = item.labelNames
                 if !labels.isEmpty {
                     Text(verbatim: labels.joined(separator: ", "))
@@ -273,6 +285,195 @@ private struct GitHubListView: View {
                 Button("Retry") { model.loadMore() }
                     .accessibilityIdentifier("\(prefix)-page-retry")
             }
+        }
+    }
+}
+
+private struct PullRequestFilterButton: View {
+    let kind: GitHubPullRequestFilterKind
+    @ObservedObject var model: GitHubBrowserModel
+    @State private var isPresented = false
+
+    private var title: String { kind == .author ? "Author" : "Labels" }
+
+    private var summary: String {
+        switch kind {
+        case .author:
+            return model.query.pullRequestFilters?.author ?? "Anyone"
+        case .label:
+            let count = model.query.pullRequestFilters?.labels.count ?? 0
+            return count == 0 ? "Any" : "\(count) selected"
+        }
+    }
+
+    var body: some View {
+        Button { isPresented = true } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                Text(verbatim: summary).foregroundStyle(.secondary).lineLimit(1)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(.secondary)
+            }
+        }
+        .disabled(model.repository == nil)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
+        .accessibilityIdentifier("pr-\(kind.rawValue)-filter")
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            if let repository = model.repository {
+                PullRequestFilterChoices(kind: kind, model: model, repository: repository) {
+                    isPresented = false
+                }
+                .id(repository)
+            }
+        }
+        .onChange(of: model.repository) { isPresented = false }
+    }
+}
+
+private struct PullRequestFilterChoices: View {
+    private struct Request: Hashable {
+        let text: String
+        let retry: Int
+    }
+
+    private enum Options {
+        case loaded(GitHubPullRequestFilterOptions)
+        case failed(String)
+    }
+
+    let kind: GitHubPullRequestFilterKind
+    @ObservedObject var model: GitHubBrowserModel
+    let repository: GitHubRepository
+    let dismiss: () -> Void
+    @State private var text = ""
+    @State private var retry = 0
+    @State private var answer: (Request, Options)?
+    @FocusState private var searchFocused: Bool
+
+    private var prefix: String { "pr-\(kind.rawValue)" }
+
+    private var selected: [String] {
+        guard let filters = model.query.pullRequestFilters else { return [] }
+        return kind == .author ? [filters.author].compactMap { $0 } : filters.labels
+    }
+
+    var body: some View {
+        let request = Request(text: String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100)), retry: retry)
+        let options = answer?.0 == request ? answer?.1 : nil
+        let values = choices(options, matching: request.text)
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(kind == .author ? "Search authors" : "Search labels", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($searchFocused)
+                .accessibilityIdentifier("\(prefix)-search")
+            if kind == .author {
+                Button { chooseAuthor(nil) } label: {
+                    choice("Anyone", selected: selected.isEmpty)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected.isEmpty ? .isSelected : [])
+                .accessibilityIdentifier("pr-author-anyone")
+            } else {
+                Button("Clear labels") { model.clearLabels(in: repository) }
+                    .disabled(selected.isEmpty)
+                    .accessibilityIdentifier("pr-label-clear")
+            }
+            if !values.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(values, id: \.self) { value in
+                            option(value)
+                        }
+                    }
+                }
+                .frame(height: CGFloat(min(values.count, 8) * 28))
+            }
+            switch options {
+            case .none:
+                ProgressView().controlSize(.small)
+                    .accessibilityLabel("Loading choices")
+                    .accessibilityIdentifier("\(prefix)-options-loading")
+            case .loaded(let page):
+                if values.isEmpty {
+                    Text(kind == .author ? "No authors found" : "No labels found")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("\(prefix)-options-empty")
+                }
+                if page.hasMore {
+                    Text("Type to narrow results").foregroundStyle(.secondary)
+                }
+            case .failed(let message):
+                Text(message)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("\(prefix)-options-error")
+                Button("Retry") { retry += 1 }
+                    .accessibilityIdentifier("\(prefix)-options-retry")
+            }
+        }
+        .padding(12)
+        .frame(width: 280)
+        .submitScope()
+        .defaultFocus($searchFocused, true)
+        .task(id: request) { await load(request) }
+    }
+
+    private func choices(_ options: Options?, matching text: String) -> [String] {
+        let known = (model.loadedFilterValues[kind] ?? []).filter {
+            text.isEmpty || $0.localizedCaseInsensitiveContains(text)
+        }
+        let hosted = if case .loaded(let page) = options { page.values } else { [String]() }
+        let remaining = GitHubPullRequestFilterOptions.unique(hosted + known)
+            .filter { value in !isSelected(value) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return selected + remaining
+    }
+
+    private func isSelected(_ value: String) -> Bool {
+        selected.contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+    }
+
+    private func option(_ value: String) -> some View {
+        let selected = isSelected(value)
+        return Button {
+            switch kind {
+            case .author: chooseAuthor(value)
+            case .label: model.toggleLabel(value, in: repository)
+            }
+        } label: {
+            choice(value, selected: selected)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("\(prefix)-option-\(value)")
+    }
+
+    private func choice(_ title: String, selected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(selected ? Color.accentColor : .secondary)
+                .accessibilityHidden(true)
+            Text(verbatim: title).lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func chooseAuthor(_ author: String?) {
+        model.setAuthor(author, in: repository)
+        dismiss()
+    }
+
+    @MainActor
+    private func load(_ request: Request) async {
+        do {
+            if !request.text.isEmpty { try await Task.sleep(for: .milliseconds(250)) }
+            let page = try await model.filterOptions(kind, matching: request.text, in: repository)
+            guard !Task.isCancelled else { return }
+            answer = (request, .loaded(page))
+        } catch {
+            guard !Task.isCancelled else { return }
+            answer = (request, .failed(error.localizedDescription))
         }
     }
 }

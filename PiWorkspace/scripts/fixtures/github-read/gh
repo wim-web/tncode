@@ -2,6 +2,9 @@
 set -eu
 
 expected_repo="${PI_GH_FIXTURE_REPO:-github.com/fixture/workspace}"
+if [ -n "${PI_GH_FIXTURE_REPO_FILE:-}" ]; then
+    expected_repo=$(/bin/cat "$PI_GH_FIXTURE_REPO_FILE")
+fi
 test "$GH_HOST" = github.com
 test "$GH_PROMPT_DISABLED" = 1
 test "$GH_NO_UPDATE_NOTIFIER" = 1
@@ -45,6 +48,47 @@ item() {
         "$1" "$2" "$3" "$repo_slug" "$4" "${5:-}"
 }
 
+options_page() {
+    if [ "$mode" = wrong-repo ]; then repo_slug=fixture/unrelated; fi
+    printf '{"data":{"repository":{"nameWithOwner":"%s","options":{"pageInfo":{"hasNextPage":%s},"nodes":[%s]}}}}\n' \
+        "$repo_slug" "$1" "$2"
+}
+
+filter_options() {
+    test "$1" = --raw-field
+    test "$2" = "owner=${repo_slug%%/*}"
+    test "$3" = --raw-field
+    test "$4" = "name=${repo_slug#*/}"
+    shift 4
+    text=
+    if [ "$#" -gt 0 ]; then
+        test "$#" = 2
+        test "$1" = --raw-field
+        case "$2" in text=*) text=${2#text=} ;; *) return 64 ;; esac
+    fi
+    case "$document" in
+        *'options: labels(first: 100, query: $text, '*)
+            case "$repo_slug:$text" in
+                fixture/workspace:) options_page true '{"value":"bug"},{"value":"documentation"},{"value":"needs triage"}' ;;
+                fixture/workspace:bug) options_page false '{"value":"bug"}' ;;
+                'fixture/workspace:triage') options_page false '{"value":"needs triage"}' ;;
+                fixture/other:) options_page false '{"value":"bug"},{"value":"other only"}' ;;
+                fixture/other:bug) options_page false '{"value":"bug"}' ;;
+                *) options_page false '' ;;
+            esac
+            ;;
+        *'options: mentionableUsers(first: 50, query: $text)'*)
+            case "$repo_slug:$text" in
+                fixture/workspace:) options_page false '{"value":"fixture-author"},{"value":"fixture-maintainer"}' ;;
+                fixture/workspace:maint*) options_page false '{"value":"fixture-maintainer"}' ;;
+                fixture/other:) options_page false '{"value":"other-author"}' ;;
+                *) options_page false '' ;;
+            esac
+            ;;
+        *) return 64 ;;
+    esac
+}
+
 page() {
     if [ -n "$1" ]; then
         page_info=$(printf '{"hasNextPage":true,"endCursor":"%s"}' "$1")
@@ -65,10 +109,15 @@ graphql() {
     test "$4" = github.com
     test "$5" = --raw-field
     document=${6#query=}
-    case "$document" in 'query('*'pageInfo { hasNextPage endCursor }'*) ;; *) return 64 ;; esac
+    case "$document" in 'query('*) ;; *) return 64 ;; esac
     shift 6
 
     repo_slug=${expected_repo#github.com/}
+    case "$document" in
+        *'options: '*) filter_options "$@"; return ;;
+        *'pageInfo { hasNextPage endCursor }'*) ;;
+        *) return 64 ;;
+    esac
     state=ALL
     case "$document" in
         *'... on PullRequest'*) kind=pr; resource=pullRequests; type=is:pr ;;
@@ -120,10 +169,10 @@ graphql() {
     docs='[{"name":"documentation"}]'
     draft=',"isDraft":true'
     ready=',"isDraft":false'
-    pr=$(item 42 'Update checkout' OPEN "$bug" "$draft")
+    pr=$(item 42 'Update checkout' OPEN "$bug" "$draft,\"author\":{\"login\":\"fixture-author\"}")
     pr_docs=$(item 43 'No checks yet' OPEN "$docs" "$ready")
-    pr_next=$(item 44 'Fix checkout retry' OPEN "$bug" "$ready")
-    pr_merged=$(item 41 'Previous change' MERGED '[]' "$ready")
+    pr_next=$(item 44 'Fix checkout retry' OPEN '[{"name":"bug"},{"name":"needs triage"}]' "$ready,\"author\":{\"login\":\"fixture-maintainer\"}")
+    pr_merged=$(item 41 'Previous change' MERGED '[]' "$ready,\"author\":{\"login\":\"fixture-maintainer\"}")
     issue=$(item 71 'Checkout socket timeout' OPEN "$bug")
     issue_docs=$(item 72 'Document worktree setup' OPEN "$docs")
     issue_next=$(item 73 'Retry slow worker' OPEN '[{"name":"bug"},{"name":"needs triage"}]')
@@ -138,8 +187,15 @@ graphql() {
         return
     fi
     if [ "$mode" = updated ]; then
-        pr=$(item 42 'Update checkout (updated)' OPEN "$bug" "$ready")
+        pr=$(item 42 'Update checkout (updated)' OPEN "$bug" "$ready,\"author\":{\"login\":\"fixture-author\"}")
         issue=$(item 71 'Checkout socket timeout (updated)' OPEN "$bug")
+    fi
+    if [ "$repo_slug" = fixture/other ]; then
+        other=$(item 52 'Bug in another checkout' OPEN "$bug" "$ready,\"author\":{\"login\":\"other-author\"}")
+        case "$scope:$kind:$state:$after:${terms:-}" in
+            repository:pr:OPEN::|search:pr:OPEN::'label:"bug"') page '' "$other"; return ;;
+            *) return 64 ;;
+        esac
     fi
 
     case "$scope:$kind:$state:$after" in
@@ -156,6 +212,12 @@ graphql() {
                 'label:"bug"') page 'pull-requests:2==' "$pr" ;;
                 '"checkout"') page '' "$pr,$pr_next" ;;
                 'label:"documentation"') page '' "$pr_docs" ;;
+                'author:"fixture-maintainer"') page '' "$pr_next" ;;
+                'author:"fixture-author"') page '' "$pr" ;;
+                'label:"bug" label:"needs triage"'|\
+                'author:"fixture-maintainer" label:"bug" label:"needs triage"'|\
+                '"checkout" author:"fixture-maintainer" label:"bug" label:"needs triage"'|\
+                '"checkout" author:"fixture-maintainer"') page '' "$pr_next" ;;
                 '"empty"') page '' '' ;;
                 *) return 64 ;;
             esac
@@ -164,7 +226,19 @@ graphql() {
             test "$terms" = 'label:"bug"'
             page '' "$pr,$pr_next"
             ;;
-        search:pr:CLOSED:) test "$terms" = 'label:"bug"'; page '' '' ;;
+        search:pr:ALL:)
+            case "$terms" in
+                'author:"fixture-author"') page '' "$pr" ;;
+                'label:"bug"') page '' "$pr,$pr_next" ;;
+                *) return 64 ;;
+            esac
+            ;;
+        search:pr:CLOSED:)
+            case "$terms" in
+                'label:"bug"'|'"checkout" author:"fixture-maintainer" label:"bug" label:"needs triage"') page '' '' ;;
+                *) return 64 ;;
+            esac
+            ;;
         search:issue:OPEN:)
             case "$terms" in
                 'label:"bug"') page 'issue-search:2==' "$issue" ;;

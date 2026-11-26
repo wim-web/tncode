@@ -42,6 +42,8 @@ struct VerifyGitHubPullRequests {
         let state = temp.appendingPathComponent("state")
         let log = temp.appendingPathComponent("commands")
         let gate = temp.appendingPathComponent("gh-gate")
+        let mockRepo = temp.appendingPathComponent("mock-repo")
+        try Data("github.com/fixture/workspace".utf8).write(to: mockRepo)
         let env = [
             "PATH": fixture.path + ":/usr/bin:/bin",
             "HOME": temp.path,
@@ -52,6 +54,7 @@ struct VerifyGitHubPullRequests {
             "PI_GH_FIXTURE_STATE": state.path,
             "PI_GH_FIXTURE_LOG": log.path,
             "PI_GH_FIXTURE_GATE": gate.path,
+            "PI_GH_FIXTURE_REPO_FILE": mockRepo.path,
         ]
         func mode(_ value: String) throws { try Data(value.utf8).write(to: state, options: .atomic) }
         try mode("initial")
@@ -119,6 +122,7 @@ struct VerifyGitHubPullRequests {
         let deadlineTest = GitHubReader(directory: directory.path, environment: env, timeout: .milliseconds(250))
         try await expectFailure("timed out") { try await deadlineTest.list(.init(.pullRequests, .open)) }
         try mode("initial")
+        try await verifyPullRequestFilters(service, project: project, mockRepo: mockRepo, env: env, mode: mode, gate: gate, log: log)
         let issueCursor = try await verifyBrowsing(service, mode: mode, gate: gate, log: log)
         try expect(snapshot(worktree) == before, "reads preserve refs, Git config, the index, and working changes")
 
@@ -159,6 +163,169 @@ struct VerifyGitHubPullRequests {
         }
         print("Verified PR and Issue lists and details, query and label filters, cursor pagination, refresh and retry.")
         print("Verified stale response rejection, selected checkout scope, and preservation of Git state.")
+    }
+
+    @MainActor
+    private static func verifyPullRequestFilters(
+        _ service: GitHubReader, project: URL, mockRepo: URL, env: [String: String],
+        mode: (String) throws -> Void, gate: URL, log: URL
+    ) async throws {
+        let prs = GitHubBrowserModel(kind: .pullRequests, reader: service)
+        await prs.load(prs.request)
+        let before = try results(prs)
+        let repository = before.repository
+        let labels = try await prs.filterOptions(.label, matching: "", in: repository)
+        let triage = try await prs.filterOptions(.label, matching: "triage", in: repository)
+        let maintenance = try await prs.filterOptions(.author, matching: "maint", in: repository)
+        try expect(before.items.map(\.number) == [42, 43] && before.items.first?.author?.login == "fixture-author",
+                   "the default list includes both a bug PR and a PR without that label")
+        try expect(labels.values == ["bug", "documentation", "needs triage"] && labels.hasMore
+                   && triage.values == ["needs triage"] && !triage.hasMore
+                   && maintenance.values == ["fixture-maintainer"],
+                   "repository option search finds labels and authors absent from the list")
+        try mode("wrong-repo")
+        try await expectFailure("unreadable pull request response") {
+            try await prs.filterOptions(.label, matching: "triage", in: repository)
+        }
+        try mode("network")
+        try await expectFailure("Couldn’t reach GitHub") {
+            try await prs.filterOptions(.author, matching: "maint", in: repository)
+        }
+        try mode("initial")
+        let recovered = try await prs.filterOptions(.author, matching: "maint", in: repository)
+        try expect(recovered.values == maintenance.values, "option retry keeps the entered search")
+
+        prs.setAuthor("fixture-author", in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42], "author selection narrows the list")
+        prs.setAuthor(nil, in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42, 43], "Anyone clears the author condition")
+
+        prs.applySearch(filter: .all)
+        await prs.load(prs.request)
+        let all = try results(prs)
+        try expect(all.items.map(\.number) == [42, 43, 41]
+                   && all.items.last?.author?.login == "fixture-maintainer" && all.items.last?.labelNames.isEmpty == true,
+                   "All includes an unlabeled PR by another author")
+        prs.setAuthor("fixture-author", in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42], "the author filter excludes another author’s PR")
+        prs.setAuthor(nil, in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42, 43, 41], "Anyone restores both authors")
+        prs.toggleLabel("bug", in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42, 44], "the label filter excludes the unlabeled PR")
+        prs.clearLabels(in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42, 43, 41], "Clear labels restores the unlabeled PR")
+        prs.applySearch(filter: .open)
+
+        prs.toggleLabel("bug", in: repository)
+        await prs.load(prs.request)
+        let bugs = try results(prs)
+        try expect(bugs.items.map(\.number) == [42] && bugs.next != nil, "selecting bug excludes the documentation PR")
+        let next = try require(bugs.next, "selected-label search has a next page")
+        try mode("page-error")
+        prs.loadMore()
+        await prs.load(prs.request)
+        guard case .loaded(let retained, .failed) = prs.listing else {
+            throw Failure(message: "selected-label page failure should retain the first page")
+        }
+        try expect(retained.items.map(\.number) == [42], "page failure preserves the filtered rows")
+        try mode("initial")
+        prs.loadMore()
+        await prs.load(prs.request)
+        let allBugs = try results(prs)
+        try expect(allBugs.items.map(\.number) == [42, 44] && allBugs.next == nil,
+                   "page retry preserves the label and does not duplicate rows")
+
+        prs.select(allBugs.items[0], in: repository)
+        prs.toggleLabel("needs triage", in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [44] && prs.selection == nil,
+                   "adding a spaced label requires both labels and resets selection")
+        let cursorLog = try Data(contentsOf: log)
+        try await expectFailure("unreadable pull request response") { try await service.list(prs.query, after: next) }
+        try expect(Data(contentsOf: log) == cursorLog, "a cursor cannot cross selected label sets")
+
+        prs.setAuthor("fixture-maintainer", in: repository)
+        await prs.load(prs.request)
+        prs.searchText = "checkout"
+        prs.applySearch(filter: .closed)
+        await prs.load(prs.request)
+        try expect(results(prs).items.isEmpty, "state combines with text, author, and both labels")
+        prs.applySearch(filter: .open)
+        try mode("network")
+        await prs.load(prs.request)
+        guard case .failed = prs.listing else { throw Failure(message: "expected initial filtered list error") }
+        try mode("initial")
+        prs.refresh()
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [44] && prs.query.text == "checkout",
+                   "list retry keeps text, state, author, and selected labels")
+        prs.clearLabels(in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [44] && prs.query.pullRequestFilters?.author == "fixture-maintainer",
+                   "Clear labels preserves the author and text")
+        prs.setAuthor(nil, in: repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [42, 44], "Anyone also preserves the active text")
+
+        try mode("held")
+        prs.refresh()
+        let older = prs.request
+        let staleList = Task { await prs.load(older) }
+        try await waitForMock(gate)
+        try mode("initial")
+        prs.searchText = ""
+        prs.applySearch(filter: .open)
+        prs.toggleLabel("bug", in: repository)
+        await prs.load(prs.request)
+        try releaseMock(gate)
+        await staleList.value
+        try clearMockGate(gate)
+        try expect(results(prs).items.map(\.number) == [42], "an earlier text search cannot replace the label selection")
+
+        try mode("held")
+        let staleOptions = Task { try await prs.filterOptions(.label, matching: "bug", in: repository) }
+        try await waitForMock(gate)
+        _ = try git(project, "remote", "set-url", "origin", "https://github.com/fixture/other.git")
+        try Data("github.com/fixture/other".utf8).write(to: mockRepo, options: .atomic)
+        try mode("initial")
+        try releaseMock(gate)
+        try await expectFailure("repository changed") { try await staleOptions.value }
+        try clearMockGate(gate)
+        let beforeSwitch = try Data(contentsOf: log)
+        prs.refresh()
+        await prs.load(prs.request)
+        try expect(prs.query.pullRequestFilters == nil && Data(contentsOf: log) == beforeSwitch,
+                   "refresh drops the old scoped filters before reaching the new repository")
+        await prs.load(prs.request)
+        let other = try results(prs)
+        let otherCheckout = mockRepo.deletingLastPathComponent().appendingPathComponent("other project")
+        try FileManager.default.createDirectory(at: otherCheckout, withIntermediateDirectories: false)
+        _ = try git(otherCheckout, "init", "-b", "main")
+        _ = try git(otherCheckout, "remote", "add", "origin", "https://github.com/fixture/other.git")
+        var otherEnv = env
+        otherEnv.removeValue(forKey: "PI_GH_FIXTURE_LOG")
+        let otherReader = GitHubReader(directory: otherCheckout.path, environment: otherEnv)
+        let otherLabels = try await otherReader.pullRequestFilterOptions(.label, matching: "", in: other.repository)
+        let otherAuthors = try await otherReader.pullRequestFilterOptions(.author, matching: "", in: other.repository)
+        try expect(other.repository.slug == "fixture/other" && other.items.map(\.number) == [52]
+                   && otherLabels.values == ["bug", "other only"] && otherAuthors.values == ["other-author"]
+                   && prs.loadedFilterValues[.author] == ["other-author"],
+                   "another repository supplies its own options, including its own bug label")
+        prs.toggleLabel("bug", in: repository)
+        try expect(prs.request == nil, "a stale bug choice is ignored even when the new repository has bug")
+        prs.toggleLabel("bug", in: other.repository)
+        await prs.load(prs.request)
+        try expect(results(prs).items.map(\.number) == [52], "the new repository’s bug choice filters its own list")
+
+        _ = try git(project, "remote", "set-url", "origin", "git@github.com:fixture/workspace.git")
+        try Data("github.com/fixture/workspace".utf8).write(to: mockRepo, options: .atomic)
+        print("Verified selectable Author and Labels, candidate search and retry, scoped bug choices in two remotes, and stale filter responses.")
     }
 
     @MainActor
@@ -276,8 +443,7 @@ struct VerifyGitHubPullRequests {
         await issues.load(issues.request)
         try releaseMock(gate)
         await oldPage.value
-        try FileManager.default.removeItem(at: gate.appendingPathExtension("release"))
-        try FileManager.default.removeItem(at: gate.appendingPathExtension("started"))
+        try clearMockGate(gate)
         let refreshed = try results(issues)
         try expect(refreshed.items.map(\.number) == [71, 72] && refreshed.items.first?.title.hasSuffix("(updated)") == true,
                    "a stale page cannot append to a refreshed listing")
@@ -326,6 +492,11 @@ struct VerifyGitHubPullRequests {
     private static func releaseMock(_ gate: URL) throws {
         let released = gate.appendingPathExtension("release")
         try Data().write(to: released)
+    }
+
+    private static func clearMockGate(_ gate: URL) throws {
+        try FileManager.default.removeItem(at: gate.appendingPathExtension("release"))
+        try FileManager.default.removeItem(at: gate.appendingPathExtension("started"))
     }
 
     private static func snapshot(_ worktree: URL) throws -> [Data] {
