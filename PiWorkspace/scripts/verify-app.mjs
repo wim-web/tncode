@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -29,8 +29,11 @@ const targets = [];
 let releaseFirst;
 const firstPartialCanFinish = new Promise(resolve => { releaseFirst = resolve; });
 let rejectNextRequest = false;
+let holdForStop = false;
+let streamClosed = false;
 let rejected = 0;
 let appPID;
+let launchNumber = 0;
 let keySaved = false;
 
 function record(text) {
@@ -39,11 +42,15 @@ function record(text) {
   console.log(text);
 }
 
-function fixtureReply(index) {
-  const json = (delta, finish_reason = null) => "data: " + JSON.stringify({
+function fixtureChunk(index, delta, finish_reason = null) {
+  return "data: " + JSON.stringify({
     id: "fixture-" + index, object: "chat.completion.chunk", created: 1, model: "smollm2:135m",
     choices: [{ index: 0, delta, finish_reason }],
   }) + "\n\n";
+}
+
+function fixtureReply(index) {
+  const json = (delta, reason) => fixtureChunk(index, delta, reason);
   const words = index === 0 ? ["Paris", " is the capital."] : ["France", "."];
   const body = json({ role: "assistant" }) + words.map(content => json({ content })).join("") +
     json({}, "stop") + "data: [DONE]\n\n";
@@ -67,6 +74,12 @@ const server = createServer(async (request, response) => {
     const body = await new Response(request).text();
     const target = { body: JSON.parse(body), fragments: [] };
     targets.push(target);
+    if (holdForStop) {
+      response.on("close", () => { streamClosed = true; });
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(fixtureChunk(targets.length, { role: "assistant", content: "Partial reply before Stop." }));
+      return;
+    }
     const result = fixtureModel ? fixtureReply(targets.length - 1) : await fetch("http://127.0.0.1:18541/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json" }, body,
       signal: AbortSignal.timeout(50_000),
@@ -131,10 +144,11 @@ function replyVisible(target) {
   return reply.length > 0 && plain(tree()).includes(reply);
 }
 
-async function launch(first) {
+async function launch() {
+  launchNumber++;
   execFileSync("/usr/bin/open", [
-    "-n", "-a", app, "--stdout", join(logs, first ? "first.out" : "second.out"),
-    "--stderr", join(logs, first ? "first.err" : "second.err"),
+    "-n", "-a", app, "--stdout", join(logs, launchNumber + ".out"),
+    "--stderr", join(logs, launchNumber + ".err"),
     "--env", "SHELL=" + (worktreeTest ? terminalFixture : "/bin/sh"), "--args", "--workspace", workspace,
   ]);
   const id = await until(() => {
@@ -316,24 +330,31 @@ async function verifyCheckout(checkout) {
   }, "shell exits when its drawer is closed");
   record("The terminal launched an interactive shell on a PTY in the worktree, kept the same shell across hide and reopen, and closed it explicitly.");
 
+  writeFileSync(join(checkout, "base.txt"), "first edit\n");
+  git(checkout, "add", "base.txt");
+  appendFileSync(join(checkout, "base.txt"), "second edit\n");
+  const excludedDiff = git(checkout, "diff", "HEAD", "--", "base.txt");
   press("toggle-changes");
   await until(() => visible("git-file-tty-proof.txt"), "untracked file in Changes");
   press("git-file-tty-proof.txt");
   await until(() => tree().includes("+") && tree().includes(checkout), "file contents in the diff");
-  press("git-stage-tty-proof.txt");
-  await until(() => git(checkout, "diff", "--cached", "--name-only") === "tty-proof.txt", "staged file in Git");
   const subject = "Verify the in-app commit";
   drive("type", ["git-commit-message"], subject);
   await until(() => drive("get", ["git-commit-message", "--values"]).includes("value=" + JSON.stringify(subject)),
               "typed commit message");
+  press("git-include-all");
+  await until(() => visible("git-commit").includes("enabled=false"), "empty commit selection");
+  press("git-include-tty-proof.txt");
   await until(() => visible("git-commit").includes("enabled=true"), "enabled commit button");
   press("git-commit");
   await until(() => git(checkout, "log", "-1", "--format=%s") === subject, "commit recorded in Git");
   assert.equal(git(checkout, "show", "--format=", "--name-only", "HEAD"), "tty-proof.txt");
   assert.match(git(checkout, "status", "--porcelain"), /\?\? retained-shell\.txt/);
+  assert.equal(git(checkout, "diff", "--cached", "--name-only"), "");
+  assert.equal(git(checkout, "diff", "--", "base.txt"), excludedDiff);
   assert.equal(git(project, "log", "-1", "--format=%s"), "Fixture base");
   press("toggle-changes");
-  record("Changes displayed a real patch. Stage and Commit affected the requested file in the worktree; the other file stayed untracked.");
+  record("Changes committed only the checked file. The excluded tracked file kept both edits unstaged. The other untracked file and original checkout were unchanged.");
 }
 
 function inspectFiles() {
@@ -362,27 +383,38 @@ try {
   record(fixtureModel ? "Model endpoint: deterministic loopback fixture." : "Model endpoint: loopback Ollama.");
   updateKey("--set-api-key-from-stdin", secret);
   keySaved = true;
-  const firstPID = await launch(true);
+  const firstPID = await launch();
   await settings();
   await until(() => visible("remove-api-key"), "saved Keychain entry");
   await closeSettings();
   await openProject();
   record("Cancelling and an invalid path left the index empty. Registration focused the draft. Browse returned the same folder and kept its project and draft IDs.");
   record("App opened Sample Project, created a conversation, and found the Swift-provisioned Keychain item.");
+  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  const draftID = index().projects[0].selectedConversation;
   if (worktreeTest) {
-    await chooseNewWorktree("main");
+    await chooseNewWorktree("ui-worktree");
+    const obstruction = join(workspace, "worktrees");
+    writeFileSync(obstruction, "fixture", { flag: "wx" });
     await typePrompt(firstPrompt);
     await until(() => !tree().includes("Opening thread…"), "draft helper ready");
     press("send-message");
-    await until(() => tree().includes("already exists"), "worktree creation error");
-    assert(drive("get", ["composer", "--values"]).includes(firstPrompt));
+    await until(() => visible("worktree-launch-error") && visible("retry-worktree"), "worktree failure and Retry");
+    assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
+    assert.equal(index().projects[0].selectedConversation, draftID);
     assert.equal(targets.length, 0);
-    record("A branch collision stopped the send and kept the draft text.");
-    await chooseNewWorktree("ui-worktree");
-    record("Choosing New worktree left the project unchanged before the first send.");
+    assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 1);
+    await quit();
+    await launch();
+    press("thread-row-" + draftID);
+    await until(() => visible("retry-worktree"), "Retry after relaunch");
+    assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
+    unlinkSync(obstruction);
+    press("retry-worktree");
+    record("Preparation failed before any model request. Relaunch retained the prompt, failure stage and thread ID. Retry used the repaired worktree store.");
+  } else {
+    await send(firstPrompt);
   }
-
-  await send(firstPrompt);
   await until(() => targets[0]?.fragments.length && tree().includes('id="streaming-reply"'), "partial reply on screen");
   assert(!targets[0].completed, "The model stream had already completed.");
   record("The actual SwiftUI window showed a partial reply while the response was still open.");
@@ -392,13 +424,15 @@ try {
   assert.equal(targets[0].status, 200);
   const previous = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const threadID = previous.projects[0].selectedConversation;
+  assert.equal(threadID, draftID);
+  assert.equal(targets[0].body.messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes(firstPrompt)).length, 1);
   const selectedThread = previous.projects[0].conversations.find(thread => thread.id === threadID);
   const checkout = selectedThread.location?.worktree?.path;
   record("First request returned HTTP 200. Reply: " + JSON.stringify(targets[0].fragments.join("").trim()));
   if (worktreeTest) await verifyCheckout(checkout);
 
   await quit();
-  const secondPID = await launch(false);
+  const secondPID = await launch();
   assert.notEqual(firstPID, secondPID);
   await until(() => visible("composer").includes("focused=true"), "focused draft after relaunch");
   const landing = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
@@ -425,6 +459,16 @@ try {
   record("Relaunched app " + firstPID + " → " + secondPID + ". Same conversation ID; second request included the first turn.");
   record("Second request returned HTTP 200. Reply: " + JSON.stringify(targets[1].fragments.join("").trim()));
 
+  if (fixtureModel) {
+    holdForStop = true;
+    await send("Hold a stream open for the Stop test.");
+    await until(() => tree().includes("Partial reply before Stop."), "partial reply before Stop");
+    press("stop-message");
+    await until(() => streamClosed && visible("send-message"), "Stop to close the active model stream");
+    assert(tree().includes("Partial reply before Stop."));
+    holdForStop = false;
+    record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
+  }
   rejectNextRequest = true;
   await send("Check error handling.");
   await until(() => rejected === 1 && tree().includes("[API key removed]"), "redacted provider error");
@@ -437,6 +481,13 @@ try {
   assert.throws(() => visible("remove-api-key"));
   await closeSettings();
   keySaved = false;
+  const requestCount = targets.length + rejected;
+  await typePrompt("Try sending without a saved key.");
+  await until(() => visible("send-message").includes("enabled=true"), "ready to check missing key");
+  press("send-message");
+  await until(() => visible("key-input"), "missing key opens Settings");
+  assert.equal(targets.length + rejected, requestCount);
+  await closeSettings();
   await quit();
   const transcripts = inspectFiles();
   assert.equal(transcripts.length, 1);

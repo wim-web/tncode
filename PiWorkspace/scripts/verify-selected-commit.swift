@@ -38,8 +38,7 @@ struct VerifySelectedCommit {
         try FileManager.default.removeItem(at: checkout.appendingPathComponent("deleted.txt"))
         _ = try git(checkout, "mv", "rename.txt", "renamed.txt")
 
-        let stagedBefore = try git(checkout, "diff", "--cached", "--", "excluded.txt")
-        let unstagedBefore = try git(checkout, "diff", "--", "excluded.txt")
+        let excludedEdits = try git(checkout, "diff", "HEAD", "--", "excluded.txt")
         let selected: Set = ["subdir/unstaged.txt", "staged.txt", "mixed.txt", "deleted.txt", "renamed.txt", untracked]
         let changes = try await workspace.state().files
         try expect(selected.isSubset(of: Set(changes.map(\.path))), "all selected paths appear in status")
@@ -51,10 +50,10 @@ struct VerifySelectedCommit {
         try expect(git(checkout, "show", "HEAD:mixed.txt") == "worktree version\n", "mixed file uses its worktree contents")
         try expect(git(checkout, "show", "HEAD:staged.txt") == "index\n", "staged-only contents are committed")
         try expect(git(checkout, "show", "HEAD:\(untracked)") == "selected new file\n", "literal new path is committed")
-        try expect(git(checkout, "diff", "--cached") == stagedBefore, "only the excluded staged patch remains")
-        try expect(git(checkout, "diff") == unstagedBefore, "only the excluded unstaged patch remains")
-        try expect(git(checkout, "status", "--porcelain") == "MM excluded.txt\n?? untracked.txt\n",
-                   "excluded edits, index state and untracked path remain")
+        try expect(git(checkout, "diff", "--cached").isEmpty, "excluded changes are unstaged")
+        try expect(git(checkout, "diff") == excludedEdits, "both excluded edits survive in the worktree")
+        try expect(git(checkout, "status", "--porcelain") == " M excluded.txt\n?? untracked.txt\n",
+                   "excluded file matches the observed MM to unstaged transition")
         try expect(git(project, "log", "-1", "--format=%s") == "Base\n", "project HEAD is untouched")
         try expect(git(project, "status", "--porcelain").isEmpty, "project index and files are untouched")
 
@@ -66,6 +65,7 @@ struct VerifySelectedCommit {
         _ = try git(checkout, "config", "core.hooksPath", hooks.path)
         let indexPath = try git(checkout, "rev-parse", "--path-format=absolute", "--git-path", "index").dropLast()
         let index = URL(fileURLWithPath: String(indexPath))
+        _ = try git(checkout, "add", "excluded.txt")
         let before = try Data(contentsOf: index)
         try await expectCommitFailure(workspace, paths: ["untracked.txt"], containing: "fixture rejected commit")
         try expect(Data(contentsOf: index) == before, "hook failure preserves the index byte-for-byte")

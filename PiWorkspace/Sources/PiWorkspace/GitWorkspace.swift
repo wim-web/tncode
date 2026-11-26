@@ -34,6 +34,8 @@ struct GitFileChange: Identifiable, Hashable, Sendable {
         indexStatus == "?" && worktreeStatus == "?"
     }
 
+    var isStaged: Bool { ![" ", "?", "!"].contains(indexStatus) }
+
     fileprivate var commitPaths: [String] {
         if let originalPath, indexStatus == "R" || worktreeStatus == "R" {
             return [path, originalPath]
@@ -171,7 +173,8 @@ struct GitWorkspace: Sendable {
         let selected = currentChanges.filter { paths.contains($0.path) }
         guard Set(selected.map(\.path)) == paths else { throw WorkspaceError.staleSelection }
         let commitPaths = Set(selected.flatMap(\.commitPaths))
-        let excludedPaths = Set(currentChanges.filter { !paths.contains($0.path) }.flatMap(\.commitPaths))
+        let excluded = currentChanges.filter { !paths.contains($0.path) }
+        let excludedPaths = Set(excluded.flatMap(\.commitPaths))
         for path in excludedPaths {
             let overlaps = commitPaths.contains { selectedPath in
                 selectedPath == path || selectedPath.hasPrefix(path + "/") || path.hasPrefix(selectedPath + "/")
@@ -197,6 +200,11 @@ struct GitWorkspace: Sendable {
 
         let pathspec = scratch.appendingPathComponent("paths")
         let pathspecArguments = ["--pathspec-from-file=" + pathspec.path, "--pathspec-file-nul"]
+        let excludedStaged = Set(excluded.filter(\.isStaged).flatMap(\.commitPaths))
+        if !excludedStaged.isEmpty {
+            try Self.writePathspec(excludedStaged.sorted(), to: pathspec)
+            _ = try await run(["reset", "--quiet"] + pathspecArguments, in: root, index: temporaryIndex)
+        }
         let untracked = selected.filter(\.isUntracked).map(\.path)
         if !untracked.isEmpty {
             try Self.writePathspec(untracked, to: pathspec)

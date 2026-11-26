@@ -115,6 +115,11 @@ struct SourceControlView: View {
                 .font(.caption)
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
+                if state.files.contains(where: { $0.isStaged && excludedPaths.contains($0.path) }) {
+                    Text("Committing will unstage the excluded files.")
+                        .font(.caption)
+                        .padding(.horizontal, 14)
+                }
             }
             fileRows(state.files, trackedPaths: trackedPaths)
         }
@@ -146,7 +151,7 @@ struct SourceControlView: View {
                         }
                         Button {
                             selected = file
-                            staged = file.worktreeStatus == " " && isStaged(file)
+                            staged = file.worktreeStatus == " " && file.isStaged
                         } label: {
                             HStack(spacing: 6) {
                                 Text(verbatim: String([file.indexStatus, file.worktreeStatus]))
@@ -168,7 +173,7 @@ struct SourceControlView: View {
                                 try await $0.stage(file)
                             }
                         }
-                        if isStaged(file) {
+                        if file.isStaged {
                             fileAction("Unstage", symbol: "minus", id: "git-unstage-", file: file) {
                                 try await $0.unstage(file)
                             }
@@ -280,10 +285,6 @@ struct SourceControlView: View {
             .accessibilityIdentifier("git-commit")
         }
         .padding(9)
-    }
-
-    private func isStaged(_ file: GitFileChange) -> Bool {
-        file.indexStatus != " " && file.indexStatus != "?" && file.indexStatus != "!"
     }
 
     private func diffColor(_ line: Substring) -> Color {

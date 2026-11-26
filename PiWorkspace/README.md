@@ -30,9 +30,9 @@ The macOS app keeps API keys in Keychain. The workspace index and Pi conversatio
 ## Work in a Git checkout
 
 1. In a draft, use the workspace control below the composer. Choose the project folder, an existing worktree, or a new worktree and its base branch.
-2. Send the first message to create a new worktree. Pi uses that directory for the rest of the thread, including after relaunch.
+2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch.
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
-4. Enter a commit message and select **Commit** to commit the staged files. The branch menu switches between existing local branches.
+4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
 
 To open a specific folder when launching a new instance, run:
