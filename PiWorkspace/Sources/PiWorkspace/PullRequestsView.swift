@@ -386,7 +386,7 @@ private struct PullRequestFilterChoices: View {
                         }
                     }
                 }
-                .frame(height: CGFloat(min(values.count, 8) * 28))
+                .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
             }
             switch options {
             case .none:
@@ -411,7 +411,9 @@ private struct PullRequestFilterChoices: View {
             }
         }
         .padding(12)
-        .frame(width: 280)
+        .frame(width: 280, height: 300, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("\(prefix)-choices")
         .submitScope()
         .defaultFocus($searchFocused, true)
         .task(id: request) { await load(request) }
