@@ -14,11 +14,12 @@ enum PiEvent: Decodable {
     case history([ChatMessage])
     case partial(String)
     case activity(String)
+    case toolApproval(ToolApproval)
     case finished([ChatMessage], error: String?)
     case fatal(String)
 
     private enum Field: String, CodingKey { case type, requestID, operation, messages, text, error }
-    private enum Kind: String, Decodable { case credential, ready, history, partial, activity, finished, fatal }
+    private enum Kind: String, Decodable { case credential, ready, history, partial, activity, toolApproval, finished, fatal }
     private enum Operation: String, Decodable { case exists, read }
 
     init(from decoder: Decoder) throws {
@@ -31,6 +32,7 @@ enum PiEvent: Decodable {
         case .history: self = .history(try fields.decode([ChatMessage].self, forKey: .messages))
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
+        case .toolApproval: self = .toolApproval(try ToolApproval(from: decoder))
         case .finished:
             self = .finished(try fields.decode([ChatMessage].self, forKey: .messages),
                              error: try fields.decodeIfPresent(String.self, forKey: .error))
@@ -45,11 +47,11 @@ struct OpenConversation: Encodable {
     let sessionDir: String
     let threadID: String
     let config: ModelSettings
-    let allowEdits: Bool
+    let toolPermission: ToolPermission
 }
 
-struct SendPrompt: Encodable { var type = "prompt"; let text: String }
-struct CancelPrompt: Encodable { var type = "cancel" }
+struct SendPrompt: Encodable { let type = "prompt"; let turnID: UUID; let text: String }
+struct CancelPrompt: Encodable { let type = "cancel"; let turnID: UUID }
 struct CredentialResult: Encodable {
     var type = "credentialResult"
     let requestID: String

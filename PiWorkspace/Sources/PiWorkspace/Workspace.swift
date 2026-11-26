@@ -149,6 +149,7 @@ struct Project: Codable, Identifiable {
     var path: String
     var title: String
     var allowEdits = false
+    var supervisedTools: Bool?
     var detached: Bool?
     var conversations: [Conversation] = []
     var selectedConversation: UUID?
@@ -168,6 +169,17 @@ struct Project: Codable, Identifiable {
         let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
         conversations.insert(thread, at: 0)
         selectedConversation = thread.id
+    }
+
+    var toolPermission: ToolPermission {
+        get {
+            if supervisedTools == true { return .supervised }
+            return allowEdits ? .shellAndEdits : .readFiles
+        }
+        set {
+            allowEdits = newValue == .shellAndEdits
+            supervisedTools = newValue == .supervised ? true : nil
+        }
     }
 }
 

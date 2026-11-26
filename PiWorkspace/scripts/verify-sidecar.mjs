@@ -109,7 +109,7 @@ async function open() {
   child.stderr.on("data", (text) => { stderr += text; });
   const worker = { child, output, closed, stderr: () => stderr };
   send(child, {
-    type: "open", cwd, sessionDir, threadID, allowEdits: false,
+    type: "open", cwd, sessionDir, threadID, toolPermission: "readOnly",
     config: {
       provider: "local", model, contextWindow: 8192,
       endpoint: `http://127.0.0.1:${server.address().port}/v1`,
@@ -143,7 +143,8 @@ async function receive(worker, type, { credential, partial } = {}) {
 }
 
 function finish(worker, text, credential = key, partial) {
-  send(worker.child, { type: "prompt", text });
+  worker.turnID = randomUUID();
+  send(worker.child, { type: "prompt", turnID: worker.turnID, text });
   return receive(worker, "finished", { credential, partial });
 }
 
@@ -216,7 +217,7 @@ try {
   const stopped = await finish(resumed, "Stop prompt", key, (text) => {
     assert.equal(text, "Stopped text.");
     stoppedResponse = requests.at(-1).response;
-    send(resumed.child, { type: "cancel" });
+    send(resumed.child, { type: "cancel", turnID: resumed.turnID });
   });
   assert(stoppedResponse, "Stop requires a partial update");
   if (!stoppedResponse.closed) {

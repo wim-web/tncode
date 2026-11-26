@@ -616,6 +616,11 @@ struct WorkspaceView: View {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
                 }
             } else if thread.worktreeLaunch == nil || model.phase.isRunning {
+                if let approval = model.pendingToolApproval, let directory = model.workingDirectory {
+                    ToolApprovalCard(approval: approval, directory: directory) {
+                        model.respond(to: approval.requestID, with: $0)
+                    }
+                }
                 inputCard(project, threadID: thread.id)
             }
             HStack {
@@ -632,7 +637,11 @@ struct WorkspaceView: View {
                 Spacer()
                 if model.preparingWorktree { Text("Preparing worktree…") }
                 if model.phase == .connecting && !model.preparingWorktree { Text("Opening thread…") }
-                if model.phase == .running { Text(model.activity.isEmpty ? "Pi is responding…" : "Running \(model.activity)…") }
+                if model.pendingToolApproval != nil {
+                    Text("Waiting for approval…")
+                } else if model.phase == .running {
+                    Text(model.activity.isEmpty ? "Pi is responding…" : "Running \(model.activity)…")
+                }
                 if model.phase == .stopping { Text("Stopping…") }
             }
             .font(.caption)
@@ -663,15 +672,17 @@ struct WorkspaceView: View {
             HStack(spacing: 13) {
                 if model.workspace.model.supportsTools {
                     Menu {
-                        Button("Read files") { model.setEditing(false) }
-                        Button("Shell and edits") { model.setEditing(true) }
+                        ForEach(ToolPermission.allCases, id: \.self) { permission in
+                            Button(permission.title) { model.setToolPermission(permission) }
+                                .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
+                        }
                     } label: {
-                        Label(project.allowEdits ? "Shell and edits" : "Read files",
-                              systemImage: project.allowEdits ? "terminal" : "lock.shield")
+                        Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .disabled(model.phase.isRunning)
+                    .disabled(model.operationsInProgress)
+                    .accessibilityIdentifier("tool-permissions")
                 }
                 Spacer()
                 Button {

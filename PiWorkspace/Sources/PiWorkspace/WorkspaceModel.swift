@@ -14,6 +14,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var partial = ""
     @Published private(set) var activity = ""
+    @Published private(set) var pendingToolApproval: ToolApproval?
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
@@ -37,6 +38,7 @@ final class WorkspaceModel: ObservableObject {
     private var store: WorkspaceStore?
     private let vault: KeyVault
     private var process: PiProcess?
+    private var activeTurnID: UUID?
 
     init(root: URL, keychainService: String) {
         vault = KeyVault(service: keychainService)
@@ -97,6 +99,8 @@ final class WorkspaceModel: ObservableObject {
     func shutdown() {
         process?.close()
         process = nil
+        activeTurnID = nil
+        pendingToolApproval = nil
         phase = .closed
     }
 
@@ -238,9 +242,10 @@ final class WorkspaceModel: ObservableObject {
         save { $0.projects[project].conversations[thread].shelf = shelf }
     }
 
-    func setEditing(_ enabled: Bool) {
-        guard !operationsInProgress, let p = selectedProjectIndex else { return }
-        if save({ $0.projects[p].allowEdits = enabled }) { connect() }
+    func setToolPermission(_ permission: ToolPermission) {
+        guard !operationsInProgress, let p = selectedProjectIndex,
+              workspace.projects[p].toolPermission != permission else { return }
+        if save({ $0.projects[p].toolPermission = permission }) { connect() }
     }
 
     func hasKey(for settings: ModelSettings) -> Bool {
@@ -416,7 +421,9 @@ final class WorkspaceModel: ObservableObject {
     private func send(_ text: String, using process: PiProcess) throws {
         guard let id = conversation?.id else { throw WorkspaceError("Select a thread before sending.") }
         try saveThread(id) { $0.recordPrompt(text) }
-        try process.send(SendPrompt(text: text))
+        let turnID = UUID()
+        try process.send(SendPrompt(turnID: turnID, text: text))
+        activeTurnID = turnID
         draft = ""
         partial = ""
         activity = ""
@@ -425,13 +432,28 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func cancel() {
-        guard phase == .running, let process else { return }
+        guard phase == .running, let process, let activeTurnID else { return }
+        pendingToolApproval = nil
         do {
-            try process.send(CancelPrompt())
+            try process.send(CancelPrompt(turnID: activeTurnID))
             phase = .stopping
         } catch {
             self.error = "Pi disconnected while stopping the request."
             shutdown()
+        }
+    }
+
+    func respond(to requestID: String, with decision: ToolApprovalDecision) {
+        guard phase == .running, let process, let approval = pendingToolApproval,
+              approval.requestID == requestID, approval.turnID == activeTurnID,
+              approval.threadID == conversation?.id else { return }
+        pendingToolApproval = nil
+        if decision == .decline { activity = "" }
+        do {
+            try process.send(ToolApprovalResult(approval, decision: decision))
+        } catch {
+            shutdown()
+            self.error = "The Pi helper disconnected while sending the tool decision."
         }
     }
 
@@ -471,7 +493,7 @@ final class WorkspaceModel: ObservableObject {
                 sessionDir: store.history(project: project.id, conversation: conversation.id).path,
                 threadID: conversation.id.uuidString,
                 config: settings,
-                allowEdits: project.allowEdits
+                toolPermission: project.toolPermission
             ))
         } catch {
             connectionFailed(error.localizedDescription)
@@ -547,7 +569,13 @@ final class WorkspaceModel: ObservableObject {
             activity = ""
         case let .activity(tool):
             activity = tool
+        case let .toolApproval(approval):
+            guard phase == .running, approval.turnID == activeTurnID,
+                  approval.threadID == conversation?.id else { return }
+            pendingToolApproval = approval
         case let .finished(history, error):
+            pendingToolApproval = nil
+            activeTurnID = nil
             messages = history
             partial = ""
             activity = ""
