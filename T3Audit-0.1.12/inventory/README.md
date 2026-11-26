@@ -2,6 +2,8 @@
 
 [features.tsv](features.tsv) は `id` をキーに、原本の操作手順・前提・中間状態・結果・失敗からの復帰・保存先・実装位置・実機の検証条件と、Swift の実装状況・根拠行・受入条件を1行にまとめた表。`source` は固定した T3 ソース、`swift_source` は PiWorkspace からの相対パスと行番号。1項目に複数の参照先がある場合は縦線で区切っている。
 
+Swift の根拠行は移植開始時のコミット `47a6cfe` を参照する。例えば `git show 47a6cfe:PiWorkspace/Sources/PiWorkspace/WorkspaceModel.swift` で比較時点のコードを読める。移植後の判定と試験は[工程別の作業表](../../docs/implementation-order.tsv)の `result` と `evidence_ref` に記録する。
+
 | 領域 | 対象 | 行数 | 入口宣言数 |
 |---|---|---:|---:|
 | [NAV](NAV/scope.md) | ルート、ネイティブメニュー、ショートカット、パレット | 248 | 790 |

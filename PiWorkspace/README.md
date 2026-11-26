@@ -15,17 +15,23 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 
 ## Start a conversation
 
-1. Open **Model Settings**. Select a provider, enter its model ID and API key, and select **Save**. For a local OpenAI-compatible provider, enter a loopback base URL and the model's context window. Enable coding tools for local models that support them.
-2. Select **Open Project**. Enter a folder path or select **Browse**, then select **Add Project**. The new project's draft opens with the message field focused.
+1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
+2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
 3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app opens a draft in the most recently active project. Select the previous conversation in the sidebar to continue it.
-4. Search or filter threads in the sidebar. Select **Group by Project** in the filter menu to organize them into collapsible folders.
+4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
 If a project folder moves, use **Relink Folder** in its context menu to point the project at the new path and retain its conversations.
 
-Pi can read project files with models that support tools. **Shell and edits** enables Pi's shell and write tools for that project. These tools use the permissions of your macOS user.
+Choose **Start without a project** on the empty home screen to work in a private folder. The thread menu's **Turn into project** action registers that folder and keeps the conversation history.
+
+Pi can read files with models that support tools. Choose **Supervised** to approve or decline individual shell and edit requests. **Shell and edits** enables those tools for the project. They use the permissions of your macOS user.
 
 The macOS app keeps API keys in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/Pi Workspace`. **Model Settings** removes or replaces a saved key.
+
+In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
+
+If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
 
 ## Work in a Git checkout
 
@@ -34,6 +40,8 @@ The macOS app keeps API keys in Keychain. The workspace index and Pi conversatio
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
+
+Open **Browser** in the thread header to preview an HTTP or HTTPS page. Back, Forward, Reload and zoom act on the selected profile. Each thread has separate browser sessions for its Default and Alternate profiles until you quit the app.
 6. Open **Pull Requests** in the header to inspect up to 50 pull requests for the selected checkout. Select a state and a PR to see its description, branches, and checks. Use **Refresh pull requests** to reload the list and selected PR. Open the PR or a check with its link.
 
 Pull Requests uses the GitHub CLI (`gh`) on the app's PATH or in a standard Homebrew or MacPorts location. Sign in to GitHub CLI from Terminal before opening the list. The app uses the checkout's GitHub.com `origin` fetch remote or its sole GitHub.com fetch repository.
@@ -46,15 +54,16 @@ open -na "dist/Pi Workspace.app" --args --project "/path/to/project"
 
 ## Verify the app locally
 
-Run Ollama on loopback port 18541 with `smollm2:135m` installed. Build the accessibility driver and run the verifier with macOS Accessibility access.
+Build the app first. Run the Swift tests, then use the packaged app with a loopback model fixture. The UI checks require macOS Accessibility and keyboard input permissions.
 
 ```sh
+swift test -c release
 swiftc -module-cache-path .build/ax-cache scripts/ax.swift -o .build/ax
-node scripts/verify-app.mjs "$PWD/.build/ax"
-node scripts/verify-app.mjs "$PWD/.build/ax" --worktree
+node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model
+node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model --worktree
 ```
 
-Add `--fixture-model` to either verifier command to use fixed streaming replies on loopback without Ollama. The verifier opens the packaged app, uses a disposable Keychain item and an isolated workspace, and saves its report under `dist/verification-*/logs`. The worktree run also exercises the terminal, diff, staging, and committing in a disposable repository.
+The verifier writes its report under `dist/verification-*/logs`. It uses an isolated workspace and a disposable Keychain item. The worktree run also checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
 
 ### Verify pull request reads
 

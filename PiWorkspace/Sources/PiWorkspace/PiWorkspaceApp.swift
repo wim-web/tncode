@@ -141,7 +141,7 @@ struct ModelSettingsView: View {
 
     init(model: WorkspaceModel) {
         self.model = model
-        _scope = State(initialValue: model.project.map { .project($0.id) } ?? .workspace)
+        _scope = State(initialValue: model.project.flatMap { $0.isScratch ? nil : .project($0.id) } ?? .workspace)
         _settings = State(initialValue: model.effectiveModel)
     }
 
@@ -155,7 +155,7 @@ struct ModelSettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Model Settings").font(.title2.weight(.semibold))
             Form {
-                if let project = model.project {
+                if let project = model.project, !project.isScratch {
                     Picker("Scope", selection: Binding(get: { scope }, set: selectScope)) {
                         Text("Workspace default").tag(ModelSettingsScope.workspace)
                         Text("Project: \(project.title)").tag(ModelSettingsScope.project(project.id))

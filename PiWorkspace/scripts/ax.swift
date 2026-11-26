@@ -5,9 +5,12 @@ import Foundation
 private let usage = """
 Usage:
   ax trust
+  ax activate PID
+  ax menu-command PID CHARACTER
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax press PID IDENTIFIER
+  ax confirm PID IDENTIFIER
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
   ax key PID KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
@@ -50,9 +53,12 @@ private struct DisplayOptions {
 }
 
 private enum Operation {
+    case activate
+    case menuCommand(String)
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case press(String)
+    case confirm(String)
     case set(String)
     case type(String, replace: Bool)
     case key(CGKeyCode, CGEventFlags)
@@ -60,12 +66,18 @@ private enum Operation {
     init(_ name: String, _ arguments: ArraySlice<String>) throws {
         let identifier = arguments.first
         switch (name, identifier) {
+        case ("activate", nil):
+            self = .activate
+        case ("menu-command", let key?) where arguments.count == 1 && key.count == 1:
+            self = .menuCommand(key)
         case ("dump", _):
             self = try .dump(DisplayOptions(arguments, allowDepth: true))
         case ("get", let id?):
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
+        case ("confirm", let id?) where arguments.count == 1:
+            self = .confirm(id)
         case ("set", let id?) where arguments.count == 1:
             self = .set(id)
         case ("type", let id?) where arguments.count == 1:
@@ -247,6 +259,20 @@ private func run(_ arguments: [String]) throws {
     try requireSuccess(roleResult, "Read application role")
 
     switch operation {
+    case .activate:
+        try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
+                           "Activate the selected application")
+    case .menuCommand(let key):
+        let matches = Tree(root: app).map(\.element).filter { item in
+            attribute(kAXRoleAttribute, on: item) as? String == kAXMenuItemRole &&
+            (attribute(kAXMenuItemCmdCharAttribute, on: item) as? String)?.lowercased() == key.lowercased() &&
+            attribute(kAXMenuItemCmdModifiersAttribute, on: item) as? Int == 0 &&
+            attribute(kAXEnabledAttribute, on: item) as? Bool == true
+        }
+        guard matches.count == 1, let command = matches.first else {
+            throw Failure("Expected one enabled menu command for Command-\(key), found \(matches.count).")
+        }
+        try requireSuccess(AXUIElementPerformAction(command, kAXPressAction as CFString), "Invoke menu command")
     case .dump(let options):
         for (node, depth) in Tree(root: app, maxDepth: options.maxDepth) {
             print(String(repeating: "  ", count: depth) + line(for: node, options: options))
@@ -256,6 +282,9 @@ private func run(_ arguments: [String]) throws {
     case .press(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")
+    case .confirm(let id):
+        let target = try element(withID: id, in: app)
+        try requireSuccess(AXUIElementPerformAction(target, kAXConfirmAction as CFString), "AXConfirm")
     case .set(let id):
         let target = try element(withID: id, in: app)
         let text = try inputText()

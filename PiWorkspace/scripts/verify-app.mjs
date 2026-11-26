@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -18,13 +19,15 @@ const worktreeTest = process.argv.includes("--worktree");
 const fixtureModel = process.argv.includes("--fixture-model");
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
+const forgeState = join(directory, "forge-state");
+const forgeLog = join(directory, "forge-calls.log");
 const logs = join(directory, "logs");
 const report = join(logs, "report.txt");
 for (const path of [project, workspace, logs]) mkdirSync(path, { mode: 0o700 });
 const secret = randomBytes(32).toString("hex");
 const expected = Buffer.from("Bearer " + secret);
-const firstPrompt = "What is the capital of France? Answer in one short sentence.";
-const secondPrompt = "What country did my first message mention? Name only the country.";
+const firstPrompt = fixtureModel ? "fixture stream" : "What is the capital of France? Answer in one short sentence.";
+const secondPrompt = fixtureModel ? "fixture resume" : "What country did my first message mention? Name only the country.";
 const targets = [];
 let releaseFirst;
 const firstPartialCanFinish = new Promise(resolve => { releaseFirst = resolve; });
@@ -36,6 +39,7 @@ let rejected = 0;
 let appPID;
 let launchNumber = 0;
 let keySaved = false;
+let keyAccount;
 
 function record(text) {
   assert(!text.includes(secret), "A verification message contained the API key.");
@@ -52,13 +56,18 @@ function fixtureChunk(index, delta, finish_reason = null) {
 
 function fixtureReply(index) {
   const json = (delta, reason) => fixtureChunk(index, delta, reason);
-  const words = index === 0 ? ["Paris", " is the capital."] : ["France", "."];
+  const words = index === 0 ? ["Fixture stream started. ", "Second delta. Fixture complete."] : ["Fixture resumed", "."];
   const body = json({ role: "assistant" }) + words.map(content => json({ content })).join("") +
     json({}, "stop") + "data: [DONE]\n\n";
   return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
 }
 
 const server = createServer(async (request, response) => {
+  if (request.method === "GET" && ["/preview/one", "/preview/two"].includes(request.url)) {
+    const label = "Local preview " + request.url.split("/").at(-1);
+    response.writeHead(200, { "Content-Type": "text/html" }).end("<title>" + label + "</title><h1>" + label + "</h1>");
+    return;
+  }
   const actual = Buffer.from(request.headers.authorization ?? "");
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     response.writeHead(401).end();
@@ -146,6 +155,7 @@ async function until(check, label, timeout = 20_000) {
 const visible = (id) => drive("get", [id]);
 const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
+const panelDriver = { press, visible, tree, setField, until, closeSettings };
 
 function replyVisible(target) {
   const plain = (text) => text.replace(/\\[nrt]/g, " ").replace(/[\p{P}\p{S}\s]+/gu, " ").trim();
@@ -153,12 +163,17 @@ function replyVisible(target) {
   return reply.length > 0 && plain(tree()).includes(reply);
 }
 
-async function launch() {
+async function launch(expectedControl = "model-settings") {
   launchNumber++;
   execFileSync("/usr/bin/open", [
     "-n", "-a", app, "--stdout", join(logs, launchNumber + ".out"),
     "--stderr", join(logs, launchNumber + ".err"),
-    "--env", "SHELL=" + (worktreeTest ? terminalFixture : "/bin/sh"), "--args", "--workspace", workspace,
+    "--env", "SHELL=" + (worktreeTest ? terminalFixture : "/bin/sh"),
+    "--env", "PATH=" + resolve(import.meta.dirname, "fixtures/github-read") + ":/usr/bin:/bin",
+    "--env", "PI_GH_FIXTURE_STATE=" + forgeState, "--env", "GH_CONFIG_DIR=" + join(directory, "gh"),
+    "--env", "PI_GH_FIXTURE_LOG=" + forgeLog,
+    "--args", "--workspace", workspace,
+    "-ApplePersistenceIgnoreState", "YES",
   ]);
   const id = await until(() => {
     const result = execFileSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8" });
@@ -166,17 +181,21 @@ async function launch() {
     return process && Number(process.trim().split(/\s+/)[0]);
   }, "app process");
   appPID = id;
-  await until(() => visible("model-settings"), "main window");
+  await until(() => { drive("activate", []); return true; }, "activate isolated app");
+  await until(() => visible(expectedControl), "main window: " + expectedControl);
   return id;
 }
 
-async function quit() {
-  const id = appPID;
-  press("terminate:");
+async function waitForExit(id) {
   await until(() => {
     try { process.kill(id, 0); } catch { return true; }
     return false;
   }, "clean application exit");
+}
+
+async function quit() {
+  press("terminate:");
+  await waitForExit(appPID);
   appPID = undefined;
 }
 
@@ -193,13 +212,17 @@ async function closeSettings() {
   }, "settings sheet to close");
 }
 
-async function setField(id, text) {
-  try {
-    drive("set", [id], text);
-  } catch {
-    drive("type", [id, "--replace"], text);
+async function setField(id, text, ready = () => true) {
+  const displayed = () => drive("get", [id, "--values"]).includes("value=" + JSON.stringify(text)) && ready();
+  for (const action of ["type", "set", "type"]) {
+    try {
+      if (displayed()) return;
+      drive(action, action === "type" ? [id, "--replace"] : [id], text);
+      await until(displayed, id + " contents", 1500);
+      return;
+    } catch {}
   }
-  await until(() => drive("get", [id, "--values"]).includes("value=" + JSON.stringify(text)), id + " contents");
+  assert(displayed(), "The native field did not accept input: " + id);
 }
 
 async function typePrompt(prompt) {
@@ -209,16 +232,21 @@ async function typePrompt(prompt) {
   await until(displayed, "prompt text in the composer");
 }
 
+async function chooseLocalFolder(entry = "open-project") {
+  press(entry);
+  await until(() => visible("project-source-local"), "project sources");
+  press("project-source-local");
+  await until(() => visible("project-path"), "Local folder");
+}
+
 async function openProject() {
-  press("open-project");
-  await until(() => visible("project-path"), "Add project dialog");
+  await chooseLocalFolder();
   press("cancel-project");
   await until(() => !tree().includes('id="project-path"'), "cancelled project picker");
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   assert.equal(index().projects.length, 0);
-  press("empty-open-project");
-  await until(() => visible("project-path"), "empty home project picker");
-  await setField("project-path", join(directory, "missing folder"));
+  await chooseLocalFolder("empty-open-project");
+  await setField("project-path", join(directory, "missing folder"), () => visible("confirm-project").includes("enabled=true"));
   press("confirm-project");
   await until(() => visible("project-path-error"), "invalid path feedback");
   assert.equal(index().projects.length, 0);
@@ -230,8 +258,7 @@ async function openProject() {
   assert.equal(added.path, project);
   assert.ok(added.selectedConversation);
   assert(!tree().includes("thread-row-"), "Empty drafts should not appear in the thread list.");
-  press("open-project");
-  await until(() => visible("project-path"), "folder picker for a duplicate");
+  await chooseLocalFolder();
   const missingChild = join(project, "missing folder");
   await setField("project-path", missingChild);
   press("browse-project");
@@ -250,8 +277,7 @@ async function openProject() {
   assert.equal(index().projects.length, 1);
   assert.equal(index().selectedProject, added.id);
   assert.equal(index().projects[0].selectedConversation, added.selectedConversation);
-  press("open-project");
-  await until(() => visible("project-path"), "picker for a folder alias");
+  await chooseLocalFolder();
   const alias = join(directory, "project-alias");
   symlinkSync(project, alias);
   await setField("project-path", alias);
@@ -259,13 +285,37 @@ async function openProject() {
   await until(() => !tree().includes('id="project-path"'), "confirmed folder alias");
   assert.equal(index().projects.length, 1);
   assert.equal(index().projects[0].id, added.id);
+
+  press("open-project");
+  await until(() => visible("project-source-new"), "New project source");
+  press("project-source-new");
+  await until(() => visible("project-parent-path"), "repository parent folder");
+  await setField("project-parent-path", directory);
+  await setField("project-name", "Sample Project");
+  press("confirm-project");
+  await until(() => visible("project-path-error"), "existing destination must remain intact");
+  assert.equal(index().projects.length, 1);
+  await setField("project-name", "Second Project");
+  press("confirm-project");
+  await until(() => index().projects.length === 2 && !tree().includes('id="project-name"'), "created repository and draft");
+  const other = index().projects.find(item => item.id === index().selectedProject);
+  assert.equal(other.title, "Second Project");
+  assert.equal(git(other.path, "rev-parse", "--is-inside-work-tree"), "true");
+  await chooseLocalFolder();
+  await setField("project-path", "../Sample Project");
+  press("confirm-project");
+  await until(() => index().selectedProject === added.id && visible("composer").includes("focused=true"), "relative folder reopens first project");
+  assert.equal(index().projects.length, 2);
+  assert.equal(index().projects[0].selectedConversation, added.selectedConversation);
+  record("New project rejected an occupied destination and created a fresh Git repository. A relative folder path reopened the original draft.");
 }
 
 async function send(prompt) {
   await until(() => !tree().includes("Opening thread…"), "Pi to become ready");
   await typePrompt(prompt);
+  const requests = targets.length + rejected;
   press("send-message");
-  await until(() => tree().includes("Preparing worktree…") || visible("stop-message"), "message send");
+  await until(() => targets.length + rejected > requests || tree().includes("Preparing worktree…") || visible("stop-message"), "message send");
 }
 
 function git(directory, ...arguments_) {
@@ -287,10 +337,14 @@ exec /bin/sh -i
   git(project, "config", "user.email", "fixture@example.invalid");
   git(project, "config", "commit.gpgsign", "false");
   git(project, "config", "core.hooksPath", join(directory, "no fixture hooks"));
+  git(project, "remote", "add", "origin", "https://github.com/fixture/workspace.git");
+  writeFileSync(forgeState, "initial\n");
   writeFileSync(join(project, "base.txt"), "base content\n");
-  git(project, "add", "base.txt");
+  writeFileSync(join(project, "README.md"), "T3 audit sample.\n");
+  git(project, "add", "base.txt", "README.md");
   git(project, "commit", "-m", "Fixture base");
   writeFileSync(join(project, "base.txt"), "unsaved root checkout edit\n");
+  appendFileSync(join(project, "README.md"), "Uncommitted fixture line.\n");
 }
 
 async function chooseNewWorktree(branch) {
@@ -387,6 +441,81 @@ async function verifyApprovals(cwd) {
   record("Supervised displayed each write before execution. Decline left the file absent. Approve created only the requested file.");
 }
 
+async function verifySidebar(savedID) {
+  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  const third = join(directory, "Third Project");
+  mkdirSync(third);
+  for (const folder of [join(directory, "Second Project"), third]) {
+    await chooseLocalFolder();
+    await setField("project-path", folder);
+    press("confirm-project");
+    await until(() => !tree().includes('id="project-path"') && visible("composer").includes("focused=true"), "folder's draft");
+    await typePrompt("Draft for " + folder.split("/").at(-1));
+  }
+  const [first, second, last] = index().projects;
+  const row = (id) => 'id="thread-row-' + id + '"';
+  press("thread-filters");
+  await until(() => visible("project-filter-" + first.id), "project scope checkboxes");
+  press("project-filter-" + first.id);
+  press("project-filter-" + second.id);
+  press("close-thread-filters");
+  await until(() => {
+    const list = tree();
+    return list.includes(row(savedID)) && list.includes(row(second.selectedConversation)) && !list.includes(row(last.selectedConversation));
+  }, "two selected projects visible, third excluded");
+  press("thread-filters");
+  press("project-filter-all");
+  press("close-thread-filters");
+  await until(() => visible("thread-row-" + last.selectedConversation), "All Projects restores third draft");
+  record("The project filter showed both checked projects, excluded the third, and restored all three on reset.");
+  drive("activate", []);
+  drive("menu-command", ["f"]);
+  await until(() => visible("thread-search").includes("focused=true"), "registered Command-F menu action focuses search");
+  await setField("thread-search", "Second Project");
+  await until(() => !tree().includes(row(savedID)) && visible("thread-row-" + second.selectedConversation), "matching project in search");
+  drive("confirm", ["thread-search"]);
+  await until(() => index().selectedProject === second.id && drive("get", ["composer", "--values"]).includes("Draft for Second Project"),
+              "confirming the search opens the selected draft with its text");
+  drive("menu-command", ["f"]);
+  await setField("thread-search", "Partial reply before Stop.");
+  const match = await until(() => tree().match(new RegExp('id="(message-search-result-' + savedID + '-([^"]+))"')), "match in a previous message");
+  press(match[1]);
+  await until(() => visible("transcript-message-" + match[2]), "matching message in the original conversation");
+  await until(() => index().selectedProject === first.id && index().projects[0].selectedConversation === savedID, "return to saved conversation");
+  record("Invoking the menu command registered for Command-F focused search. AXConfirm reopened the matching draft with its text.");
+  record("Searching an older assistant reply opened its stored message ID in the original thread.");
+}
+
+async function verifyScratch(originalThread) {
+  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  press("new-conversation");
+  await until(() => visible("new-thread-no-project"), "No project in the new-thread chooser");
+  press("new-thread-no-project");
+  const scratch = await until(() => {
+    const data = index();
+    return data.projects.find(p => p.kind === "scratch" && p.id === data.selectedProject);
+  }, "scratch workspace");
+  assert.equal(scratch.path, join(workspace, "scratch", scratch.id));
+  await send("Verify the scratch thread and its history.");
+  await until(() => visible("send-message") && tree().includes("Verify the scratch thread and its history."), "scratch turn completed");
+  const history = join(workspace, "sessions", scratch.id, scratch.selectedConversation);
+  const files = readdirSync(history).filter(name => name.endsWith(".jsonl"));
+  assert.equal(files.length, 1);
+  const transcript = readFileSync(join(history, files[0]));
+  press("conversation-title");
+  await until(() => visible("turn-into-project"), "scratch conversion");
+  press("turn-into-project");
+  await until(() => visible("project-created"), "project created in place");
+  const converted = index().projects.find(p => p.id === scratch.id);
+  assert.equal(converted.path, scratch.path);
+  assert.equal(converted.selectedConversation, scratch.selectedConversation);
+  assert.equal(converted.kind, undefined);
+  assert.deepEqual(readFileSync(join(history, files[0])), transcript);
+  press("thread-row-" + originalThread);
+  await until(() => index().projects[0].selectedConversation === originalThread && index().selectedProject === index().projects[0].id, "original workspace");
+  record("A scratch thread sent from its private folder. Conversion kept the folder, thread ID and history file.");
+}
+
 function inspectFiles() {
   const files = readdirSync(directory, { recursive: true, withFileTypes: true });
   for (const entry of files) {
@@ -405,6 +534,7 @@ try {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const endpoint = "http://127.0.0.1:" + server.address().port + "/v1";
+  keyAccount = "local:" + endpoint;
   writeFileSync(join(workspace, "workspace.json"), JSON.stringify({
     projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel },
   }), { mode: 0o600 });
@@ -435,12 +565,16 @@ try {
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const draftID = index().projects[0].selectedConversation;
   if (worktreeTest) {
-    await chooseNewWorktree("ui-worktree");
-    const obstruction = join(workspace, "worktrees");
-    writeFileSync(obstruction, "fixture", { flag: "wx" });
+    await chooseNewWorktree("main");
     await typePrompt(firstPrompt);
     await until(() => !tree().includes("Opening thread…"), "draft helper ready");
     press("send-message");
+    await until(() => tree().includes("already exists") && visible("retry-worktree"), "branch collision");
+    assert.equal(targets.length, 0);
+    await chooseNewWorktree("ui-worktree");
+    const obstruction = join(workspace, "worktrees", index().projects[0].id, draftID);
+    writeFileSync(obstruction, "fixture", { flag: "wx" });
+    press("retry-worktree");
     await until(() => visible("worktree-launch-error") && visible("retry-worktree"), "worktree failure and Retry");
     assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
     assert.equal(index().projects[0].selectedConversation, draftID);
@@ -470,8 +604,18 @@ try {
   assert.equal(targets[0].body.messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes(firstPrompt)).length, 1);
   const selectedThread = previous.projects[0].conversations.find(thread => thread.id === threadID);
   const checkout = selectedThread.location?.worktree?.path;
+  if (worktreeTest) assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 2);
   record("First request returned HTTP 200. Reply: " + JSON.stringify(targets[0].fragments.join("").trim()));
-  if (worktreeTest) await verifyCheckout(checkout);
+  if (worktreeTest) {
+    await verifyCheckout(checkout);
+    await verifyPullRequests(panelDriver, forgeState, forgeLog, checkout);
+    record("Mock gh returned PR 42 and its checks from the selected checkout. Refresh displayed the new head and updated checks.");
+  }
+  if (fixtureModel) {
+    await verifyPreview(panelDriver, new URL(endpoint).origin);
+    record("WebKit opened both loopback pages, went back and forward, zoomed and retained the unsent composer text.");
+    await setProjectModel(panelDriver, "fixture-project-model");
+  }
 
   await quit();
   const secondPID = await launch();
@@ -489,6 +633,13 @@ try {
   await until(() => visible("send-message"), "second turn settled");
   assert.equal(targets[1].status, 200);
   assert.equal(targets.length, 2);
+  if (fixtureModel) {
+    assert.equal(targets[1].body.model, "fixture-project-model");
+    assert.equal(landing.model.model, "smollm2:135m");
+    assert.equal(landing.projects[1].modelOverride, undefined);
+    await resetProjectModel(panelDriver, "smollm2:135m");
+    record("Only the first project used the override for a model request after relaunch. Reset restored the inherited model and kept its Keychain item.");
+  }
   assert(targets[1].body.messages.some(message => message.role === "user" && JSON.stringify(message.content).includes(firstPrompt)));
   assert(targets[1].body.messages.some(message => message.role === "assistant" && JSON.stringify(message.content).includes(targets[0].fragments.join("").trim())));
   const reopened = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
@@ -511,6 +662,8 @@ try {
     holdForStop = false;
     record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
     await verifyApprovals(checkout ?? project);
+    await verifySidebar(threadID);
+    await verifyScratch(threadID);
   }
   rejectNextRequest = true;
   await send("Check error handling.");
@@ -533,19 +686,44 @@ try {
   await closeSettings();
   await quit();
   const transcripts = inspectFiles();
-  assert.equal(transcripts.length, 1);
+  assert.equal(transcripts.length, fixtureModel ? 2 : 1);
   record("No auth.json or plaintext key under the project, app data, transcripts, or captured logs. Keychain test item removed.");
+  if (fixtureModel) {
+    const previousIndex = JSON.parse(readFileSync(join(workspace, "workspace.previous.json"), "utf8"));
+    const damaged = "{incomplete fixture";
+    writeFileSync(join(workspace, "workspace.json"), damaged);
+    await launch("workspace-startup-restore");
+    press("workspace-startup-restore");
+    await until(() => visible("model-settings"), "restored workspace window");
+    const restored = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+    assert.deepEqual(restored.projects.map(p => p.id), previousIndex.projects.map(p => p.id));
+    assert(readdirSync(workspace).some(name => name.startsWith("workspace.corrupt-") && readFileSync(join(workspace, name), "utf8") === damaged));
+    await quit();
+    assert.deepEqual(inspectFiles().sort(), transcripts.sort());
+    record("The recovery screen restored the previous project index, retained the damaged bytes and kept both session histories.");
+  }
 } catch (error) {
   let message = error.message.replaceAll(secret, "[redacted]");
   if (appPID) {
     let summary = "";
     try { summary = tree().replaceAll(secret, "[redacted]"); } catch { /* app exited */ }
     writeFileSync(join(logs, "failure-ui.txt"), summary, { mode: 0o600 });
-    try { await quit(); } catch { try { process.kill(appPID, "SIGTERM"); } catch { /* exited */ } }
+    try { await quit(); } catch {
+      try {
+        process.kill(appPID, "SIGTERM");
+        await waitForExit(appPID);
+      } catch (terminationError) {
+        if (terminationError.code !== "ESRCH") message += " (app exit not confirmed)";
+      }
+    }
   }
   if (keySaved) {
     try { updateKey("--remove-api-key"); }
-    catch { message += " (Keychain cleanup not confirmed)"; }
+    catch {
+      const service = "dev.piworkspace.model-key." + createHash("sha256").update(workspace).digest("hex");
+      try { execFileSync("/usr/bin/security", ["delete-generic-password", "-s", service, "-a", keyAccount], { stdio: "ignore" }); }
+      catch (cleanupError) { if (cleanupError.status !== 44) message += " (Keychain cleanup not confirmed)"; }
+    }
   }
   record("FAIL: " + message);
   process.exitCode = 1;
