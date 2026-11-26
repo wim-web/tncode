@@ -135,7 +135,7 @@ async function receive(worker, type, { credential, partial } = {}) {
     } else if (event.type === type) {
       return event;
     } else {
-      assert.equal(event.type, "history", `Expected ${type}; received ${JSON.stringify(event)}`);
+      assert(["history", "inputMode"].includes(event.type), `Expected ${type}; received ${JSON.stringify(event)}`);
     }
   }
   assertRedacted(worker.stderr(), "worker stderr");

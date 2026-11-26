@@ -25,6 +25,8 @@ let initializing = false;
 let connected = true;
 let active;
 let approvals;
+const steeredMessages = new WeakMap();
+const validID = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
 
 function requestCredential(operation) {
   if (!connected) return Promise.reject(new Error("Host disconnected"));
@@ -80,7 +82,7 @@ function history() {
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
     const text = redact(messageText(entry.message));
-    return text ? [{ id: entry.id, role, text }] : [];
+    return text ? [{ id: entry.id, role, text, queuedID: entry.message.workspaceQueuedID }] : [];
   });
 }
 
@@ -148,7 +150,20 @@ async function open(command) {
     : SessionManager.create(cwd, sessionDir, { id: threadID });
   if (manager.getSessionId() !== threadID) throw new Error("Conversation history does not match its ID.");
   const appendMessage = manager.appendMessage.bind(manager);
-  manager.appendMessage = (message) => appendMessage(redactValue(message));
+  manager.appendMessage = (message) => {
+    const safeMessage = redactValue(message);
+    if (message.role === "user") {
+      // Store the queue ID with the transcript entry so reopening can acknowledge it.
+      const queuedID = steeredMessages.get(message);
+      if (queuedID) {
+        safeMessage.workspaceQueuedID = queuedID;
+      } else if (active?.promptID) {
+        safeMessage.workspaceQueuedID = active.promptID;
+        active.promptID = undefined;
+      }
+    }
+    return appendMessage(safeMessage);
+  };
 
   const result = await createAgentSession({
     cwd,
@@ -196,7 +211,15 @@ async function open(command) {
     });
   }
   session.subscribe((event) => {
-    if (event.type === "agent_start" && active?.cancelled) void session.abort().catch(() => {});
+    if (active) {
+      if (event.type === "agent_start") {
+        active.started = true;
+        if (active.cancelled) void session.abort().catch(() => {});
+        else setInputMode("steer");
+      }
+      if (event.type === "agent_end" || event.type === "compaction_end") setInputMode("waiting");
+      if (event.type === "compaction_start" && active.started && !active.cancelled) setInputMode("compacting");
+    }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       emit({ type: "partial", text: redact(messageText(event.message)) });
     }
@@ -206,12 +229,13 @@ async function open(command) {
   emit({ type: "ready", messages: history() });
 }
 
-async function prompt({ turnID, text }) {
-  if (!session || active || typeof turnID !== "string" || !/^[a-f0-9-]{36}$/i.test(turnID) ||
+async function prompt({ turnID, text, queuedID, skipCompaction }) {
+  if (!session || active || !validID(turnID) || (queuedID !== undefined && !validID(queuedID)) ||
       typeof text !== "string" || !text.trim()) return;
-  const run = { id: turnID, cancelled: false };
+  const run = { id: turnID, promptID: queuedID, mode: "waiting", cancelled: false, started: false };
   active = run;
   let error;
+  const restoreCompaction = skipCompaction === true && session.autoCompactionEnabled;
   try {
     credential = await requestCredential("read");
     if (run.cancelled) {
@@ -219,7 +243,13 @@ async function prompt({ turnID, text }) {
     } else if (!credential) {
       error = "Save an API key for this provider in Settings.";
     } else {
-      await session.prompt(redact(text), { expandPromptTemplates: false });
+      if (restoreCompaction) session.setAutoCompactionEnabled(false);
+      await session.prompt(redact(text), {
+        expandPromptTemplates: false,
+        preflightResult: () => {
+          if (restoreCompaction) session.setAutoCompactionEnabled(true);
+        },
+      });
       const assistant = session.messages.findLast((message) => message.role === "assistant");
       if (assistant?.stopReason === "error") {
         error = redact(assistant.errorMessage) || "The model request failed.";
@@ -228,15 +258,42 @@ async function prompt({ turnID, text }) {
   } catch {
     error = "Pi could not complete the request. Check the provider, model, and Keychain access.";
   } finally {
+    if (restoreCompaction) session.setAutoCompactionEnabled(true);
+    session.clearQueue();
     active = undefined;
     approvals?.cancel();
-    emit({ type: "finished", messages: history(), error });
+    emit({ type: "finished", turnID, messages: history(), error });
     credential = undefined;
   }
 }
 
+function setInputMode(mode) {
+  if (active.mode === mode) return;
+  active.mode = mode;
+  emit({ type: "inputMode", turnID: active.id, mode });
+}
+
+function handleQueuedInput({ type, turnID, queuedID, text }) {
+  if (!validID(turnID) || !validID(queuedID)) return;
+  const reject = () => emit({ type: "queueRejected", turnID, queuedID });
+  if (active?.id !== turnID || active.cancelled) return reject();
+  if (type === "skipCompaction") {
+    if (active.mode !== "compacting" || !session.isCompacting) return reject();
+    session.abortCompaction();
+    setInputMode("waiting");
+    emit({ type: "compactionSkipped", turnID, queuedID });
+    return;
+  }
+  if (active.mode !== "steer" || !session.agent.state.isStreaming ||
+      typeof text !== "string" || !text.trim()) return reject();
+  const message = { role: "user", content: [{ type: "text", text: redact(text) }], timestamp: Date.now() };
+  steeredMessages.set(message, queuedID);
+  session.agent.steer(message);
+}
+
 function cancelActive() {
   if (active) active.cancelled = true;
+  session?.clearQueue();
   approvals?.cancel();
 }
 
@@ -262,6 +319,8 @@ input.on("line", (line) => {
     });
   } else if (command.type === "prompt") {
     void prompt(command);
+  } else if (command.type === "steer" || command.type === "skipCompaction") {
+    handleQueuedInput(command);
   } else if (command.type === "toolApprovalResult") {
     approvals?.respond(command);
   } else if (command.type === "cancel" && active && active.id === command.turnID) {
