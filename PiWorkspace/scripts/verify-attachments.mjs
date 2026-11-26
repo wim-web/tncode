@@ -31,9 +31,19 @@ const server = createServer(async (request, response) => {
     const message = body.messages.findLast(({ role }) => role === "user");
     requests.push(message.content);
     const text = message.content.filter(({ type }) => type === "text").map(({ text }) => text).join("");
-    assert.equal(text, `Attached text file "note.txt":\n${note}`);
     const urls = message.content.filter(({ type }) => type === "image_url").map(({ image_url }) => image_url.url);
-    assert.deepEqual(urls, [`data:image/png;base64,${images.blue}`]);
+    if (requests.length === 1) {
+      assert.equal(text, `Attached text file "note.txt":\n${note}`);
+      assert.deepEqual(urls, [`data:image/png;base64,${images.blue}`]);
+    } else {
+      const run = requests.length - 1;
+      const largeText = "\uFEFF" + "  日本語 👩🏽‍💻 e\u0301\r\n".repeat(1300);
+      assert.ok(Buffer.byteLength(largeText) >= 32 * 1024);
+      assert.equal(text, `Large paste ${run}\n\nAttached text file "pasted-text.txt":\n${largeText}`);
+      const png = readFileSync(join(root, `normalized-${run}.png`));
+      assert.ok(png.length <= 4 * 1024 * 1024);
+      assert.deepEqual(urls, [`data:image/png;base64,${png.toString("base64")}`]);
+    }
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     for (const [delta, reason] of [[{ role: "assistant", content: "Attachment fixture received." }, null], [{}, "stop"]]) {
       const chunk = {
@@ -76,8 +86,8 @@ try {
   if (fixtureError) throw fixtureError;
   assert.equal(signal, null);
   assert.equal(code, 0);
-  assert.equal(requests.length, 1);
-  console.log(`PASS Pi SDK ${installed.version} sent the retained blue PNG bytes and complete UTF-8 note.`);
+  assert.equal(requests.length, 3);
+  console.log(`PASS Pi SDK ${installed.version} sent exact PNG bytes and complete UTF-8 text across three turns.`);
 } finally {
   server.close();
   rmSync(root, { recursive: true, force: true });

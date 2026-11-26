@@ -4,6 +4,7 @@ struct ComposerTextField: NSViewRepresentable {
     let placeholder: String
     @Binding var text: String
     let drop: AttachmentDropDestination
+    let attachPastedText: (String) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -30,6 +31,7 @@ struct ComposerTextField: NSViewRepresentable {
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
         field.drop = drop
+        field.attachPastedText = attachPastedText
         field.isEnabled = context.environment.isEnabled
         field.placeholderString = placeholder
         if field.stringValue != text, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true {
@@ -58,6 +60,7 @@ struct ComposerTextField: NSViewRepresentable {
 
     final class Field: NSTextField {
         var drop: AttachmentDropDestination?
+        var attachPastedText: ((String) -> Void)?
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
             drop?.operation(for: sender) ?? super.draggingEntered(sender)
@@ -92,16 +95,34 @@ struct ComposerTextField: NSViewRepresentable {
 
     final class Editor: NSTextView {
         weak var owner: Field?
+        private var pastingAsPlainText = false
+
+        override func pasteAsPlainText(_ sender: Any?) {
+            pastingAsPlainText = true
+            defer { pastingAsPlainText = false }
+            super.pasteAsPlainText(sender)
+        }
 
         override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
             AttachmentDropDestination.types + super.readablePasteboardTypes
         }
 
         override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+            takeAttachment(from: pasteboard) || super.readSelection(from: pasteboard, type: type)
+        }
+
+        private func takeAttachment(from pasteboard: NSPasteboard) -> Bool {
+            guard !pastingAsPlainText else { return false }
             if let drop = owner?.drop, pasteboard.availableType(from: AttachmentDropDestination.types) != nil {
-                return drop.receiveItems(from: pasteboard)
+                _ = drop.receiveItems(from: pasteboard)
+                return true
             }
-            return super.readSelection(from: pasteboard, type: type)
+            if let attach = owner?.attachPastedText, let text = pasteboard.string(forType: .string),
+               text.utf8.count >= ComposerAttachmentInput.pastedTextThreshold {
+                attach(text)
+                return true
+            }
+            return false
         }
 
         override var acceptableDragTypes: [NSPasteboard.PasteboardType] {

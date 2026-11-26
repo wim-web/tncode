@@ -188,6 +188,33 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertEqual(model.messages.first?.id, user.id)
         XCTAssertEqual(model.messages.first?.attachments?.map(\.name), ["same.png", "note.txt"])
 
+        let largeText = "\u{FEFF}" + String(repeating: "  日本語 👩🏽‍💻 e\u{301}\r\n", count: 1300)
+        let largeImage = try makeAttachmentImage(width: 2200, height: 1600, type: .png, noisy: true)
+        XCTAssertGreaterThan(largeImage.count, ComposerAttachment.maxBytes)
+        let target = model.attachmentTarget(for: threadID)
+        var sentImageID: UUID?
+        for run in 1...2 {
+            model.draft = "Large paste \(run)"
+            XCTAssertTrue(model.attach([.pastedText(largeText), .image(largeImage, .png)], to: target))
+            let attachments = model.composerAttachments
+            XCTAssertEqual(attachments.map(\.name), ["pasted-text.txt", "Pasted Image.png"])
+            XCTAssertEqual(attachments.first?.payload?.data, Data(largeText.utf8))
+            let image = try XCTUnwrap(attachments.last)
+            XCTAssertNotEqual(image.id, sentImageID)
+            let bytes = try XCTUnwrap(image.payload?.data)
+            try bytes.write(to: source.appendingPathComponent("normalized-\(run).png"))
+            XCTAssertTrue(model.canSend)
+            model.send()
+            XCTAssertEqual(model.phase, .running)
+            await wait(for: .ready, in: model)
+            XCTAssertNil(model.error)
+            XCTAssertTrue(model.composerAttachments.isEmpty)
+            let message = try XCTUnwrap(model.messages.last(where: { $0.role == .user }))
+            XCTAssertEqual(message.text, "Large paste \(run)")
+            XCTAssertEqual(message.attachments?.map(\.id), attachments.map(\.id))
+            sentImageID = image.id
+        }
+
         var textOnly = settings
         textOnly.localImages = false
         try model.applySettings(textOnly, in: .workspace, newKey: "", removeKey: false)

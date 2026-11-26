@@ -1,10 +1,203 @@
 import AppKit
+import ImageIO
 import SwiftUI
+import UniformTypeIdentifiers
 import XCTest
 @testable import PiWorkspace
 
 @MainActor
 final class ComposerFieldDropTests: XCTestCase {
+    func testLargePastesInNativeFieldKeepTheDraftAndQueueOwners() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let queued = QueuedMessage(text: "Queue 🌸")
+        let original = "Keep 👩🏽‍💻 this draft"
+        let draft = Conversation(id: UUID(), title: "Draft", composerText: original, queuedMessages: [queued])
+        let other = Conversation(id: UUID(), title: "Other", composerText: "Other draft")
+        let project = Project(id: UUID(), path: root.path, title: "Fixture",
+                              conversations: [draft, other], selectedConversation: draft.id)
+        try WorkspaceStore(root: root).save(Workspace(projects: [project], selectedProject: project.id, welcomeCompleted: true))
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in "fixture-credential" }) { _, _ in
+            throw WorkspaceError("No helper in this test.")
+        }
+        defer { model.terminate() }
+        let screenLeft = NSScreen.screens.map(\.frame.minX).min() ?? 0
+        let window = OffscreenPanel(contentRect: NSRect(x: screenLeft - 2200, y: 0, width: 1100, height: 720),
+                                    styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable))
+        window.contentView = host
+        window.setFrameOrigin(NSPoint(x: screenLeft - 2200, y: 0))
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        window.orderBack(nil)
+
+        func editor(for text: String) async throws -> NSTextView {
+            var field: ComposerTextField.Field?
+            for _ in 0..<40 {
+                host.layoutSubtreeIfNeeded()
+                field = descendant(in: host) { ($0 as? ComposerTextField.Field)?.stringValue == text } as? ComposerTextField.Field
+                if field != nil { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let composer = try XCTUnwrap(field)
+            XCTAssertEqual(composer.accessibilityIdentifier(), "composer")
+            XCTAssertTrue(window.makeFirstResponder(composer))
+            return try XCTUnwrap(composer.currentEditor() as? NSTextView)
+        }
+
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        func paste(_ text: String, into editor: NSTextView) {
+            board.clearContents()
+            XCTAssertTrue(board.setString(text, forType: .string))
+            XCTAssertTrue(editor.readSelection(from: board))
+        }
+
+        let draftEditor = try await editor(for: original)
+        let selection = (original as NSString).range(of: "👩🏽‍💻")
+        draftEditor.setSelectedRange(selection)
+        let belowThreshold = String(repeating: "a", count: 32 * 1024 - 1)
+        paste(belowThreshold, into: draftEditor)
+        XCTAssertTrue(model.draft == (original as NSString).replacingCharacters(in: selection, with: belowThreshold))
+        XCTAssertTrue(model.composerAttachments.isEmpty)
+        draftEditor.insertText(original, replacementRange: NSRange(location: 0, length: draftEditor.string.utf16.count))
+        draftEditor.setSelectedRange(selection)
+
+        let line = "  日本語 👩🏽‍💻 e\u{301}\r\n"
+        let repeated = String(repeating: line, count: (32 * 1024) / line.utf8.count)
+        let boundary = repeated + String(repeating: " ", count: 32 * 1024 - repeated.utf8.count)
+        paste(boundary, into: draftEditor)
+        XCTAssertTrue(model.draft == original)
+        XCTAssertTrue(draftEditor.string == original)
+        XCTAssertEqual(draftEditor.selectedRange(), selection)
+        let first = try XCTUnwrap(model.composerAttachments.first)
+        XCTAssertEqual(first.name, "pasted-text.txt")
+        XCTAssertEqual(first.payload?.data, Data(boundary.utf8))
+
+        paste(boundary + boundary, into: draftEditor)
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["pasted-text.txt", "pasted-text-2.txt"])
+        XCTAssertEqual(model.composerAttachments.last?.payload?.data, Data((boundary + boundary).utf8))
+        let accepted = model.composerAttachments
+        paste(boundary + boundary + "a", into: draftEditor)
+        XCTAssertTrue(model.error?.contains("64 KB") == true)
+        XCTAssertEqual(model.composerAttachments, accepted)
+        XCTAssertEqual(draftEditor.selectedRange(), selection)
+
+        board.clearContents()
+        XCTAssertTrue(board.setData(Data([1, 2, 3]), forType: .png))
+        XCTAssertTrue(draftEditor.readSelection(from: board))
+        XCTAssertTrue(model.error?.contains("damaged") == true)
+        XCTAssertEqual(model.composerAttachments, accepted)
+        XCTAssertEqual(model.draft, original)
+
+        model.editQueuedMessage(queued.id)
+        let queueEditor = try await editor(for: queued.text)
+        paste(boundary, into: queueEditor)
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["pasted-text.txt"])
+        XCTAssertEqual(model.draft, queued.text)
+        model.cancelQueuedMessageEdit()
+        XCTAssertEqual(model.queuedMessages.first?.attachments, queued.attachments)
+        XCTAssertEqual(model.composerAttachments, accepted)
+        model.editQueuedMessage(queued.id)
+        paste(boundary, into: try await editor(for: queued.text))
+        model.updateQueuedMessage()
+        XCTAssertEqual(model.queuedMessages.first?.id, queued.id)
+        XCTAssertEqual(model.queuedMessages.first?.attachments?.first?.payload?.data, Data(boundary.utf8))
+
+        model.selectConversation(other.id, in: project.id)
+        paste(boundary, into: try await editor(for: "Other draft"))
+        XCTAssertEqual(model.draft, "Other draft")
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["pasted-text.txt"])
+        XCTAssertNotEqual(model.composerAttachments.first?.id, first.id)
+        model.selectConversation(draft.id, in: project.id)
+        let restored = try await editor(for: original)
+        XCTAssertEqual(model.composerAttachments, accepted)
+        for _ in accepted.count..<ComposerAttachment.maxCount { paste(boundary, into: restored) }
+        XCTAssertEqual(model.composerAttachments.count, ComposerAttachment.maxCount)
+        let full = model.composerAttachments
+        paste(boundary, into: restored)
+        XCTAssertTrue(model.error?.contains("up to 10 files") == true)
+        XCTAssertEqual(model.composerAttachments, full)
+        XCTAssertEqual(model.draft, original)
+
+        for attachment in full { model.removeAttachment(attachment.id, in: model.attachmentTarget(for: draft.id)) }
+        let alphaTIFF = try makeAttachmentImage(width: 2400, height: 1800, type: .tiff, noisy: true)
+        XCTAssertGreaterThan(alphaTIFF.count, ComposerAttachment.maxBytes)
+        board.clearContents()
+        XCTAssertTrue(board.setData(alphaTIFF, forType: .tiff))
+        XCTAssertTrue(restored.readSelection(from: board))
+        let image = try XCTUnwrap(model.composerAttachments.first)
+        XCTAssertEqual(image.name, "Pasted Image.png")
+        XCTAssertEqual(image.payload?.mimeType, "image/png")
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(image.payload?.data)))
+        XCTAssertLessThanOrEqual(bitmap.pixelsWide, 2000)
+        XCTAssertEqual(Double(bitmap.pixelsWide) / Double(bitmap.pixelsHigh), 4.0 / 3.0, accuracy: 0.002)
+        let pixel = try XCTUnwrap(bitmap.colorAt(x: 4, y: 4)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(pixel.redComponent, 0.9)
+        XCTAssertLessThan(pixel.greenComponent, 0.2)
+        XCTAssertLessThan(pixel.blueComponent, 0.2)
+        XCTAssertEqual(pixel.alphaComponent, 0.5, accuracy: 0.02)
+        XCTAssertEqual(model.draft, original)
+
+        let imageURL = root.appendingPathComponent("large.png")
+        let largePNG = try makeAttachmentImage(width: 2000, height: 1800, type: .png, noisy: true)
+        XCTAssertGreaterThan(largePNG.count, ComposerAttachment.maxBytes)
+        try largePNG.write(to: imageURL)
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([imageURL as NSURL]))
+        let drag = FileDrag(board: board)
+        XCTAssertEqual(restored.draggingEntered(drag), .copy)
+        XCTAssertFalse(restored.performDragOperation(drag))
+        XCTAssertTrue(model.error?.contains("total 4 MB") == true)
+        XCTAssertEqual(model.composerAttachments, [image])
+        let target = model.attachmentTarget(for: draft.id)
+        model.removeAttachment(image.id, in: target)
+
+        XCTAssertEqual(restored.draggingEntered(drag), .copy)
+        XCTAssertTrue(restored.performDragOperation(drag))
+        let dropped = try XCTUnwrap(model.composerAttachments.first)
+        XCTAssertEqual(dropped.name, "large.png")
+        let droppedBytes = try XCTUnwrap(dropped.payload?.data)
+        XCTAssertLessThan(droppedBytes.count, ComposerAttachment.maxBytes)
+        let droppedBitmap = try XCTUnwrap(NSBitmapImageRep(data: droppedBytes))
+        XCTAssertLessThan(droppedBitmap.pixelsWide, 2000)
+        XCTAssertEqual(try XCTUnwrap(droppedBitmap.colorAt(x: 4, y: 4)).alphaComponent, 0.5, accuracy: 0.02)
+
+        let jpeg = try makeAttachmentImage(width: 4, height: 3, type: .jpeg)
+        let jpegURL = root.appendingPathComponent("Small JPEG.jpeg")
+        try jpeg.write(to: jpegURL)
+        XCTAssertTrue(model.attach([.file(jpegURL)], to: target, replacing: dropped.id))
+        XCTAssertEqual(model.composerAttachments.first?.id, dropped.id)
+        XCTAssertEqual(model.composerAttachments.first?.name, "Small JPEG.jpeg")
+        XCTAssertEqual(model.composerAttachments.first?.payload?.data, jpeg)
+        let snapshot = model.composerAttachments
+        let oversized = root.appendingPathComponent("Oversized.png")
+        XCTAssertTrue(FileManager.default.createFile(atPath: oversized.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: oversized)
+        try handle.truncate(atOffset: 50 * 1024 * 1024 + 1)
+        try handle.close()
+        XCTAssertFalse(model.attach([.file(oversized)], to: target, replacing: dropped.id))
+        XCTAssertTrue(model.error?.contains("50 MB") == true)
+        XCTAssertEqual(model.composerAttachments, snapshot)
+
+        let rotatedJPEG = try makeAttachmentImage(width: 2500, height: 1000, type: .jpeg, orientation: 6)
+        board.clearContents()
+        XCTAssertTrue(board.setData(rotatedJPEG, forType: .init(UTType.jpeg.identifier)))
+        XCTAssertTrue(restored.readSelection(from: board))
+        let rotated = try XCTUnwrap(model.composerAttachments.last)
+        XCTAssertEqual(rotated.name, "Pasted Image.jpg")
+        XCTAssertEqual(rotated.payload?.mimeType, "image/jpeg")
+        let rotatedBitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(rotated.payload?.data)))
+        XCTAssertEqual(rotatedBitmap.pixelsWide, 800)
+        XCTAssertEqual(rotatedBitmap.pixelsHigh, 2000)
+    }
+
     func testFileDropOnActiveComposerAndQueueFieldPreservesTextAndAttachmentOwner() async throws {
         let app = NSApplication.shared
         let policy = app.activationPolicy()
@@ -216,6 +409,43 @@ final class ComposerFieldDropTests: XCTestCase {
         }
         return nil
     }
+}
+
+func makeAttachmentImage(width: Int, height: Int, type: UTType, noisy: Bool = false,
+                         orientation: Int = 1) throws -> Data {
+    let rowBytes = width * 4
+    var pixels = Data(count: rowBytes * height)
+    pixels.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
+        var seed: UInt32 = 123_456_789
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = y * rowBytes + x * 4
+                if noisy && x >= 32 {
+                    seed ^= seed << 13
+                    seed ^= seed >> 17
+                    seed ^= seed << 5
+                    buffer[offset] = UInt8(truncatingIfNeeded: seed)
+                    buffer[offset + 1] = UInt8(truncatingIfNeeded: seed >> 8)
+                    buffer[offset + 2] = UInt8(truncatingIfNeeded: seed >> 16)
+                    buffer[offset + 3] = 255
+                } else {
+                    buffer[offset] = 128
+                    buffer[offset + 3] = 128
+                }
+            }
+        }
+    }
+    let provider = try XCTUnwrap(CGDataProvider(data: pixels as CFData))
+    let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+    let image = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                      bytesPerRow: rowBytes, space: colorSpace,
+                                      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                      provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent))
+    let data = NSMutableData()
+    let output = try XCTUnwrap(CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(output, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+    XCTAssertTrue(CGImageDestinationFinalize(output))
+    return data as Data
 }
 
 private final class OffscreenPanel: NSPanel {

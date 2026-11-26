@@ -158,7 +158,7 @@ final class WorkspaceModel: ObservableObject {
                 guard replacement != nil || attachments.count < ComposerAttachment.maxCount else {
                     throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
                 }
-                let name = input.name
+                let name = input.name(among: attachments)
                 if let key, !key.isEmpty, name.contains(key) {
                     throw WorkspaceError("Enter your API key in Model Settings.")
                 }
@@ -167,10 +167,15 @@ final class WorkspaceModel: ObservableObject {
                     payload = try input.load()
                 } catch {
                     self.error = "\(name): \(error.localizedDescription)"
+                    guard replacement == nil, input.keepsUnavailableFile(after: error) else { continue }
                     payload = nil
                 }
                 try Self.validateAttachment(payload, key: key, alongside: attachments.filter { $0.id != attachmentID })
-                let attachment = ComposerAttachment(id: attachmentID ?? UUID(), name: name, payload: payload)
+                let storedName = input.nameForStorage(name, payload: payload)
+                if storedName != name, let key, !key.isEmpty, storedName.contains(key) {
+                    throw WorkspaceError("Enter your API key in Model Settings.")
+                }
+                let attachment = ComposerAttachment(id: attachmentID ?? UUID(), name: storedName, payload: payload)
                 if let replacement {
                     attachments[replacement] = attachment
                     return

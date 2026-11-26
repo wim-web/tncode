@@ -1414,6 +1414,7 @@ struct WorkspaceView: View {
             if let error = model.error {
                 HStack {
                     Text(error).foregroundStyle(.red)
+                        .accessibilityIdentifier("composer-error")
                     Spacer()
                     if model.phase == .closed && !model.canRetryWorktree {
                         Button("Reconnect", action: model.connect)
@@ -1489,18 +1490,23 @@ struct WorkspaceView: View {
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         let target = model.attachmentTarget(for: threadID)
+        func ownsComposer() -> Bool {
+            model.conversation?.id == threadID && model.attachmentTarget(for: threadID) == target
+        }
         let drop = AttachmentDropDestination(canDrop: model.canEditAttachments, perform: { items in
             let attachments = ComposerAttachmentInput.readAttachments(from: items)
-            return !attachments.isEmpty && model.canEditAttachments && model.attach(attachments, to: target)
+            return !attachments.isEmpty && ownsComposer() && model.canEditAttachments && model.attach(attachments, to: target)
         }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
         return VStack(alignment: .leading, spacing: 0) {
             ComposerAttachmentsView(model: model, threadID: threadID)
                 .id(threadID)
                 .padding(.bottom, 6)
             ComposerTextField(placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
-                get: { model.conversation?.id == threadID ? model.draft : "" },
-                set: { model.editDraft($0, in: threadID) }
-            ), drop: drop)
+                get: { ownsComposer() ? model.draft : "" },
+                set: { if ownsComposer() { model.editDraft($0, in: threadID) } }
+            ), drop: drop) { text in
+                if ownsComposer(), model.canEditAttachments { model.attach([.pastedText(text)], to: target) }
+            }
                 .id(threadID)
                 .focused($focusedComposer, equals: threadID)
                 .task(id: threadID) {

@@ -4,7 +4,7 @@ import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 
-struct ComposerAttachmentTarget {
+struct ComposerAttachmentTarget: Equatable {
     let threadID: UUID
     var queueEditID: UUID?
 }
@@ -12,8 +12,11 @@ struct ComposerAttachmentTarget {
 enum ComposerAttachmentInput: Transferable {
     case file(URL)
     case image(Data, UTType)
+    case pastedText(String)
 
-    static let contentTypes: [UTType] = [.fileURL, .png, .jpeg, .tiff]
+    private static let imageInputTypes: [UTType] = [.png, .jpeg, .tiff]
+    static let contentTypes: [UTType] = [.fileURL] + imageInputTypes
+    static let pastedTextThreshold = 32 * 1024
 
     static func readAttachments(from items: [NSPasteboardItem]) -> [Self] {
         Array(items.lazy.compactMap(Self.init(pasteboardItem:)).prefix(ComposerAttachment.maxCount + 1))
@@ -53,35 +56,72 @@ enum ComposerAttachmentInput: Transferable {
         DataRepresentation(importedContentType: .tiff) { Self.image($0, .tiff) }
     }
 
-    var name: String {
+    func name(among attachments: [ComposerAttachment]) -> String {
         switch self {
         case .file(let url): url.lastPathComponent
         case .image(_, .jpeg): "Pasted Image.jpg"
         case .image: "Pasted Image.png"
+        case .pastedText:
+            Self.pastedTextName(among: attachments)
         }
+    }
+
+    private static func pastedTextName(among attachments: [ComposerAttachment]) -> String {
+        let names = Set(attachments.map { $0.name.lowercased() })
+        if !names.contains("pasted-text.txt") { return "pasted-text.txt" }
+        var sequence = 2
+        while names.contains("pasted-text-\(sequence).txt") { sequence += 1 }
+        return "pasted-text-\(sequence).txt"
+    }
+
+    func keepsUnavailableFile(after error: Error) -> Bool {
+        if case .file = self { return !(error is ComposerImageError) }
+        return false
+    }
+
+    func nameForStorage(_ name: String, payload: ComposerAttachment.Payload?) -> String {
+        guard case .file(let url) = self, payload?.mimeType == "image/png",
+              let type = UTType(filenameExtension: url.pathExtension), type == .tiff else { return name }
+        return (name as NSString).deletingPathExtension + ".png"
     }
 
     func load() throws -> ComposerAttachment.Payload {
         switch self {
         case .file(let url):
-            return try ComposerAttachment.payload(for: ComposerAttachment.read(url))
-        case .image(let data, let type):
-            if type == .tiff {
-                guard data.count <= 24 * 1024 * 1024,
-                      let source = CGImageSourceCreateWithData(data as CFData, nil),
-                      CGImageSourceGetType(source) as String? == UTType.tiff.identifier,
-                      ComposerAttachment.hasPreviewDimensions(source),
-                      let image = ComposerAttachment.thumbnail(source, maximumSize: 2048) else {
-                    throw WorkspaceError("Could not prepare the pasted image.")
-                }
-                guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
-                    throw WorkspaceError("Could not encode the pasted image.")
-                }
-                return try ComposerAttachment.payload(for: png)
+            let data = try ComposerAttachment.read(url)
+            let source = ComposerAttachment.imageSource(for: data)
+            if let source, let type = CGImageSourceGetType(source) as String?,
+               let format = UTType(type), Self.imageInputTypes.contains(format) {
+                return try ComposerAttachment.prepareImage(data, source: source, type: format)
             }
-            let payload = try ComposerAttachment.payload(for: data)
-            guard payload.isImage else { throw WorkspaceError("Could not read the pasted image.") }
-            return payload
+            return try ComposerAttachment.payload(for: data)
+        case .image(let data, let type):
+            guard data.count <= ComposerAttachment.maxImageSourceBytes else {
+                throw ComposerImageError.sourceBytes
+            }
+            guard let source = ComposerAttachment.imageSource(for: data),
+                  CGImageSourceGetType(source) as String? == type.identifier else {
+                throw ComposerImageError.unreadable
+            }
+            return try ComposerAttachment.prepareImage(data, source: source, type: type)
+        case .pastedText(let text):
+            guard text.utf8.count <= ComposerAttachment.maxTextBytes else {
+                throw WorkspaceError("Pasted text must be 64 KB or smaller to attach. Paste a smaller excerpt or use Paste and Match Style.")
+            }
+            return try ComposerAttachment.textPayload(for: Data(text.utf8))
+        }
+    }
+}
+
+private enum ComposerImageError: LocalizedError {
+    case sourceBytes, unreadable, multipleFrames, tooLarge
+
+    var errorDescription: String? {
+        switch self {
+        case .sourceBytes: "Image sources must be 50 MB or smaller."
+        case .unreadable: "The image is damaged or too large to decode."
+        case .multipleFrames: "This image has multiple frames. Attach a single-frame PNG or JPEG."
+        case .tooLarge: "The image is too large to attach, even after compression."
         }
     }
 }
@@ -98,6 +138,10 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
     static let maxBytes = 4 * 1024 * 1024
     static let maxTextBytes = 64 * 1024
     static let imageTypes: [UTType: String] = [.png: "image/png", .jpeg: "image/jpeg"]
+    fileprivate static let maxImageSourceBytes = 50 * 1024 * 1024
+    private static let maxImageEdge = 2000
+    // Pi's default resize budget is strictly below 4.5 MiB of base64.
+    private static let maxImageBytes = (9 * 1024 * 1024 / 2 / 4 - 1) * 3
 
     let id: UUID
     let name: String
@@ -137,30 +181,79 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
             throw WorkspaceError("Choose a regular local file.")
         }
-        guard info.st_size <= Self.maxBytes else { throw WorkspaceError("Files must be 4 MB or smaller.") }
-        let data = try file.read(upToCount: Self.maxBytes + 1) ?? Data()
-        guard data.count <= Self.maxBytes else { throw WorkspaceError("Files must be 4 MB or smaller.") }
+        guard info.st_size <= maxImageSourceBytes else { throw sourceSizeError(for: url) }
+        let data = try file.read(upToCount: maxImageSourceBytes + 1) ?? Data()
+        guard data.count <= maxImageSourceBytes else { throw sourceSizeError(for: url) }
         return data
+    }
+
+    private static func sourceSizeError(for url: URL) -> Error {
+        if let type = UTType(filenameExtension: url.pathExtension), imageTypes[type] != nil || type == .tiff {
+            return ComposerImageError.sourceBytes
+        }
+        return WorkspaceError("Files must be 4 MB or smaller.")
     }
 
     static func payload(for data: Data) throws -> Payload {
         guard !data.isEmpty else { throw WorkspaceError("The file is empty.") }
         guard data.count <= maxBytes else { throw WorkspaceError("Files must be 4 MB or smaller.") }
-        if let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) {
+        if let source = imageSource(for: data), let type = CGImageSourceGetType(source) {
             guard let mimeType = imageTypes[UTType(type as String) ?? .image] else {
                 throw WorkspaceError("Choose a PNG or JPEG image.")
             }
             guard CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
-                  hasPreviewDimensions(source) else {
+                  previewEdge(source) != nil else {
                 throw WorkspaceError("The image is damaged or too large to preview.")
             }
             return Payload(mimeType: mimeType, data: data)
         }
-        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else {
+        return try textPayload(for: data)
+    }
+
+    fileprivate static func textPayload(for data: Data) throws -> Payload {
+        guard !data.isEmpty, !data.contains(0), String(data: data, encoding: .utf8) != nil else {
             throw WorkspaceError("Choose a PNG, JPEG, or UTF-8 text file.")
         }
         guard data.count <= maxTextBytes else { throw WorkspaceError("Text files must be 64 KB or smaller.") }
         return Payload(mimeType: "text/plain", data: data)
+    }
+
+    fileprivate static func imageSource(for data: Data) -> CGImageSource? {
+        CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+    }
+
+    fileprivate static func prepareImage(_ data: Data, source: CGImageSource, type: UTType) throws -> Payload {
+        guard let edge = previewEdge(source), CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else {
+            throw ComposerImageError.unreadable
+        }
+        if let mimeType = imageTypes[type], data.count <= maxImageBytes, edge <= maxImageEdge {
+            return Payload(mimeType: mimeType, data: data)
+        }
+        guard CGImageSourceGetCount(source) == 1 else { throw ComposerImageError.multipleFrames }
+
+        let destination: UTType = type == .jpeg ? .jpeg : .png
+        let qualities = destination == .jpeg ? [0.92, 0.85, 0.78, 0.68] : [1.0]
+        let baseEdge = min(edge, maxImageEdge)
+        for scale in [1.0, 0.75, 0.55, 0.35] {
+            let size = max(1, Int((Double(baseEdge) * scale).rounded()))
+            guard let image = thumbnail(source, maximumSize: size) else { throw ComposerImageError.unreadable }
+            // Shrink PNGs without swapping to a codec that discards transparency.
+            for quality in qualities {
+                if let data = encode(image, as: destination, quality: quality), data.count <= maxImageBytes {
+                    return try payload(for: data)
+                }
+            }
+        }
+        throw ComposerImageError.tooLarge
+    }
+
+    private static func encode(_ image: CGImage, as type: UTType, quality: Double) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? (data as Data) : nil
     }
 
     func preview(maximumSize: Int) -> NSImage? {
@@ -170,16 +263,16 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         return NSImage(cgImage: image, size: .zero)
     }
 
-    fileprivate static func hasPreviewDimensions(_ source: CGImageSource) -> Bool {
+    private static func previewEdge(_ source: CGImageSource) -> Int? {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         guard let width = properties?[kCGImagePropertyPixelWidth] as? Int, (1...8192).contains(width),
               let height = properties?[kCGImagePropertyPixelHeight] as? Int, (1...8192).contains(height) else {
-            return false
+            return nil
         }
-        return width * height <= 24_000_000
+        return width * height <= 24_000_000 ? max(width, height) : nil
     }
 
-    fileprivate static func thumbnail(_ source: CGImageSource, maximumSize: Int) -> CGImage? {
+    private static func thumbnail(_ source: CGImageSource, maximumSize: Int) -> CGImage? {
         CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
