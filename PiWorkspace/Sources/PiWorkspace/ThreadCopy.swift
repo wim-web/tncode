@@ -67,10 +67,7 @@ struct ThreadLink: Codable {
     }
 
     init?(text: String) {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.prefix(Self.authority.count).lowercased() == Self.authority else { return nil }
-        let parts = text.dropFirst(Self.authority.count).split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count == 4, parts[0] == "v1", parts[1].wholeMatch(of: #/[0-9a-f]{64}/#) != nil,
+        guard let parts = Self.components(text, authority: Self.authority), parts.count == 4,
               let projectID = UUID(uuidString: String(parts[2])), let threadID = UUID(uuidString: String(parts[3])) else {
             return nil
         }
@@ -81,9 +78,59 @@ struct ThreadLink: Codable {
 
     var text: String { "\(Self.authority)v1/\(workspace)/\(projectID)/\(threadID)" }
 
+    fileprivate static func components(_ text: String, authority: String) -> [Substring]? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.prefix(authority.count).lowercased() == authority else { return nil }
+        let parts = text.dropFirst(authority.count).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 2, parts[0] == "v1", parts[1].wholeMatch(of: #/[0-9a-f]{64}/#) != nil else { return nil }
+        return parts
+    }
+
     static func workspaceScope(id: UUID, root: URL) -> String {
         let path = root.resolvingSymlinksInPath().standardizedFileURL.path
         return SHA256.hash(data: Data("\(id)/\(path)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct DraftLink {
+    private static let authority = "\(ThreadLink.scheme)://draft/"
+
+    let workspace: String
+    let draftID: UUID
+
+    init(workspaceID: UUID, root: URL, draftID: UUID) {
+        workspace = ThreadLink.workspaceScope(id: workspaceID, root: root)
+        self.draftID = draftID
+    }
+
+    init?(text: String) {
+        guard let parts = ThreadLink.components(text, authority: Self.authority), parts.count == 3,
+              let draftID = UUID(uuidString: String(parts[2])) else { return nil }
+        workspace = String(parts[1])
+        self.draftID = draftID
+    }
+
+    var text: String { "\(Self.authority)v1/\(workspace)/\(draftID)" }
+
+    @MainActor
+    func copy(to pasteboard: NSPasteboard) throws {
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else { throw WorkspaceError("Couldn’t copy the draft link.") }
+    }
+}
+
+enum WorkspaceLink {
+    case draft(DraftLink)
+    case thread(ThreadLink)
+
+    init?(text: String) {
+        if let draft = DraftLink(text: text) {
+            self = .draft(draft)
+        } else if let thread = ThreadLink(text: text) {
+            self = .thread(thread)
+        } else {
+            return nil
+        }
     }
 }
 

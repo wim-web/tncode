@@ -106,6 +106,7 @@ final class WorkspaceModel: ObservableObject {
     private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
     private var threadSelectionRevision = 0
     private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
+    private var promotedDraftLinks: [UUID: UUID] = [:]
 
     private(set) var composerRevision = 0
     @Published private var queueEdit: QueueEdit? {
@@ -1250,50 +1251,95 @@ final class WorkspaceModel: ObservableObject {
               thread.isDraft != true else {
             throw WorkspaceError("This thread doesn’t have a link.")
         }
-        let workspaceID = workspace.threadLinkID ?? UUID()
-        if workspace.threadLinkID == nil {
-            var updated = workspace
-            updated.threadLinkID = workspaceID
-            try persist(updated)
-        }
+        let workspaceID = try linkWorkspaceID()
         let link = ThreadLink(workspaceID: workspaceID, root: root, projectID: projectID, threadID: id)
         try ThreadReference(link: link, title: thread.title).copy(to: pasteboard)
+    }
+
+    func copyDraftLink(_ id: UUID, in projectID: UUID, to pasteboard: NSPasteboard) throws {
+        guard threadProjects.first(where: { $0.id == projectID })?.conversations.contains(where: {
+            $0.id == id && $0.isDraft == true && !$0.archived
+        }) == true else { throw WorkspaceError("This draft doesn’t have a link.") }
+        let workspaceID = try linkWorkspaceID()
+        try DraftLink(workspaceID: workspaceID, root: root, draftID: id).copy(to: pasteboard)
+    }
+
+    private func linkWorkspaceID() throws -> UUID {
+        if let id = workspace.threadLinkID { return id }
+        let id = UUID()
+        var updated = workspace
+        updated.threadLinkID = id
+        try persist(updated)
+        return id
     }
 
     @discardableResult
     func openThreadLink(_ text: String) async -> Bool {
         rejectPendingThreadLink()
         do {
-            guard let link = ThreadLink(text: text) else { throw WorkspaceError("Enter a Pi Workspace thread link.") }
+            guard let link = WorkspaceLink(text: text) else { throw WorkspaceError("Enter a Pi Workspace thread link or draft link.") }
             guard let store else { throw WorkspaceError("Finish opening the workspace and try the thread link again.") }
-            let (index, thread) = try linkedThread(link)
-            let project = workspace.projects[index]
-            if self.project?.id == project.id, conversation?.id == thread.id, phase != .closed {
-                if phase == .connecting, let process {
-                    return await withCheckedContinuation { pendingThreadLink = (process, $0) }
-                }
-                finishOpeningThreadLink()
-                return true
-            }
-            let command = try linkedOpenCommand(project: project, thread: thread, store: store)
-            try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
-            let worker = try makeProcess(store.config, command.cwd)
-            return await withCheckedContinuation { result in
-                pendingThreadLink = (worker, result)
-                worker.onClose = { [weak self, weak worker] in
-                    guard let self, let worker, self.pendingThreadLink?.worker === worker else { return }
-                    self.rejectPendingThreadLink("The Pi helper exited while opening the linked thread.")
-                }
-                worker.onEvent = { [weak self, weak worker] event in
-                    guard let self, let worker else { return }
-                    self.receiveOpeningThreadLink(event, link: link, command: command, store: store, worker: worker)
-                }
-                do { try worker.send(command) }
-                catch { rejectPendingThreadLink(error.localizedDescription) }
+            switch link {
+            case let .draft(draft): return try await openDraftLink(draft, store: store)
+            case let .thread(thread): return try await openSubmittedThreadLink(thread, store: store)
             }
         } catch {
             threadLinkError = error.localizedDescription
             return false
+        }
+    }
+
+    private func openDraftLink(_ link: DraftLink, store: WorkspaceStore) async throws -> Bool {
+        guard let workspaceID = workspace.threadLinkID,
+              link.workspace == ThreadLink.workspaceScope(id: workspaceID, root: root) else {
+            throw WorkspaceError("This draft link belongs to a different Pi Workspace.")
+        }
+        if let projectID = promotedDraftLinks[link.draftID] {
+            let promoted = ThreadLink(workspaceID: workspaceID, root: root, projectID: projectID, threadID: link.draftID)
+            return try await openSubmittedThreadLink(promoted, store: store)
+        }
+        guard let index = workspace.projects.firstIndex(where: { project in
+            project.detached != true && project.conversations.contains { $0.id == link.draftID }
+        }), let thread = workspace.projects[index].conversations.first(where: {
+            $0.id == link.draftID && $0.isDraft == true && !$0.archived
+        }) else { throw WorkspaceError("The linked draft is unavailable.") }
+        let project = workspace.projects[index]
+        try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "draft")
+        let isSelected = self.project?.id == project.id && conversation?.id == thread.id
+        if !isSelected || phase == .closed {
+            try requireLinkNavigation()
+            if !isSelected { try persistSelection(thread.id, at: index) }
+            connect()
+        }
+        finishOpeningThreadLink()
+        return true
+    }
+
+    private func openSubmittedThreadLink(_ link: ThreadLink, store: WorkspaceStore) async throws -> Bool {
+        let (index, thread) = try linkedThread(link)
+        let project = workspace.projects[index]
+        if self.project?.id == project.id, conversation?.id == thread.id, phase != .closed {
+            if phase == .connecting, let process {
+                return await withCheckedContinuation { pendingThreadLink = (process, $0) }
+            }
+            finishOpeningThreadLink()
+            return true
+        }
+        let command = try linkedOpenCommand(project: project, thread: thread, store: store)
+        try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
+        let worker = try makeProcess(store.config, command.cwd)
+        return await withCheckedContinuation { result in
+            pendingThreadLink = (worker, result)
+            worker.onClose = { [weak self, weak worker] in
+                guard let self, let worker, self.pendingThreadLink?.worker === worker else { return }
+                self.rejectPendingThreadLink("The Pi helper exited while opening the linked thread.")
+            }
+            worker.onEvent = { [weak self, weak worker] event in
+                guard let self, let worker else { return }
+                self.receiveOpeningThreadLink(event, link: link, command: command, store: store, worker: worker)
+            }
+            do { try worker.send(command) }
+            catch { rejectPendingThreadLink(error.localizedDescription) }
         }
     }
 
@@ -1356,19 +1402,28 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func linkedOpenCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
-        guard !operationsInProgress, queueEdit == nil else {
-            throw WorkspaceError("Finish the current operation or queued message edit and try the thread link again.")
-        }
-        let directory = thread.workingLocation.directory(in: project)
-        var isDirectory: ObjCBool = false
-        guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil,
-              directory.hasPrefix("/"), !directory.utf8.contains(0),
-              FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+        try requireLinkNavigation()
+        guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil else {
             throw WorkspaceError("The linked thread’s checkout is unavailable.")
         }
+        try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "thread")
         var command = try openCommand(project: project, thread: thread, store: store)
         command.requireHistory = true
         return command
+    }
+
+    private func requireLinkNavigation() throws {
+        guard !operationsInProgress, queueEdit == nil else {
+            throw WorkspaceError("Finish the current operation or queued message edit and try the thread link again.")
+        }
+    }
+
+    private func requireLinkedCheckout(_ directory: String, target: String) throws {
+        var isDirectory: ObjCBool = false
+        guard directory.hasPrefix("/"), !directory.utf8.contains(0),
+              FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw WorkspaceError("The linked \(target)’s checkout is unavailable.")
+        }
     }
 
     func canOpenForkLink(_ id: UUID) -> Bool {
@@ -2434,11 +2489,13 @@ final class WorkspaceModel: ObservableObject {
         }
         guard accepted else { return false }
         preparingWorktree = false
-        try? saveThread(conversation.id) {
+        if (try? saveThread(conversation.id) {
             let nextDraft = $0.composerText
             $0.recordPrompt(launch.prompt)
             $0.composerText = nextDraft
             $0.worktreeLaunch = nil
+        }) != nil, conversation.isDraft == true, let project {
+            promotedDraftLinks[conversation.id] = project.id
         }
         return true
     }
@@ -2457,6 +2514,7 @@ final class WorkspaceModel: ObservableObject {
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
         if accepted {
             workspace.projects[p].conversations[t].recordPrompt(text)
+            if conversation.isDraft == true { promotedDraftLinks[conversation.id] = workspace.projects[p].id }
         } else {
             workspace.projects[p].conversations[t].composerSubmission = nil
         }

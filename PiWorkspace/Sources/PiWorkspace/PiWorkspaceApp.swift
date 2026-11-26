@@ -232,6 +232,7 @@ private struct WorkspaceSidebarCommands: Commands {
             Button("Open Thread Link from Clipboard") {
                 Task { await model.openThreadLink(from: workspacePasteboard) }
             }
+                .help("Open a thread or draft link from the clipboard")
                 .accessibilityIdentifier("open-thread-link-from-clipboard")
                 .disabled(!workspaceOpen || model.projectPicker != nil)
             Button("Command Palette…", action: model.requestCommandPalette)

@@ -1115,7 +1115,14 @@ struct WorkspaceView: View {
                 Button("Branch") { copy(.branch, from: target) }
                     .accessibilityIdentifier(prefix + "-branch")
             }
-            if !target.isDraft {
+            if target.isDraft {
+                Button("Draft Link") {
+                    copyTask?.cancel()
+                    do { try model.copyDraftLink(thread.id, in: project.id, to: workspacePasteboard) }
+                    catch { model.error = error.localizedDescription }
+                }
+                .accessibilityIdentifier("draft-copy-link")
+            } else {
                 if thread.isDraft != true {
                     Button("Thread") {
                         copyTask?.cancel()
@@ -1129,7 +1136,6 @@ struct WorkspaceView: View {
             }
         }
         .accessibilityIdentifier(prefix)
-        .disabled(target.isDraft && target.path.isEmpty && !hasBranch)
     }
 
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {

@@ -14,7 +14,7 @@ Usage:
   ax check-image TEST_PASTEBOARD < expected.png
   ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
-  ax open-thread-link PID LOCAL_THREAD_URL
+  ax open-thread-link PID LOCAL_WORKSPACE_URL [--no-activate]
   ax open-menu PID MENU_TITLE
   ax menu-command PID CHARACTER
   ax menu-item PID TITLE [--no-activate]
@@ -28,7 +28,7 @@ Usage:
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax drop-fixture PID WORKSPACE WINDOW_IDENTIFIER TARGET_IDENTIFIER FIXTURE_PATH
-  ax press PID IDENTIFIER
+  ax press PID IDENTIFIER [--no-activate]
   ax click PID IDENTIFIER [shift]
   ax show-menu PID IDENTIFIER
   ax segment PID GROUP_IDENTIFIER LABEL
@@ -766,7 +766,7 @@ private func run(_ arguments: [String]) throws {
         throw Failure("A positive PID is required. See ax --help.")
     }
     var operands = arguments.dropFirst(2)
-    let noActivate = ["menu-item", "key-focused"].contains(arguments[0]) && operands.last == "--no-activate"
+    let noActivate = ["menu-item", "key-focused", "open-thread-link", "press"].contains(arguments[0]) && operands.last == "--no-activate"
     if noActivate { operands = operands.dropLast() }
     let operation = try Operation(arguments[0], operands)
     guard kill(pid, 0) == 0 else { throw Failure("The specified PID is unavailable.") }
@@ -795,10 +795,12 @@ private func run(_ arguments: [String]) throws {
               let bundle = running.bundleURL, bundle.deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-test-app-"),
               let option = args.firstIndex(of: "--workspace"), args.indices.contains(option + 1),
               URL(fileURLWithPath: args[option + 1]).deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-verification-"),
-              let url = URL(string: link), url.scheme == "pi-workspace", url.host == "thread" else {
+              let url = URL(string: link), url.scheme == "pi-workspace",
+              let host = url.host, ["thread", "draft"].contains(host) else {
             throw Failure("Opening a thread link requires the dedicated app copy and its verification workspace.")
         }
         let config = NSWorkspace.OpenConfiguration()
+        config.activates = !noActivate
         config.allowsRunningApplicationSubstitution = false
         config.addsToRecentItems = false
         let completed = DispatchGroup()
@@ -982,7 +984,7 @@ private func run(_ arguments: [String]) throws {
     case .press(let id):
         var target = try? element(withID: id, in: app)
         if target == nil {
-            try activateForInput(app, pid: pid)
+            if !noActivate { try activateForInput(app, pid: pid) }
             let deadline = ProcessInfo.processInfo.systemUptime + 2
             while target == nil, ProcessInfo.processInfo.systemUptime < deadline {
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
