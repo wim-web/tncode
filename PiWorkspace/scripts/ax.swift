@@ -823,7 +823,7 @@ private func run(_ arguments: [String]) throws {
         try activateForInput(app, pid: pid)
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
-        let characters: [CGKeyCode: UInt16] = [0: 0x61, 2: 0x64, 3: 0x66, 7: 0x78, 8: 0x63, 13: 0x77,
+        let characters: [CGKeyCode: UInt16] = [0: 0x61, 2: 0x64, 3: 0x66, 6: 0x7A, 7: 0x78, 8: 0x63, 9: 0x76, 13: 0x77,
                                                16: 0x79, 17: 0x74, 18: 0x31, 19: 0x32, 20: 0x33, 21: 0x34,
                                                30: 0x5D, 32: 0x75, 33: 0x5B, 35: 0x70, 37: 0x6C,
                                                36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,

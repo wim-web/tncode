@@ -1,9 +1,11 @@
+import Combine
 import SwiftUI
 
 struct ComposerTextField: NSViewRepresentable {
     let target: ComposerAttachmentTarget
     let placeholder: String
     @Binding var text: String
+    let pasteboard: NSPasteboard
     let drop: AttachmentDropDestination
     let attachPastedText: (String) -> Void
 
@@ -32,6 +34,7 @@ struct ComposerTextField: NSViewRepresentable {
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
         field.composerTarget = target
+        field.pasteboardOverride = pasteboard.name == .general ? nil : pasteboard
         field.drop = drop
         field.attachPastedText = attachPastedText
         field.isEnabled = context.environment.isEnabled
@@ -44,13 +47,33 @@ struct ComposerTextField: NSViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: Field, context: Context) -> CGSize? {
         guard let width = proposal.width, width.isFinite, let cell = field.cell, let font = field.font else { return nil }
         let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
-        let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude))
+        let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 7 * lineHeight))
         return CGSize(width: width, height: min(7 * lineHeight, max(2 * lineHeight, size.height)))
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: ComposerTextField
         init(_ parent: ComposerTextField) { self.parent = parent }
+
+        private var undoObservation: AnyCancellable?
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            guard let field = notification.object as? Field,
+                  let editor = field.currentEditor() as? NSTextView, let manager = editor.undoManager else { return }
+            // AppKit restores the field editor's storage on Undo without notifying the text field delegate.
+            let center = NotificationCenter.default
+            undoObservation = center.publisher(for: .NSUndoManagerDidUndoChange, object: manager)
+                .merge(with: center.publisher(for: .NSUndoManagerDidRedoChange, object: manager))
+                .sink { [weak self, weak field, weak editor] _ in
+                    guard let self, let editor, field?.currentEditor() === editor,
+                          !editor.hasMarkedText(), parent.text != editor.string else { return }
+                    editor.didChangeText()
+                }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            undoObservation = nil
+        }
 
         func controlTextDidChange(_ notification: Notification) {
             if let field = notification.object as? Field {
@@ -95,6 +118,7 @@ struct ComposerTextField: NSViewRepresentable {
     final class Field: NSTextField {
         var composerTarget: ComposerAttachmentTarget?
         var selectionOnFocus: (() -> NSRange?)?
+        var pasteboardOverride: NSPasteboard?
         var drop: AttachmentDropDestination?
         var attachPastedText: ((String) -> Void)?
 
@@ -143,10 +167,31 @@ struct ComposerTextField: NSViewRepresentable {
         weak var owner: Field?
         private var pastingAsPlainText = false
 
+        override func paste(_ sender: Any?) {
+            guard let board = owner?.pasteboardOverride else { return super.paste(sender) }
+            if isEditable { _ = readSelection(from: board) }
+        }
+
         override func pasteAsPlainText(_ sender: Any?) {
             pastingAsPlainText = true
             defer { pastingAsPlainText = false }
-            super.pasteAsPlainText(sender)
+            guard let board = owner?.pasteboardOverride else { return super.pasteAsPlainText(sender) }
+            if isEditable, board.availableType(from: [.string]) != nil {
+                _ = readSelection(from: board, type: .string)
+            }
+        }
+
+        override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+            if let board = owner?.pasteboardOverride {
+                switch item.action {
+                case #selector(paste(_:)):
+                    return isEditable && board.availableType(from: readablePasteboardTypes) != nil
+                case #selector(pasteAsPlainText(_:)):
+                    return isEditable && board.availableType(from: [.string]) != nil
+                default: break
+                }
+            }
+            return super.validateUserInterfaceItem(item)
         }
 
         override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {

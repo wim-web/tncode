@@ -31,7 +31,9 @@ final class ComposerFieldDropTests: XCTestCase {
                                     styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable))
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable, workspacePasteboard: board))
         window.contentView = host
         window.setFrameOrigin(NSPoint(x: screenLeft - 2200, y: 0))
         XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
@@ -51,22 +53,44 @@ final class ComposerFieldDropTests: XCTestCase {
             return try XCTUnwrap(composer.currentEditor() as? NSTextView)
         }
 
-        let board = NSPasteboard.withUniqueName()
-        defer { board.releaseGlobally() }
+        func invoke(_ selector: Selector, on editor: NSTextView) {
+            XCTAssertTrue(window.firstResponder === editor)
+            XCTAssertTrue(window.firstResponder?.tryToPerform(selector, with: nil) == true)
+        }
+        let pasteAction = #selector(NSText.paste(_:))
+        let plainAction = #selector(NSTextView.pasteAsPlainText(_:))
+        func checkMenus(_ editor: NSTextView, paste: Bool, plain: Bool, line: UInt = #line) {
+            let menu = NSMenu()
+            for (action, expected) in [(pasteAction, paste), (plainAction, plain)] {
+                let item = menu.addItem(withTitle: "Paste", action: action, keyEquivalent: "")
+                item.target = editor
+                menu.update()
+                XCTAssertEqual(item.isEnabled, expected, line: line)
+            }
+        }
         func paste(_ text: String, into editor: NSTextView) {
             board.clearContents()
             XCTAssertTrue(board.setString(text, forType: .string))
-            XCTAssertTrue(editor.readSelection(from: board))
+            invoke(pasteAction, on: editor)
         }
 
         let draftEditor = try await editor(for: original)
         let selection = (original as NSString).range(of: "👩🏽‍💻")
+        board.clearContents()
+        checkMenus(draftEditor, paste: false, plain: false)
         draftEditor.setSelectedRange(selection)
         let belowThreshold = String(repeating: "a", count: 32 * 1024 - 1)
         paste(belowThreshold, into: draftEditor)
         XCTAssertTrue(model.draft == (original as NSString).replacingCharacters(in: selection, with: belowThreshold))
         XCTAssertTrue(model.composerAttachments.isEmpty)
-        draftEditor.insertText(original, replacementRange: NSRange(location: 0, length: draftEditor.string.utf16.count))
+        checkMenus(draftEditor, paste: true, plain: true)
+        invoke(Selector(("undo:")), on: draftEditor)
+        XCTAssertTrue(model.draft == original)
+
+        invoke(Selector(("redo:")), on: draftEditor)
+        XCTAssertTrue(model.draft == (original as NSString).replacingCharacters(in: selection, with: belowThreshold))
+        invoke(Selector(("undo:")), on: draftEditor)
+        XCTAssertTrue(model.draft == original)
         draftEditor.setSelectedRange(selection)
 
         let line = "  日本語 👩🏽‍💻 e\u{301}\r\n"
@@ -80,6 +104,14 @@ final class ComposerFieldDropTests: XCTestCase {
         XCTAssertEqual(first.name, "pasted-text.txt")
         XCTAssertEqual(first.payload?.data, Data(boundary.utf8))
 
+        invoke(plainAction, on: draftEditor)
+        XCTAssertTrue(model.draft == (original as NSString).replacingCharacters(in: selection, with: boundary))
+        XCTAssertEqual(model.composerAttachments, [first])
+        invoke(Selector(("undo:")), on: draftEditor)
+        XCTAssertTrue(model.draft == original)
+
+        draftEditor.setSelectedRange(selection)
+
         paste(boundary + boundary, into: draftEditor)
         XCTAssertEqual(model.composerAttachments.map(\.name), ["pasted-text.txt", "pasted-text-2.txt"])
         XCTAssertEqual(model.composerAttachments.last?.payload?.data, Data((boundary + boundary).utf8))
@@ -91,7 +123,10 @@ final class ComposerFieldDropTests: XCTestCase {
 
         board.clearContents()
         XCTAssertTrue(board.setData(Data([1, 2, 3]), forType: .png))
-        XCTAssertTrue(draftEditor.readSelection(from: board))
+        checkMenus(draftEditor, paste: true, plain: false)
+        invoke(plainAction, on: draftEditor)
+        XCTAssertEqual(model.composerAttachments, accepted)
+        invoke(pasteAction, on: draftEditor)
         XCTAssertTrue(model.error?.contains("damaged") == true)
         XCTAssertEqual(model.composerAttachments, accepted)
         XCTAssertEqual(model.draft, original)
