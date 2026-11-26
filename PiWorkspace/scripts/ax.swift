@@ -12,15 +12,18 @@ Usage:
   ax activate PID
   ax menu-command PID CHARACTER
   ax menu-item PID TITLE
+  ax pick PID POPUP_IDENTIFIER OPTION_TITLE
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax selected-text PID TEXT_AREA_IDENTIFIER
-  ax frame PID IDENTIFIER
+  ax frame PID IDENTIFIER [--popover]
   ax web-frame PID DOM_IDENTIFIER
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax drop-fixture PID WORKSPACE WINDOW_IDENTIFIER TARGET_IDENTIFIER FIXTURE_PATH
   ax press PID IDENTIFIER
+  ax show-menu PID IDENTIFIER
+  ax segment PID GROUP_IDENTIFIER LABEL
   ax close-window PID WINDOW_IDENTIFIER
   ax select-folder PID ABSOLUTE_PATH
   ax select-path PID ABSOLUTE_PATH
@@ -33,7 +36,7 @@ Usage:
 dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
 AXDescription, and AXPlaceholderValue. set/type read UTF-8 stdin verbatim.
-type and key target PID. drag and drop-fixture require an unobstructed frontmost window.
+type and key target PID. drag, drop-fixture and show-menu require an unobstructed frontmost window.
 Common keycodes: Return 36, Escape 53,
 Tab 48, Space 49, Left 123, Right 124, Down 125, Up 126, G 5.
 """
@@ -72,15 +75,18 @@ private enum Operation {
     case activate
     case menuCommand(String)
     case menuItem(String)
+    case pick(String, String)
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case selectedText(String)
-    case frame(String)
+    case frame(String, popover: Bool)
     case webFrame(String)
     case sizeWindow(String, CGSize)
     case drag(String, CGPoint, CGSize)
     case dropFixture(workspace: String, window: String, target: String, path: String)
     case press(String)
+    case showMenu(String)
+    case segment(String, String)
     case closeWindow(String)
     case selectFolder(String)
     case confirm(String)
@@ -98,14 +104,16 @@ private enum Operation {
             self = .menuCommand(key)
         case ("menu-item", let title?) where arguments.count == 1:
             self = .menuItem(title)
+        case ("pick", let id?) where arguments.count == 2:
+            self = .pick(id, arguments[arguments.startIndex + 1])
         case ("dump", _):
             self = try .dump(DisplayOptions(arguments, allowDepth: true))
         case ("get", let id?):
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
         case ("selected-text", let id?) where arguments.count == 1:
             self = .selectedText(id)
-        case ("frame", let id?) where arguments.count == 1:
-            self = .frame(id)
+        case ("frame", let id?) where arguments.count == 1 || arguments.dropFirst().elementsEqual(["--popover"]):
+            self = .frame(id, popover: arguments.count == 2)
         case ("web-frame", let id?) where arguments.count == 1:
             self = .webFrame(id)
         case ("size-window", let id?) where arguments.count == 3:
@@ -126,6 +134,10 @@ private enum Operation {
                                 target: arguments[arguments.startIndex + 2], path: arguments[arguments.startIndex + 3])
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
+        case ("show-menu", let id?) where arguments.count == 1:
+            self = .showMenu(id)
+        case ("segment", let id?) where arguments.count == 2:
+            self = .segment(id, arguments[arguments.startIndex + 1])
         case ("close-window", let id?) where arguments.count == 1:
             self = .closeWindow(id)
         case (let command, let path?) where ["select-folder", "select-path"].contains(command) && arguments.count == 1 && path.hasPrefix("/"):
@@ -202,6 +214,10 @@ private func line(for element: AXUIElement, options: DisplayOptions) -> String {
     if options.values {
         let subrole = attribute(kAXSubroleAttribute, on: element) as? String
         let role = attribute(kAXRoleAttribute, on: element) as? String
+        if role == kAXSplitterRole {
+            if let minimum = attribute(kAXMinValueAttribute, on: element) as? NSNumber { parts.append("min=\(minimum)") }
+            if let maximum = attribute(kAXMaxValueAttribute, on: element) as? NSNumber { parts.append("max=\(maximum)") }
+        }
         if subrole == kAXSecureTextFieldSubrole || role == kAXSecureTextFieldSubrole {
             parts.append("value=<secure>")
         } else if let value = attribute(kAXValueAttribute, on: element) {
@@ -219,15 +235,18 @@ private struct Tree: Sequence, IteratorProtocol {
     private var pending: [(element: AXUIElement, depth: Int)]
     private var seen: Set<AXUIElement> = []
     private let maxDepth: Int?
+    private let skipMenuBar: Bool
 
-    init(root: AXUIElement, maxDepth: Int? = nil) {
+    init(root: AXUIElement, maxDepth: Int? = nil, skipMenuBar: Bool = false) {
         pending = [(root, 0)]
         self.maxDepth = maxDepth
+        self.skipMenuBar = skipMenuBar
     }
 
     mutating func next() -> (element: AXUIElement, depth: Int)? {
         while let node = pending.popLast() {
             guard seen.insert(node.element).inserted else { continue }
+            if skipMenuBar, attribute(kAXRoleAttribute, on: node.element) as? String == kAXMenuBarRole { continue }
             if maxDepth.map({ node.depth < $0 }) ?? true {
                 var children = attribute(kAXChildrenAttribute, on: node.element) as? [AXUIElement] ?? []
                 if node.depth == 0 {
@@ -446,13 +465,18 @@ private final class FixtureDragSource: NSView, NSDraggingSource {
     }
 }
 
-private func hitTest(_ target: AXUIElement, at point: CGPoint) -> Bool {
+private func element(at point: CGPoint) -> AXUIElement? {
     let system = AXUIElementCreateSystemWide()
     AXUIElementSetMessagingTimeout(system, 1.5)
     var hit: AXUIElement?
     guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success else {
-        return false
+        return nil
     }
+    return hit
+}
+
+private func hitTest(_ target: AXUIElement, at point: CGPoint) -> Bool {
+    var hit = element(at: point)
     var seen: Set<AXUIElement> = []
     while let current = hit, seen.insert(current).inserted {
         if CFEqual(current, target) { return true }
@@ -474,10 +498,15 @@ private func dropFixture(_ url: URL, in window: AXUIElement, target: AXUIElement
     }
     let windowFrame = try frame(of: window)
     let targetFrame = try frame(of: target).intersection(windowFrame)
-    let end = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
-    guard !targetFrame.isEmpty, hitTest(target, at: end),
-          let destination = DragWindow.at(end), destination.pid == pid, destination.frame.integral == windowFrame.integral else {
-        throw Failure("The destination must be visible and unobstructed in the named workspace window.")
+    guard !targetFrame.isEmpty else { throw Failure("The named control is outside its workspace window.") }
+    let center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+    guard let destination = DragWindow.at(center), destination.pid == pid, destination.frame.integral == windowFrame.integral else {
+        throw Failure("The named workspace window does not own the center of the destination.")
+    }
+    let points = [0.5, 0.25, 0.75].map { CGPoint(x: targetFrame.minX + targetFrame.width * $0, y: targetFrame.midY) }
+    guard let end = points.first(where: { DragWindow.at($0)?.id == destination.id && hitTest(target, at: $0) }) else {
+        let role = element(at: center).flatMap { attribute(kAXRoleAttribute, on: $0) as? String } ?? "unavailable"
+        throw Failure("The named workspace owns the destination, but its accessibility hit is \(role) rather than the named control.")
     }
     let desktopTop = mainScreen.frame.maxY
     func flip(_ rect: CGRect) -> CGRect {
@@ -596,6 +625,9 @@ private func requireKeyboardAccess() throws {
 
 private func activateForInput(_ app: AXUIElement, pid: pid_t) throws {
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier != pid else { return }
+    if let raw = attribute(kAXFocusedWindowAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() {
+        _ = AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXRaiseAction as CFString)
+    }
     try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
                        "Activate the designated application")
     NSRunningApplication(processIdentifier: pid)?.activate()
@@ -672,8 +704,7 @@ private func run(_ arguments: [String]) throws {
 
     switch operation {
     case .activate:
-        try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
-                           "Activate the selected application")
+        try activateForInput(app, pid: pid)
     case .menuCommand(let key):
         try activateForInput(app, pid: pid)
         let matches = Tree(root: app).map(\.element).filter { item in
@@ -687,14 +718,48 @@ private func run(_ arguments: [String]) throws {
         }
         try requireSuccess(AXUIElementPerformAction(command, kAXPressAction as CFString), "Invoke menu command")
     case .menuItem(let title):
-        try activateForInput(app, pid: pid)
-        let matches = Tree(root: app).map(\.element).filter {
-            attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
-            attribute(kAXTitleAttribute, on: $0) as? String == title &&
-            attribute(kAXEnabledAttribute, on: $0) as? Bool == true
+        func enabledItems() -> [AXUIElement] {
+            Tree(root: app).map(\.element).filter {
+                attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
+                attribute(kAXTitleAttribute, on: $0) as? String == title &&
+                attribute(kAXEnabledAttribute, on: $0) as? Bool == true
+            }
+        }
+        var matches = enabledItems()
+        if matches.count != 1 {
+            try activateForInput(app, pid: pid)
+            let deadline = ProcessInfo.processInfo.systemUptime + 1
+            repeat {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.04))
+                matches = enabledItems()
+            } while matches.count != 1 && ProcessInfo.processInfo.systemUptime < deadline
         }
         guard matches.count == 1, let item = matches.first else { throw Failure("Expected exactly one enabled menu item matching the title.") }
         try requireSuccess(AXUIElementPerformAction(item, kAXPressAction as CFString), "Select menu item")
+    case .pick(let id, let title):
+        try activateForInput(app, pid: pid)
+        let popup = try element(withID: id, in: app)
+        guard [kAXPopUpButtonRole, kAXMenuButtonRole].contains(attribute(kAXRoleAttribute, on: popup) as? String ?? "") else {
+            throw Failure("The requested control is not a popup or menu button.")
+        }
+        for _ in 0..<2 {
+            try requireSuccess(AXUIElementPerformAction(popup, kAXPressAction as CFString), "Open \(id)")
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.9
+            repeat {
+                let choices = Tree(root: app, skipMenuBar: true).map(\.element).filter {
+                    attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
+                    attribute(kAXTitleAttribute, on: $0) as? String == title &&
+                    attribute(kAXEnabledAttribute, on: $0) as? Bool == true
+                }
+                if choices.count == 1, let choice = choices.first {
+                    try requireSuccess(AXUIElementPerformAction(choice, kAXPressAction as CFString), "Select \(title)")
+                    return
+                }
+                guard choices.isEmpty else { throw Failure("Multiple presented menu choices are labeled \(title).") }
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.045))
+            } while ProcessInfo.processInfo.systemUptime < deadline
+        }
+        throw Failure("The popup \(id) did not present an enabled choice labeled \(title).")
     case .dump(let options):
         for (node, depth) in Tree(root: app, maxDepth: options.maxDepth) {
             print(String(repeating: "  ", count: depth) + line(for: node, options: options))
@@ -708,8 +773,17 @@ private func run(_ arguments: [String]) throws {
             throw Failure("The requested text area does not expose a selection.")
         }
         print(text, terminator: "")
-    case .frame(let id):
-        let rect = try frame(of: element(withID: id, in: app))
+    case .frame(let id, let popover):
+        var target = try element(withID: id, in: app)
+        if popover {
+            var seen: Set<AXUIElement> = []
+            while attribute(kAXRoleAttribute, on: target) as? String != "AXPopover" {
+                guard seen.insert(target).inserted, let raw = attribute(kAXParentAttribute, on: target),
+                      CFGetTypeID(raw) == AXUIElementGetTypeID() else { throw Failure("The control has no enclosing popover.") }
+                target = unsafeBitCast(raw, to: AXUIElement.self)
+            }
+        }
+        let rect = try frame(of: target)
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .keyFocused(let id, let code, let flags):
         try requireKeyboardAccess()
@@ -744,6 +818,10 @@ private func run(_ arguments: [String]) throws {
         try requireSuccess(AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, dimensions), "Resize target window")
     case .drag(let id, let fraction, let delta):
         try requireKeyboardAccess()
+        guard ![CGMouseButton.left, .right, .center].contains(where: { CGEventSource.buttonState(.combinedSessionState, button: $0) }) else {
+            throw Failure("A fixture drag requires an idle pointer.")
+        }
+        try activateForInput(app, pid: pid)
         try drag(in: frame(of: element(withID: id, in: app)), from: fraction, by: delta, to: pid)
     case .dropFixture(let workspace, let windowID, let targetID, let path):
         try requireKeyboardAccess()
@@ -755,6 +833,10 @@ private func run(_ arguments: [String]) throws {
         let target = try element(withID: targetID, in: window)
         NSApplication.shared.setActivationPolicy(.accessory)
         NSApp.finishLaunching()
+        guard ![CGMouseButton.left, .right, .center].contains(where: { CGEventSource.buttonState(.combinedSessionState, button: $0) }) else {
+            throw Failure("A fixture drag requires an idle pointer.")
+        }
+        try activateForInput(app, pid: pid)
         try dropFixture(url, in: window, target: target, pid: pid)
     case .press(let id):
         var target = try? element(withID: id, in: app)
@@ -768,6 +850,41 @@ private func run(_ arguments: [String]) throws {
         }
         guard let target else { throw Failure("No element has that identifier.") }
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")
+    case .showMenu(let id):
+        try requireKeyboardAccess()
+        guard ![CGMouseButton.left, .right, .center].contains(where: { CGEventSource.buttonState(.combinedSessionState, button: $0) }) else {
+            throw Failure("Opening a context menu requires an idle pointer.")
+        }
+        try activateForInput(app, pid: pid)
+        let target = try element(withID: id, in: app)
+        let rect = try frame(of: target)
+        let point = CGPoint(x: rect.midX, y: rect.midY)
+        guard DragWindow.at(point)?.pid == pid, hitTest(target, at: point),
+              let previous = CGEvent(source: nil)?.location,
+              let down = CGEvent(mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right),
+              let up = CGEvent(mouseEventSource: nil, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right) else {
+            throw Failure("The context menu target is not exposed at its own screen position.")
+        }
+        down.setIntegerValueField(.mouseEventClickState, value: 1)
+        up.setIntegerValueField(.mouseEventClickState, value: 1)
+        down.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.09)
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, DragWindow.at(point)?.pid == pid {
+            up.post(tap: .cghidEventTap)
+        } else {
+            up.postToPid(pid)
+        }
+        if CGEvent(source: nil)?.location == point { CGWarpMouseCursorPosition(previous) }
+    case .segment(let id, let title):
+        let group = try element(withID: id, in: app)
+        let matches = Tree(root: group).map(\.element).filter { item in
+            attribute(kAXRoleAttribute, on: item) as? String == kAXRadioButtonRole &&
+            [kAXTitleAttribute, kAXDescriptionAttribute].contains { attribute($0, on: item) as? String == title }
+        }
+        guard matches.count == 1, let segment = matches.first else {
+            throw Failure("Expected one segment labeled \(title) in \(id).")
+        }
+        try requireSuccess(AXUIElementPerformAction(segment, kAXPressAction as CFString), "Select segment")
     case .closeWindow(let id):
         let window = try element(withID: id, in: app)
         guard attribute(kAXRoleAttribute, on: window) as? String == kAXWindowRole,
@@ -790,7 +907,9 @@ private func run(_ arguments: [String]) throws {
         let target = try element(withID: id, in: app)
         let text = try inputText()
         let focused = kAXFocusedAttribute as CFString
-        try requireSuccess(AXUIElementSetAttributeValue(target, focused, kCFBooleanTrue), "Set AXFocused")
+        if attribute(kAXFocusedAttribute, on: target) as? Bool != true {
+            try requireSuccess(AXUIElementSetAttributeValue(target, focused, kCFBooleanTrue), "Set AXFocused")
+        }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.5
         while attribute(kAXFocusedAttribute, on: target) as? Bool != true {
             guard ProcessInfo.processInfo.systemUptime < deadline else {

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export async function seedPaletteMessageHistory({ sidecar, workspace, projectID, threadID, cwd, keyword, laterKeyword }) {
+export async function seedPaletteMessageHistory({ sidecar, workspace, projectID, threadID, cwd, keyword, laterKeyword, paddingTurns = 0 }) {
   const sdk = resolve(sidecar, "node_modules/@earendil-works/pi-coding-agent");
   assert.equal(JSON.parse(readFileSync(join(sdk, "package.json"), "utf8")).version, "1.6.1");
   const { SessionManager } = await import(pathToFileURL(join(sdk, "dist/index.js")).href);
@@ -25,6 +25,10 @@ export async function seedPaletteMessageHistory({ sidecar, workspace, projectID,
 
   const messageID = user(`An older message mentions ${keyword}.`);
   const firstReplyID = reply("First fixture reply.");
+  for (let n = 0; n < paddingTurns; n++) {
+    user(`Unrelated question ${n + 1}.`);
+    reply(`Unrelated response ${n + 1}.`);
+  }
   user("What happened later?");
   const latest = reply(laterKeyword ? `Latest active fixture reply mentions ${laterKeyword}.` : "Latest active fixture reply.");
   session.branch(firstReplyID);

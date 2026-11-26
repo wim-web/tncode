@@ -59,9 +59,12 @@ export async function verifyTerminalPanes(driver, originalPID) {
   keyFor("thread-terminal", 40, "cmd");
   await delay(250);
   assert(focused(originalPID) && !driver.tree().includes('id="command-palette-search"'));
+  driver.sizeWindow(1220, 810);
   const handle = "terminal-drawer-resize-handle";
   const drawerHeight = () => Number(value(handle).match(/value="?([\d.]+)/)?.[1]);
   await until(() => drawerHeight() === 280, "reference default for the terminal drawer");
+  const limits = value(handle);
+  assert(Number(limits.match(/max=([\d.]+)/)?.[1]) >= 360, "The test window needs room for the 360-point drawer: " + limits);
   const initialPane = frame("thread-terminal")[3];
   driver.drag(handle, 0.5, 0.5, 0, -80);
   await until(() => Math.abs(drawerHeight() - 360) <= 1 && Math.abs(frame("thread-terminal")[3] - initialPane - 80) <= 1 &&

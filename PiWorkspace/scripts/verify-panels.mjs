@@ -45,6 +45,7 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
     await verifyFiles();
     await until(() => visible("browser-address") && tree().includes("Preview document 1") && tree().includes("110%"), "live page restored after Files");
   }
+  sizeWindow(1220, 850);
   press("browser-open-mini");
   await until(() => visible("browser-mini-move") && tree().includes("Preview document 1"), "in-chat Mini Player");
   const player = "browser-mini-player";
@@ -54,12 +55,19 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
     const rect = frame(player);
     return rect[0] < start[0] - 10 && rect;
   }, "dragging the Mini Player from " + start);
-  drag(player, 0.99, 0.5, 48, 0);
-  const resized = await until(() => {
+  drag(player, 0.99, 0.5, -40, 0);
+  const smaller = await until(() => {
     const rect = frame(player);
-    return rect[2] > moved[2] + 8 && rect;
-  }, "resizing the Mini Player from " + moved);
-  assert(Math.abs(resized[2] / resized[3] - moved[2] / moved[3]) < 0.05);
+    return rect[2] < moved[2] - 8 && rect;
+  }, "shrinking the Mini Player from " + moved);
+  drag(player, 0.99, 0.5, 40, 0);
+  const larger = await until(() => {
+    const rect = frame(player);
+    return rect[2] > smaller[2] + 8 && rect;
+  }, "growing the Mini Player from " + smaller);
+  for (const resized of [smaller, larger]) {
+    assert(Math.abs(resized[2] / resized[3] - moved[2] / moved[3]) < 0.05);
+  }
   assert(tree().includes("Keep this text while previewing."));
   press("browser-mini-dock");
   await until(() => visible("browser-open-mini") && tree().includes("Preview document 1") && tree().includes("110%"), "redocking the Mini Player");
@@ -106,11 +114,10 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
 }
 
-async function verifyAddressSearch({ press, visible, tree, until, setField, menuItem, key }, baseURL, network) {
+async function verifyAddressSearch({ press, visible, tree, until, setField, menuItem, pick, key }, baseURL, network) {
   menuItem("Browser Settings…");
   await until(() => visible("browser-search-engine"), "browser settings");
-  press("browser-search-engine");
-  menuItem("Custom");
+  pick("browser-search-engine", "Custom");
   await until(() => visible("browser-custom-search-url"), "custom search URL");
   await setField("browser-custom-search-url", baseURL + "/preview/search");
   assert(visible("browser-settings-save").includes("enabled=false"));
@@ -169,7 +176,8 @@ async function verifyPageControls({ press, visible, tree, until, setField, webFr
   await until(() => tree().includes("Server recovered") && !tree().includes('id="browser-error-details"'), "repaired server");
 }
 
-export async function verifyPullRequests({ press, visible, tree, until, setField, menuItem }, stateFile, logFile, checkout) {
+export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
+  const { press, visible, tree, until, setField, pick } = driver;
   press("pull-requests");
   await until(() => visible("pr-row-42"), "pull requests in fixture checkout");
   press("pr-row-42");
@@ -185,6 +193,7 @@ export async function verifyPullRequests({ press, visible, tree, until, setField
   assert(visible("pr-open"));
   assert(visible("pr-check-open-0"));
   writeFileSync(stateFile, "initial\n");
+  await verifyPullRequestChoices(driver);
   async function search(prefix, text) {
     await setField(prefix + "-search", text);
     press(prefix + "-search-submit");
@@ -214,11 +223,9 @@ export async function verifyPullRequests({ press, visible, tree, until, setField
   writeFileSync(stateFile, "initial\n");
   press("issue-detail-retry");
   await until(() => tree().includes("Fixture issue description."), "issue detail recovered");
-  press("issue-filter");
-  menuItem("Closed");
+  pick("issue-filter", "Closed");
   await until(() => visible("issue-row-70") && !tree().includes('id="issue-row-71"'), "closed issues by label");
-  press("issue-filter");
-  menuItem("Open");
+  pick("issue-filter", "Open");
   await search("issue", "empty");
   await until(() => visible("issue-list-empty") && visible("issue-search-clear"), "empty issue search");
   press("issue-search-clear");
@@ -236,6 +243,47 @@ export async function verifyPullRequests({ press, visible, tree, until, setField
   assert(allCalls.some(call => call.includes("after=pull-requests:2==")));
   press("pr-close");
   await until(() => !tree().includes('id="pr-close"'), "closed pull request sheet");
+}
+
+async function verifyPullRequestChoices({ press, visible, value, tree, until, setField, pick, focus, keyFor, popoverFrame }) {
+  const row = n => tree().includes('id="pr-row-' + n + '"');
+  async function openChoices(kind) {
+    const search = "pr-" + kind + "-search";
+    press("pr-" + kind + "-filter");
+    return until(() => {
+      if (!visible(search).includes("focused=true")) return false;
+      const size = popoverFrame(search).slice(2);
+      return size.every(n => n > 0) && size;
+    }, "native " + kind + " popover");
+  }
+  pick("pr-filter", "All");
+  await until(() => row(41) && row(42) && row(43), "three PRs with different authors and labels");
+  const authorSize = await openChoices("author");
+  await setField("pr-author-search", "no-such-fixture-author");
+  await until(() => visible("pr-author-options-empty"), "empty author options");
+  assert.deepEqual(popoverFrame("pr-author-search").slice(2), authorSize);
+  await setField("pr-author-search", "fixture-author");
+  await until(() => visible("pr-author-option-fixture-author"), "matching checkout author");
+  assert.deepEqual(popoverFrame("pr-author-search").slice(2), authorSize);
+  press("pr-author-option-fixture-author");
+  await until(() => row(42) && !row(41) && !row(43) && value("pr-author-filter").includes("fixture-author"),
+              "only the selected author's PR");
+  await openChoices("author");
+  await until(() => visible("pr-author-anyone"), "clear the author selection");
+  press("pr-author-anyone");
+  await until(() => row(41) && row(42) && row(43), "Anyone restores all authors");
+  await openChoices("label");
+  await setField("pr-label-search", "bug");
+  await until(() => visible("pr-label-option-bug"), "search returned the bug label");
+  press("pr-label-option-bug");
+  await until(() => row(42) && !row(41) && value("pr-label-filter").includes("1 selected"), "unlabeled PR excluded");
+  press("pr-label-clear");
+  await until(() => row(41) && row(42) && row(43), "Clear labels restores all PRs");
+  focus("pr-label-search");
+  keyFor("pr-label-search", 53);
+  await until(() => !tree().includes('id="pr-label-search"'), "closed label choices");
+  pick("pr-filter", "Open");
+  await until(() => row(42) && !row(41), "open PR scope restored");
 }
 
 export async function setProjectModel({ openModelSettings, visible, tree, until, setField, closeSettings }, model) {

@@ -39,14 +39,13 @@ async function openAppearance({ menuItem, visible, until }) {
 }
 
 export async function verifyAppearance(driver) {
-  const { menuItem, press, until, visible, value, frame, sizeWindow } = driver;
+  const { pick, press, until, visible, value, frame, sizeWindow } = driver;
   sizeWindow(1680, 810);
   const initialWidth = frame("composer")[2];
   const draft = value("composer").match(/value=(".*")/)?.[1];
   assert(draft);
   async function select(id, label) {
-    press(id);
-    menuItem(label);
+    pick(id, label);
     await until(() => value(id).includes(label), "selected " + label);
   }
   async function done() {

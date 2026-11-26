@@ -128,8 +128,8 @@ export async function verifyFiles(driver, checkout, project, git) {
 async function verifyRenderedFiles({ press, visible, value, until, setField }, checkout) {
   const markdown = "# Checkout notes\n\nSee [the heading](#checkout-notes).\n";
   const csv = 'Name,Note\r\nTokyo,"quoted, 日本語"\r\nOsaka,"two\nlines"\r\n';
-  const names = ["outline.md", "cities.csv", "cities.tsv"];
-  const sources = [markdown, csv, 'Name\tNote\nTokyo\t"quoted\tvalue"\n'];
+  const names = ["outline.md", "cities.csv", "cities.tsv", "prices.csv"];
+  const sources = [markdown, csv, 'Name\tNote\nTokyo\t"quoted\tvalue"\n', '"Artikel";Preis, EUR;Menge\n"Apfel";1,25;2'];
   for (const [i, name] of names.entries()) writeFileSync(join(checkout, name), sources[i]);
   press("files-refresh");
   const row = name => "files-row-" + name;
@@ -163,6 +163,10 @@ async function verifyRenderedFiles({ press, visible, value, until, setField }, c
   await until(() => displays("files-editor", sources[2]), "remembered source mode on TSV");
   press("files-toggle-rendered");
   await until(() => displays("files-table-cell-1-2", "quoted\tvalue"), "TSV delimiter in a quoted cell");
+  press("files-close-preview");
+  press(row(names[3]));
+  await until(() => displays("files-table-cell-1-2", "1,25") && displays("files-table-cell-1-3", "2"),
+              "decimal comma in a semicolon-delimited CSV");
   press("files-close-preview");
   assert.equal(readFileSync(join(checkout, names[1]), "utf8"), csv);
   assert.equal(readFileSync(join(checkout, names[2]), "utf8"), sources[2]);

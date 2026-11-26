@@ -25,20 +25,20 @@ const log = openSync(join(root, "app.log"), "wx", 0o600);
 const child = spawn(resolve(app, "Contents/MacOS/PiWorkspace"), [
   "--workspace", workspace, "--project", project, "-ApplePersistenceIgnoreState", "YES",
 ], { stdio: ["ignore", log, log] });
-const closed = once(child, "close").catch(error => { launchError = error; });
 let launchError;
+const closed = once(child, "close").catch(error => { launchError = error; });
 closeSync(log);
 
 function drive(operation, args = [], input) {
   if (launchError) throw launchError;
   assert(child.pid && child.exitCode === null && child.signalCode === null, "The fixture app exited.");
   return execFileSync(ax, [operation, String(child.pid), ...args], {
-    input, encoding: "utf8", timeout: operation === "drop-fixture" ? 15_000 : 5_000,
+    input, encoding: "utf8", timeout: operation === "drop-fixture" ? 15_000 : 5_000, stdio: ["pipe", "pipe", "pipe"],
   });
 }
 
-async function until(check, description) {
-  const deadline = Date.now() + 10_000;
+async function until(check, description, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
   let lastError;
   while (Date.now() < deadline) {
     if (launchError) throw launchError;
@@ -129,7 +129,11 @@ try {
   if (child.pid && child.exitCode === null && child.signalCode === null) {
     try { press("terminate:"); } catch { /* AX can disconnect during quit. */ }
     try { await until(() => child.exitCode !== null || child.signalCode !== null, "fixture app exit"); }
-    catch { child.kill(); }
+    catch {
+      child.kill();
+      try { await until(() => child.exitCode !== null || child.signalCode !== null, "fixture process termination", 2000); }
+      catch { child.kill("SIGKILL"); }
+    }
   }
   await closed;
 }

@@ -16,6 +16,10 @@ import { verifyFork, verifyInterruptedReply } from "./verify-fork-ui.mjs";
 import { verifyAttachmentUI } from "./verify-attachment-ui.mjs";
 import { linkFixturePullRequest, verifyLinkOnlyDraftMove, verifyRestoredLink } from "./verify-linked-prs.mjs";
 import { verifyProjectClone } from "./verify-project-clone.mjs";
+import { createUsageFixture } from "./fixtures/usage.mjs";
+import { verifyUsage } from "./verify-usage-ui.mjs";
+import { createWorkspaceControlsFixture, setWorktreeLocation, verifyWorkspaceControls } from "./verify-workspace-controls.mjs";
+import { verifyConversationControls } from "./verify-conversation-controls.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -28,6 +32,7 @@ const worktreeTest = process.argv.includes("--worktree");
 const fixtureModel = process.argv.includes("--fixture-model");
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
+const customWorktrees = join(directory, "Custom Worktrees");
 const forgeState = join(directory, "forge-state");
 const forgeLog = join(directory, "forge-calls.log");
 const pasteboard = "dev.piworkspace.verification." + randomBytes(16).toString("hex");
@@ -186,8 +191,8 @@ function drive(operation, id, input) {
   });
 }
 
-function updateKey(argument, input) {
-  execFileSync(join(app, "Contents/MacOS/PiWorkspace"), ["--workspace", workspace, argument], {
+function updateKey(argument, input, root = workspace) {
+  execFileSync(join(app, "Contents/MacOS/PiWorkspace"), ["--workspace", root, argument], {
     input, timeout: 10_000, stdio: ["pipe", "pipe", "pipe"],
   });
 }
@@ -222,9 +227,13 @@ const panelDriver = {
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", [name]),
+  showMenu: id => drive("show-menu", [id]),
+  pick: (id, title) => drive("pick", [id, title]),
+  segment: (group, label) => drive("segment", [group, label]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
   keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers]),
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
+  popoverFrame: id => drive("frame", [id, "--popover"]).trim().split(/\s+/).map(Number),
   webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
   drag: (id, x, y, dx, dy) => drive("drag", [id, ...[x, y, dx, dy].map(String)]),
 };
@@ -235,22 +244,22 @@ function replyVisible(target) {
   return reply.length > 0 && plain(tree()).includes(reply);
 }
 
-async function launch(expectedControl = "model-settings") {
+async function launch(expectedControl = "model-settings", root = workspace, shell = worktreeTest ? terminalFixture : "/bin/sh") {
   launchNumber++;
   execFileSync("/usr/bin/open", [
     "-n", "-a", app, "--stdout", join(logs, launchNumber + ".out"),
     "--stderr", join(logs, launchNumber + ".err"),
-    "--env", "SHELL=" + (worktreeTest ? terminalFixture : "/bin/sh"),
+    "--env", "SHELL=" + shell,
     "--env", "PATH=" + resolve(import.meta.dirname, "fixtures/github-read") + ":/usr/bin:/bin",
     "--env", "PI_GH_FIXTURE_STATE=" + forgeState, "--env", "GH_CONFIG_DIR=" + join(directory, "gh"),
     "--env", "PI_GH_FIXTURE_LOG=" + forgeLog,
     "--env", "PI_WORKSPACE_TEST_PASTEBOARD=" + pasteboard,
-    "--args", "--workspace", workspace,
+    "--args", "--workspace", root,
     "-ApplePersistenceIgnoreState", "YES",
   ]);
   const id = await until(() => {
     const result = execFileSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8" });
-    const process = result.split("\n").find(line => line.includes("/MacOS/PiWorkspace --workspace " + workspace));
+    const process = result.split("\n").find(line => line.includes("/MacOS/PiWorkspace --workspace " + root + " "));
     return process && Number(process.trim().split(/\s+/)[0]);
   }, "app process");
   appPID = id;
@@ -341,10 +350,23 @@ async function verifyPathCompletion(projectID, threadID) {
 }
 
 async function openProject() {
+  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  if (fixtureModel) {
+    assert.equal(index().projects.length, 0);
+    press("start-without-project");
+    const scratch = await until(() => {
+      const project = index().projects.find(p => p.kind === "scratch");
+      return project && visible("composer") && project;
+    }, "No project from empty Home");
+    assert.equal(realpathSync(scratch.path), realpathSync(join(workspace, "scratch", scratch.id)));
+    await openDraftActions();
+    press("discard-draft");
+    await until(() => index().projects.length === 0 && visible("empty-open-project"), "discard the empty scratch draft and return Home");
+    record("Start without a project on empty Home opened the scratch draft in its private directory. Discard returned to empty Home.");
+  }
   await chooseLocalFolder();
   press("cancel-project");
   await until(() => !tree().includes('id="project-path"'), "cancelled project picker");
-  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   assert.equal(index().projects.length, 0);
   await chooseLocalFolder("empty-open-project");
   await setField("project-path", join(directory, "missing folder"), () => visible("confirm-project").includes("enabled=true"));
@@ -536,6 +558,32 @@ async function verifyExistingDraft(projectID, savedID, checkout) {
   record("The new-thread project chooser opened a separate draft in the selected project. Copy on its existing worktree returned that checkout's path and current branch without sending a model request.");
 }
 
+async function verifyDefaultWorktree(index, projectID, originalID, previousCheckout) {
+  await setWorktreeLocation(panelDriver, index, customWorktrees);
+  const marker = join(previousCheckout, "storage-reset-note.txt");
+  writeFileSync(marker, "Keep this edit in the custom checkout.\n");
+  await setWorktreeLocation(panelDriver, index, "");
+  assert.equal(readFileSync(marker, "utf8"), "Keep this edit in the custom checkout.\n");
+  press("new-conversation");
+  await until(() => visible("new-thread-project-" + projectID), "choose the project for another worktree");
+  press("new-thread-project-" + projectID);
+  await until(() => visible("composer").includes("focused=true"), "new draft after resetting storage");
+  const thread = index().projects.find(p => p.id === projectID).selectedConversation;
+  assert.notEqual(thread, originalID);
+  await chooseNewWorktree("default-after-reset", 2);
+  const count = targets.length;
+  await send("Verify the new thread starts in the default worktree folder.");
+  await until(() => targets.length === count + 1 && replyVisible(targets.at(-1)), "one turn in the default checkout");
+  const created = index().projects.find(p => p.id === projectID).conversations.find(t => t.id === thread);
+  assert.equal(realpathSync(created.location.worktree.path), realpathSync(join(workspace, "worktrees", projectID, thread)));
+  assert(targets.at(-1).body.messages.some(m => m.role === "system" && JSON.stringify(m.content).includes(created.location.worktree.path)));
+  assert.equal(readFileSync(marker, "utf8"), "Keep this edit in the custom checkout.\n");
+  assert.equal(git(previousCheckout, "branch", "--show-current"), "ui-worktree");
+  press("thread-row-" + originalID);
+  await until(() => index().projects.find(p => p.id === projectID).selectedConversation === originalID, "original worktree thread");
+  record("With worktree storage reset, the next thread ran once under the default root. The earlier custom checkout retained its branch and working file.");
+}
+
 async function verifyCheckout(checkout) {
   const branch = git(checkout, "branch", "--show-current");
   assert.equal(branch, "ui-worktree");
@@ -565,7 +613,7 @@ async function verifyCheckout(checkout) {
   process.kill(shellPID, 0);
   await until(() => drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."), "reopened terminal output");
   await verifyTerminalPanes(panelDriver, shellPID);
-  record("Four distinct worktree shell PIDs survived tab changes and both split directions. Previous and next shortcuts focused the expected pane. Cancel kept all shells, and each confirmed close stopped only that pane.");
+  record("The terminal drawer measured 280 points by default and retained its dragged 360-point height and shell across hide and reopen. Five distinct PTYs exercised both split directions and the four-pane limit. Previous and next focused the expected pane, and confirmed close stopped only that shell.");
 
   writeFileSync(join(checkout, "base.txt"), "first edit\n");
   git(checkout, "add", "base.txt");
@@ -618,12 +666,10 @@ async function verifyApprovals(cwd) {
 
 async function verifySidebar(savedID) {
   async function focusSearch() {
-    await until(() => {
-      if (visible("thread-search").includes("focused=true")) return true;
-      drive("activate", []);
-      drive("menu-command", ["f"]);
-      return visible("thread-search").includes("focused=true");
-    }, "registered Command-F menu action focuses search");
+    if (visible("thread-search").includes("focused=true")) return;
+    panelDriver.focus("composer");
+    panelDriver.keyFor("composer", 3, "cmd", "shift");
+    await until(() => visible("thread-search").includes("focused=true"), "Command-Shift-F focuses sidebar search");
   }
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const third = join(directory, "Third Project");
@@ -705,7 +751,7 @@ async function verifySidebar(savedID) {
   press(match[1]);
   await until(() => visible("transcript-message-" + match[2]), "matching message in the original conversation");
   await until(() => index().selectedProject === first.id && index().projects[0].selectedConversation === savedID, "return to saved conversation");
-  record("Invoking the menu command registered for Command-F focused search. AXConfirm reopened the matching draft with its text.");
+  record("Command-Shift-F focused sidebar search. AXConfirm reopened the matching draft with its text.");
   record("Searching an older assistant reply opened its stored message ID in the original thread.");
   press("thread-row-" + last.selectedConversation);
   await until(() => composerHas(thirdText), "third draft before Discard");
@@ -762,7 +808,7 @@ function inspectFiles() {
   return files.filter(entry => entry.isFile() && entry.name.endsWith(".jsonl")).map(entry => entry.name);
 }
 
-try {
+async function verifyConversations() {
   if (worktreeTest) makeRepository();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -807,8 +853,11 @@ try {
   }
   await verifyDraftCopy("draft-copy-path", project);
   if (worktreeTest) {
+    if (fixtureModel) await setWorktreeLocation(panelDriver, index, customWorktrees);
     await chooseNewWorktree("main");
-    assert.equal(index().projects[0].conversations.find(t => t.id === draftID).location.newWorktree.base, "main");
+    const base = index().projects[0].conversations.find(t => t.id === draftID).location.newWorktree.base;
+    assert.equal(base, "refs/heads/main");
+    assert.equal(git(project, "rev-parse", base), git(project, "rev-parse", "HEAD"));
     await verifyDraftCopy("draft-copy-path", project);
     await verifyDraftCopy("draft-copy-branch", "main");
     record("Copy wrote the project path for a local and a planned worktree draft, and the selected base branch, to an isolated native pasteboard.");
@@ -826,7 +875,8 @@ try {
     await until(() => tree().includes("already exists") && visible("retry-worktree"), "retry collision after cancellation");
     assert.equal(targets.length, 0);
     await chooseNewWorktree("ui-worktree");
-    const obstruction = join(workspace, "worktrees", index().projects[0].id, draftID);
+    const storage = fixtureModel ? customWorktrees : join(workspace, "worktrees");
+    const obstruction = join(storage, index().projects[0].id, draftID);
     writeFileSync(obstruction, "fixture", { flag: "wx" });
     press("retry-worktree");
     await until(() => visible("worktree-launch-error") && visible("retry-worktree"), "worktree failure and Retry");
@@ -840,6 +890,11 @@ try {
     press("thread-row-" + draftID);
     await until(() => visible("retry-worktree"), "Retry after relaunch");
     assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
+    if (fixtureModel) {
+      assert.equal(index().worktreesDirectory, customWorktrees);
+      await setWorktreeLocation(panelDriver, index, "");
+      assert.equal(readFileSync(obstruction, "utf8"), "fixture");
+    }
     unlinkSync(obstruction);
     press("retry-worktree");
     record("Preparation failed before any model request. Relaunch retained the prompt, failure stage and thread ID. Retry used the repaired worktree store.");
@@ -861,6 +916,10 @@ try {
   assert.equal(targets[0].body.messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes(firstPrompt)).length, 1);
   const selectedThread = previous.projects[0].conversations.find(thread => thread.id === threadID);
   const checkout = selectedThread.location?.worktree?.path;
+  if (fixtureModel && worktreeTest) {
+    assert.equal(realpathSync(checkout), realpathSync(join(customWorktrees, projectID, threadID)));
+    record("Retry from the saved thread created the checkout at its pinned custom location after relaunch and a settings reset.");
+  }
   if (worktreeTest) assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 2);
   record("First request returned HTTP 200. Reply: " + JSON.stringify(targets[0].fragments.join("").trim()));
   if (worktreeTest) {
@@ -971,7 +1030,10 @@ try {
     await verifyCommandPalette(panelDriver, index, () => targets.length);
     await verifyPaletteMessage(panelDriver, index, threadID, matchedMessage, "Partial reply before Stop.");
     record("Command-K opened and closed the palette; Escape, Backspace and Return preserved focus and draft ownership. The project selector created one draft, the modal folder picker kept the shortcut, and Home and Search opened their workspace destinations.");
-    if (worktreeTest) await verifyExistingDraft(previous.selectedProject, threadID, checkout);
+    if (worktreeTest) {
+      await verifyExistingDraft(previous.selectedProject, threadID, checkout);
+      await verifyDefaultWorktree(index, previous.selectedProject, threadID, checkout);
+    }
     await verifyScratch(threadID);
     await verifySettingsSearch(panelDriver, index);
     record("Settings search on General handled no results and Escape. Return focused the project model ID and license search. SwiftTerm's packaged license was readable, and switching panes preserved the unsaved model edit without changing its stored value.");
@@ -1000,7 +1062,7 @@ try {
   await closeSettings();
   await quit();
   const transcripts = inspectFiles();
-  assert.equal(transcripts.length, fixtureModel ? (worktreeTest ? 4 : 3) : 1);
+  assert.equal(transcripts.length, fixtureModel ? (worktreeTest ? 5 : 3) : 1);
   record("No auth.json or plaintext key under the project, app data, transcripts, or captured logs. Keychain test item removed.");
   if (fixtureModel) {
     const previousIndex = JSON.parse(readFileSync(join(workspace, "workspace.previous.json"), "utf8"));
@@ -1015,6 +1077,44 @@ try {
     await quit();
     assert.deepEqual(inspectFiles().sort(), transcripts.sort());
     record("The recovery screen restored the previous project index, retained the damaged bytes and kept all " + transcripts.length + " session histories.");
+  }
+}
+
+const usageWorkspace = join(directory, "usage-workspace");
+const controlsWorkspace = join(directory, "controls-workspace");
+try {
+  const usageOnly = process.argv.includes("--usage-only");
+  const controlsOnly = process.argv.includes("--workspace-controls-only");
+  const conversationOnly = process.argv.includes("--conversation-controls-only");
+  if (usageOnly || controlsOnly || conversationOnly) record("Verification folder: " + directory);
+  else await verifyConversations();
+  if (usageOnly || (fixtureModel && !worktreeTest)) {
+    const fixture = await createUsageFixture(usageWorkspace, join(app, "Contents/Resources/Sidecar"));
+    await launch("model-settings", usageWorkspace);
+    await verifyUsage(panelDriver, fixture, async () => {
+      await quit();
+      await launch("model-settings", usageWorkspace);
+    });
+    await quit();
+    record("Saved Pi usage matched 310, 350, 480 and 720 tokens. Refresh added the 23-token reply. Removing a saved fork flagged incomplete usage and removed its 60 tokens. Restoring it recovered 503. The selected seven-day cost and unfinished draft survived relaunch.");
+  }
+  if (controlsOnly || (fixtureModel && worktreeTest)) {
+    const fixture = createWorkspaceControlsFixture(controlsWorkspace, git);
+    const launchControls = () => launch("model-settings", controlsWorkspace, fixture.shell);
+    await launchControls();
+    await verifyWorkspaceControls(panelDriver, fixture, git, record, async () => {
+      await quit();
+      await launchControls();
+    });
+    await quit();
+    record("The new Git branch started at the selected alternate commit. Choosing a branch already in use moved the same draft to its linked checkout and preserved the original checkout and index.");
+  }
+  if (conversationOnly) {
+    await verifyConversationControls(panelDriver, {
+      root: join(directory, "find-and-questions"), app, key: secret, credential: updateKey, launch, quit, record,
+    });
+    assert.equal(inspectFiles().length, 2);
+    record("The two Pi histories remained separate, with no plaintext fixture key or auth.json under the verification directory.");
   }
 } catch (error) {
   let message = error.message.replaceAll(secret, "[redacted]");
@@ -1046,12 +1146,12 @@ try {
   server.closeAllConnections();
   server.close();
   execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
-  if (fixtureModel) {
-    const scope = createHash("sha256").update(workspace).digest("hex");
-    for (const [feature, key] of [["browser", "browserSearchSettings"], ["appearance", "appearance.colorScheme"]]) {
-      const domain = "dev.piworkspace." + feature + "." + scope;
-      const result = spawnSync("/usr/bin/defaults", ["read", domain, key], { stdio: "ignore" });
-      if (result.status === 0) execFileSync("/usr/bin/defaults", ["delete", domain], { stdio: "ignore" });
-    }
+  const preferenceChecks = [[usageWorkspace, "browser", "usagePeriod"]];
+  if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
+  for (const [root, feature, key] of preferenceChecks) {
+    const scope = createHash("sha256").update(root).digest("hex");
+    const domain = "dev.piworkspace." + feature + "." + scope;
+    const result = spawnSync("/usr/bin/defaults", ["read", domain, key], { stdio: "ignore" });
+    if (result.status === 0) execFileSync("/usr/bin/defaults", ["delete", domain], { stdio: "ignore" });
   }
 }
