@@ -243,6 +243,88 @@ struct GitHubReader: Sendable {
         )
     }
 
+    func pullRequestFiles(
+        in details: GitHubPullRequestDetails, after previous: GitHubPullRequestFilePage? = nil
+    ) async throws -> GitHubPullRequestFilePage {
+        guard previous == nil || previous?.nextPage != nil else {
+            throw ReadError.invalidResponse(.pullRequests)
+        }
+        let reference = details.reference
+        let checkout = try await fileCheckout(for: reference)
+        let revision = try await fileRevision(for: reference)
+        guard revision.head.sha == details.headOID, previous == nil || previous?.revision == revision else {
+            throw GitHubPullRequestFilesError.revisionChanged
+        }
+        guard previous == nil || previous?.checkout == checkout else {
+            throw GitHubPullRequestFilesError.checkoutChanged
+        }
+
+        let page = previous?.nextPage ?? 1
+        let firstIndex = (page - 1) * GitHubPullRequestFilePage.pageSize
+        let remaining = min(revision.changedFiles, GitHubPullRequestFilePage.fileLimit) - firstIndex
+        let files: [GitHubPullRequestFile]
+        if remaining == 0 {
+            files = []
+        } else {
+            files = try await read(
+                ["api", "repos/\(reference.repository.slug)/pulls/\(reference.number)/files?per_page=\(GitHubPullRequestFilePage.pageSize)&page=\(page)",
+                 "--hostname", "github.com", "--method", "GET", "--jq", GitHubPullRequestFile.projection],
+                for: .pullRequests
+            )
+            guard files.count <= min(remaining, GitHubPullRequestFilePage.pageSize),
+                  files.allSatisfy({ !$0.path.isEmpty && $0.additions >= 0 && $0.deletions >= 0 }) else {
+                throw ReadError.invalidResponse(.pullRequests)
+            }
+        }
+        let result = GitHubPullRequestFilePage(
+            files: files, revision: revision, checkout: checkout,
+            nextPage: files.count == GitHubPullRequestFilePage.pageSize && remaining > files.count ? page + 1 : nil
+        )
+        try await verifyFileSnapshot(result, for: reference)
+        return result
+    }
+
+    func validatePullRequestFiles(
+        _ page: GitHubPullRequestFilePage, for reference: GitHubPullRequestReference
+    ) async throws {
+        guard try await fileCheckout(for: reference) == page.checkout else {
+            throw GitHubPullRequestFilesError.checkoutChanged
+        }
+        try await verifyFileSnapshot(page, for: reference)
+    }
+
+    private func verifyFileSnapshot(
+        _ page: GitHubPullRequestFilePage, for reference: GitHubPullRequestReference
+    ) async throws {
+        guard try await fileRevision(for: reference) == page.revision else {
+            throw GitHubPullRequestFilesError.revisionChanged
+        }
+        guard try await fileCheckout(for: reference) == page.checkout else {
+            throw GitHubPullRequestFilesError.checkoutChanged
+        }
+        try Task.checkCancellation()
+    }
+
+    private func fileRevision(for reference: GitHubPullRequestReference) async throws -> GitHubPullRequestFileRevision {
+        let revision: GitHubPullRequestFileRevision = try await read(
+            ["api", "repos/\(reference.repository.slug)/pulls/\(reference.number)", "--hostname", "github.com",
+             "--method", "GET", "--jq", "{number, html_url, head: {sha: .head.sha}, base: {sha: .base.sha}, changed_files}"],
+            for: .pullRequests
+        )
+        guard revision.number == reference.number, GitHubPullRequestReference(url: revision.htmlURL) == reference,
+              !revision.head.sha.isEmpty, !revision.base.sha.isEmpty, revision.changedFiles >= 0 else {
+            throw ReadError.invalidResponse(.pullRequests)
+        }
+        return revision
+    }
+
+    private func fileCheckout(for reference: GitHubPullRequestReference) async throws -> GitHubPullRequestFileCheckout {
+        _ = try await repository(matching: reference.repository)
+        let git = GitWorkspace(path: directory)
+        let (branch, head) = try await (git.currentBranch(), git.headObjectID())
+        return GitHubPullRequestFileCheckout(directory: directory, branch: branch, head: head)
+    }
+
     func checkLog(for check: GitHubCheck, in details: GitHubPullRequestDetails) async throws -> GitHubCheckLog {
         guard check.hasFailureLog, let target = check.actionsJob, target.repository == details.reference.repository else {
             throw GitHubCheckLogError.unsupported

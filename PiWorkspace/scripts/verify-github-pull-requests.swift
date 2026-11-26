@@ -39,6 +39,10 @@ struct VerifyGitHubPullRequests {
         try Data("staged\n".utf8).write(to: directory.appendingPathComponent("edit.txt"))
         _ = try git(worktree, "add", "--all")
         try Data("working\n".utf8).write(to: directory.appendingPathComponent("edit.txt"))
+        let localFile = worktree.appendingPathComponent("src/checkout.swift")
+        try manager.createDirectory(at: localFile.deletingLastPathComponent(), withIntermediateDirectories: false)
+        let localContents = Data("LOCAL-CHECKOUT\n".utf8)
+        try localContents.write(to: localFile)
 
         let state = temp.appendingPathComponent("state")
         let log = temp.appendingPathComponent("commands")
@@ -123,14 +127,21 @@ struct VerifyGitHubPullRequests {
         let deadlineTest = GitHubReader(directory: directory.path, environment: env, timeout: .milliseconds(250))
         try await expectFailure("timed out") { try await deadlineTest.list(.init(.pullRequests, .open)) }
         try mode("initial")
+        try await verifyPullRequestFiles(service, details: details, empty: withoutChecks, worktree: worktree, mode: mode, gate: gate)
         try await verifyCheckLogs(service, repository: listing.repository, worktree: worktree, mode: mode, gate: gate, log: log)
         try await verifyPullRequestFilters(service, project: project, mockRepo: mockRepo, env: env, mode: mode, gate: gate, log: log)
         let issueCursor = try await verifyBrowsing(service, mode: mode, gate: gate, log: log)
+        let savedFiles = try await service.pullRequestFiles(in: details)
         try expect(snapshot(worktree) == before, "reads preserve refs, Git config, the index, and working changes")
+        try expect(Data(contentsOf: localFile) == localContents, "the local file at the forge path stays untouched")
 
         _ = try git(project, "remote", "set-url", "origin", "https://github.com/fixture/other.git")
         let beforeStale = try Data(contentsOf: log)
         try await expectFailure("repository changed") { try await service.pullRequestDetails(for: 42, in: listing.repository) }
+        try await expectFailure("repository changed") { try await service.pullRequestFiles(in: details) }
+        try await expectFailure("repository changed") {
+            try await service.validatePullRequestFiles(savedFiles, for: details.reference)
+        }
         try await expectFailure("repository changed") {
             try await service.list(.init(.issues), after: issueCursor)
         }
@@ -159,6 +170,7 @@ struct VerifyGitHubPullRequests {
             try expect(call.hasPrefix(prefix), "gh runs in the selected worktree subdirectory")
             let arguments = call.dropFirst(prefix.count)
             try expect(arguments.hasPrefix("api graphql --hostname github.com ")
+                       || (arguments.hasPrefix("api repos/fixture/workspace/pulls/") && arguments.contains(" --hostname github.com --method GET --jq "))
                        || [
                            "api repos/fixture/workspace/actions/jobs/61001 --hostname github.com --method GET",
                            "api repos/fixture/workspace/actions/jobs/61002 --hostname github.com --method GET",
@@ -172,6 +184,77 @@ struct VerifyGitHubPullRequests {
         }
         print("Verified PR and Issue lists and details, query and label filters, cursor pagination, refresh and retry.")
         print("Verified stale response rejection, selected checkout scope, and preservation of Git state.")
+    }
+
+    @MainActor
+    private static func verifyPullRequestFiles(
+        _ service: GitHubReader, details: GitHubPullRequestDetails, empty: GitHubPullRequestDetails,
+        worktree: URL, mode: (String) throws -> Void, gate: URL
+    ) async throws {
+        let noFiles = try await service.pullRequestFiles(in: empty)
+        try expect(noFiles.files.isEmpty && noFiles.fileCount == 0 && noFiles.nextPage == nil, "an empty PR has no file pages")
+
+        try mode("files-denied")
+        try await expectFailure("denied access") { try await service.pullRequestFiles(in: details) }
+        try mode("files-many")
+        let first = try await service.pullRequestFiles(in: details)
+        try expect(first.fileCount == 31 && first.files.count == 30 && first.nextPage == 2, "the changed file list is paginated")
+        let files = first.files
+        try expect(files[0].path == "src/checkout.swift"
+                   && files[0].patch == .text("@@ -1 +1 @@\n-old checkout\n+FORGE-CHECKOUT", partial: false),
+                   "the selected PR supplies the changed path and patch")
+        try expect(files[1].status == "renamed" && files[1].previousPath == "docs/old guide.md",
+                   "rename carries both paths")
+        try expect(files[2].patch == .unavailable, "a binary file without a patch is listed")
+        try expect(files[3].status == "added" && files[3].patch == .text("@@ -0,0 +1 @@\n+FORGE-ADD", partial: false),
+                   "the added file shows its additions")
+        try expect(files[4].statusLabel == "Deleted"
+                   && files[4].patch == .text("@@ -1 +0,0 @@\n-FORGE-DELETE", partial: false),
+                   "the deleted file shows its removals")
+        try expect(files[5].patch == .tooLarge && files[6].patch == .text("@@ -0,0 +1 @@\n+PARTIAL", partial: true),
+                   "the file list retains large patches and labels partial text")
+
+        try mode("files-page-error")
+        try await expectFailure("Couldn’t reach GitHub") { try await service.pullRequestFiles(in: details, after: first) }
+        try mode("files-many")
+        let second = try await service.pullRequestFiles(in: details, after: first)
+        try expect(second.files.map(\.path) == ["page-two.swift"]
+                   && second.files.first?.patch == .text("+FORGE-PAGE-TWO", partial: false) && second.nextPage == nil,
+                   "retry reads the same next page and then stops")
+        try mode("files-new-base")
+        try await expectFailure("pull request changed") { try await service.validatePullRequestFiles(first, for: details.reference) }
+        try mode("files-stale")
+        try await expectFailure("pull request changed") { try await service.pullRequestFiles(in: details) }
+        try await expectFailure("pull request changed") { try await service.validatePullRequestFiles(first, for: details.reference) }
+
+        try mode("files-short")
+        let short = try await service.pullRequestFiles(in: details)
+        try expect(short.files.count < short.fileCount && short.nextPage == nil, "a short service response is partial and stops paging")
+        try mode("files-limit")
+        let large = try await service.pullRequestFiles(in: details)
+        let penultimate = GitHubPullRequestFilePage(files: [], revision: large.revision, checkout: large.checkout, nextPage: 100)
+        let capped = try await service.pullRequestFiles(in: details, after: penultimate)
+        try expect(capped.files.count == 30 && capped.fileCount == 3001 && capped.nextPage == nil,
+                   "the list stops at GitHub's 3,000-file limit")
+
+        try mode("files-held")
+        let outdated = Task { try await service.pullRequestFiles(in: details) }
+        try await waitForMock(gate)
+        try mode("files-stale")
+        try releaseMock(gate)
+        try await expectFailure("pull request changed") { try await outdated.value }
+        try clearMockGate(gate)
+
+        try mode("files-held")
+        let moved = Task { try await service.pullRequestFiles(in: details) }
+        try await waitForMock(gate)
+        _ = try git(worktree, "symbolic-ref", "HEAD", "refs/heads/fixture-second")
+        try releaseMock(gate)
+        try await expectFailure("checkout changed") { try await moved.value }
+        try clearMockGate(gate)
+        _ = try git(worktree, "symbolic-ref", "HEAD", "refs/heads/fixture")
+        try mode("initial")
+        print("Verified PR file pages and patches, empty and partial results, retry, and stale head, base and checkout rejection.")
     }
 
     @MainActor
@@ -565,13 +648,20 @@ struct VerifyGitHubPullRequests {
     }
 
     private static func snapshot(_ worktree: URL) throws -> [Data] {
-        let index = try git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index")
-            .trimmingCharacters(in: .newlines)
+        func metadata(_ name: String) throws -> Data {
+            let path = try git(worktree, "rev-parse", "--path-format=absolute", "--git-path", name)
+                .trimmingCharacters(in: .newlines)
+            guard FileManager.default.fileExists(atPath: path) else { return Data() }
+            return try Data(contentsOf: URL(fileURLWithPath: path))
+        }
         return [
             Data(try git(worktree, "show-ref").utf8),
             Data(try git(worktree, "config", "--local", "--list").utf8),
             Data(try git(worktree, "diff", "HEAD").utf8),
-            try Data(contentsOf: URL(fileURLWithPath: index)),
+            Data(try git(worktree, "status", "--porcelain=v1", "--untracked-files=all").utf8),
+            try metadata("HEAD"),
+            try metadata("index"),
+            try metadata("FETCH_HEAD"),
         ]
     }
 

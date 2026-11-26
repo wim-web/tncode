@@ -21,7 +21,7 @@ if [ -n "${PI_GH_FIXTURE_LOG:-}" ]; then
     printf '%s\n' "$(pwd -P)|$command" >> "$PI_GH_FIXTURE_LOG"
 fi
 case "$mode:${2:-}" in
-    held:*|held-error:*|check-logs-held:*/logs)
+    held:*|held-error:*|check-logs-held:*/logs|files-held:*/files\?*)
         : > "$PI_GH_FIXTURE_GATE.started"
         remaining=200
         while [ ! -f "$PI_GH_FIXTURE_GATE.release" ] && [ "$remaining" -gt 0 ]; do
@@ -267,6 +267,77 @@ fi
 
 fields=number,title,state,isDraft,author
 head=0123456789abcdef0123456789abcdef01234567
+if [ "$mode" = files-stale ]; then
+    head=ffffffffffffffffffffffffffffffffffffffff
+fi
+case "${1:-}:${2:-}" in
+    "api:repos/${expected_repo#github.com/}/pulls/"*)
+        test "$#" -eq 8
+        test "$3 $4 $5 $6 $7" = "--hostname github.com --method GET --jq"
+        case "$2" in
+            */pulls/42|*/pulls/43)
+                test "$8" = '{number, html_url, head: {sha: .head.sha}, base: {sha: .base.sha}, changed_files}'
+                number=${2##*/}
+                base=abcdef0123456789abcdef0123456789abcdef01
+                count=7
+                case "$mode" in
+                    files-many|files-page-error|files-short) count=31 ;;
+                    files-limit) count=3001 ;;
+                    files-new-base) base=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ;;
+                    files-selection-error) printf '%s\n' 'dial tcp: fixture could not recheck the PR head' >&2; exit 1 ;;
+                esac
+                if [ "$number" = 43 ]; then count=0; fi
+                printf '{"number":%s,"html_url":"https://%s/pull/%s","head":{"sha":"%s"},"base":{"sha":"%s"},"changed_files":%s}\n' \
+                    "$number" "$expected_repo" "$number" "$head" "$base" "$count"
+                ;;
+            */pulls/42/files\?per_page=30\&page=*)
+                case "$8" in *'map('*'utf8bytelength > 32768'*'patch_too_large: $large})') ;; *) exit 64 ;; esac
+                case "${2##*=}" in
+                    1)
+                        if [ "$mode" = files-denied ]; then
+                            printf '%s\n' 'gh: Resource not accessible (HTTP 403)' >&2
+                            exit 1
+                        fi
+                        printf '[\n'
+                        /bin/cat <<'JSON'
+{"filename":"src/checkout.swift","status":"modified","additions":1,"deletions":1,"patch":"@@ -1 +1 @@\n-old checkout\n+FORGE-CHECKOUT","patch_too_large":false},
+{"filename":"docs/new guide.md","previous_filename":"docs/old guide.md","status":"renamed","additions":1,"deletions":1,"patch":"@@ -1 +1 @@\n-old guide\n+FORGE-GUIDE","patch_too_large":false},
+{"filename":"assets/fixture.bin","status":"modified","additions":0,"deletions":0,"patch_too_large":false},
+{"filename":"src/added.swift","status":"added","additions":1,"deletions":0,"patch":"@@ -0,0 +1 @@\n+FORGE-ADD","patch_too_large":false},
+{"filename":"src/deleted.swift","status":"removed","additions":0,"deletions":1,"patch":"@@ -1 +0,0 @@\n-FORGE-DELETE","patch_too_large":false},
+{"filename":"large.txt","status":"modified","additions":2000,"deletions":0,"patch":null,"patch_too_large":true},
+{"filename":"partial.txt","status":"modified","additions":20,"deletions":0,"patch":"@@ -0,0 +1 @@\n+PARTIAL","patch_too_large":false}
+JSON
+                        case "$mode" in
+                            files-many|files-page-error|files-limit)
+                                index=8
+                                while [ "$index" -le 30 ]; do
+                                    printf ',{"filename":"padding/%s","status":"added","additions":0,"deletions":0,"patch_too_large":false}\n' "$index"
+                                    index=$((index + 1))
+                                done
+                                ;;
+                        esac
+                        printf ']\n'
+                        ;;
+                    2)
+                        case "$mode" in
+                            files-page-error) printf '%s\n' 'dial tcp: fixture could not read the next page' >&2; exit 1 ;;
+                            files-many) printf '[{"filename":"page-two.swift","status":"added","additions":1,"deletions":0,"patch":"+FORGE-PAGE-TWO","patch_too_large":false}]\n' ;;
+                            *) exit 64 ;;
+                        esac
+                        ;;
+                    100)
+                        test "$mode" = files-limit
+                        /usr/bin/awk 'BEGIN { printf "["; for (i=2971; i<=3000; i++) printf "%s{\"filename\":\"padding/%d\",\"status\":\"added\",\"additions\":0,\"deletions\":0,\"patch_too_large\":false}", (i == 2971 ? "" : ","), i; print "]" }'
+                        ;;
+                    *) exit 64 ;;
+                esac
+                ;;
+            *) exit 64 ;;
+        esac
+        exit
+        ;;
+esac
 actions_url="https://$expected_repo/actions/runs/58008/job"
 checks='null'
 case "$mode" in

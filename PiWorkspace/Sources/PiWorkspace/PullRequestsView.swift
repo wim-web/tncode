@@ -585,6 +585,7 @@ struct PullRequestDetailsView: View {
     @State private var retry = 0
     @State private var content: GitHubDetailLoad<GitHubPullRequestDetails> = .loading
     @State private var selectedCheckIndex: Int?
+    @State private var showingCode = false
 
     var body: some View {
         Group {
@@ -612,8 +613,26 @@ struct PullRequestDetailsView: View {
                     }
                     .id(index)
                 } else {
-                    ScrollView {
-                        summary(details)
+                    VStack(spacing: 0) {
+                        HStack {
+                            Button("Summary") { showingCode = false }
+                                .accessibilityAddTraits(showingCode ? [] : .isSelected)
+                                .accessibilityIdentifier("pr-tab-summary")
+                            Button("Code") { showingCode = true }
+                                .accessibilityAddTraits(showingCode ? .isSelected : [])
+                                .accessibilityIdentifier("pr-tab-code")
+                            Spacer()
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        Divider()
+                        if showingCode {
+                            PullRequestCodeView(reader: reader, details: details) { retry += 1 }
+                        } else {
+                            ScrollView {
+                                summary(details)
+                            }
+                        }
                     }
                 }
             }
