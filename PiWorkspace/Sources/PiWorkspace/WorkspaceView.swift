@@ -445,8 +445,14 @@ struct WorkspaceView: View {
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
-                Text("Pi Workspace")
-                    .font(.system(size: 14, weight: .semibold))
+                Button(action: model.showHome) {
+                    Text("Pi Workspace")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Pi Workspace home")
+                .accessibilityIdentifier("sidebar-home")
+                .disabled(model.operationsInProgress || model.editingQueuedMessageID != nil)
                 Spacer()
                 Button { model.openFolder() } label: {
                     Image(systemName: "folder.badge.plus")

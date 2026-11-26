@@ -5,6 +5,31 @@ import XCTest
 
 @MainActor
 final class SidebarPersistenceTests: XCTestCase {
+    func testSidebarHomeAndThreadRowReturnToTheSameUnsentDraft() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("Project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let draft = Conversation(id: UUID(), title: "Work in progress", isDraft: true, composerText: "Keep this text.")
+        let project = Project(id: UUID(), path: folder.path, title: "Project", conversations: [draft], selectedConversation: draft.id)
+        try WorkspaceStore(root: root).save(Workspace(projects: [project], selectedProject: project.id, welcomeCompleted: true))
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        defer { model.terminate() }
+        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable))
+        defer { window.close() }
+        for _ in 0..<50 where window.element("sidebar-home") == nil { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(window.element("sidebar-home")?.accessibilityPerformPress?() == true)
+        XCTAssertNil(model.workspace.selectedProject)
+        XCTAssertTrue(window.element("thread-row-\(draft.id)")?.accessibilityPerformPress?() == true)
+        XCTAssertEqual(model.conversation?.id, draft.id)
+        XCTAssertEqual(model.draft, "Keep this text.")
+    }
+
     func testScopeAndFoldersFollowProjectIDsInTheirOwnWorkspace() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let other = root.appendingPathComponent("other-store")

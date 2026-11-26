@@ -56,6 +56,11 @@ export async function verifySidebarPersistence(driver, { root, git, launch, quit
   press("project-group-" + alpha.id);
   await until(() => visible(row(alpha)) && !included().length && current(), "reset and expand restored every row");
   record("A plain project click selected only Alpha. Two Shift-clicks added and removed Beta with the picker still open. After a checkbox added Beta and Alpha was collapsed, relaunch restored both settings and Gamma's selected unsent draft. All Projects and expanding Alpha restored all three rows.");
+  press("sidebar-home");
+  await until(() => index().selectedProject == null && tree().includes("What should we work on?"), "sidebar brand opens home");
+  press(row(gamma));
+  await until(() => current() && index().projects.find(p => p.id === gamma.id).selectedConversation === gamma.selectedConversation, "same draft after returning from Home");
+  record("The sidebar brand opened Home. Reopening Gamma from its row restored the same draft ID and unsent text.");
   writeFileSync(stateFile, "check-logs-denied\n");
   press("pull-requests");
   await until(() => visible("pr-row-42"), "pull request from Gamma's checkout");
