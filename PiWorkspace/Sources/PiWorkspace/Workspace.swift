@@ -182,6 +182,7 @@ struct Project: Codable, Identifiable {
     var allowEdits = false
     var supervisedTools: Bool?
     var detached: Bool?
+    var pinned: Bool?
     var conversations: [Conversation] = []
     var selectedConversation: UUID?
     var createdAt: Date?

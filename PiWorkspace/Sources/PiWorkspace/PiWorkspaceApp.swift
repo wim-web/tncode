@@ -65,14 +65,7 @@ struct PiWorkspaceApp: App {
         }
         .defaultSize(width: 1080, height: 720)
         .commands {
-            CommandGroup(after: .newItem) {
-                Button("Add Project…") { model.openFolder() }
-                    .keyboardShortcut("o")
-                    .disabled(model.operationsInProgress)
-                Button("New Thread") { model.addConversation() }
-                    .keyboardShortcut("n")
-                    .disabled(model.phase.isRunning)
-            }
+            WorkspaceSidebarCommands(model: model)
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
@@ -82,6 +75,43 @@ struct PiWorkspaceApp: App {
                 Button("Show Welcome") { model.showingWelcome = true }
                     .disabled(model.operationsInProgress || model.showingSettings || model.projectPicker != nil)
             }
+        }
+    }
+}
+
+struct WorkspaceSidebarActions {
+    let newThread: (() -> Void)?
+    let searchThreads: () -> Void
+}
+
+private struct WorkspaceSidebarActionsKey: FocusedValueKey {
+    typealias Value = WorkspaceSidebarActions
+}
+
+extension FocusedValues {
+    var sidebarActions: WorkspaceSidebarActions? {
+        get { self[WorkspaceSidebarActionsKey.self] }
+        set { self[WorkspaceSidebarActionsKey.self] = newValue }
+    }
+}
+
+private struct WorkspaceSidebarCommands: Commands {
+    @ObservedObject var model: WorkspaceModel
+    @FocusedValue(\.sidebarActions) private var actions
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Add Project…") { model.openFolder() }
+                .keyboardShortcut("o")
+                .disabled(model.operationsInProgress)
+            Button("New Thread") { actions?.newThread?() }
+                .keyboardShortcut("n")
+                .disabled(actions?.newThread == nil)
+        }
+        CommandGroup(after: .pasteboard) {
+            Button("Search Threads") { actions?.searchThreads() }
+                .keyboardShortcut("f")
+                .disabled(actions == nil)
         }
     }
 }

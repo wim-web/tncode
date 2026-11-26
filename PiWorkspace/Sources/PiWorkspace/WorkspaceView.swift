@@ -21,7 +21,10 @@ struct WorkspaceView: View {
     @AppStorage("groupThreadsByProject") private var grouped = false
     @State private var collapsed: Set<UUID> = []
     @State private var query = ""
-    @State private var projectFilter: UUID?
+    @State private var projectFilter = SidebarProjectFilter()
+    @State private var showingSidebarFilters = false
+    @State private var highlightedSearchThread: UUID?
+    @FocusState private var searchFocused: Bool
     @State private var showingDetails = false
     @State private var showingChanges = false
     @State private var showingTerminal = false
@@ -42,31 +45,19 @@ struct WorkspaceView: View {
         case conversation(UUID, project: UUID)
     }
 
-    private struct ThreadItem: Identifiable {
-        let project: Project
-        let thread: Conversation
-        var id: UUID { thread.id }
-    }
-
     private struct TerminalLocation: Identifiable, Hashable {
         let thread: UUID
         let path: String
         var id: Self { self }
     }
 
-    private var filteredProjects: [Project] {
-        model.projects.filter { projectFilter == nil || $0.id == projectFilter }
-    }
+    private var orderedProjects: [Project] { SidebarProjectFilter.orderedProjects(model.projects) }
+    private var filteredProjects: [Project] { projectFilter.projects(in: orderedProjects) }
+    private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    private var threads: [ThreadItem] {
-        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return filteredProjects.flatMap { project in
-            project.conversations.filter {
-                model.showsInSidebar($0) && $0.archived == model.showArchive &&
-                (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) ||
-                    project.title.localizedCaseInsensitiveContains(search))
-            }.map { ThreadItem(project: project, thread: $0) }
-        }.sorted { ($0.thread.lastActiveAt ?? .distantPast) > ($1.thread.lastActiveAt ?? .distantPast) }
+    private var threads: [SidebarThread] {
+        SidebarThread.matching(in: filteredProjects, search: searchTerm, archived: model.showArchive)
+            .filter { model.showsInSidebar($0.thread) }
     }
 
     private var rail: Color { colorScheme == .dark ? Color(white: 0.082) : Color(white: 0.955) }
@@ -88,6 +79,11 @@ struct WorkspaceView: View {
             if model.showingWelcome { welcome }
         }
         .tint(accent)
+        .focusedSceneValue(\.sidebarActions, model.showingWelcome ? nil : WorkspaceSidebarActions(
+            newThread: model.operationsInProgress ? nil : newThread,
+            searchThreads: { searchFocused = true }
+        ))
+        .onChange(of: model.projects.map(\.id)) { _, ids in projectFilter.retainProjects(ids) }
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
@@ -104,8 +100,9 @@ struct WorkspaceView: View {
             Text("Workspace changes require a new terminal in the selected folder.")
         }
         .confirmationDialog("Start a thread in", isPresented: $choosingThreadProject, titleVisibility: .visible) {
-            ForEach(model.projects) { project in
+            ForEach(filteredProjects) { project in
                 Button(project.title) { startThread(in: project.id) }
+                    .accessibilityIdentifier("new-thread-project-\(project.id)")
             }
         }
         .sheet(item: $model.projectPicker, onDismiss: {
@@ -116,6 +113,10 @@ struct WorkspaceView: View {
                 try await model.openProject(source, request: request)
                 focusAfterPicker = true
                 revealOpenedProject()
+                if request.relinking == nil {
+                    searchFocused = false
+                    clearSearch()
+                }
             }
         }
         .alert("Rename", isPresented: Binding(get: { rename != nil }, set: { if !$0 { rename = nil } })) {
@@ -128,7 +129,6 @@ struct WorkspaceView: View {
                                                  set: { if !$0 { removingProject = nil } }),
                             presenting: removingProject) { project in
             Button("Remove Project", role: .destructive) {
-                if projectFilter == project.id { projectFilter = nil }
                 model.removeProject(project.id)
             }
         } message: { _ in
@@ -160,9 +160,7 @@ struct WorkspaceView: View {
 
     private var sidebar: some View {
         let visibleThreads = threads
-        let groupedThreads = model.showArchive ? visibleThreads : visibleThreads.filter { $0.thread.threadShelf == .active }
-        let pinned = model.showArchive ? [] : visibleThreads.filter { $0.thread.threadShelf == .pinned }
-        let settled = model.showArchive ? [] : visibleThreads.filter { $0.thread.threadShelf == .settled }
+        let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
                 Text("Pi Workspace")
@@ -187,26 +185,12 @@ struct WorkspaceView: View {
                     .help("New Thread")
                     .accessibilityLabel("New Thread")
                     .accessibilityIdentifier("new-conversation")
-                    .disabled(model.phase.isRunning)
+                    .disabled(model.operationsInProgress)
             }
             .padding(.horizontal, 14)
             .frame(height: 42)
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                TextField("Search threads", text: $query)
-                    .textFieldStyle(.plain)
-                    .accessibilityIdentifier("thread-search")
-                sidebarOptions
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 9)
-            .frame(height: 29)
-            .background(surface, in: RoundedRectangle(cornerRadius: 7))
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
+            sidebarSearch(visibleThreads)
 
             if model.showArchive {
                 Button {
@@ -221,34 +205,32 @@ struct WorkspaceView: View {
                 .padding(.bottom, 6)
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    if !pinned.isEmpty {
-                        Text("Pinned").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                            .padding(.leading, 7).padding(.bottom, 4)
-                        ForEach(pinned) { link in threadRow(link, showProject: true) }
-                    }
-                    if grouped {
-                        ForEach(filteredProjects) { project in
-                            projectGroup(project, items: groupedThreads.filter { $0.project.id == project.id })
+            ScrollViewReader { reader in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        if searchTerm.isEmpty {
+                            threadShelves(visibleThreads)
+                        } else if visibleThreads.isEmpty {
+                            Text("No matching threads")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(7)
+                        } else {
+                            ForEach(visibleThreads) { link in
+                                threadRow(link, showProject: true,
+                                          highlighted: link.id == highlightedID)
+                            }
                         }
-                    } else {
-                        ForEach(groupedThreads) { link in threadRow(link, showProject: true) }
                     }
-                    if !settled.isEmpty {
-                        DisclosureGroup(isExpanded: Binding(
-                            get: { settledExpanded || !query.isEmpty }, set: { settledExpanded = $0 }
-                        )) {
-                            ForEach(settled) { link in threadRow(link, showProject: true) }
-                        } label: {
-                            Text("Settled").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 6)
-                        .padding(.leading, 5)
-                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .onChange(of: highlightedSearchThread) { _, id in
+                    if let id { reader.scrollTo(id) }
+                }
+                .onChange(of: searchTerm) { _, term in
+                    if !term.isEmpty, let id = visibleThreads.first?.id { reader.scrollTo(id, anchor: .top) }
+                }
             }
 
             Divider()
@@ -300,39 +282,134 @@ struct WorkspaceView: View {
     }
 
     private func revealOpenedProject() {
-        projectFilter = nil
+        projectFilter.clear()
         if let id = model.project?.id { collapsed.remove(id) }
     }
 
-    private var sidebarOptions: some View {
-        Menu {
-            Button("All Projects") { projectFilter = nil }
-            ForEach(model.projects) { project in
-                Button {
-                    projectFilter = project.id
-                    model.selectProject(project.id)
-                } label: {
-                    if projectFilter == project.id {
-                        Label(project.title, systemImage: "checkmark")
-                    } else {
-                        Text(project.title)
-                    }
-                }
-            }
-            Divider()
-            Toggle("Group by Project", isOn: $grouped)
-            Toggle("Show Archive", isOn: $model.showArchive)
-        } label: {
-            Image(systemName: projectFilter == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+    private func sidebarSearch(_ results: [SidebarThread]) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search threads", text: $query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .accessibilityIdentifier("thread-search")
+                .onChange(of: query) { _, _ in highlightedSearchThread = nil }
+                .onSubmit {
+                    if !searchTerm.isEmpty, let result = searchResult(in: results) { openThread(result) }
+                }
+                .onExitCommand(perform: query.isEmpty ? nil : clearSearch)
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    return moveSearchHighlight(in: results, by: press.key == .upArrow ? -1 : 1)
+                }
+            if !query.isEmpty {
+                Button {
+                    clearSearch()
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear thread search")
+                .accessibilityIdentifier("clear-thread-search")
+            }
+            sidebarOptions
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Thread filters")
+        .font(.system(size: 12))
+        .padding(.horizontal, 9)
+        .frame(height: 29)
+        .background(surface, in: RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
     }
 
-    private func projectGroup(_ project: Project, items: [ThreadItem]) -> some View {
+    @ViewBuilder
+    private func threadShelves(_ threads: [SidebarThread]) -> some View {
+        let active = model.showArchive ? threads : threads.filter { $0.thread.threadShelf == .active }
+        let pinned = model.showArchive ? [] : threads.filter { $0.thread.threadShelf == .pinned }
+        let settled = model.showArchive ? [] : threads.filter { $0.thread.threadShelf == .settled }
+        if !pinned.isEmpty {
+            Text("Pinned").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .padding(.leading, 7).padding(.bottom, 4)
+            ForEach(pinned) { link in threadRow(link, showProject: true) }
+        }
+        if grouped {
+            let threadsByProject = Dictionary(grouping: active, by: { $0.project.id })
+            ForEach(filteredProjects) { project in
+                let items = threadsByProject[project.id, default: []]
+                if !items.isEmpty || (!model.showArchive &&
+                    (project.pinned == true || projectFilter.selection.contains(project.id))) {
+                    projectGroup(project, items: items)
+                }
+            }
+        } else {
+            ForEach(active) { link in threadRow(link, showProject: true) }
+        }
+        if !settled.isEmpty {
+            DisclosureGroup(isExpanded: $settledExpanded) {
+                ForEach(settled) { link in threadRow(link, showProject: true) }
+            } label: {
+                Text("Settled").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+            .padding(.top, 6)
+            .padding(.leading, 5)
+        }
+    }
+
+    private var sidebarOptions: some View {
+        Button { showingSidebarFilters.toggle() } label: {
+            Image(systemName: projectFilter.selection.isEmpty ?
+                  "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Thread filters")
+        .accessibilityLabel("Thread filters")
+        .accessibilityIdentifier("thread-filters")
+        .popover(isPresented: $showingSidebarFilters, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Button("All Projects") { projectFilter.clear() }
+                    .accessibilityIdentifier("project-filter-all")
+                    .disabled(projectFilter.selection.isEmpty)
+                if !orderedProjects.isEmpty {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(orderedProjects) { project in
+                                Toggle(isOn: Binding(
+                                    get: { projectFilter.selection.contains(project.id) },
+                                    set: { projectFilter.setSelected(project.id, $0) }
+                                )) {
+                                    Label(project.title, systemImage: project.pinned == true ? "pin.fill" : "folder")
+                                        .lineLimit(1)
+                                }
+                                .toggleStyle(.checkbox)
+                                .accessibilityIdentifier("project-filter-\(project.id)")
+                                .contextMenu { projectPinAction(project) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(idealHeight: CGFloat(min(orderedProjects.count, 9)) * 26, maxHeight: 234)
+                }
+                Divider()
+                Toggle("Group by Project", isOn: $grouped)
+                    .accessibilityIdentifier("group-threads-by-project")
+                Toggle("Show Archive", isOn: $model.showArchive)
+                    .accessibilityIdentifier("show-thread-archive")
+                Button("Done") { showingSidebarFilters = false }
+                    .accessibilityIdentifier("close-thread-filters")
+            }
+            .padding(12)
+            .frame(width: 230)
+        }
+    }
+
+    private func projectGroup(_ project: Project, items: [SidebarThread]) -> some View {
         let expanded = !collapsed.contains(project.id)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 9) {
@@ -343,18 +420,21 @@ struct WorkspaceView: View {
                     HStack(spacing: 7) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 8, weight: .semibold))
-                        Image(systemName: "folder")
+                        Image(systemName: project.pinned == true ? "pin.fill" : "folder")
                         Text(project.title).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("project-group-\(project.id)")
                 .accessibilityAddTraits(expanded ? .isSelected : [])
-                Button { model.addConversation(in: project.id) } label: { Image(systemName: "square.and.pencil") }
+                Button { startThread(in: project.id) } label: { Image(systemName: "square.and.pencil") }
                     .buttonStyle(.plain)
                     .help("New Thread in \(project.title)")
-                    .disabled(model.phase.isRunning)
+                    .accessibilityLabel("New Thread in \(project.title)")
+                    .accessibilityIdentifier("project-new-thread-\(project.id)")
+                    .disabled(model.operationsInProgress)
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.secondary)
@@ -368,10 +448,11 @@ struct WorkspaceView: View {
         }
     }
 
-    private func threadRow(_ link: ThreadItem, showProject: Bool) -> some View {
+    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false) -> some View {
         let selected = model.conversation?.id == link.id
+        let emphasized = searchTerm.isEmpty ? selected : highlighted
         return Button {
-            model.selectConversation(link.id, in: link.project.id)
+            openThread(link)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 if showProject {
@@ -391,20 +472,22 @@ struct WorkspaceView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 9)
             .padding(.vertical, showProject ? 8 : 6)
-            .background(selected ? accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .background(emphasized ? accent.opacity(0.18) : .clear,
+                        in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("thread-row-\(link.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .disabled(model.phase.isRunning && !selected)
+        .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project) }
     }
 
     @ViewBuilder
     private func projectActions(_ project: Project) -> some View {
-        Button("New Thread") { model.addConversation(in: project.id) }
-            .disabled(model.phase.isRunning)
+        Button("New Thread") { startThread(in: project.id) }
+            .disabled(model.operationsInProgress)
+        projectPinAction(project)
         Button("Rename Project…") { beginRename(.project(project.id), title: project.title) }
         Button("Relink Folder…") { model.openFolder(relinking: project.id) }
             .disabled(model.phase.isRunning)
@@ -412,8 +495,20 @@ struct WorkspaceView: View {
             .disabled(model.phase.isRunning)
     }
 
+    private func projectPinAction(_ project: Project) -> some View {
+        Button(project.pinned == true ? "Unpin Project" : "Pin Project") {
+            model.setProjectPinned(project.id, pinned: project.pinned != true)
+        }
+        .accessibilityIdentifier("toggle-project-pin-\(project.id)")
+    }
+
     @ViewBuilder
     private func threadActions(_ thread: Conversation, project: Project) -> some View {
+        if projectFilter.selection == [project.id] {
+            Button("Show All Projects") { projectFilter.clear() }
+        } else {
+            Button("Filter by \(project.title)") { projectFilter.selectOnly(project.id) }
+        }
         Button("Rename Thread…") { beginRename(.conversation(thread.id, project: project.id), title: thread.title) }
         if !thread.archived {
             Button(thread.threadShelf == .pinned ? "Unpin Thread" : "Pin Thread") {
@@ -465,8 +560,10 @@ struct WorkspaceView: View {
                 Text(project.title).font(.system(size: 26, weight: .semibold)).lineLimit(1)
                 Button("New Thread") { newThread() }
                     .buttonStyle(.borderedProminent)
+                    .disabled(model.operationsInProgress)
                 Menu("Project Actions") { projectActions(project) }
                     .fixedSize()
+                    .accessibilityIdentifier("project-actions")
             } else {
                 Text("What should we work on?").font(.system(size: 26, weight: .semibold))
                 Button("Add Project") { model.openFolder() }
@@ -490,6 +587,7 @@ struct WorkspaceView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .tint(.primary)
+            .accessibilityIdentifier("project-actions")
             .fixedSize(horizontal: true, vertical: false)
             Text("/").foregroundStyle(.tertiary).accessibilityHidden(true)
             Menu {
@@ -801,10 +899,13 @@ struct WorkspaceView: View {
     }
 
     private func newThread() {
-        if projectFilter == nil && model.projects.count > 1 {
+        let projects = filteredProjects
+        if projects.count > 1 {
             choosingThreadProject = true
+        } else if let project = projects.first {
+            startThread(in: project.id)
         } else {
-            startThread(in: projectFilter)
+            model.openFolder(startThread: true)
         }
     }
 
@@ -816,10 +917,41 @@ struct WorkspaceView: View {
         }
     }
 
-    private func startThread(in projectID: UUID?) {
+    private func startThread(in projectID: UUID) {
+        guard !model.operationsInProgress, model.projects.contains(where: { $0.id == projectID }) else { return }
         model.addConversation(in: projectID)
-        if let id = model.project?.id { collapsed.remove(id) }
+        guard model.project?.id == projectID else { return }
+        if !projectFilter.selection.isEmpty, !projectFilter.selection.contains(projectID) {
+            projectFilter.clear()
+        }
+        collapsed.remove(projectID)
+        searchFocused = false
+        clearSearch()
+    }
+
+    private func clearSearch() {
         query = ""
+        highlightedSearchThread = nil
+    }
+
+    private func searchResult(in results: [SidebarThread]) -> SidebarThread? {
+        results.first { $0.id == highlightedSearchThread } ?? results.first
+    }
+
+    private func moveSearchHighlight(in results: [SidebarThread], by step: Int) -> KeyPress.Result {
+        guard !searchTerm.isEmpty, !results.isEmpty else { return .ignored }
+        let index = results.firstIndex { $0.id == highlightedSearchThread } ?? 0
+        highlightedSearchThread = results[(index + step + results.count) % results.count].id
+        return .handled
+    }
+
+    private func openThread(_ item: SidebarThread) {
+        model.selectConversation(item.id, in: item.project.id)
+        guard model.conversation?.id == item.id, !searchTerm.isEmpty else { return }
+        collapsed.remove(item.project.id)
+        if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
+        searchFocused = false
+        clearSearch()
     }
 
     private func beginRename(_ target: RenameTarget, title: String) {

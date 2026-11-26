@@ -243,6 +243,11 @@ final class WorkspaceModel: ObservableObject {
         save { $0.projects[index].title = title }
     }
 
+    func setProjectPinned(_ id: UUID, pinned: Bool) {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true }) else { return }
+        save { $0.projects[index].pinned = pinned }
+    }
+
     func addConversation(in requestedProject: UUID? = nil) {
         guard !operationsInProgress else { return }
         let projectID = requestedProject ?? project?.id ?? projects.first?.id
