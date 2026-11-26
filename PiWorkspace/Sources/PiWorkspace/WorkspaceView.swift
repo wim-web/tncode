@@ -318,9 +318,9 @@ struct WorkspaceView: View {
                 let matches = try await model.searchMessages(key.search)
                 try Task.checkCancellation()
                 messageSearchResult = (key, matches)
-            } catch {
-                // Replacing the query or scope cancels the old result.
-            }
+            } catch is CancellationError {
+                return
+            } catch { model.error = error.localizedDescription }
         }
         .contentShape(Rectangle())
         .overlay {

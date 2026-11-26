@@ -137,8 +137,8 @@ struct SourceControlView: View {
                 }
                 ForEach(files) { file in
                     HStack(spacing: 7) {
-                        if file.indexStatus == "?" && trackedPaths.contains(file.path) {
-                            // The tracked row already controls this path's inclusion.
+                        let trackedRowOwnsInclusion = file.indexStatus == "?" && trackedPaths.contains(file.path)
+                        if trackedRowOwnsInclusion {
                             Spacer().frame(width: 14)
                         } else {
                             Toggle("Include \(file.path)", isOn: inclusion(file.path))

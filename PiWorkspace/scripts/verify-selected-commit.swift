@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 
-// swiftc Sources/PiWorkspace/GitWorkspace.swift scripts/verify-selected-commit.swift -o /tmp/verify-selected-commit
 @main
 struct VerifySelectedCommit {
     static func main() async throws {

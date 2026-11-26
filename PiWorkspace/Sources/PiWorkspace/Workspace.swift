@@ -334,7 +334,7 @@ final class WorkspaceStore {
             throw WorkspaceStoreError.invalidIndex(missing: current == nil, canRestore: workspace != nil)
         }
 
-        if let current { try archiveCorruptIndex(current) }
+        if let current { try ensureCorruptIndexArchived(current) }
         try write(previous, to: index)
         return workspace
     }
@@ -355,7 +355,7 @@ final class WorkspaceStore {
         try write(updated, to: index)
     }
 
-    private func archiveCorruptIndex(_ data: Data) throws {
+    private func ensureCorruptIndexArchived(_ data: Data) throws {
         // Reuse the archive if a prior recovery stopped before replacing the index.
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let archive = root.appendingPathComponent("workspace.corrupt-\(digest).json")
