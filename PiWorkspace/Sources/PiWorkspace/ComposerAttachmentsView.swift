@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ComposerAttachmentsView: View {
+struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
     @ObservedObject var model: WorkspaceModel
     let threadID: UUID
     @State private var choosingFiles = false
@@ -9,47 +9,67 @@ struct ComposerAttachmentsView: View {
     @State private var pickerTarget: ComposerAttachmentTarget?
     let previewFocus: FocusState<ChatImagePreview.Opener?>.Binding
     let openPreview: (ChatImagePreview.Opener) -> Void
+    @ViewBuilder let prompt: () -> Prompt
+    @ViewBuilder let controls: () -> Controls
     private var target: ComposerAttachmentTarget {
         model.attachmentTarget(for: threadID)
     }
 
     var body: some View {
         let pasteTarget = target
-        VStack(alignment: .leading, spacing: 6) {
-            if !model.composerAttachments.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(model.composerAttachments) { attachment in
-                            tile(attachment)
+        VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                if !model.composerAttachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(model.composerAttachments) { attachment in
+                                tile(attachment)
+                            }
                         }
                     }
+                    .accessibilityIdentifier("composer-attachments")
                 }
-                .accessibilityIdentifier("composer-attachments")
+                if let error = model.attachmentSendError {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("attachment-send-error")
+                }
+                prompt()
             }
-            HStack {
+            .padding(.horizontal, WorkspaceLayout.editorInset)
+            .padding(.top, WorkspaceLayout.editorInset)
+
+            HStack(spacing: 8) {
                 Button {
                     chooseFiles(replacing: nil)
                 } label: {
                     Label("Attach Files", systemImage: "paperclip")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help("Attach files")
                 .accessibilityIdentifier("attach-files")
                 .disabled(!model.canEditAttachments)
                 PasteButton(supportedContentTypes: ComposerAttachmentInput.contentTypes) {
                     model.pasteAttachments($0, to: pasteTarget)
                 }
+                .buttonStyle(.borderless)
+                .labelStyle(.iconOnly)
                 .help("Paste files or images")
                 .accessibilityLabel("Paste files or images")
                 .accessibilityIdentifier("paste-attachments")
                 .disabled(!model.canEditAttachments)
-                if let error = model.attachmentSendError {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("attachment-send-error")
-                }
+                Spacer(minLength: 0)
+                controls()
             }
+            .font(.system(size: 14))
+            .frame(minHeight: 32)
+            .padding(.horizontal, 9)
+            .padding(.bottom, 9)
         }
-        .buttonStyle(.borderless)
-        .font(.callout)
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.item],
                       allowsMultipleSelection: replacementID == nil) { result in
             switch result {
@@ -111,6 +131,8 @@ struct ComposerAttachmentsView: View {
             .accessibilityIdentifier("remove-attachment-\(attachment.id)")
         }
         .padding(5)
+        .buttonStyle(.borderless)
+        .font(.callout)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("composer-attachment-\(attachment.id)")

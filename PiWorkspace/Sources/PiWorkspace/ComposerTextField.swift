@@ -61,7 +61,7 @@ struct ComposerTextField: NSViewRepresentable {
         let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
         let maxHeight = CGFloat(field.maximumNumberOfLines) * lineHeight
         let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: maxHeight))
-        return CGSize(width: width, height: min(maxHeight, max(2 * lineHeight, size.height)))
+        return CGSize(width: width, height: min(maxHeight, max(53.5, size.height)))
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -134,6 +134,8 @@ struct ComposerTextField: NSViewRepresentable {
         var pasteboardOverride: NSPasteboard?
         var drop: AttachmentDropDestination?
         var foldPastedText: ((String, Int) -> Bool)?
+
+        override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
             drop?.operation(for: sender) ?? super.draggingEntered(sender)

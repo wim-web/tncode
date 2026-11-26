@@ -308,8 +308,8 @@ final class ComposerFieldDropTests: XCTestCase {
         defer { board.releaseGlobally() }
         let drag = FileDrag(board: board)
 
-        func assertAXHit(_ id: String, in view: NSView, fraction: CGFloat = 0.5) {
-            let point = NSPoint(x: view.bounds.width * fraction, y: view.bounds.midY)
+        func assertAXHit(_ id: String, in view: NSView, fraction: CGFloat = 0.5, heightFraction: CGFloat = 0.5) {
+            let point = NSPoint(x: view.bounds.width * fraction, y: view.bounds.height * heightFraction)
             let screenPoint = window.convertPoint(toScreen: view.convert(point, to: nil))
             var node = host.accessibilityHitTest(screenPoint) as AnyObject?
             var path: [String] = []
@@ -359,6 +359,9 @@ final class ComposerFieldDropTests: XCTestCase {
                 return view is AttachmentDropDestination.Destination && view.bounds.contains(fieldBounds)
             } as? AttachmentDropDestination.Destination)
             let bounds = composer.convert(composer.bounds, to: destination)
+            XCTAssertEqual(bounds.height, 53.5, accuracy: 1)
+            XCTAssertEqual(bounds.minX, WorkspaceLayout.editorInset, accuracy: 1)
+            XCTAssertEqual(destination.bounds.maxX - bounds.maxX, WorkspaceLayout.editorInset, accuracy: 1)
             XCTAssertGreaterThan(destination.bounds.width, bounds.width)
             XCTAssertGreaterThan(destination.bounds.height, bounds.height)
             let center = composer.convert(NSPoint(x: composer.bounds.midX, y: composer.bounds.midY), to: host.superview)
@@ -370,6 +373,7 @@ final class ComposerFieldDropTests: XCTestCase {
             XCTAssertTrue(window.makeFirstResponder(composer))
             let editor = try XCTUnwrap(composer.currentEditor() as? NSTextView)
             for fraction in [0.25, 0.5, 0.75] { assertAXHit("composer", in: composer, fraction: fraction) }
+            assertAXHit("composer", in: composer, heightFraction: 0.9)
             // Bridging a retained editor.string back to NSString can read its live text storage.
             XCTAssertEqual(editor.string, original)
             let range = NSRange(location: 1, length: 2)

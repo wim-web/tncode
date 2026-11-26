@@ -1502,12 +1502,12 @@ struct WorkspaceView: View {
                         .font(.system(size: 27, weight: .semibold))
                         .multilineTextAlignment(.center)
                         .reservesRoomAboveTerminal(terminalIsVisible, inset: DraftComposerLayout.bottomInset)
-                    composer(project, thread)
+                    composer(project, thread, width: layout.composerWidth)
                         .reservesRoomAboveTerminal(terminalIsVisible)
                 }
             } else {
                 transcript(find?.selection, project: project, thread: thread)
-                composer(project, thread).padding(.vertical, 12)
+                composer(project, thread, width: layout.composerWidth).padding(.vertical, 12)
                     .reservesRoomAboveTerminal(terminalIsVisible)
             }
         }
@@ -1829,8 +1829,10 @@ struct WorkspaceView: View {
         }
     }
 
-    private func composer(_ project: Project, _ thread: Conversation) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func composer(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
+        let canCompose = !thread.archived && (thread.worktreeLaunch == nil || model.phase.isRunning)
+        let question = model.pendingAgentQuestion
+        return VStack(alignment: .leading, spacing: 8) {
             if let saveError = model.composerSaveError {
                 HStack {
                     Text("Draft not saved. \(saveError)").foregroundStyle(.red)
@@ -1860,7 +1862,7 @@ struct WorkspaceView: View {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
                 }
                 .accessibilityIdentifier("restore-open-thread")
-            } else if thread.worktreeLaunch == nil || model.phase.isRunning {
+            } else if canCompose {
                 if let approval = model.pendingToolApproval, let directory = model.workingDirectory {
                     ToolApprovalCard(approval: approval, directory: directory) {
                         model.respond(to: approval.requestID, with: $0)
@@ -1872,30 +1874,53 @@ struct WorkspaceView: View {
                 if let scope = model.draftProjectScope {
                     composerStash(in: scope)
                 }
-                if let question = model.pendingAgentQuestion {
+                if let question {
                     AgentQuestionCard(request: question.request, submitting: question.submitting, error: question.error,
                                       respond: { model.respond(to: question.request.scope, with: $0) }, stop: model.cancel)
                         .id(question.request.scope.requestID)
                 } else {
-                    inputCard(project, threadID: thread.id)
+                    inputCard(threadID: thread.id)
                 }
             }
-            HStack {
+            composerContextStrip(project, thread, width: width, showsPermissions: canCompose && question == nil)
+        }
+        .frame(maxWidth: .infinity)
+        .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
+    }
+
+    private func composerContextStrip(_ project: Project, _ thread: Conversation, width: CGFloat,
+                                      showsPermissions: Bool) -> some View {
+        let branch = branchDisplay
+        let isCheckout = thread.workingLocation == .project && branch != nil
+        let location = isCheckout ? "Current checkout" : thread.workingLocation.label
+        let compact = width < 576
+        let branchButton = branch.map {
+            ThreadBranchButton(branch: $0.branch, label: $0.label,
+                               identifier: "composer-branch", open: { openBranchPicker() }, copy: copyBranch)
+                .padding(.horizontal, 7)
+        }
+        return HStack(spacing: 4) {
+            Group {
                 if model.canChangeWorkspace {
                     Button(action: chooseWorkspace) {
-                        Label(thread.workingLocation.label, systemImage: "chevron.up.chevron.down")
+                        Label(location, systemImage: "folder")
+                            .lineLimit(1)
+                            .padding(.horizontal, 7)
+                            .frame(minHeight: 24)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Thread workspace, \(thread.workingLocation.label)")
                     .accessibilityIdentifier("choose-workspace")
                 } else {
-                    Label(thread.workingLocation.label, systemImage: "desktopcomputer")
+                    Label(location, systemImage: isCheckout ? "folder" : "desktopcomputer")
+                        .lineLimit(1)
+                        .padding(.horizontal, 7)
                 }
-                if let display = branchDisplay {
-                    ThreadBranchButton(branch: display.branch, label: display.label,
-                                       identifier: "composer-branch", open: { openBranchPicker() }, copy: copyBranch)
-                }
-                Spacer()
+            }
+            if compact { branchButton }
+            Spacer(minLength: 0)
+            Group {
                 if model.preparingWorktree && thread.worktreeLaunch?.interruption != nil {
                     Text("Cancelling setup…")
                 } else if model.preparingWorktree && thread.workingLocation != .project {
@@ -1914,13 +1939,28 @@ struct WorkspaceView: View {
                 }
                 if model.phase == .stopping { Text("Stopping…") }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 2)
-            .frame(minHeight: 24)
+            if !compact { branchButton }
+            if showsPermissions && model.effectiveModel.supportsTools {
+                Menu {
+                    ForEach(ToolPermission.allCases, id: \.self) { permission in
+                        Button(permission.title) { model.setToolPermission(permission) }
+                            .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
+                    }
+                } label: {
+                    Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .tint(.secondary)
+                .fixedSize()
+                .disabled(model.operationsInProgress)
+                .accessibilityIdentifier("tool-permissions")
+            }
         }
-        .frame(maxWidth: .infinity)
-        .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 24)
     }
 
     @ViewBuilder
@@ -1994,7 +2034,7 @@ struct WorkspaceView: View {
         if model.restoreStashedPrompt(id, to: scope) { showingComposerStash = false }
     }
 
-    private func inputCard(_ project: Project, threadID: UUID) -> some View {
+    private func inputCard(threadID: UUID) -> some View {
         let target = model.attachmentTarget(for: threadID)
         func ownsComposer() -> Bool {
             model.conversation?.id == threadID && model.attachmentTarget(for: threadID) == target
@@ -2003,11 +2043,8 @@ struct WorkspaceView: View {
             let attachments = ComposerAttachmentInput.readAttachments(from: items)
             return !attachments.isEmpty && ownsComposer() && model.canEditAttachments && model.attach(attachments, to: target)
         }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
-        return VStack(alignment: .leading, spacing: 0) {
-            ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedImageOpener,
-                                    openPreview: openImagePreview)
-                .id(target)
-                .padding(.bottom, 6)
+        return ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedImageOpener,
+                                       openPreview: openImagePreview) {
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
                 set: {
@@ -2034,28 +2071,26 @@ struct WorkspaceView: View {
                         focusedComposer = threadID
                     }
                 }
-                .font(.system(size: 14))
-                .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
                 .accessibilityIdentifier("composer")
                 .disabled(model.conversation?.worktreeLaunch != nil || model.conversation?.composerSubmission != nil)
+        } controls: {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 13) {
-                    composerConfiguration(project)
+                HStack(spacing: 8) {
+                    composerModelButton
                     composerActions.fixedSize()
                 }
                 VStack(alignment: .trailing, spacing: 4) {
-                    composerConfiguration(project)
-                    composerActions
+                    composerModelButton
+                    composerActions.fixedSize()
                 }
             }
-            .font(.system(size: 12))
-            .frame(minHeight: 32)
         }
-        .padding(WorkspaceLayout.editorInset)
-        .background(surface, in: RoundedRectangle(cornerRadius: 15))
+        .id(target)
+        .background(colorScheme == .dark ? Color(.sRGB, white: 15.0 / 255, opacity: 1) : surface,
+                    in: RoundedRectangle(cornerRadius: 16))
         .overlay {
-            RoundedRectangle(cornerRadius: 15)
-                .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(0.11))
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(colorScheme == .dark ? 0.05 : 0.11))
                 .allowsHitTesting(false)
         }
         .background { drop.accessibilityHidden(true) }
@@ -2064,34 +2099,21 @@ struct WorkspaceView: View {
         }
     }
 
-    private func composerConfiguration(_ project: Project) -> some View {
-        HStack(spacing: 13) {
-            if model.effectiveModel.supportsTools {
-                Menu {
-                    ForEach(ToolPermission.allCases, id: \.self) { permission in
-                        Button(permission.title) { model.setToolPermission(permission) }
-                            .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
-                    }
-                } label: {
-                    Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .disabled(model.operationsInProgress)
-                .accessibilityIdentifier("tool-permissions")
-            }
-            Spacer()
-            Button {
-                model.openSettings(.model)
-            } label: {
-                Label(model.effectiveModel.model, systemImage: "cpu")
-                    .lineLimit(1)
-            }
-            .accessibilityIdentifier("active-model")
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .disabled(model.phase.isRunning)
+    private var composerModelButton: some View {
+        let settings = model.effectiveModel
+        let title = settings.thinkingLevel.map { "\(settings.model) \($0.label)" } ?? settings.model
+        return Button {
+            model.openSettings(.model)
+        } label: {
+            Label(title, systemImage: "cpu")
+                .lineLimit(1)
+                .frame(minHeight: 28)
+                .contentShape(Rectangle())
         }
+        .accessibilityIdentifier("active-model")
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .disabled(model.phase.isRunning)
     }
 
     private var composerActions: some View {
@@ -2125,13 +2147,20 @@ struct WorkspaceView: View {
                             .accessibilityIdentifier("queue-message")
                             .disabled(!model.canQueueDraft)
                     }
-                    Button(action: model.send) { Image(systemName: "arrow.up") }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .accessibilityLabel("Send")
-                        .accessibilityIdentifier("send-message")
-                        .disabled(!model.canSend)
+                    Button(action: model.send) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color(red: 0.14, green: 0.24, blue: 0.51), in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(model.canSend ? 1 : 0.45)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .accessibilityLabel("Send")
+                    .accessibilityIdentifier("send-message")
+                    .disabled(!model.canSend)
                 }
             }
             if model.phase.isRunning {
@@ -2143,6 +2172,7 @@ struct WorkspaceView: View {
                     .disabled(model.phase == .stopping)
             }
         }
+        .font(.system(size: 12))
     }
 
     private func newThread() {
