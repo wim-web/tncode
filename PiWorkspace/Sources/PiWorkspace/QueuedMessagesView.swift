@@ -82,7 +82,7 @@ struct QueuedMessagesView: View {
                         model.editQueuedMessage(item.id)
                         focusComposer()
                     }
-                    .disabled(model.editingQueuedMessageID != nil)
+                    .disabled(!model.canStartEditingQueuedMessage)
                     .accessibilityIdentifier("queue-edit-\(item.id)")
                     if !first {
                         Button("Move to Front") { model.moveQueuedMessageToFront(item.id) }

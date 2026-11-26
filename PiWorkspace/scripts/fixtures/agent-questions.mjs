@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.argv[2];
 const model = "question-fixture";
@@ -51,7 +52,14 @@ const server = createServer(async (request, response) => {
     switch (prompt) {
       case "Answer questions": {
         assert(tools.includes("write"));
-        if (count === 1) calls = [ask];
+        if (count === 1) {
+          const deadline = Date.now() + 20_000;
+          while (existsSync(join(root, "hold-first-question")) && !response.destroyed) {
+            assert(Date.now() < deadline, "The fixture did not release its first question.");
+            await delay(40);
+          }
+          calls = [ask];
+        }
         else if (count === 2) {
           const result = body.messages.at(-1);
           assert.equal(result.role, "tool");

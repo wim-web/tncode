@@ -91,7 +91,26 @@ export async function verifyConversationControls(driver, { root, app, credential
     await until(() => visible("tool-mode-supervised"), "Supervised permission");
     press("tool-mode-supervised");
     await until(() => visible("tool-permissions").includes("Supervised"), "questions and individually approved writes");
-    await ask("Answer questions");
+    const gate = join(root, "hold-first-question");
+    writeFileSync(gate, "", { flag: "wx" });
+    let queued;
+    try {
+      await prompt("Answer questions");
+      await until(() => visible("queue-message"), "composer during the pending model response");
+      await setField("composer", "Keep this queued instruction.");
+      press("queue-message");
+      queued = await until(() => {
+        const state = JSON.parse(readFileSync(join(root, "workspace.json"), "utf8"));
+        return state.projects[0].conversations.find(t => t.id === questionThread).queuedMessages?.[0];
+      }, "queued message before the question arrives");
+    } finally { unlinkSync(gate); }
+    await until(() => visible("agent-question"), "question over the composer");
+    press("queue-item-actions-" + queued.id);
+    await until(() => visible("queue-edit-" + queued.id).includes("enabled=false") &&
+                visible("queue-remove-" + queued.id).includes("enabled=true"), "a hidden composer cannot start an edit");
+    press("queue-remove-" + queued.id);
+    await until(() => !has("queued-message-" + queued.id) && has("agent-question"), "removed the item with the question still open");
+    record("While the question occupied the composer, Edit in Composer was disabled for the queued item and Remove still worked.");
     assert(visible("agent-question-next").includes("enabled=false"));
     press("agent-question-option-0");
     press("agent-question-option-2");

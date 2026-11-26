@@ -235,6 +235,7 @@ final class WorkspaceModel: ObservableObject {
     }
     var queuePaused: Bool { queueDelivery.paused }
     var canEditQueue: Bool { canUseQueue && phase != .connecting && forkRequest == nil }
+    var canStartEditingQueuedMessage: Bool { canEditQueue && queueEdit == nil && pendingAgentQuestion == nil }
     var canSteer: Bool { phase == .running && queueDelivery.mode == .steer && pendingAgentQuestion == nil }
     var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
     var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
@@ -1254,7 +1255,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func editQueuedMessage(_ id: UUID) {
-        guard canEditQueue, queueEdit == nil, let item = queuedMessages.first(where: { $0.id == id }) else { return }
+        guard canStartEditingQueuedMessage, let item = queuedMessages.first(where: { $0.id == id }) else { return }
         queueEdit = QueueEdit(id: id, text: item.text, attachments: item.attachments)
     }
 

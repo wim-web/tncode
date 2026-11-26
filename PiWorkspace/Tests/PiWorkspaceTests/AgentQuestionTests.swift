@@ -112,6 +112,14 @@ final class AgentQuestionTests: XCTestCase {
         try await waitFor("Pi to open the thread") { model.phase == .ready || model.error != nil }
         let answered = try await send("Answer questions")
         try await waitFor("prompt receipt") { model.conversation?.composerSubmission == nil }
+        model.draft = "Wait until the question is answered."
+        model.queueDraft()
+        let waiting = try XCTUnwrap(model.queuedMessages.first)
+        XCTAssertFalse(model.canStartEditingQueuedMessage)
+        model.editQueuedMessage(waiting.id)
+        XCTAssertNil(model.editingQueuedMessageID)
+        XCTAssertEqual(model.queuedMessages.first?.text, waiting.text)
+        model.removeQueuedMessage(waiting.id)
         model.draft = "unrelated composer draft"
         let invalid = AgentQuestionReply.Answer(questionID: "1", value: .options([99]))
         model.respond(to: answered, with: .answer([invalid]))
