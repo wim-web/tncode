@@ -80,6 +80,24 @@ struct GitWorkspace: Sendable {
         return folder
     }
 
+    func fetchRemotes() async throws -> [(name: String, url: String)] {
+        let names = try await run(["remote"], outputLimit: 64 * 1024)
+        guard !names.output.truncated else { throw WorkspaceError.invalidOutput(command: "remote") }
+        let listing = try Self.decode(names.output.bytes, command: "remote")
+        var remotes: [(name: String, url: String)] = []
+        for name in listing.split(separator: "\n").map(String.init) {
+            let result = try await run(["remote", "get-url", "--", name], outputLimit: 64 * 1024)
+            guard !result.output.truncated, result.output.bytes.last == 10 else {
+                throw WorkspaceError.invalidOutput(command: "remote get-url")
+            }
+            let url = try Self.decode(result.output.bytes.dropLast(), command: "remote get-url")
+            if !url.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+                remotes.append((name, url))
+            }
+        }
+        return remotes
+    }
+
     func state() async throws -> GitRepositoryState {
         let files = try await changes()
         let head = try await run(["symbolic-ref", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
@@ -124,13 +142,13 @@ struct GitWorkspace: Sendable {
     func patch(for file: GitFileChange?, staged: Bool) async throws -> String {
         let root = try await repositoryRoot()
         var arguments = ["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv"]
-        let result: CommandResult
+        let result: WorkspaceCommand.Capture
 
         if let file, file.isUntracked && !staged {
             arguments += ["--no-index", "--", "/dev/null", "./" + file.path]
             result = try await run(arguments, in: root, outputLimit: Self.patchLimit, acceptedStatuses: [0, 1])
             if result.status == 1 && result.output.bytes.isEmpty {
-                throw result.failure(command: "diff")
+                throw WorkspaceError.commandFailed(command: "diff", status: result.status, message: result.errorMessage)
             }
         } else {
             arguments += ["--no-relative", "--find-renames"]
@@ -316,7 +334,7 @@ struct GitWorkspace: Sendable {
         index: URL? = nil,
         outputLimit: Int? = nil,
         acceptedStatuses: [Int32] = [0]
-    ) async throws -> CommandResult {
+    ) async throws -> WorkspaceCommand.Capture {
         let directory = directory ?? path
         guard !directory.isEmpty else {
             throw WorkspaceError.emptyRepositoryPath
@@ -326,13 +344,8 @@ struct GitWorkspace: Sendable {
         }
 
         let process = Process()
-        let output = Pipe()
-        let errorOutput = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["--no-pager", "--literal-pathspecs", "-C", directory] + arguments
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = errorOutput
 
         var environment = ProcessInfo.processInfo.environment
         if arguments[0] == "init" {
@@ -348,21 +361,57 @@ struct GitWorkspace: Sendable {
         environment["GIT_OPTIONAL_LOCKS"] = "0"
         process.environment = environment
 
-        async let termination = Self.launch(process, output: output, errorOutput: errorOutput)
-        async let stdout = Self.read(output.fileHandleForReading, limit: outputLimit)
-        async let stderr = Self.read(errorOutput.fileHandleForReading, limit: 16 * 1024)
-        let (exit, outputCapture, errorCapture) = try await (termination, stdout, stderr)
-
-        let result = CommandResult(status: exit.status, output: outputCapture, error: errorCapture)
-        if !exit.exitedNormally || !acceptedStatuses.contains(result.status) {
-            throw result.failure(command: arguments[0])
+        let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit)
+        if !result.exitedNormally || !acceptedStatuses.contains(result.status) {
+            throw WorkspaceError.commandFailed(command: arguments[0], status: result.status, message: result.errorMessage)
         }
         return result
     }
+}
 
-    private static func launch(_ process: Process, output: Pipe, errorOutput: Pipe) async throws -> CommandExit {
+enum WorkspaceCommand {
+    struct Output: Sendable {
+        let bytes: Data
+        let truncated: Bool
+    }
+
+    struct Capture: Sendable {
+        let status: Int32
+        let exitedNormally: Bool
+        let output: Output
+        fileprivate let error: Output
+
+        var errorMessage: String {
+            String(decoding: error.bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    static func capture(
+        _ process: Process, outputLimit: Int?, timeout: DispatchTimeInterval? = nil
+    ) async throws -> Capture {
+        let output = Pipe()
+        let errorOutput = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = errorOutput
+
+        async let termination = launch(process, output: output, errorOutput: errorOutput, timeout: timeout)
+        async let stdout = read(output.fileHandleForReading, limit: outputLimit)
+        async let stderr = read(errorOutput.fileHandleForReading, limit: 16 * 1024)
+        let (exit, outputCapture, errorCapture) = try await (termination, stdout, stderr)
+        return Capture(status: exit.status, exitedNormally: exit.exitedNormally,
+                      output: outputCapture, error: errorCapture)
+    }
+
+    private static func launch(
+        _ process: Process, output: Pipe, errorOutput: Pipe, timeout: DispatchTimeInterval?
+    ) async throws -> CommandExit {
         try await withCheckedThrowingContinuation { continuation in
+            let stop = DispatchWorkItem { [weak process] in
+                if let process, process.isRunning { process.terminate() }
+            }
             process.terminationHandler = { process in
+                stop.cancel()
                 continuation.resume(returning: CommandExit(
                     status: process.terminationStatus,
                     exitedNormally: process.terminationReason == .exit
@@ -370,6 +419,9 @@ struct GitWorkspace: Sendable {
             }
             do {
                 try process.run()
+                if let timeout {
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: stop)
+                }
             } catch {
                 process.terminationHandler = nil
                 try? output.fileHandleForWriting.close()
@@ -384,7 +436,7 @@ struct GitWorkspace: Sendable {
         let exitedNormally: Bool
     }
 
-    private static func read(_ handle: FileHandle, limit: Int?) async throws -> OutputCapture {
+    private static func read(_ handle: FileHandle, limit: Int?) async throws -> Output {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 defer { try? handle.close() }
@@ -396,28 +448,14 @@ struct GitWorkspace: Sendable {
                         bytes.append(chunk.prefix(available))
                         truncated = truncated || chunk.count > available
                     }
-                    return OutputCapture(bytes: bytes, truncated: truncated)
+                    return Output(bytes: bytes, truncated: truncated)
                 })
             }
         }
     }
+}
 
-    private struct OutputCapture: Sendable {
-        let bytes: Data
-        let truncated: Bool
-    }
-
-    private struct CommandResult: Sendable {
-        let status: Int32
-        let output: OutputCapture
-        let error: OutputCapture
-
-        func failure(command: String) -> WorkspaceError {
-            let message = String(decoding: error.bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            return .commandFailed(command: command, status: status, message: message)
-        }
-    }
-
+extension GitWorkspace {
     private enum WorkspaceError: LocalizedError {
         case emptyRepositoryPath
         case emptySelection

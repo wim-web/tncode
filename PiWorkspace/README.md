@@ -34,6 +34,9 @@ The macOS app keeps API keys in Keychain. The workspace index and Pi conversatio
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
+6. Open **Pull Requests** in the header to inspect up to 50 pull requests for the selected checkout. Select a state and a PR to see its description, branches, and checks. Use **Refresh pull requests** to reload the list and selected PR. Open the PR or a check with its link.
+
+Pull Requests uses the GitHub CLI (`gh`) on the app's PATH or in a standard Homebrew or MacPorts location. Sign in to GitHub CLI from Terminal before opening the list. The app uses the checkout's GitHub.com `origin` fetch remote or its sole GitHub.com fetch repository.
 
 To open a specific folder when launching a new instance, run:
 
@@ -52,3 +55,19 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --worktree
 ```
 
 Add `--fixture-model` to either verifier command to use fixed streaming replies on loopback without Ollama. The verifier opens the packaged app, uses a disposable Keychain item and an isolated workspace, and saves its report under `dist/verification-*/logs`. The worktree run also exercises the terminal, diff, staging, and committing in a disposable repository.
+
+### Verify pull request reads
+
+From this directory, run the Swift verifier with the mock GitHub CLI. It creates a disposable repository and linked worktree.
+
+```sh
+mkdir -p .build
+swiftc -module-cache-path .build/pr-test-cache \
+    Sources/PiWorkspace/GitWorkspace.swift Sources/PiWorkspace/GitHubPullRequests.swift \
+    scripts/verify-github-pull-requests.swift -o .build/verify-github-pull-requests
+.build/verify-github-pull-requests "$PWD/scripts/fixtures/github-read"
+```
+
+For a packaged-app check, initialize a disposable checkout with fetch remote `git@github.com:fixture/workspace.git`. Launch the app binary with `scripts/fixtures/github-read` on the front of PATH. Pass the checkout with `--project` and a disposable app store with `--workspace`. Set `PI_GH_FIXTURE_STATE` to a file containing `initial`, then replace its contents with `updated` and press Refresh to exercise a changed head and check result.
+
+The accessibility IDs for this flow are `pull-requests`, `pr-checkout`, `pr-repository`, `pr-filter`, `pr-refresh`, `pr-row-42`, `pr-detail-title`, `pr-check-status-0`, `pr-open`, `pr-check-open-0`, and `pr-close`. The Swift verifier checks the fixture link destinations without opening a browser.

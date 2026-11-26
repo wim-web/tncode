@@ -670,6 +670,10 @@ struct WorkspaceView: View {
             .tint(.primary)
             .accessibilityIdentifier("conversation-title")
             Spacer()
+            if !thread.workingLocation.needsWorktree, let directory = model.workingDirectory {
+                PullRequestsButton(directory: directory)
+                    .id(directory)
+            }
             Button {
                 if browserIsVisible {
                     browserPanels[thread.id]?.isVisible = false

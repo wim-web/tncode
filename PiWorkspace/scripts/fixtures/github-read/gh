@@ -1,0 +1,78 @@
+#!/bin/sh
+set -eu
+
+expected_repo="${PI_GH_FIXTURE_REPO:-github.com/fixture/workspace}"
+if [ -n "${PI_GH_FIXTURE_LOG:-}" ]; then
+    printf '%s\n' "$(pwd -P)|$*" >> "$PI_GH_FIXTURE_LOG"
+fi
+
+test "$GH_HOST" = github.com
+test "$GH_PROMPT_DISABLED" = 1
+test "$GH_NO_UPDATE_NOTIFIER" = 1
+test "$GH_NO_EXTENSION_UPDATE_NOTIFIER" = 1
+test -z "${GH_REPO:-}"
+test -z "${GH_DEBUG:-}"
+
+mode=initial
+if [ -n "${PI_GH_FIXTURE_STATE:-}" ]; then
+    mode=$(/bin/cat "$PI_GH_FIXTURE_STATE")
+fi
+case "$mode" in
+    no-auth) printf '%s\n' 'To get started, run gh auth login' >&2; exit 4 ;;
+    forbidden) printf '%s\n' 'HTTP 403: Resource not accessible' >&2; exit 1 ;;
+    network) printf '%s\n' 'dial tcp: lookup api.github.com: no such host' >&2; exit 1 ;;
+    timeout) exec /bin/sleep 30 ;;
+    malformed) printf 'not JSON\n'; exit 0 ;;
+esac
+
+fields=number,title,state,isDraft,author
+case "$*" in
+    "pr list --state open --limit 50 --json $fields --repo $expected_repo")
+        if [ "$mode" = updated ]; then
+            printf '%s\n' '[{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"}}]'
+        else
+            printf '%s\n' '[{"number":42,"title":"Update checkout","state":"OPEN","isDraft":true,"author":{"login":"fixture-author"}},{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null}]'
+        fi
+        ;;
+    "pr list --state merged --limit 50 --json $fields --repo $expected_repo")
+        printf '%s\n' '[{"number":41,"title":"Previous change","state":"MERGED","isDraft":false,"author":null}]'
+        ;;
+    "pr list --state closed --limit 50 --json $fields --repo $expected_repo")
+        printf '[]\n'
+        ;;
+    "pr list --state all --limit 50 --json $fields --repo $expected_repo")
+        printf '%s\n' '[{"number":42,"title":"Update checkout","state":"OPEN","isDraft":true,"author":{"login":"fixture-author"}},{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null},{"number":41,"title":"Previous change","state":"MERGED","isDraft":false,"author":null}]'
+        ;;
+    "pr view 42 --json $fields,headRefName,baseRefName,body,statusCheckRollup --repo $expected_repo")
+        if [ "$mode" = missing ]; then
+            printf '%s\n' "GraphQL: Could not resolve to a PullRequest with the number of 42." >&2
+            exit 1
+        fi
+        if [ "$mode" = updated ]; then
+            printf '%s\n' '{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"},"headRefName":"new-head","baseRefName":"main","body":"Fixture description","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://checks.example.invalid/build-new"}]}'
+        else
+            /bin/cat <<'JSON'
+{
+  "number": 42,
+  "title": "Update checkout",
+  "state": "OPEN",
+  "isDraft": true,
+  "author": { "login": "fixture-author" },
+  "headRefName": "fixture-branch",
+  "baseRefName": "main",
+  "body": "Fixture description",
+  "statusCheckRollup": [
+    { "__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "FAILURE", "workflowName": "CI", "detailsUrl": "https://checks.example.invalid/build" },
+    { "__typename": "StatusContext", "context": "deploy / preview", "state": "PENDING", "targetUrl": "https://checks.example.invalid/preview" },
+    { "__typename": "CheckRun", "name": "unit", "status": "IN_PROGRESS", "conclusion": "", "detailsUrl": "" },
+    { "__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "file:///tmp/fixture" }
+  ]
+}
+JSON
+        fi
+        ;;
+    "pr view 43 --json $fields,headRefName,baseRefName,body,statusCheckRollup --repo $expected_repo")
+        printf '%s\n' '{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null,"headRefName":"new-branch","baseRefName":"main","body":"","statusCheckRollup":null}'
+        ;;
+    *) printf '%s\n' "Unexpected mock gh arguments: $*" >&2; exit 64 ;;
+esac
