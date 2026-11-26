@@ -61,30 +61,43 @@ final class SettingsNavigationTests: XCTestCase {
         defer { fixture.window.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
 
-        let search = try await fixture.typeQuery("no setting matches this")
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        try await fixture.until("Settings opens with keyboard focus in search") {
+            search.currentEditor() != nil && search.currentEditor() === fixture.window.firstResponder
+        }
+        try await fixture.typeQuery("no setting matches this", in: search)
         try await fixture.key(kVK_Return, "\r")
         XCTAssertEqual((search.currentEditor() as? NSTextView)?.string, "no setting matches this")
         try await fixture.key(kVK_Escape, "\u{1b}")
         try await fixture.until("Escape clears search") { search.stringValue.isEmpty }
 
-        _ = try await fixture.typeQuery("model id")
+        try await fixture.typeQuery("model id", in: search)
         try await fixture.key(kVK_Return, "\r")
         let modelID = try await fixture.waitForField("project model ID") { $0.stringValue == "local-override" }
         try await fixture.until("Return focuses the project model ID") {
             modelID.currentEditor() != nil && modelID.currentEditor() === fixture.window.firstResponder
         }
-        try fixture.edit(modelID, text: "unsaved-model")
+        try XCTUnwrap(fixture.window.firstResponder as? NSTextView).selectAll(nil)
+        fixture.window.sendEvent(try fixture.event(kVK_ANSI_X, "x"))
+        XCTAssertEqual(modelID.stringValue, "x")
+        XCTAssertEqual(search.stringValue, "")
 
-        _ = try await fixture.typeQuery("settings")
+        try await fixture.typeQuery("settings", in: search)
         try await fixture.key(kVK_UpArrow)
         try await fixture.key(kVK_Return, "\r")
         let field = try await fixture.waitForField("custom search URL") { $0.stringValue == "https://example.test/?q=%s" }
+        try await fixture.until("Return focuses the custom search URL") {
+            field.currentEditor() != nil && field.currentEditor() === fixture.window.firstResponder
+        }
         XCTAssertEqual(BrowserSearchSettings.load(from: fixture.defaults).customURL, field.stringValue)
 
-        _ = try await fixture.typeQuery("provider credentials")
+        try await fixture.typeQuery("provider credentials", in: search)
         try await fixture.key(kVK_Return, "\r")
-        _ = try await fixture.waitForField("API key") { $0 is NSSecureTextField }
-        _ = try await fixture.waitForField("unsaved project model ID") { $0.stringValue == "unsaved-model" }
+        let apiKey = try await fixture.waitForField("API key") { $0 is NSSecureTextField }
+        try await fixture.until("Return focuses the secure API key") {
+            apiKey.currentEditor() != nil && apiKey.currentEditor() === fixture.window.firstResponder
+        }
+        _ = try await fixture.waitForField("unsaved project model ID") { $0.stringValue == "x" }
 
         let saved = try JSONDecoder().decode(
             Workspace.self, from: Data(contentsOf: fixture.root.appendingPathComponent("workspace.json"))
@@ -136,29 +149,27 @@ final class SettingsNavigationTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        func typeQuery(_ query: String) async throws -> NSTextField {
-            let field = try await waitForField("settings search") { $0.placeholderString == "Search settings" }
-            XCTAssertTrue(window.makeFirstResponder(field))
+        func typeQuery(_ query: String, in field: NSTextField) async throws {
             try await key(kVK_ANSI_F, "f", modifiers: .command)
-            try edit(field, text: query)
+            try await until("Command-F focuses settings search") {
+                field.currentEditor() != nil && field.currentEditor() === window.firstResponder
+            }
+            let editor = try XCTUnwrap(window.firstResponder as? NSTextView)
+            editor.insertText(query, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
             try await Task.sleep(for: .milliseconds(25))
-            return field
-        }
-
-        func edit(_ field: NSTextField, text: String) throws {
-            XCTAssertTrue(window.makeFirstResponder(field))
-            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
-            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
         }
 
         func key(_ code: Int, _ characters: String = "", modifiers: NSEvent.ModifierFlags = []) async throws {
-            let event = try XCTUnwrap(NSEvent.keyEvent(
+            NSApplication.shared.sendEvent(try event(code, characters, modifiers: modifiers))
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        func event(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, characters: characters,
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(code)
             ))
-            NSApplication.shared.sendEvent(event)
-            try await Task.sleep(for: .milliseconds(25))
         }
 
         func waitForField(_ name: String, _ matches: @escaping (NSTextField) -> Bool) async throws -> NSTextField {

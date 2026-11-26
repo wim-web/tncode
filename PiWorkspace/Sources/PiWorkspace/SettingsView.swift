@@ -88,13 +88,12 @@ struct SettingsView: View {
                         }
                     }
                     .task(id: jump) {
-                        guard let jump else { return }
                         await Task.yield()
                         guard !Task.isCancelled else { return }
-                        if let anchor = jump.anchor {
+                        if let anchor = jump?.anchor {
                             reader.scrollTo(anchor)
                         } else {
-                            focus = .heading
+                            focus = jump == nil ? .search : .heading
                         }
                     }
                 }
@@ -105,8 +104,6 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings")
         .environment(\.settingsJump, jump)
-        .defaultFocus($focus, .search)
-        .onAppear { if jump == nil { focus = .search } }
         .background { WindowKeyMonitor(handle: handleKey) }
     }
 
@@ -212,6 +209,7 @@ struct SettingsView: View {
     }
 
     private func navigate(to page: SettingsPage, anchor: SettingsAnchor? = nil) {
+        focus = nil
         search.query = ""
         self.page = page
         showingLicenses = anchor == .licenses
