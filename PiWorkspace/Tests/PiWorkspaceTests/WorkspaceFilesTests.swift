@@ -406,6 +406,16 @@ final class WorkspaceFilesTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(textView(sourceID)).isEditable)
     }
 
+    func testQuotedCSVFieldCanResolveAnAmbiguousDelimiter() throws {
+        let prices = "\"Artikel\";Preis, EUR;Menge\n\"Apfel\";1,25;2"
+        let table = try WorkspaceDelimitedTable(text: prices, delimiter: .comma)
+        XCTAssertEqual(table.rows, [["Artikel", "Preis, EUR", "Menge"], ["Apfel", "1,25", "2"]])
+        let ordinary = try WorkspaceDelimitedTable(text: "Name,Note\nApple,\"a;b,c\"", delimiter: .comma)
+        XCTAssertEqual(ordinary.rows, [["Name", "Note"], ["Apple", "a;b,c"]])
+        XCTAssertThrowsError(try WorkspaceDelimitedTable(text: "A,B\n\"price\"invalid,2", delimiter: .comma))
+        XCTAssertThrowsError(try WorkspaceDelimitedTable(text: prices, delimiter: .tab))
+    }
+
     @MainActor
     func testDelimitedTableRendersCellsAndRefreshesAfterParseFailureOffscreen() async throws {
         let root = try makeFixture()

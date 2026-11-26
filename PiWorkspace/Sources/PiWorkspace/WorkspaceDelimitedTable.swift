@@ -9,12 +9,12 @@ struct WorkspaceDelimitedTable: Sendable {
 
     enum ParseError: LocalizedError {
         case unclosedQuote(row: Int)
-        case charactersAfterQuote(row: Int)
+        case charactersAfterQuote(row: Int, byte: UInt8)
 
         var errorDescription: String? {
             switch self {
             case .unclosedQuote(let row): "Unclosed quoted field in row \(row)."
-            case .charactersAfterQuote(let row): "Unexpected characters after a quoted field in row \(row)."
+            case .charactersAfterQuote(let row, _): "Unexpected characters after a quoted field in row \(row)."
             }
         }
     }
@@ -34,6 +34,19 @@ struct WorkspaceDelimitedTable: Sendable {
         let bytes = Array(text.utf8)
         let start = bytes.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0
         let separator = delimiter == .comma ? Self.csvDelimiter(bytes[start...]) : delimiter
+        do {
+            self = try Self(bytes: bytes, start: start, separator: separator)
+        } catch let original as ParseError {
+            guard delimiter == .comma, case let .charactersAfterQuote(_, byte) = original,
+                  let alternate = Delimiter(rawValue: byte), alternate == .comma || alternate == .semicolon else {
+                throw original
+            }
+            do { self = try Self(bytes: bytes, start: start, separator: alternate) }
+            catch is ParseError { throw original }
+        }
+    }
+
+    private init(bytes: [UInt8], start: Int, separator: Delimiter) throws {
         var index = start
         var recordStart = start
         var field = Field.unquoted
@@ -82,7 +95,7 @@ struct WorkspaceDelimitedTable: Sendable {
                 if byte == 13, index < bytes.count, bytes[index] == 10 { index += 1 }
                 recordStart = index
             } else {
-                guard field != .closedQuote else { throw ParseError.charactersAfterQuote(row: rows.count + 1) }
+                guard field != .closedQuote else { throw ParseError.charactersAfterQuote(row: rows.count + 1, byte: byte) }
                 cell.append(byte)
             }
         }
