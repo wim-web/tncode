@@ -136,7 +136,23 @@ final class AppearanceSettingsTests: XCTestCase {
         try await assertWidth(710, in: host) { composer()?.superview }
         let draftComposer = try XCTUnwrap(composer())
         XCTAssertTrue(window.makeFirstResponder(draftComposer))
-        let editor = try XCTUnwrap(draftComposer.currentEditor())
+        let editor = try XCTUnwrap(draftComposer.currentEditor() as? NSTextView)
+        let caret = NSRange(location: 4, length: 0)
+        editor.setSelectedRange(caret)
+        let draftFrames: [(viewport: CGFloat, x: CGFloat, width: CGFloat)] = [
+            (1080, 318, 701), (900, 318, 521), (1440, 493.5, 710), (1080, 318, 701),
+        ]
+        for sample in draftFrames {
+            window.setContentSize(NSSize(width: sample.viewport, height: 720))
+            try await assertWidth(sample.width, in: host, view: composer)
+            let frame = host.convert(draftComposer.bounds, from: draftComposer)
+            XCTAssertEqual(frame.minX, sample.x, accuracy: 0.5)
+            XCTAssertEqual(host.isFlipped ? frame.minY : host.bounds.height - frame.maxY, 317.3, accuracy: 0.5)
+            XCTAssertEqual(frame.height, 53.5, accuracy: 0.5)
+            XCTAssertTrue(window.firstResponder === editor)
+            XCTAssertEqual(editor.selectedRange(), caret)
+        }
+        window.setContentSize(NSSize(width: 1680, height: 720))
         for (mode, width) in [(ChatWidth.comfortable, 710.0), (.wide, 1126.0), (.full, 1301.0)] {
             settings.chatWidth = mode
             try await assertWidth(width, in: host) { composer()?.superview }

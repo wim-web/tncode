@@ -169,6 +169,8 @@ final class ComposerAttachmentTests: XCTestCase {
         let opener = "preview-queued-attachment-\(queue.id)-\(queuedImages[0].id)"
         try await ui.press(opener)
         try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        let copiedQueuedImage = try await ui.copyImage("expanded-attachment-\(queuedImages[0].id)")
+        XCTAssertEqual(copiedQueuedImage, png)
         try await ui.focused("close-image-preview")
         try await ui.press("previous-image-preview")
         try await ui.visible("expanded-attachment-\(queuedImages[1].id)")
@@ -321,8 +323,12 @@ final class ComposerAttachmentTests: XCTestCase {
             defer { ui.close() }
             try await ui.press("sent-attachment-\(added)")
             try await ui.visible("expanded-attachment-\(added)")
+            let copiedRed = try await ui.copyImage("expanded-attachment-\(added)")
+            XCTAssertEqual(copiedRed, try Data(contentsOf: first))
             try ui.key(kVK_RightArrow, "\u{f703}")
             try await ui.visible("expanded-attachment-\(kept)")
+            let copiedBlue = try await ui.copyImage("expanded-attachment-\(kept)")
+            XCTAssertEqual(copiedBlue, try Data(contentsOf: second))
             try await ui.press("close-image-preview")
             try await ui.hidden("attachment-image-preview")
         }
@@ -505,11 +511,14 @@ private final class OffscreenPreviewWorkspace {
         try await waitFor("focus on \(id)") { self.element(id)?.isAccessibilityFocused?() == true }
     }
 
-    func copyImage(_ id: String) async throws {
+    @discardableResult
+    func copyImage(_ id: String) async throws -> Data {
+        pasteboard.clearContents()
         let actions = try XCTUnwrap(element(id)?.accessibilityCustomActions?())
         let action = try XCTUnwrap(actions.first { $0.name == "Copy Image" })
         XCTAssertEqual(action.handler?(), true)
         try await waitFor("PNG on the isolated pasteboard") { self.pasteboard.data(forType: .png) != nil }
+        return try XCTUnwrap(pasteboard.data(forType: .png))
     }
 
     private func waitFor(_ id: String, _ predicate: () -> Bool) async throws {
