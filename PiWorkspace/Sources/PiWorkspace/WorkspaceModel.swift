@@ -134,21 +134,24 @@ final class WorkspaceModel: ObservableObject {
         return nil
     }
 
-    func attachFiles(_ urls: [URL], in threadID: UUID, replacing attachmentID: UUID? = nil) {
-        editAttachments(in: threadID) { attachments, key in
+    @discardableResult
+    func attach(_ inputs: [ComposerAttachmentInput], to target: ComposerAttachmentTarget,
+                replacing attachmentID: UUID? = nil) -> Bool {
+        editAttachments(in: target) { attachments, settings in
+            let key = try readCredential(((try? settings.validated()) ?? settings).account)
             let replacement = attachmentID.flatMap { id in attachments.firstIndex { $0.id == id } }
             guard attachmentID == nil || replacement != nil else { return }
-            for url in urls {
+            for input in inputs {
                 guard replacement != nil || attachments.count < ComposerAttachment.maxCount else {
                     throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
                 }
-                let name = url.lastPathComponent
+                let name = input.name
                 if let key, !key.isEmpty, name.contains(key) {
                     throw WorkspaceError("Enter your API key in Model Settings.")
                 }
                 let payload: ComposerAttachment.Payload?
                 do {
-                    payload = try ComposerAttachment.payload(for: ComposerAttachment.read(url))
+                    payload = try input.load()
                 } catch {
                     self.error = "\(name): \(error.localizedDescription)"
                     payload = nil
@@ -164,8 +167,8 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    func removeAttachment(_ id: UUID, in threadID: UUID) {
-        editAttachments(in: threadID) { attachments, _ in attachments.removeAll { $0.id == id } }
+    func removeAttachment(_ id: UUID, in target: ComposerAttachmentTarget) {
+        _ = editAttachments(in: target) { attachments, _ in attachments.removeAll { $0.id == id } }
     }
 
     private static func validateAttachment(_ payload: ComposerAttachment.Payload?, key: String?,
@@ -178,24 +181,32 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func editAttachments(in threadID: UUID, _ edit: (inout [ComposerAttachment], String?) throws -> Void) {
-        guard canEditAttachments, let conversation, conversation.id == threadID else { return }
-        var attachments = composerAttachments
-        error = nil
-        do {
-            let key = try readCredential(effectiveModel.account)
-            // Commit files already accepted when a later file exceeds a limit.
-            do { try edit(&attachments, key) }
-            catch { self.error = error.localizedDescription }
-            let updated = attachments.isEmpty ? nil : attachments
-            if queueEdit != nil {
-                queueEdit?.attachments = updated
-            } else if attachments != composerAttachments {
-                try saveThread(threadID) { $0.composerAttachments = updated }
-            }
-        } catch {
-            self.error = error.localizedDescription
+    private func editAttachments(in target: ComposerAttachmentTarget,
+                                 _ edit: (inout [ComposerAttachment], ModelSettings) throws -> Void) -> Bool {
+        guard let p = workspace.projects.firstIndex(where: {
+            $0.detached != true && $0.conversations.contains { $0.id == target.threadID }
+        }), let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == target.threadID }) else { return false }
+        let project = workspace.projects[p]
+        let thread = project.conversations[t]
+        guard !thread.archived, thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
+        if let id = target.queueID {
+            guard conversation?.id == thread.id, queueEdit?.id == id else { return false }
         }
+        let original = target.queueID == nil ? thread.composerAttachments ?? [] : queueEdit?.attachments ?? []
+        var attachments = original
+        error = nil
+        do { try edit(&attachments, project.modelOverride ?? workspace.model) }
+        catch { self.error = error.localizedDescription }
+        guard attachments != original else { return false }
+        let updated = attachments.isEmpty ? nil : attachments
+        if target.queueID != nil {
+            queueEdit?.attachments = updated
+        } else {
+            workspace.projects[p].conversations[t].composerAttachments = updated
+            composerDirty = true
+            savePendingComposer()
+        }
+        return true
     }
     var queuedMessages: [QueuedMessage] {
         guard let queue = conversation?.queuedMessages, !queue.isEmpty else { return [] }
@@ -1432,10 +1443,12 @@ final class WorkspaceModel: ObservableObject {
         case let .inputMode(turnID, mode):
             guard activeTurnID == turnID, phase == .running else { return }
             queueDelivery.mode = mode
-        case let .queueRejected(turnID, queuedID):
+        case let .queueRejected(turnID, queuedID, reason):
             guard activeTurnID == turnID, queueDelivery.inFlight.remove(queuedID) != nil else { return }
             queueDelivery.paused = true
-            if phase == .running { error = "The turn reached a different stage. The message stayed in the queue." }
+            if phase == .running {
+                error = (reason ?? "The turn reached a different stage.") + " The message stayed in the queue."
+            }
         case let .compactionSkipped(turnID, queuedID):
             guard activeTurnID == turnID, phase == .running, queueDelivery.inFlight.contains(queuedID) else { return }
             queueDelivery.skipAfterTurn = queuedID

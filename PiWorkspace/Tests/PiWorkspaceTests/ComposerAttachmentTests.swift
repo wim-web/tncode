@@ -17,7 +17,7 @@ final class ComposerAttachmentTests: XCTestCase {
             try model.openProject(fixture.root)
             fixture.worker.onEvent?(.ready([]))
             threadID = try XCTUnwrap(model.conversation?.id)
-            model.attachFiles([missing], in: threadID)
+            model.attach([.file(missing)], to: ComposerAttachmentTarget(threadID: threadID))
             attachmentID = try XCTUnwrap(model.composerAttachments.first?.id)
             XCTAssertFalse(model.canSend)
             XCTAssertTrue(model.terminate())
@@ -29,7 +29,7 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertEqual(model.conversation?.id, threadID)
         XCTAssertEqual(model.composerAttachments.first?.id, attachmentID)
         XCTAssertFalse(model.canSend)
-        model.attachFiles([replacement], in: threadID, replacing: attachmentID)
+        model.attach([.file(replacement)], to: ComposerAttachmentTarget(threadID: threadID), replacing: attachmentID)
         XCTAssertEqual(model.composerAttachments.first?.id, attachmentID)
         XCTAssertEqual(model.composerAttachments.first?.name, "replacement.txt")
         XCTAssertTrue(model.canSend)
@@ -46,7 +46,7 @@ final class ComposerAttachmentTests: XCTestCase {
         let sameText = ChatMessage(id: "prior", role: .user, text: "Same prompt")
         fixture.worker.onEvent?(.ready([sameText]))
         model.draft = sameText.text
-        model.attachFiles([url], in: threadID)
+        model.attach([.file(url)], to: ComposerAttachmentTarget(threadID: threadID))
         model.send()
         let first = try XCTUnwrap(fixture.worker.prompt)
         let falseReceipt = ChatMessage(id: "intervening", role: .user, text: sameText.text, submissionID: UUID())
@@ -64,6 +64,47 @@ final class ComposerAttachmentTests: XCTestCase {
         fixture.worker.onEvent?(.ready([sameText, falseReceipt, recorded]))
         XCTAssertTrue(model.composerAttachments.isEmpty)
         XCTAssertFalse(model.canSend)
+    }
+
+    func testRowTargetAndQueueEditorKeepSeparateAttachmentOwners() async throws {
+        let fixture = try Fixture()
+        let firstFile = fixture.root.appendingPathComponent("first.txt")
+        let secondFile = fixture.root.appendingPathComponent("second.txt")
+        try Data("First draft bytes".utf8).write(to: firstFile)
+        try Data("Second draft bytes".utf8).write(to: secondFile)
+        let model = fixture.open()
+        try model.openProject(fixture.root)
+        let project = try XCTUnwrap(model.project?.id)
+        let first = ComposerAttachmentTarget(threadID: try XCTUnwrap(model.conversation?.id))
+        XCTAssertTrue(model.attach([.file(firstFile)], to: first))
+        model.addConversation()
+        let second = ComposerAttachmentTarget(threadID: try XCTUnwrap(model.conversation?.id))
+        XCTAssertNotEqual(first.threadID, second.threadID)
+        XCTAssertTrue(model.attach([.file(secondFile)], to: first))
+        XCTAssertTrue(model.composerAttachments.isEmpty)
+        model.selectConversation(first.threadID, in: project)
+        fixture.worker.onEvent?(.ready([]))
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["first.txt", "second.txt"])
+
+        model.send()
+        let active = try XCTUnwrap(fixture.worker.prompt)
+        let sent = ChatMessage(id: "sent", role: .user, text: "", submissionID: active.submissionID)
+        fixture.worker.onEvent?(.history([sent]))
+        fixture.worker.onEvent?(.inputMode(turnID: active.turnID, .steer))
+        XCTAssertTrue(model.attach([.file(firstFile)], to: first))
+        model.queueDraft(steering: true)
+        let steer = try XCTUnwrap(fixture.worker.steer)
+        XCTAssertEqual(steer.attachments?.map(\.name), ["first.txt"])
+        fixture.worker.onEvent?(.queueRejected(turnID: active.turnID, queuedID: steer.queuedID))
+        XCTAssertEqual(model.queuedMessages.first?.attachments, steer.attachments)
+        XCTAssertTrue(model.attach([.file(secondFile)], to: first))
+        model.editQueuedMessage(steer.queuedID)
+        let queueTarget = ComposerAttachmentTarget(threadID: first.threadID, queueID: steer.queuedID)
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["first.txt"])
+        model.cancelQueuedMessageEdit()
+        XCTAssertFalse(model.attach([.file(firstFile)], to: queueTarget))
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["second.txt"])
+        XCTAssertEqual(model.queuedMessages.first?.attachments, steer.attachments)
     }
 
     func testSelectedAttachmentsReachPinnedSDK() async throws {
@@ -97,7 +138,7 @@ final class ComposerAttachmentTests: XCTestCase {
             await wait(for: .ready, in: model)
             XCTAssertTrue(model.supportsImageInput)
             threadID = try XCTUnwrap(model.conversation?.id)
-            model.attachFiles([first, second, note], in: threadID)
+            model.attach([first, second, note].map(ComposerAttachmentInput.file), to: ComposerAttachmentTarget(threadID: threadID))
             let attachments = model.composerAttachments
             XCTAssertEqual(attachments.map(\.name), ["same.png", "same.png", "note.txt"])
             removed = try XCTUnwrap(attachments.first?.id)
@@ -106,7 +147,7 @@ final class ComposerAttachmentTests: XCTestCase {
             XCTAssertEqual(attachments[0].payload?.data, try Data(contentsOf: first))
             XCTAssertEqual(attachments[1].payload?.data, try Data(contentsOf: second))
             XCTAssertNotEqual(try previewColor(attachments[0]), try previewColor(attachments[1]))
-            model.removeAttachment(removed, in: threadID)
+            model.removeAttachment(removed, in: ComposerAttachmentTarget(threadID: threadID))
             XCTAssertTrue(model.terminate())
         }
 
@@ -137,7 +178,7 @@ final class ComposerAttachmentTests: XCTestCase {
         textOnly.localImages = false
         try model.applySettings(textOnly, in: .workspace, newKey: "", removeKey: false)
         await wait(for: .ready, in: model)
-        model.attachFiles([first], in: threadID)
+        model.attach([.file(first)], to: ComposerAttachmentTarget(threadID: threadID))
         XCTAssertFalse(model.supportsImageInput)
         XCTAssertFalse(model.canSend)
         XCTAssertNotNil(model.attachmentSendError)
@@ -181,9 +222,11 @@ final class ComposerAttachmentTests: XCTestCase {
         var onEvent: ((PiEvent) -> Void)?
         var onClose: (() -> Void)?
         var prompt: SendPrompt?
+        var steer: SendQueuedInput?
 
         func send(_ command: any Encodable) throws {
             if let command = command as? SendPrompt { prompt = command }
+            if let command = command as? SendQueuedInput { steer = command }
         }
 
         func close() {}

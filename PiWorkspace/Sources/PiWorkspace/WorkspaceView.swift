@@ -55,6 +55,8 @@ struct WorkspaceView: View {
     @FocusState private var focusedComposer: UUID?
     @State private var focusAfterPicker = false
     @State private var targetingProjectDrop = false
+    @State private var targetingAttachmentRow: UUID?
+    @State private var targetingComposerDrop = false
 
     private enum RenameTarget {
         case project(UUID)
@@ -409,7 +411,7 @@ struct WorkspaceView: View {
         }
         .contentShape(Rectangle())
         .overlay {
-            if targetingProjectDrop && !model.operationsInProgress {
+            if targetingProjectDrop && targetingAttachmentRow == nil && !model.operationsInProgress {
                 Label("Drop folders to add projects", systemImage: "folder.badge.plus")
                     .font(.callout.weight(.medium))
                     .multilineTextAlignment(.center)
@@ -617,6 +619,8 @@ struct WorkspaceView: View {
     private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
+        let acceptsAttachments = !link.thread.archived && link.thread.worktreeLaunch == nil &&
+            link.thread.composerSubmission == nil && (!model.operationsInProgress || selected)
         return Button {
             openThread(link)
         } label: {
@@ -638,7 +642,7 @@ struct WorkspaceView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 9)
             .padding(.vertical, showProject ? 8 : 6)
-            .background(emphasized ? accent.opacity(0.18) : .clear,
+            .background(emphasized || targetingAttachmentRow == link.id ? accent.opacity(0.18) : .clear,
                         in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
         }
@@ -647,6 +651,24 @@ struct WorkspaceView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project) }
+        .dropDestination(for: ComposerAttachmentInput.self) { items, _ in
+            let folders = items.compactMap { item -> URL? in
+                guard case .file(let url) = item,
+                      (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
+                return url
+            }
+            if !folders.isEmpty && folders.count == items.count && !model.operationsInProgress {
+                return openDroppedProjects(folders)
+            }
+            guard acceptsAttachments, model.attach(items, to: ComposerAttachmentTarget(threadID: link.id)) else {
+                return false
+            }
+            openThread(link)
+            return true
+        } isTargeted: { targeted in
+            if targeted && acceptsAttachments { targetingAttachmentRow = link.id }
+            else if targetingAttachmentRow == link.id { targetingAttachmentRow = nil }
+        }
     }
 
     @ViewBuilder
@@ -1151,6 +1173,7 @@ struct WorkspaceView: View {
                             messageRow(message.text, role: message.role, attachments: message.attachments ?? [])
                                 .background(isMatch ? accent.opacity(0.18) : .clear,
                                             in: RoundedRectangle(cornerRadius: 11))
+                                .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
                                 .accessibilityAddTraits(isMatch ? .isSelected : [])
                             if message.canFork == true && !thread.archived {
@@ -1310,7 +1333,8 @@ struct WorkspaceView: View {
     }
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let target = ComposerAttachmentTarget(threadID: threadID, queueID: model.editingQueuedMessageID)
+        return VStack(alignment: .leading, spacing: 0) {
             ComposerAttachmentsView(model: model, threadID: threadID)
                 .id(threadID)
                 .padding(.bottom, 6)
@@ -1347,7 +1371,35 @@ struct WorkspaceView: View {
         }
         .padding(WorkspaceLayout.editorInset)
         .background(surface, in: RoundedRectangle(cornerRadius: 15))
-        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(.primary.opacity(0.11)).allowsHitTesting(false) }
+        .overlay {
+            RoundedRectangle(cornerRadius: 15)
+                .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(0.11))
+                .allowsHitTesting(false)
+        }
+        .dropDestination(for: ComposerAttachmentInput.self) { items, _ in
+            guard model.canEditAttachments else { return false }
+            return model.attach(items, to: target)
+        } isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments }
+        .onPasteCommand(of: ComposerAttachmentInput.contentTypes) { providers in
+            guard model.canEditAttachments else { return }
+            Task {
+                var items: [ComposerAttachmentInput] = []
+                for provider in providers.prefix(ComposerAttachment.maxCount + 1) {
+                    let loaded = await withCheckedContinuation { continuation in
+                        _ = provider.loadTransferable(type: ComposerAttachmentInput.self) { result in
+                            continuation.resume(returning: result)
+                        }
+                    }
+                    if case .success(let item) = loaded { items.append(item) }
+                }
+                let attached = !items.isEmpty && model.attach(items, to: target)
+                if model.error == nil && items.count < min(providers.count, ComposerAttachment.maxCount + 1) {
+                    model.error = "Some pasted files or images could not be read."
+                } else if !attached && !items.isEmpty && model.error == nil {
+                    model.error = "The attachment target is no longer editable."
+                }
+            }
+        }
     }
 
     private func composerConfiguration(_ project: Project) -> some View {

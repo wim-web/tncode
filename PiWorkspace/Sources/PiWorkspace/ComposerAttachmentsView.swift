@@ -6,9 +6,14 @@ struct ComposerAttachmentsView: View {
     let threadID: UUID
     @State private var choosingFiles = false
     @State private var replacementID: UUID?
+    @State private var pickerTarget: ComposerAttachmentTarget?
     @State private var preview: ComposerAttachment?
+    private var target: ComposerAttachmentTarget {
+        ComposerAttachmentTarget(threadID: threadID, queueID: model.editingQueuedMessageID)
+    }
 
     var body: some View {
+        let pasteTarget = target
         VStack(alignment: .leading, spacing: 6) {
             if !model.composerAttachments.isEmpty {
                 ScrollView(.horizontal) {
@@ -28,6 +33,13 @@ struct ComposerAttachmentsView: View {
                 }
                 .accessibilityIdentifier("attach-files")
                 .disabled(!model.canEditAttachments)
+                PasteButton(payloadType: ComposerAttachmentInput.self) {
+                    model.attach($0, to: pasteTarget)
+                }
+                .help("Paste files or images")
+                .accessibilityLabel("Paste files or images")
+                .accessibilityIdentifier("paste-attachments")
+                .disabled(!model.canEditAttachments)
                 if let error = model.attachmentSendError {
                     Text(error)
                         .foregroundStyle(.red)
@@ -40,7 +52,9 @@ struct ComposerAttachmentsView: View {
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.item],
                       allowsMultipleSelection: replacementID == nil) { result in
             switch result {
-            case .success(let urls): model.attachFiles(urls, in: threadID, replacing: replacementID)
+            case .success(let urls):
+                guard let pickerTarget else { return }
+                model.attach(urls.map(ComposerAttachmentInput.file), to: pickerTarget, replacing: replacementID)
             case .failure(let error): model.error = error.localizedDescription
             }
         }
@@ -68,6 +82,7 @@ struct ComposerAttachmentsView: View {
     }
 
     private func chooseFiles(replacing id: UUID?) {
+        pickerTarget = target
         replacementID = id
         choosingFiles = true
     }
@@ -101,7 +116,7 @@ struct ComposerAttachmentsView: View {
                 }
             }
             Button {
-                model.removeAttachment(attachment.id, in: threadID)
+                model.removeAttachment(attachment.id, in: target)
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }

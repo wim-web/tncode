@@ -145,7 +145,7 @@ function supportsImages() {
   return session.model?.input.includes("image") === true;
 }
 
-async function prepareInput(text, attachments = []) {
+function prepareInput(text, attachments = []) {
   if (typeof text !== "string" || !Array.isArray(attachments) || attachments.length > 10 ||
       (!text.trim() && !attachments.length)) {
     throw new Error("Enter a message or attach up to 10 files.");
@@ -186,10 +186,7 @@ async function prepareInput(text, attachments = []) {
       if (limits?.maxPerMessage && images.length >= limits.maxPerMessage) {
         throw new Error(`This model accepts up to ${limits.maxPerMessage} images per message.`);
       }
-      const resized = await resizeImage(decoded, mimeType, limits?.resize);
-      if (!resized) throw new Error(`Could not prepare image ${JSON.stringify(safeName)}.`);
-      images.push({ type: "image", mimeType: resized.mimeType, data: resized.data });
-      parts.push(formatDimensionNote(resized));
+      images.push({ name: safeName, decoded, mimeType });
     } else {
       throw new Error("Choose a PNG, JPEG, or UTF-8 text file.");
     }
@@ -201,6 +198,18 @@ async function prepareInput(text, attachments = []) {
     images,
     input: metadata.length ? { text: redact(text), attachments: metadata } : undefined,
   };
+}
+
+async function prepareImages(prepared) {
+  const images = [];
+  const parts = [prepared.prompt];
+  for (const { name, decoded, mimeType } of prepared.images) {
+    const resized = await resizeImage(decoded, mimeType, session.model?.inputLimits?.images?.resize);
+    if (!resized) throw new Error(`Could not prepare image ${JSON.stringify(name)}.`);
+    images.push({ type: "image", mimeType: resized.mimeType, data: resized.data });
+    parts.push(formatDimensionNote(resized));
+  }
+  return { ...prepared, images, prompt: parts.filter(Boolean).join("\n\n") };
 }
 
 function localModel(runtime, config) {
@@ -374,8 +383,12 @@ async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, at
     }
     let prepared;
     if (!error) {
-      try { prepared = await prepareInput(text, attachments); }
-      catch (inputError) { error = inputError.message; }
+      try {
+        const input = prepareInput(text, attachments);
+        prepared = input.images.length ? await prepareImages(input) : input;
+      } catch (inputError) {
+        error = inputError.message;
+      }
     }
     if (prepared && !run.cancelled) {
       run.receipt = { queuedID, submissionID, input: prepared.input };
@@ -412,7 +425,7 @@ function setInputMode(mode) {
 
 function handleQueuedInput({ type, turnID, queuedID, text, attachments }) {
   if (!validID(turnID) || !validID(queuedID)) return;
-  const reject = () => emit({ type: "queueRejected", turnID, queuedID });
+  const reject = (error) => emit({ type: "queueRejected", turnID, queuedID, error });
   if (active?.id !== turnID || active.cancelled) return reject();
   if (type === "skipCompaction") {
     if (active.mode !== "compacting" || !session.isCompacting) return reject();
@@ -423,19 +436,27 @@ function handleQueuedInput({ type, turnID, queuedID, text, attachments }) {
   }
   if (active.mode !== "steer" || !session.agent.state.isStreaming) return reject();
   const run = active;
-  const deliver = () => steer(run, queuedID, text, attachments, reject);
-  run.steering = (run.steering ?? Promise.resolve()).then(deliver);
-}
-
-async function steer(run, queuedID, text, attachments, reject) {
   let prepared;
-  try { prepared = await prepareInput(text, attachments); }
-  catch { return reject(); }
-  if (active !== run || run.cancelled || run.mode !== "steer" || !session.agent.state.isStreaming) return reject();
-  const content = prepared.prompt ? [{ type: "text", text: prepared.prompt }, ...prepared.images] : prepared.images;
-  const message = { role: "user", content, timestamp: Date.now() };
-  steeredMessages.set(message, { queuedID, input: prepared.input });
-  session.agent.steer(message);
+  try { prepared = prepareInput(text, attachments); }
+  catch (error) { return reject(error.message); }
+  const deliver = ({ prompt, images, input }) => {
+    if (active !== run || run.cancelled || run.mode !== "steer" || !session.agent.state.isStreaming) return reject();
+    const content = prompt ? [{ type: "text", text: prompt }, ...images] : images;
+    const message = { role: "user", content, timestamp: Date.now() };
+    steeredMessages.set(message, { queuedID, input });
+    session.agent.steer(message);
+  };
+  if (!run.steering && !prepared.images.length) {
+    deliver(prepared);
+    return;
+  }
+  const pending = (run.steering ?? Promise.resolve())
+    .then(() => run === active && !run.cancelled && run.mode === "steer"
+      ? (prepared.images.length ? prepareImages(prepared) : prepared) : undefined)
+    .then((input) => input ? deliver(input) : reject())
+    .catch((error) => reject(error.message))
+    .finally(() => { if (run.steering === pending) run.steering = undefined; });
+  run.steering = pending;
 }
 
 function cancelActive() {

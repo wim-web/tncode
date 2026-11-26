@@ -1,7 +1,64 @@
 import AppKit
+import CoreTransferable
 import Darwin
 import ImageIO
 import UniformTypeIdentifiers
+
+struct ComposerAttachmentTarget {
+    let threadID: UUID
+    var queueID: UUID?
+}
+
+enum ComposerAttachmentInput: Transferable {
+    case file(URL)
+    case image(Data, UTType)
+
+    static let contentTypes: [UTType] = [.fileURL, .png, .jpeg, .tiff]
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .fileURL) { data in
+            guard let url = URL(dataRepresentation: data, relativeTo: nil), ComposerAttachment.isLocalFile(url) else {
+                throw WorkspaceError("Choose a local file.")
+            }
+            return Self.file(url)
+        }
+        DataRepresentation(importedContentType: .png) { Self.image($0, .png) }
+        DataRepresentation(importedContentType: .jpeg) { Self.image($0, .jpeg) }
+        DataRepresentation(importedContentType: .tiff) { Self.image($0, .tiff) }
+    }
+
+    var name: String {
+        switch self {
+        case .file(let url): url.lastPathComponent
+        case .image(_, .jpeg): "Pasted Image.jpg"
+        case .image: "Pasted Image.png"
+        }
+    }
+
+    func load() throws -> ComposerAttachment.Payload {
+        switch self {
+        case .file(let url):
+            return try ComposerAttachment.payload(for: ComposerAttachment.read(url))
+        case .image(let data, let type):
+            if type == .tiff {
+                guard data.count <= 24 * 1024 * 1024,
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      CGImageSourceGetType(source) as String? == UTType.tiff.identifier,
+                      ComposerAttachment.hasPreviewDimensions(source),
+                      let image = ComposerAttachment.thumbnail(source, maximumSize: 2048) else {
+                    throw WorkspaceError("Could not prepare the pasted image.")
+                }
+                guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+                    throw WorkspaceError("Could not encode the pasted image.")
+                }
+                return try ComposerAttachment.payload(for: png)
+            }
+            let payload = try ComposerAttachment.payload(for: data)
+            guard payload.isImage else { throw WorkspaceError("Could not read the pasted image.") }
+            return payload
+        }
+    }
+}
 
 struct ComposerAttachment: Codable, Equatable, Identifiable {
     struct Payload: Codable, Equatable {
@@ -38,8 +95,13 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         }
     }
 
-    static func read(_ url: URL) throws -> Data {
-        guard url.isFileURL else { throw WorkspaceError("Choose a local file.") }
+    fileprivate static func isLocalFile(_ url: URL) -> Bool {
+        let host = url.host(percentEncoded: false)?.lowercased() ?? ""
+        return url.isFileURL && (host.isEmpty || host == "localhost")
+    }
+
+    fileprivate static func read(_ url: URL) throws -> Data {
+        guard isLocalFile(url) else { throw WorkspaceError("Choose a local file.") }
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
@@ -62,11 +124,8 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
             guard let mimeType = imageTypes[UTType(type as String) ?? .image] else {
                 throw WorkspaceError("Choose a PNG or JPEG image.")
             }
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
             guard CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
-                  let width = properties?[kCGImagePropertyPixelWidth] as? Int, (1...8192).contains(width),
-                  let height = properties?[kCGImagePropertyPixelHeight] as? Int, (1...8192).contains(height),
-                  width * height <= 24_000_000 else {
+                  hasPreviewDimensions(source) else {
                 throw WorkspaceError("The image is damaged or too large to preview.")
             }
             return Payload(mimeType: mimeType, data: data)
@@ -81,12 +140,25 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
     func preview(maximumSize: Int) -> NSImage? {
         guard let payload, payload.isImage,
               let source = CGImageSourceCreateWithData(payload.data as CFData, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: maximumSize
-              ] as CFDictionary) else { return nil }
+              let image = Self.thumbnail(source, maximumSize: maximumSize) else { return nil }
         return NSImage(cgImage: image, size: .zero)
+    }
+
+    fileprivate static func hasPreviewDimensions(_ source: CGImageSource) -> Bool {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        guard let width = properties?[kCGImagePropertyPixelWidth] as? Int, (1...8192).contains(width),
+              let height = properties?[kCGImagePropertyPixelHeight] as? Int, (1...8192).contains(height) else {
+            return false
+        }
+        return width * height <= 24_000_000
+    }
+
+    fileprivate static func thumbnail(_ source: CGImageSource, maximumSize: Int) -> CGImage? {
+        CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumSize
+        ] as CFDictionary)
     }
 }
 

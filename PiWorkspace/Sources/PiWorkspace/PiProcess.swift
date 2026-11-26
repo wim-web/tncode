@@ -20,7 +20,7 @@ enum PiEvent: Decodable {
     case activity(String)
     case toolApproval(ToolApproval)
     case inputMode(turnID: UUID, PiInputMode)
-    case queueRejected(turnID: UUID, queuedID: UUID)
+    case queueRejected(turnID: UUID, queuedID: UUID, error: String? = nil)
     case compactionSkipped(turnID: UUID, queuedID: UUID)
     case forked(threadID: UUID, error: String?)
     case finished(turnID: UUID, [ChatMessage], error: String?)
@@ -58,7 +58,8 @@ enum PiEvent: Decodable {
             let turnID = try fields.decode(UUID.self, forKey: .turnID)
             let queuedID = try fields.decode(UUID.self, forKey: .queuedID)
             self = kind == .queueRejected
-                ? .queueRejected(turnID: turnID, queuedID: queuedID)
+                ? .queueRejected(turnID: turnID, queuedID: queuedID,
+                                 error: try fields.decodeIfPresent(String.self, forKey: .error))
                 : .compactionSkipped(turnID: turnID, queuedID: queuedID)
         case .forked:
             self = .forked(threadID: try fields.decode(UUID.self, forKey: .threadID),
