@@ -460,27 +460,22 @@ final class WorkspaceModel: ObservableObject {
             guard request.relinking == nil else {
                 throw WorkspaceError("Choose a local folder to relink this project.")
             }
-            guard destination.isFileURL else {
-                throw WorkspaceError("Choose a local destination folder.")
+            let target = try GitWorkspace.CloneDestination(destination)
+            let ignoresCase = (try? target.folder.deletingLastPathComponent()
+                .resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames) == false
+            let owner = workspace.projects.first {
+                if $0.path == target.folder.path { return true }
+                guard ignoresCase, $0.path.caseInsensitiveCompare(target.folder.path) == .orderedSame else { return false }
+                return !target.alreadyExists || target.matchesDirectory(at: $0.path)
             }
-            let destination = destination.standardizedFileURL
-            let enclosingFolder = destination.deletingLastPathComponent()
-            guard destination.path != enclosingFolder.path else {
-                throw WorkspaceError("Enter a destination for the cloned repository.")
-            }
-            let parent = try ProjectFolder.existing(at: enclosingFolder)
-            let target = parent.appendingPathComponent(destination.lastPathComponent, isDirectory: true)
-            let ignoresCase = (try? parent.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey])
-                .volumeSupportsCaseSensitiveNames) == false
-            guard !workspace.projects.contains(where: {
-                $0.path == target.path || (ignoresCase && $0.path.caseInsensitiveCompare(target.path) == .orderedSame)
-            }) else {
+            if owner != nil && !target.alreadyExists {
                 throw WorkspaceError("The destination already belongs to a project. Choose another destination.")
             }
             try await runGitMutation {
                 let clone = Task {
                     let folder = try await GitWorkspace.cloneRepository(from: remote.argument, to: target)
-                    try registerCreatedRepository(folder, request: request)
+                    let registeredFolder = owner.map { URL(fileURLWithPath: $0.path, isDirectory: true) } ?? folder
+                    try registerCreatedRepository(registeredFolder, request: request)
                 }
                 projectCloneTask = clone
                 defer { projectCloneTask = nil }

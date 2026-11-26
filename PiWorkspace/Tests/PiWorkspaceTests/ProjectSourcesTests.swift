@@ -149,9 +149,11 @@ final class ProjectSourcesTests: XCTestCase {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let source = try await makeCloneSource(in: root)
-        let remote = try ProjectCloneRemote(source.absoluteString, relativeTo: nil)
-        XCTAssertEqual(remote.suggestedName, "Fixture Source")
-        let destination = root.appendingPathComponent("Selected copy", isDirectory: true)
+        let bare = root.appendingPathComponent("Fixture Remote.git")
+        _ = try await git(["clone", "--bare", "--", source.path, bare.path], in: root)
+        let remote = try ProjectCloneRemote(bare.absoluteString, relativeTo: nil)
+        XCTAssertEqual(remote.suggestedName, "Fixture Remote")
+        let destination = root.appendingPathComponent("missing/nested/Selected copy", isDirectory: true)
         let projectID: UUID
         let draftID: UUID
         do {
@@ -191,14 +193,54 @@ final class ProjectSourcesTests: XCTestCase {
         XCTAssertEqual(reopened.workingDirectory, destination.path)
     }
 
-    func testCloneRefusesExistingPathsAndAPreviouslyRegisteredDestination() async throws {
+    func testCloneIntoEmptyDirectoryPreservesDirectoryAndRegisteredProject() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try await makeCloneSource(in: root)
+        let bare = root.appendingPathComponent("remote.git")
+        _ = try await git(["clone", "--bare", "--", source.path, bare.path], in: root)
+        let remote = try ProjectCloneRemote(bare.absoluteString, relativeTo: nil)
+        let files = FileManager.default
+        let model = workspace(in: root)
+
+        for registered in [false, true] {
+            let target = root.appendingPathComponent(registered ? "Existing project" : "Empty folder", isDirectory: true)
+            try files.createDirectory(at: target, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o750])
+            let original = try files.attributesOfItem(atPath: target.path)
+            if registered { try model.openProject(target) }
+            let projects = model.projects.map(\.id)
+            let draft = model.conversation?.id
+            model.openFolder()
+            let request = try XCTUnwrap(model.projectPicker)
+            let ignoresCase = try root.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames == false
+            let input = registered && ignoresCase ? root.appendingPathComponent("existing project") : target
+            try await model.openProject(.clone(remote, destination: input), request: request)
+
+            let after = try files.attributesOfItem(atPath: target.path)
+            for key in [FileAttributeKey.systemFileNumber, .posixPermissions] {
+                XCTAssertEqual(after[key] as? NSNumber, original[key] as? NSNumber)
+            }
+            let expected = try await git(["rev-parse", "HEAD"], in: bare)
+            let actual = try await git(["rev-parse", "HEAD"], in: target)
+            XCTAssertEqual(actual, expected)
+            XCTAssertEqual(try Data(contentsOf: target.appendingPathComponent("README.md")),
+                           try Data(contentsOf: source.appendingPathComponent("README.md")))
+            XCTAssertEqual(model.project?.path, target.path)
+            if registered {
+                XCTAssertEqual(model.projects.map(\.id), projects)
+                XCTAssertEqual(model.conversation?.id, draft)
+            }
+        }
+    }
+
+    func testCloneRefusesOccupiedPathsAndAMissingRegisteredDestination() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let source = try await makeCloneSource(in: root)
         let remote = try ProjectCloneRemote(source.absoluteString, relativeTo: nil)
         let destination = root.appendingPathComponent("Previous", isDirectory: true)
-        let empty = root.appendingPathComponent("Empty", isDirectory: true)
-        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: false)
+        let file = root.appendingPathComponent("File")
+        try Data("keep".utf8).write(to: file)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
         let model = workspace(in: root)
         try model.openProject(destination)
@@ -207,11 +249,13 @@ final class ProjectSourcesTests: XCTestCase {
         try FileManager.default.moveItem(at: destination, to: root.appendingPathComponent("Moved"))
         let link = root.appendingPathComponent("Dangling")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: destination)
+        let linkedFolder = root.appendingPathComponent("Link to empty folder")
+        try FileManager.default.createSymbolicLink(at: linkedFolder, withDestinationURL: root.appendingPathComponent("Moved"))
         model.openFolder()
         let request = try XCTUnwrap(model.projectPicker)
         let entries = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
 
-        for target in [source, empty, link, destination] {
+        for target in [source, file, file.appendingPathComponent("child"), link, linkedFolder, destination] {
             do {
                 try await model.openProject(.clone(remote, destination: target), request: request)
                 XCTFail("Accepted occupied destination \(target.lastPathComponent)")
@@ -222,9 +266,39 @@ final class ProjectSourcesTests: XCTestCase {
         XCTAssertEqual(model.project?.path, previous.path)
         XCTAssertEqual(model.conversation?.id, draft.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: empty.path).isEmpty)
+        XCTAssertEqual(try Data(contentsOf: file), Data("keep".utf8))
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), destination.path)
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)), entries)
+    }
+
+    func testCloneRefusesForeignAdditionsAndAReplacedEmptyDirectoryAtPublication() async throws {
+        let root = try temporaryDirectory()
+        let files = FileManager.default
+        defer { try? files.removeItem(at: root) }
+        let source = try await makeCloneSource(in: root)
+        let folder = root.appendingPathComponent("Empty", isDirectory: true)
+        try files.createDirectory(at: folder, withIntermediateDirectories: false)
+        let marker = folder.appendingPathComponent(".foreign")
+        let payload = Data("created after destination validation".utf8)
+        let target = try GitWorkspace.CloneDestination(folder)
+        try payload.write(to: marker)
+        do {
+            _ = try await GitWorkspace.cloneRepository(from: source.path, to: target)
+            XCTFail("Published into a destination that became occupied")
+        } catch {}
+        XCTAssertEqual(try files.contentsOfDirectory(atPath: folder.path), [".foreign"])
+        XCTAssertEqual(try Data(contentsOf: marker), payload)
+
+        let moved = root.appendingPathComponent("Moved")
+        try files.moveItem(at: folder, to: moved)
+        try files.createDirectory(at: folder, withIntermediateDirectories: false)
+        do {
+            _ = try await GitWorkspace.cloneRepository(from: source.path, to: target)
+            XCTFail("Published into a replacement directory")
+        } catch {}
+        XCTAssertTrue(try files.contentsOfDirectory(atPath: folder.path).isEmpty)
+        XCTAssertEqual(try files.contentsOfDirectory(atPath: moved.path), [".foreign"])
+        XCTAssertEqual(try Data(contentsOf: moved.appendingPathComponent(".foreign")), payload)
     }
 
     func testCloneFailureCleansTheStageAndCanBeRetried() async throws {
@@ -233,6 +307,8 @@ final class ProjectSourcesTests: XCTestCase {
         let repo = try await makeCloneSource(in: root)
         let missing = root.appendingPathComponent("missing.git")
         let destination = root.appendingPathComponent("Copy", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+        let original = try FileManager.default.attributesOfItem(atPath: destination.path)
         let remote = try ProjectCloneRemote(missing.absoluteString, relativeTo: nil)
         let model = workspace(in: root)
         try model.openProject(repo)
@@ -253,6 +329,9 @@ final class ProjectSourcesTests: XCTestCase {
         XCTAssertFalse(model.gitMutationInProgress)
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)), entries)
 
+        let after = try FileManager.default.attributesOfItem(atPath: destination.path)
+        XCTAssertEqual(after[.systemFileNumber] as? NSNumber, original[.systemFileNumber] as? NSNumber)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty)
         try await model.openProject(.clone(try ProjectCloneRemote(repo.absoluteString, relativeTo: nil),
                                            destination: destination), request: request)
         XCTAssertEqual(model.project?.path, destination.path)
@@ -270,6 +349,8 @@ final class ProjectSourcesTests: XCTestCase {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let source = try await makeCloneSource(in: root)
+        let bare = root.appendingPathComponent("retry.git")
+        if !quitting { _ = try await git(["clone", "--bare", "--", source.path, bare.path], in: root) }
         let head = try await git(["rev-parse", "HEAD"], in: source)
         let commit = source.appendingPathComponent(".git/objects/\(head.prefix(2))/\(head.dropFirst(2))")
         // The local upload-pack blocks opening this loose object until a writer opens the FIFO.
@@ -283,6 +364,9 @@ final class ProjectSourcesTests: XCTestCase {
         let request = try XCTUnwrap(model.projectPicker)
         let remote = try ProjectCloneRemote(source.absoluteString, relativeTo: nil)
         let destination = root.appendingPathComponent("Cancelled", isDirectory: true)
+        if !quitting {
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+        }
         let entries = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
 
         let clone = Task { try await model.openProject(.clone(remote, destination: destination), request: request) }
@@ -291,9 +375,11 @@ final class ProjectSourcesTests: XCTestCase {
         let deadline = clock.now + .seconds(5)
         var launched = false
         while clock.now < deadline {
-            let added = Set(try FileManager.default.contentsOfDirectory(atPath: root.path)).subtracting(entries)
-            if added.contains(where: {
-                FileManager.default.fileExists(atPath: root.appendingPathComponent($0 + "/.git/HEAD").path)
+            let stageParent = quitting ? root : destination
+            let contents = try FileManager.default.contentsOfDirectory(atPath: stageParent.path)
+            if contents.contains(where: {
+                $0.hasPrefix(".pi-workspace-") &&
+                    FileManager.default.fileExists(atPath: stageParent.appendingPathComponent($0 + "/.git/HEAD").path)
             }) {
                 launched = true
                 break
@@ -302,6 +388,14 @@ final class ProjectSourcesTests: XCTestCase {
         }
         XCTAssertTrue(launched)
         XCTAssertTrue(model.gitMutationInProgress)
+        let moved = root.appendingPathComponent("Moved during clone")
+        let foreign = Data("written during clone".utf8)
+        if !quitting {
+            try foreign.write(to: destination.appendingPathComponent("README.md"))
+            try FileManager.default.moveItem(at: destination, to: moved)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+            try foreign.write(to: destination.appendingPathComponent("replacement"))
+        }
         let stopped = expectation(description: "Git and its transport stopped")
         Task {
             defer { stopped.fulfill() }
@@ -324,10 +418,26 @@ final class ProjectSourcesTests: XCTestCase {
             clone.cancel()
         }
         await fulfillment(of: [stopped], timeout: 5)
+        if !quitting {
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: moved.path), ["README.md"])
+            XCTAssertEqual(try Data(contentsOf: moved.appendingPathComponent("README.md")), foreign)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), ["replacement"])
+            XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("replacement")), foreign)
+            try FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: moved, to: destination)
+        }
         XCTAssertFalse(model.gitMutationInProgress)
         XCTAssertEqual(model.projects.map(\.id), [project.id])
         XCTAssertEqual(model.conversation?.id, draft.id)
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)), entries)
+        if !quitting {
+            try FileManager.default.removeItem(at: destination.appendingPathComponent("README.md"))
+            let retry = try ProjectCloneRemote(bare.absoluteString, relativeTo: nil)
+            try await model.openProject(.clone(retry, destination: destination), request: request)
+            XCTAssertEqual(model.project?.path, destination.path)
+            let cloned = try await git(["rev-parse", "HEAD"], in: destination)
+            XCTAssertEqual(cloned, head)
+        }
     }
 
     func testFailedCloneRegistrationLeavesTheCompleteRepositoryForLocalFolder() async throws {
