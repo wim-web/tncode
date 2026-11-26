@@ -19,6 +19,10 @@ struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("groupThreadsByProject") private var grouped = false
+    @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
+    @GestureState private var sidebarDrag: CGFloat = 0
+    @State private var rightPanelWidths: [UUID: CGFloat] = [:]
+    @GestureState private var rightPanelDrag: CGFloat = 0
     @State private var collapsed: Set<UUID> = []
     @State private var query = ""
     @State private var projectFilter = SidebarProjectFilter()
@@ -95,11 +99,19 @@ struct WorkspaceView: View {
 
     var body: some View {
         ZStack {
-            HSplitView {
-                sidebar
-                    .frame(minWidth: 177, idealWidth: 212, maxWidth: 238)
-                detail
-                    .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { window in
+                let viewportWidth = window.size.width
+                let width = WorkspaceLayout.sidebarWidth(in: viewportWidth, preferred: sidebarWidth, drag: sidebarDrag)
+                HStack(spacing: 0) {
+                    sidebar
+                        .frame(width: width)
+                    WorkspaceDivider(label: "Resize sidebar", width: width, drag: $sidebarDrag) { translation in
+                        sidebarWidth = WorkspaceLayout.sidebarWidth(
+                            in: viewportWidth, preferred: sidebarWidth, drag: translation)
+                    }
+                    .zIndex(1)
+                    detail(viewportWidth: viewportWidth)
+                }
             }
             .opacity(model.showingWelcome ? 0 : 1)
             .accessibilityHidden(model.showingWelcome)
@@ -251,7 +263,7 @@ struct WorkspaceView: View {
                     .disabled(model.operationsInProgress)
             }
             .padding(.horizontal, 14)
-            .frame(height: 42)
+            .frame(height: WorkspaceLayout.headerHeight)
 
             sidebarSearch(visibleThreads, messageMatches: messageMatches ?? [:])
 
@@ -624,30 +636,77 @@ struct WorkspaceView: View {
         .disabled(model.operationsInProgress)
     }
 
-    private var detail: some View {
+    private func detail(viewportWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-            if let project = model.project, let thread = model.conversation {
-                let browser = browserPanels[thread.id]
-                header(project, thread, browser: browser)
-                Divider()
-                HSplitView {
-                    conversation(project, thread).frame(minWidth: 260)
-                    if let browser, browser.isVisible {
-                        BrowserPreviewView(preview: browser.preview)
-                            .frame(minWidth: 290, idealWidth: 380, maxWidth: 495)
-                    } else if showingChanges, !thread.workingLocation.needsWorktree,
-                              let directory = model.workingDirectory {
-                        SourceControlView(directory: directory, model: model)
-                            .id(directory)
-                            .frame(minWidth: 290, idealWidth: 355, maxWidth: 495)
-                    }
+            GeometryReader { workspace in
+                if let project = model.project, let thread = model.conversation {
+                    threadWorkspace(project, thread, viewportWidth: viewportWidth, size: workspace.size)
+                } else {
+                    readyScreen
                 }
-            } else {
-                readyScreen
             }
             terminalDrawer
         }
         .background(canvas)
+    }
+
+    private func threadWorkspace(_ project: Project, _ thread: Conversation, viewportWidth: CGFloat, size: CGSize) -> some View {
+        let browser = browserPanels[thread.id]
+        let visibleBrowser = browser?.isVisible == true ? browser?.preview : nil
+        let changesDirectory = showingChanges && !thread.workingLocation.needsWorktree ? model.workingDirectory : nil
+        let hasRightPanel = visibleBrowser != nil || changesDirectory != nil
+        let preferredWidth = rightPanelWidths[thread.id] ?? WorkspaceLayout.defaultRightPanelWidth
+        let layout = WorkspaceLayout(
+            viewportWidth: viewportWidth,
+            workspaceSize: size,
+            preferredRightPanelWidth: hasRightPanel ? preferredWidth : nil,
+            rightPanelDrag: rightPanelDrag,
+            showingDetails: showingDetails
+        )
+        return VStack(spacing: 0) {
+            header(project, thread, browser: browser, detailsFitInline: layout.detailsFitInline)
+                .overlay(alignment: .bottom) { Divider() }
+
+            // Keep the conversation in the same slot as the panel opens, closes, or overlays it.
+            conversation(project, thread, layout: layout)
+                .frame(width: layout.chatWidth)
+                .overlay(alignment: .topTrailing) {
+                    if showingDetails && layout.detailsFitInline {
+                        inspector(project, thread, width: WorkspaceLayout.detailsWidth)
+                            .frame(maxHeight: layout.detailsHeight, alignment: .topLeading)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .padding(WorkspaceLayout.detailsInset)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .trailing) {
+                    if hasRightPanel {
+                        HStack(spacing: 0) {
+                            if layout.rightPanelOverlaysChat {
+                                Divider().frame(width: WorkspaceLayout.dividerWidth)
+                            } else {
+                                WorkspaceDivider(label: "Resize right panel", width: layout.rightPanelWidth,
+                                                 drag: $rightPanelDrag, expandsToRight: false) { translation in
+                                    rightPanelWidths[thread.id] = layout.resizedRightPanelWidth(drag: translation)
+                                }
+                                .zIndex(1)
+                            }
+                            Group {
+                                if let visibleBrowser {
+                                    BrowserPreviewView(preview: visibleBrowser)
+                                } else if let changesDirectory {
+                                    SourceControlView(directory: changesDirectory, model: model)
+                                        .id(changesDirectory)
+                                }
+                            }
+                            .frame(width: layout.rightPanelWidth - WorkspaceLayout.dividerWidth)
+                            .frame(maxHeight: .infinity)
+                            .clipped()
+                        }
+                        .background(canvas)
+                    }
+                }
+        }
     }
 
     private var readyScreen: some View {
@@ -678,7 +737,7 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func header(_ project: Project, _ thread: Conversation, browser: BrowserPanel?) -> some View {
+    private func header(_ project: Project, _ thread: Conversation, browser: BrowserPanel?, detailsFitInline: Bool) -> some View {
         let browserIsVisible = browser?.isVisible == true
         return HStack(spacing: 8) {
             let canSwitchProject = model.canSwitchDraftProject &&
@@ -782,36 +841,41 @@ struct WorkspaceView: View {
             .help("Thread Details")
             .accessibilityLabel(showingDetails ? "Hide Thread Details" : "Show Thread Details")
             .accessibilityIdentifier("thread-details")
-            .popover(isPresented: $showingDetails, arrowEdge: .top) {
-                inspector(project, thread)
+            .popover(isPresented: Binding(
+                get: { showingDetails && !detailsFitInline },
+                set: { if !detailsFitInline { showingDetails = $0 } }
+            ), arrowEdge: .top) {
+                inspector(project, thread, width: 296)
             }
         }
         .font(.system(size: 13))
         .padding(.horizontal, 16)
-        .frame(height: 42)
+        .frame(height: WorkspaceLayout.headerHeight)
     }
 
-    private func conversation(_ project: Project, _ thread: Conversation) -> some View {
+    private func conversation(_ project: Project, _ thread: Conversation, layout: WorkspaceLayout) -> some View {
         let jump = messageJump.flatMap { $0.projectID == project.id && $0.threadID == thread.id ? $0 : nil }
         let legacyDraft = model.phase == .ready && model.messages.isEmpty && thread.worktreeLaunch == nil
         let drafting = jump == nil && !thread.archived && (thread.isDraft ?? legacyDraft)
         return VStack(spacing: 0) {
             if drafting {
-                Spacer()
-                Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
-                    .font(.system(size: 27, weight: .semibold))
-                    .padding(.bottom, 12)
-                composer(project, thread)
-                Spacer(minLength: 45)
+                DraftComposerLayout {
+                    Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
+                        .font(.system(size: 27, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                    composer(project, thread)
+                }
             } else {
                 transcript(jump)
-                composer(project, thread)
+                composer(project, thread).padding(.vertical, 12)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: layout.composerWidth)
+        .padding(.leading, layout.composerLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private func inspector(_ project: Project, _ thread: Conversation) -> some View {
+    private func inspector(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
         let path = thread.workingLocation.directory(in: project)
         return VStack(alignment: .leading, spacing: 11) {
             Text("Thread details").font(.system(size: 13, weight: .semibold))
@@ -837,7 +901,7 @@ struct WorkspaceView: View {
                 .accessibilityIdentifier("thread-model")
         }
         .padding(15)
-        .frame(width: 260)
+        .frame(width: width, alignment: .leading)
         .accessibilityIdentifier("workspace-details")
     }
 
@@ -919,9 +983,8 @@ struct WorkspaceView: View {
                     }
                     Color.clear.frame(height: 1).id(TranscriptAnchor.latest)
                 }
-                .frame(maxWidth: 710)
                 .padding(.vertical, 22)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, WorkspaceLayout.editorInset)
                 .frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("transcript")
@@ -1003,15 +1066,13 @@ struct WorkspaceView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 2)
+            .frame(minHeight: 24)
         }
-        .frame(maxWidth: 710)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
     }
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             TextField("Ask Pi anything", text: $model.draft, axis: .vertical)
                 .lineLimit(2...7)
                 .textFieldStyle(.plain)
@@ -1023,6 +1084,7 @@ struct WorkspaceView: View {
                     }
                 }
                 .font(.system(size: 14))
+                .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
                 .accessibilityIdentifier("composer")
                 .disabled(model.preparingWorktree)
             HStack(spacing: 13) {
@@ -1069,8 +1131,9 @@ struct WorkspaceView: View {
                 }
             }
             .font(.system(size: 12))
+            .frame(minHeight: 32)
         }
-        .padding(12)
+        .padding(WorkspaceLayout.editorInset)
         .background(surface, in: RoundedRectangle(cornerRadius: 15))
         .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(.primary.opacity(0.11)).allowsHitTesting(false) }
     }
@@ -1165,5 +1228,63 @@ struct WorkspaceView: View {
         case let .conversation(id, project): model.renameConversation(id, in: project, title: updated)
         case nil: break
         }
+    }
+}
+
+private struct DraftComposerLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let lane = ProposedViewSize(width: bounds.width, height: nil)
+        let headline = subviews[0]
+        let composer = subviews[1]
+        let composerHeight = composer.sizeThatFits(lane).height
+        let bottomInset: CGFloat = 20
+        let freeHeight = max(0, bounds.height - composerHeight - bottomInset)
+        let headlineSize = headline.sizeThatFits(ProposedViewSize(width: bounds.width, height: freeHeight))
+        let spacing = min(48, max(0, freeHeight - headlineSize.height))
+        let composerTop = bounds.minY + max(freeHeight / 2, headlineSize.height + spacing)
+        headline.place(at: CGPoint(x: bounds.midX, y: composerTop - spacing), anchor: .bottom,
+                       proposal: ProposedViewSize(headlineSize))
+        composer.place(at: CGPoint(x: bounds.midX, y: composerTop), anchor: .top, proposal: lane)
+    }
+}
+
+private struct WorkspaceDivider: View {
+    let label: String
+    let width: CGFloat
+    let drag: GestureState<CGFloat>
+    var expandsToRight = true
+    let onResize: (CGFloat) -> Void
+
+    var body: some View {
+        Divider()
+            .frame(width: WorkspaceLayout.dividerWidth)
+            .overlay {
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        (hovering ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .updating(drag) { value, translation, _ in translation = value.translation.width }
+                            .onEnded { onResize($0.translation.width) }
+                    )
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(label)
+                    .accessibilityValue("\(Int(width)) points")
+                    .accessibilityAdjustableAction { direction in
+                        let step: CGFloat = expandsToRight ? 16 : -16
+                        switch direction {
+                        case .increment: onResize(step)
+                        case .decrement: onResize(-step)
+                        @unknown default: break
+                        }
+                    }
+            }
     }
 }
