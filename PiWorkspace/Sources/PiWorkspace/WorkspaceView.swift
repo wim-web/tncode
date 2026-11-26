@@ -496,7 +496,20 @@ struct WorkspaceView: View {
             ScrollViewReader { reader in
                 ScrollView {
                     if searchTerm.isEmpty {
-                        LazyVStack(alignment: .leading, spacing: 3) { threadShelves(visibleThreads) }
+                        LazyVStack(alignment: .leading, spacing: 3) {
+                            threadShelves(visibleThreads)
+                            if visibleThreads.isEmpty && !projectFilter.selection.isEmpty {
+                                VStack(spacing: 6) {
+                                    Text("No threads in the selected projects")
+                                        .foregroundStyle(.secondary)
+                                    Button("Show All Projects") { model.updateSidebarScope { $0.clear() } }
+                                        .accessibilityIdentifier("sidebar-clear-project-scope")
+                                }
+                                .font(.caption)
+                                .frame(maxWidth: .infinity)
+                                .padding(7)
+                            }
+                        }
                             .padding(.horizontal, 8)
                             .padding(.bottom, 8)
                     } else if searchRows.isEmpty {
@@ -696,39 +709,9 @@ struct WorkspaceView: View {
         .accessibilityLabel("Thread filters")
         .accessibilityIdentifier("thread-filters")
         .popover(isPresented: $showingSidebarFilters, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 8) {
-                Button("All Projects") { model.updateSidebarScope { $0.clear() } }
-                    .accessibilityIdentifier("project-filter-all")
-                if !orderedProjects.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(orderedProjects) { project in
-                                SidebarProjectScopeRow(
-                                    project: project,
-                                    setIncluded: { included in model.updateSidebarScope { $0.setSelected(project.id, included) } },
-                                    selectOnly: {
-                                        model.updateSidebarScope { $0.selectOnly(project.id) }
-                                        showingSidebarFilters = false
-                                    },
-                                    openSettings: { openProjectSettings(project.id) }
-                                )
-                                .contextMenu { projectFolderActions(project) }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(idealHeight: CGFloat(min(orderedProjects.count, 9)) * 26, maxHeight: 234)
-                }
-                Divider()
-                Toggle("Group by Project", isOn: $grouped)
-                    .accessibilityIdentifier("group-threads-by-project")
-                Toggle("Show Archive", isOn: $model.showArchive)
-                    .accessibilityIdentifier("show-thread-archive")
-                Button("Done") { showingSidebarFilters = false }
-                    .accessibilityIdentifier("close-thread-filters")
+            SidebarProjectScopePicker(model: model, grouped: $grouped, dismiss: { showingSidebarFilters = false }) {
+                projectFolderActions($0)
             }
-            .padding(12)
-            .frame(width: 230)
         }
     }
 
@@ -957,10 +940,15 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private func submittedThreadActions(_ thread: Conversation, project: Project) -> some View {
-        if projectFilter.selection == [project.id] {
-            Button("Show All Projects") { model.updateSidebarScope { $0.clear() } }
-        } else if !project.isScratch {
-            Button("Filter by \(project.title)") { model.updateSidebarScope { $0.selectOnly(project.id) } }
+        if !project.isScratch {
+            let included = projectFilter.selection.contains(project.id)
+            Button(included ? "Show All Projects" : "Filter by \(project.title)") {
+                model.updateSidebarScope {
+                    if included { $0.clear() }
+                    else { $0.selectOnly(project.id) }
+                }
+            }
+            .accessibilityIdentifier("thread-project-scope")
         }
         Button("Rename Thread…") { beginRename(.conversation(thread.id, project: project.id), title: thread.title) }
             .accessibilityIdentifier("rename-thread")

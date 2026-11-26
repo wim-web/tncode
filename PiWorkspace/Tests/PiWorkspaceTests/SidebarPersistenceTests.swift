@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import XCTest
 @testable import PiWorkspace
@@ -123,6 +124,176 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertEqual(toggles, [false])
         XCTAssertTrue(window.element("project-filter-\(project.id)")?.accessibilityPerformPress?() == true)
         XCTAssertEqual(toggles, [false, false])
+    }
+
+    func testPickerSearchAndKeyboardPersistExactScopeWithoutChangingTheDraft() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let index = root.appendingPathComponent("workspace.json")
+        let alpha = Project(id: UUID(), path: root.appendingPathComponent("alpha").path, title: "Alpha Café")
+        let beta = Project(id: UUID(), path: root.appendingPathComponent("beta").path, title: "Beta Café",
+                           inSidebarScope: true)
+        let draft = Conversation(id: UUID(), title: "Current draft", isDraft: true, composerText: "Keep me unsent")
+        let gamma = Project(id: UUID(), path: root.appendingPathComponent("gamma").path, title: "Gamma",
+                            conversations: [draft], selectedConversation: draft.id)
+        try WorkspaceStore(root: root).save(Workspace(projects: [alpha, beta, gamma], selectedProject: gamma.id))
+        func open(_ location: URL) -> WorkspaceModel {
+            WorkspaceModel(root: location, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        }
+        let alphaRow = "project-filter-choice-\(alpha.id)"
+        let betaRow = "project-filter-choice-\(beta.id)"
+        let gammaRow = "project-filter-choice-\(gamma.id)"
+        let all = "project-filter-all"
+        let search = "project-filter-search"
+        let empty = "project-filter-no-results"
+        func searchEditor(in panel: SidebarOffscreenPanel, after action: String) async throws -> NSTextView {
+            try await panel.waitFor("focused project search after \(action)") {
+                panel.element(search) != nil && panel.searchEditor != nil
+            }
+            return try XCTUnwrap(panel.searchEditor)
+        }
+        func replaceQuery(_ query: String, in editor: NSTextView) {
+            editor.insertText(query, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        }
+
+        do {
+            let model = open(root)
+            XCTAssertNil(model.startupFailure)
+            func checkScope(_ expected: Set<UUID>) throws {
+                XCTAssertEqual(model.sidebarProjectFilter.selection, expected)
+                let saved = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
+                XCTAssertEqual(Set(saved.projects.filter { $0.inSidebarScope == true }.map(\.id)), expected)
+                XCTAssertEqual(saved.selectedProject, gamma.id)
+                XCTAssertEqual(saved.activeProject?.selectedConversation, draft.id)
+                XCTAssertEqual(saved.activeProject?.conversations.first?.composerText, "Keep me unsent")
+                XCTAssertEqual(model.conversation?.id, draft.id)
+                XCTAssertEqual(model.draft, "Keep me unsent")
+            }
+
+            try checkScope([beta.id])
+            do {
+                let window = SidebarOffscreenPanel(SidebarPickerFixture(model: model))
+                defer { window.close() }
+                let editor = try await searchEditor(in: window, after: "opening")
+                replaceQuery(" CAFE ", in: editor)
+                try await window.waitFor("both matching project titles") {
+                    window.element(alphaRow) != nil && window.element(betaRow) != nil && window.element(gammaRow) == nil
+                }
+                XCTAssertNil(window.element(all))
+                try window.key(kVK_Return, "\r")
+                try await window.waitFor("closed picker after plain Return") { window.element(search) == nil }
+                try checkScope([alpha.id])
+            }
+
+            let window = SidebarOffscreenPanel(SidebarPickerFixture(model: model))
+            defer { window.close() }
+            let reopenedEditor = try await searchEditor(in: window, after: "reopening")
+            XCTAssertEqual(reopenedEditor.string, "")
+            replaceQuery("Beta", in: reopenedEditor)
+            try await window.waitFor("Beta as the only match") {
+                window.element(betaRow) != nil && window.element(alphaRow) == nil
+            }
+            replaceQuery("no such project", in: reopenedEditor)
+            try await window.waitFor("no matching projects") { window.element(empty) != nil }
+            try window.key(kVK_Return, "\r")
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            try checkScope([alpha.id])
+            XCTAssertNotNil(window.element(empty))
+            XCTAssertTrue(window.firstResponder === reopenedEditor)
+
+            replaceQuery("Beta", in: reopenedEditor)
+            try await window.waitFor("Beta after clearing the unmatched query") { window.element(betaRow) != nil }
+            reopenedEditor.setMarkedText("Beta", selectedRange: NSRange(location: 4, length: 0),
+                                         replacementRange: NSRange(location: 0, length: 4))
+            XCTAssertTrue(reopenedEditor.hasMarkedText())
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            try checkScope([alpha.id])
+            XCTAssertNotNil(window.element(search))
+            reopenedEditor.unmarkText()
+
+            replaceQuery("CAFE", in: try await searchEditor(in: window, after: "marked text"))
+            try await window.waitFor("both matching rows again") { window.element(alphaRow) != nil }
+            try window.key(kVK_DownArrow, "\u{f701}")
+            try await Task.sleep(for: .milliseconds(30))
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            try checkScope([alpha.id, beta.id])
+            XCTAssertEqual(window.searchEditor?.string, "CAFE")
+            try window.key(kVK_Return, "\r", modifiers: .shift, repeating: true)
+            try checkScope([alpha.id, beta.id])
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            try checkScope([alpha.id])
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            try checkScope([alpha.id, beta.id])
+            try window.key(kVK_Escape, "\u{1b}")
+            try await window.waitFor("closed picker after Escape") { window.element(search) == nil }
+        }
+
+        let restoredRoot = root.appendingPathComponent("restored", isDirectory: true)
+        try FileManager.default.createDirectory(at: restoredRoot, withIntermediateDirectories: false)
+        let restoredIndex = restoredRoot.appendingPathComponent("workspace.json")
+        try FileManager.default.copyItem(at: index, to: restoredIndex)
+        let restored = open(restoredRoot)
+        XCTAssertNil(restored.startupFailure)
+        XCTAssertEqual(restored.sidebarProjectFilter.selection, [alpha.id, beta.id])
+        XCTAssertEqual(restored.conversation?.id, draft.id)
+        XCTAssertEqual(restored.draft, "Keep me unsent")
+        let restoredWindow = SidebarOffscreenPanel(SidebarPickerFixture(model: restored))
+        defer { restoredWindow.close() }
+        let restoredEditor = try await searchEditor(in: restoredWindow, after: "restoring the workspace")
+        XCTAssertEqual(restoredEditor.string, "")
+        XCTAssertNotNil(restoredWindow.element(all))
+        try restoredWindow.key(kVK_ANSI_KeypadEnter, "\u{3}")
+        try await restoredWindow.waitFor("closed picker after All Projects") { restoredWindow.element(search) == nil }
+        XCTAssertTrue(restored.sidebarProjectFilter.selection.isEmpty)
+        let saved = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: restoredIndex))
+        XCTAssertTrue(saved.projects.allSatisfy { $0.inSidebarScope != true })
+    }
+
+    func testEmptyScopedSidebarCanRestoreAllRowsWithoutChangingTheDraft() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let index = root.appendingPathComponent("workspace.json")
+        let empty = Project(id: UUID(), path: root.appendingPathComponent("empty").path, title: "Empty",
+                            inSidebarScope: true, sidebarFolderCollapsed: true)
+        let draft = Conversation(id: UUID(), title: "Current draft", isDraft: true, composerText: "Keep me unsent")
+        let project = Project(id: UUID(), path: root.appendingPathComponent("current").path, title: "Current",
+                              conversations: [draft], selectedConversation: draft.id)
+        try WorkspaceStore(root: root).save(Workspace(projects: [empty, project], selectedProject: project.id))
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        XCTAssertNil(model.startupFailure)
+        let suite = "SidebarPersistenceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SidebarPreference.groupByProject)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                         workspacePasteboard: pasteboard).defaultAppStorage(defaults))
+        defer { window.close() }
+        let clear = "sidebar-clear-project-scope"
+        let row = "thread-row-\(draft.id)"
+        try await window.waitFor("Show All Projects in the empty sidebar") { window.element(clear) != nil }
+        XCTAssertNil(window.element(row))
+        XCTAssertTrue(window.element(clear)?.accessibilityPerformPress?() == true)
+        try await window.waitFor("unfiltered sidebar") { window.element(row) != nil && window.element(clear) == nil }
+        let saved = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
+        XCTAssertTrue(saved.projects.allSatisfy { $0.inSidebarScope != true })
+        XCTAssertEqual(saved.projects.first?.sidebarFolderCollapsed, true)
+        XCTAssertEqual(saved.selectedProject, project.id)
+        XCTAssertEqual(model.conversation?.id, draft.id)
+        XCTAssertEqual(model.draft, "Keep me unsent")
     }
 
     func testCollapsedFolderSurvivesWindowRecreation() async throws {
@@ -291,6 +462,19 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 }
 
+private struct SidebarPickerFixture: View {
+    let model: WorkspaceModel
+    @State private var showing = true
+
+    var body: some View {
+        if showing {
+            SidebarProjectScopePicker(model: model, grouped: .constant(false), dismiss: { showing = false }) { _ in
+                EmptyView()
+            }
+        }
+    }
+}
+
 private final class SidebarOffscreenPanel: NSPanel {
     convenience init<Content: View>(_ content: Content) {
         let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
@@ -354,6 +538,35 @@ private final class SidebarOffscreenPanel: NSPanel {
             try await Task.sleep(for: .milliseconds(20))
         }
         throw WorkspaceError("Timed out waiting for \(description).")
+    }
+
+    var searchEditor: NSTextView? {
+        func find(_ view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.placeholderString == "Search projects" { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let contentView, let editor = find(contentView)?.currentEditor() as? NSTextView,
+              editor === firstResponder else { return nil }
+        return editor
+    }
+
+    func waitFor(_ description: String, _ ready: () -> Bool) async throws {
+        for _ in 0..<80 {
+            contentView?.layoutSubtreeIfNeeded()
+            if ready() { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("Timed out waiting for \(description).")
+        throw WorkspaceError("Timed out waiting for \(description).")
+    }
+
+    func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], repeating: Bool = false) throws {
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+            windowNumber: windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: repeating, keyCode: UInt16(code)
+        ))
+        NSApp.sendEvent(event)
     }
 
     override func close() {
