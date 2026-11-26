@@ -41,9 +41,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     enum Phase: Equatable {
-        case closed, connecting, ready, running, stopping
+        case closed, connecting, ready, running, stopping, stopTimedOut
 
-        var isRunning: Bool { self == .running || self == .stopping }
+        var canStop: Bool { self == .running || self == .stopTimedOut }
+        var isRunning: Bool { canStop || self == .stopping }
     }
 
     private struct QueueEdit {
@@ -518,6 +519,7 @@ final class WorkspaceModel: ObservableObject {
     private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Never>)?
     private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
+    private var stopTimeout: Task<Void, Never>?
 
     init(root: URL, keychainService: String, now: @escaping () -> Date = Date.init,
          readCredential: ((String) throws -> String?)? = nil,
@@ -682,6 +684,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func shutdown() {
+        stopTimeout?.cancel()
+        stopTimeout = nil
         rejectPendingThreadLink()
         process?.close()
         process = nil
@@ -2327,17 +2331,29 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func cancel() {
-        guard phase == .running, let process, let activeTurnID else { return }
+        guard phase.canStop, let process, let activeTurnID else { return }
         pendingToolApproval = nil
         pendingAgentQuestion = nil
-        queueDelivery.paused = true
-        queueDelivery.skipAfterTurn = nil
         do {
             try process.send(CancelPrompt(turnID: activeTurnID))
-            phase = .stopping
+            awaitStopAcknowledgement(turnID: activeTurnID, from: process)
         } catch {
             self.error = "Pi disconnected while stopping the request."
             shutdown()
+        }
+    }
+
+    private func awaitStopAcknowledgement(turnID: UUID, from worker: any PiConnection) {
+        queueDelivery.paused = true
+        queueDelivery.skipAfterTurn = nil
+        phase = .stopping
+        stopTimeout?.cancel()
+        let deadline = ContinuousClock.now + .seconds(10)
+        stopTimeout = Task { [weak self, weak worker, threadID = conversation?.id] in
+            do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+            guard let self, let worker, process === worker, conversation?.id == threadID,
+                  activeTurnID == turnID, phase == .stopping else { return }
+            phase = .stopTimedOut
         }
     }
 
@@ -2596,10 +2612,8 @@ final class WorkspaceModel: ObservableObject {
             pendingAgentQuestion = nil
             activity = ""
             if end.status == .expired {
-                queueDelivery.paused = true
-                queueDelivery.skipAfterTurn = nil
-                phase = .stopping
-                error = "The question expired and Pi stopped the turn. Send a new message to try again."
+                awaitStopAcknowledgement(turnID: end.scope.turnID, from: worker)
+                error = "The question expired. You can send a new message after the turn ends."
             }
         case let .agentQuestionRejected(scope):
             guard pendingAgentQuestion?.request.scope == scope else { return }
@@ -2621,6 +2635,8 @@ final class WorkspaceModel: ObservableObject {
             finishFork(threadID, failure: error)
         case let .finished(turnID, history, error):
             guard activeTurnID == turnID else { return }
+            stopTimeout?.cancel()
+            stopTimeout = nil
             let skipped = queueDelivery.skipAfterTurn
             let recorded = Set(history.compactMap(\.queuedID))
             var undelivered = queueDelivery.inFlight.subtracting(recorded)

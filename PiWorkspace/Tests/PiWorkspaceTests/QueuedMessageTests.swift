@@ -80,6 +80,46 @@ final class QueuedMessageTests: XCTestCase {
     }
 
     @MainActor
+    func testLateFinishAndOldStopDeadlinesStayWithTheirTurn() async throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.open()
+        defer { model.shutdown() }
+        let oldWorker = fixture.worker
+        let oldEvent = try XCTUnwrap(oldWorker.onEvent)
+        let first = try oldWorker.start("First", in: model)
+        model.cancel()
+        oldWorker.finish(first)
+        XCTAssertEqual(model.phase, .ready)
+        model.selectConversation(fixture.other, in: fixture.project)
+        let worker = fixture.worker
+        worker.emit(.ready([]))
+        let second = try worker.start("Second", in: model)
+        model.cancel()
+        worker.finish(second)
+        let third = try worker.start("Third", in: model)
+        fixture.append(["Wait for resume"], in: model)
+        let beforeThirdStop = ContinuousClock.now
+        try await Task.sleep(for: .seconds(2))
+        model.cancel()
+
+        oldEvent(.finished(turnID: third.turnID, [], error: "Old helper"))
+        worker.finish(second)
+        try await Task.sleep(until: beforeThirdStop + .milliseconds(10500), clock: .continuous)
+        XCTAssertEqual(model.phase, .stopping)
+        XCTAssertNil(model.error)
+        try await Task.sleep(until: beforeThirdStop + .seconds(13), clock: .continuous)
+        XCTAssertEqual(model.phase, .stopTimedOut)
+        worker.finish(third)
+        model.cancel()
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertTrue(model.queuePaused)
+        XCTAssertEqual(model.queuedMessages.map(\.text), ["Wait for resume"])
+        XCTAssertEqual(worker.prompts.map(\.text), ["Second", "Third"])
+        XCTAssertEqual(worker.commands.compactMap { ($0 as? CancelPrompt)?.turnID }, [second.turnID, third.turnID])
+    }
+
+    @MainActor
     func testRestartReconcilesRecordedIDsAndKeepsUnconfirmedMessagesInTheirThread() async throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }

@@ -2076,6 +2076,7 @@ struct WorkspaceView: View {
                     Text(model.activity.isEmpty ? "Pi is responding…" : "Running \(model.activity)…")
                 }
                 if model.phase == .stopping { Text("Stopping…") }
+                if model.phase == .stopTimedOut { Text("Pi hasn’t confirmed. Try Stop again.") }
             }
             if !compact { branchButton }
             if showsPermissions && model.effectiveModel.supportsTools {
@@ -2279,7 +2280,7 @@ struct WorkspaceView: View {
                         .keyboardShortcut(.return, modifiers: .command)
                         .accessibilityIdentifier("queue-message")
                         .disabled(!model.canQueueDraft)
-                } else if model.phase != .stopping {
+                } else if !model.phase.isRunning {
                     if model.canStartQueuedMessage && !model.queuedMessages.isEmpty {
                         Button("Queue") { model.queueDraft() }
                             .accessibilityIdentifier("queue-message")
@@ -2307,7 +2308,7 @@ struct WorkspaceView: View {
                     .buttonBorderShape(.circle)
                     .accessibilityLabel("Stop")
                     .accessibilityIdentifier("stop-message")
-                    .disabled(model.phase == .stopping)
+                    .disabled(!model.phase.canStop)
             }
         }
         .font(.system(size: 12))
