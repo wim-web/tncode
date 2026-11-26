@@ -172,6 +172,94 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertEqual(model.draft, "Keep the original draft 🧪")
     }
 
+    func testDamagedForkLinkKeepsSourceSelectionAfterRestart() async throws {
+        guard let nodePath = ProcessInfo.processInfo.environment["PI_PALETTE_NODE"] else {
+            throw XCTSkip("Set PI_PALETTE_NODE to the absolute path of Node.")
+        }
+        let fixture = try Fixture()
+        let node = URL(fileURLWithPath: nodePath)
+        let sidecar = try fixture.seedPiHistory(node: node)
+        let linkID = UUID()
+        let queued = QueuedMessage(text: "Keep this queued follow-up")
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var index = try store.load()
+            index.threadLinkID = linkID
+            index.projects[0].conversations[0].queuedMessages = [queued]
+            try store.save(index)
+        }
+        func savedIndex() throws -> Workspace {
+            try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: fixture.workspace.appendingPathComponent("workspace.json")))
+        }
+        func openModel() -> WorkspaceModel {
+            WorkspaceModel(root: fixture.workspace, keychainService: fixture.root.lastPathComponent,
+                           readCredential: { _ in nil }) { config, cwd in
+                try PiProcess(config: config, cwd: cwd, executable: node,
+                              arguments: [sidecar.appendingPathComponent("worker.mjs").path])
+            }
+        }
+        func waitUntil(_ condition: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while !condition() {
+                guard ContinuousClock.now < deadline else { throw WorkspaceError("Timed out waiting for Pi.") }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
+        let sourceID = fixture.local.id
+        let projectID = fixture.project.id
+        let forkID: UUID
+        let cutoff: String
+        do {
+            let model = openModel()
+            defer { model.terminate() }
+            model.connect()
+            try await waitUntil { model.phase == .ready }
+            cutoff = try XCTUnwrap(model.messages.last(where: { $0.canFork == true })?.id)
+            model.forkResponse(cutoff)
+            try await waitUntil { model.phase == .ready && model.conversation?.forkOrigin?.messageID == cutoff }
+            forkID = try XCTUnwrap(model.conversation?.id)
+            model.selectConversation(sourceID, in: projectID)
+            model.draft = "Source draft before restart"
+        }
+
+        let model = openModel()
+        defer { model.terminate() }
+        model.start()
+        try await waitUntil { model.phase == .ready }
+        let link = ThreadLink(workspaceID: linkID, root: fixture.workspace, projectID: projectID, threadID: forkID)
+        let forkHistory = fixture.workspace.appendingPathComponent("sessions/\(projectID)/\(forkID)").appendingPathComponent("\(forkID).jsonl")
+        let original = try Data(contentsOf: forkHistory)
+        let endOfHeader = try XCTUnwrap(original.firstIndex(of: 10))
+        try original[...endOfHeader].write(to: forkHistory, options: .atomic)
+        model.draft = "Dirty while opening the damaged fork"
+        let sourceMessages = model.messages.map(\.id)
+        var publishedSelections: [UUID?] = []
+        let subscription = model.$workspace.sink { publishedSelections.append($0.activeProject?.selectedConversation) }
+        defer { subscription.cancel() }
+        let accepted = await model.openThreadLink(link.text)
+        XCTAssertFalse(accepted)
+        try await waitUntil { model.phase != .connecting }
+        XCTAssertTrue(model.threadLinkError?.contains("fork history is incomplete") == true)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(model.messages.map(\.id), sourceMessages)
+        XCTAssertEqual(model.queuedMessages, [queued])
+        XCTAssertEqual(model.draft, "Dirty while opening the damaged fork")
+        XCTAssertEqual(try savedIndex().activeProject?.selectedConversation, sourceID)
+        XCTAssertEqual(Set(publishedSelections), [sourceID])
+
+        try original.write(to: forkHistory, options: .atomic)
+        let sourceDir = fixture.workspace.appendingPathComponent("sessions/\(projectID)/\(sourceID)")
+        try FileManager.default.moveItem(at: sourceDir, to: fixture.root.appendingPathComponent("Moved source history"))
+        let restored = await model.openThreadLink(link.text)
+        XCTAssertTrue(restored)
+        try await waitUntil { model.phase == .ready && model.conversation?.id == forkID }
+        XCTAssertEqual(model.messages.last?.id, cutoff)
+        let savedSource = try savedIndex().activeProject?.conversations.first { $0.id == sourceID }
+        XCTAssertEqual(savedSource?.composerText, "Dirty while opening the damaged fork")
+        XCTAssertEqual(savedSource?.queuedMessages, [queued])
+    }
+
     func testRejectedLinksKeepTheDraftAndActiveTurn() throws {
         let fixture = try Fixture()
         let model = fixture.open()
