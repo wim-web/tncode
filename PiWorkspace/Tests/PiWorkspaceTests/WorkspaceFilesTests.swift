@@ -696,7 +696,22 @@ final class WorkspaceFilesTests: XCTestCase {
             </svg>
             """
             try write(svg, "sample.svg", in: root)
-            XCTAssertEqual(try pixel(previewImage(files.preview("sample.svg")).bitmap), [255, 0, 0, 255])
+            let image = try previewImage(files.preview("sample.svg")).bitmap
+            // AppKit rasterizes SVG into the display profile. Compare both fills in that profile.
+            let bitmap = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height,
+                                                 bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                                 space: try XCTUnwrap(image.colorSpace),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+            bitmap.setBlendMode(.copy)
+            bitmap.draw(image, in: bounds)
+            let pixels = try XCTUnwrap(bitmap.data)
+            let byteCount = bitmap.bytesPerRow * bitmap.height
+            let rendered = Data(bytes: pixels, count: byteCount)
+            bitmap.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+            bitmap.fill(bounds)
+            XCTAssertEqual(rendered, Data(bytes: pixels, count: byteCount), "Expected solid opaque sRGB red")
+
             try write("<svg>", "broken.svg", in: root)
             XCTAssertThrowsError(try files.preview("broken.svg"))
             let sibling = try folder("sibling", in: root)
