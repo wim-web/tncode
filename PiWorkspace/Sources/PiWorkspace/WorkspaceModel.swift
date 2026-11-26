@@ -27,6 +27,11 @@ final class WorkspaceModel: ObservableObject {
         var skipAfterTurn: UUID?
     }
 
+    private struct SnoozeUndo {
+        let deadlines: [ThreadSnoozeTarget: Date]
+        let expiresAt: Date
+    }
+
     private struct ForkRequest {
         let destination: PendingConversationFork
         let child: Conversation
@@ -52,7 +57,13 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var supportsImageInput = false
     @Published var showingQuitSaveFailure = false
     @Published private(set) var quitFileSaveError: String?
+    @Published private(set) var snoozeClock: Date
+    @Published private(set) var snoozeUndoCount = 0
     let fileSaves = WorkspaceFileSaves()
+    private let now: () -> Date
+    private var snoozeTimer: Timer?
+    private(set) var nextSnoozeUpdate: Date?
+    private var snoozeUndo: SnoozeUndo?
     private var composerDirty = false
     private var worktreeTask: Task<Void, Never>?
     private var projectCloneTask: Task<Void, Error>?
@@ -453,16 +464,23 @@ final class WorkspaceModel: ObservableObject {
     private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
 
-    init(root: URL, keychainService: String, readCredential: ((String) throws -> String?)? = nil,
+    init(root: URL, keychainService: String, now: @escaping () -> Date = Date.init,
+         readCredential: ((String) throws -> String?)? = nil,
          makeProcess: ((URL, String) throws -> any PiConnection)? = nil,
          makeGitHubReader: @escaping (String) -> GitHubReader = { GitHubReader(directory: $0) }) {
         self.root = root
+        self.now = now
+        snoozeClock = now()
         let vault = KeyVault(service: keychainService)
         self.vault = vault
         self.readCredential = readCredential ?? vault.read
         self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1) }
         self.makeGitHubReader = makeGitHubReader
         openWorkspace()
+    }
+
+    deinit {
+        snoozeTimer?.invalidate()
     }
 
     func openWorkspace(restoringPrevious: Bool = false) {
@@ -472,6 +490,7 @@ final class WorkspaceModel: ObservableObject {
             workspace = try store.load(restoringPrevious: restoringPrevious)
             try? store.recoverFork(in: workspace)
             self.store = store
+            refreshSnoozes()
             showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
             startupFailure = nil
         } catch {
@@ -619,6 +638,9 @@ final class WorkspaceModel: ObservableObject {
         worktreeTask?.cancel()
         worktreeTask = nil
         preparingWorktree = false
+        snoozeTimer?.invalidate()
+        snoozeTimer = nil
+        nextSnoozeUpdate = nil
         shutdown()
         return true
     }
@@ -658,6 +680,7 @@ final class WorkspaceModel: ObservableObject {
         workspace = updated
         if pullRequestScope != previousScope || !draft.utf8.elementsEqual(previousDraft.utf8) { composerRevision += 1 }
         if pullRequestScope != previousScope { threadSelectionRevision += 1 }
+        refreshSnoozes()
     }
 
     func updateAddProjectBaseDirectory(_ input: String) throws {
@@ -848,7 +871,8 @@ final class WorkspaceModel: ObservableObject {
     func selectProjectFromPalette(_ id: UUID) {
         guard !operationsInProgress, let project = projects.first(where: { $0.id == id }) else { return }
         let latest = SidebarThread.matching(in: [project], search: "", archived: false).first {
-            $0.thread.threadShelf != .settled && $0.thread.isDraft != true
+            $0.thread.threadShelf != .settled && $0.thread.isDraft != true &&
+                $0.thread.snoozeStatus(at: snoozeClock)?.isSnoozed != true
         }
         if let latest {
             selectConversation(latest.id, in: id)
@@ -1060,6 +1084,10 @@ final class WorkspaceModel: ObservableObject {
         var updated = workspace
         updated.selectedProject = updated.projects[projectIndex].id
         updated.projects[projectIndex].selectedConversation = id
+        if let index = updated.projects[projectIndex].conversations.firstIndex(where: { $0.id == id }),
+           case .woke = updated.projects[projectIndex].conversations[index].snoozeStatus(at: now()) {
+            updated.projects[projectIndex].conversations[index].snoozedUntil = nil
+        }
         try persist(updated)
     }
 
@@ -1357,7 +1385,161 @@ final class WorkspaceModel: ObservableObject {
               let project = workspace.projects.firstIndex(where: { $0.id == projectID }),
               let thread = workspace.projects[project].conversations.firstIndex(where: { $0.id == id }),
               !workspace.projects[project].conversations[thread].archived else { return }
-        save { $0.projects[project].conversations[thread].shelf = shelf }
+        save {
+            $0.projects[project].conversations[thread].shelf = shelf
+            if shelf == .pinned || shelf == .settled {
+                $0.projects[project].conversations[thread].snoozedUntil = nil
+            }
+        }
+    }
+
+    var snoozePresets: [ThreadSnoozeSchedule.Preset] {
+        ThreadSnoozeSchedule.presets(at: now())
+    }
+
+    var initialCustomSnoozeDate: Date { now().addingTimeInterval(3600) }
+
+    func setSnoozedShelfExpanded(_ expanded: Bool) {
+        save { $0.snoozedShelfExpanded = expanded }
+    }
+
+    func canSnooze(_ target: ThreadSnoozeTarget) -> Bool {
+        guard let (p, t) = snoozeIndices(target) else { return false }
+        let thread = workspace.projects[p].conversations[t]
+        guard thread.isDraft != true, !thread.archived, thread.worktreeLaunch == nil,
+              thread.composerSubmission == nil, thread.snoozeStatus(at: now())?.isSnoozed != true else { return false }
+        if target.projectID == project?.id, target.threadID == conversation?.id {
+            return pendingToolApproval == nil && queueDelivery.inFlight.isEmpty &&
+                (queueDelivery.paused || queuedMessages.isEmpty)
+        }
+        return true
+    }
+
+    @discardableResult
+    func snooze(_ target: ThreadSnoozeTarget, preset: ThreadSnoozeSchedule.Preset) -> Bool {
+        let current = now()
+        do {
+            let deadline = preset.deadline(at: current)
+            guard ThreadSnoozeSchedule.isFuture(deadline, after: current) else {
+                throw WorkspaceError("That snooze time has passed. Choose another time.")
+            }
+            try snooze(target, until: deadline)
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+
+    func snooze(_ target: ThreadSnoozeTarget, date: String, time: String) throws {
+        guard let deadline = ThreadSnoozeSchedule.deadline(date: date, time: time, after: now()) else {
+            throw WorkspaceError("Choose a valid date and time in the future.")
+        }
+        try snooze(target, until: deadline)
+    }
+
+    func snooze(_ target: ThreadSnoozeTarget, amount: String, unit: ThreadSnoozeSchedule.Unit) throws {
+        guard let deadline = ThreadSnoozeSchedule.deadline(amount: amount, unit: unit, after: now()) else {
+            throw WorkspaceError("Enter a positive duration.")
+        }
+        try snooze(target, until: deadline)
+    }
+
+    private func snooze(_ target: ThreadSnoozeTarget, until deadline: Date) throws {
+        let current = now()
+        guard ThreadSnoozeSchedule.isFuture(deadline, after: current), canSnooze(target),
+              let (p, t) = snoozeIndices(target) else {
+            throw WorkspaceError("This thread can no longer be snoozed at that time.")
+        }
+        var updated = workspace
+        updated.projects[p].conversations[t].snoozedUntil = deadline
+        try persist(updated)
+        var deadlines = snoozeUndo?.deadlines ?? [:]
+        deadlines[target] = deadline
+        snoozeUndo = SnoozeUndo(deadlines: deadlines, expiresAt: now().addingTimeInterval(5))
+        refreshSnoozes()
+    }
+
+    func advanceAfterSidebarSnooze(_ target: ThreadSnoozeTarget, next: ThreadSnoozeTarget?) {
+        guard project?.id == target.projectID, conversation?.id == target.threadID,
+              canChangeArchive(for: target.threadID),
+              conversation?.snoozeStatus(at: now())?.isSnoozed == true else { return }
+        if let next {
+            selectConversation(next.threadID, in: next.projectID)
+        } else {
+            addConversation(in: target.projectID)
+        }
+    }
+
+    func wakeThread(_ target: ThreadSnoozeTarget, until deadline: Date) {
+        guard let (p, t) = snoozeIndices(target),
+              workspace.projects[p].conversations[t].snoozeStatus(at: now()) == .snoozed(until: deadline) else { return }
+        save { $0.projects[p].conversations[t].snoozedUntil = nil }
+    }
+
+    func dismissWoke(_ target: ThreadSnoozeTarget, at deadline: Date) {
+        guard let (p, t) = snoozeIndices(target),
+              workspace.projects[p].conversations[t].snoozeStatus(at: now()) == .woke(at: deadline) else { return }
+        save { $0.projects[p].conversations[t].snoozedUntil = nil }
+    }
+
+    func undoSnooze() {
+        refreshSnoozes()
+        guard let notice = snoozeUndo else { return }
+        save { updated in
+            for target in notice.deadlines.keys {
+                guard let (p, t) = snoozeIndices(target) else { continue }
+                updated.projects[p].conversations[t].snoozedUntil = nil
+            }
+        }
+    }
+
+    func refreshSnoozes() {
+        let current = now()
+        if let notice = snoozeUndo {
+            let valid = notice.deadlines.filter { target, deadline in
+                guard let (p, t) = snoozeIndices(target) else { return false }
+                return workspace.projects[p].conversations[t].snoozeStatus(at: current) == .snoozed(until: deadline)
+            }
+            snoozeUndo = notice.expiresAt > current && !valid.isEmpty
+                ? SnoozeUndo(deadlines: valid, expiresAt: notice.expiresAt) : nil
+        }
+        let undoCount = snoozeUndo?.deadlines.count ?? 0
+        if snoozeUndoCount != undoCount { snoozeUndoCount = undoCount }
+
+        let nextWake = threadProjects.lazy.flatMap(\.conversations).compactMap { thread -> Date? in
+            guard case let .snoozed(until: deadline) = thread.snoozeStatus(at: current) else { return nil }
+            return deadline
+        }.min()
+        if snoozeClock != current { snoozeClock = current }
+        let nextUpdate = [nextWake, snoozeUndo?.expiresAt].compactMap { $0 }.min()
+        if nextSnoozeUpdate == nextUpdate, snoozeTimer?.isValid == true { return }
+        snoozeTimer?.invalidate()
+        snoozeTimer = nil
+        nextSnoozeUpdate = nextUpdate
+        if let nextUpdate {
+            let timer = Timer(timeInterval: nextUpdate.timeIntervalSince(current), repeats: false) { [weak self] timer in
+                MainActor.assumeIsolated {
+                    timer.invalidate()
+                    self?.refreshSnoozes()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            snoozeTimer = timer
+        }
+    }
+
+    private func snoozeIndices(_ target: ThreadSnoozeTarget) -> (Int, Int)? {
+        guard let p = workspace.projects.firstIndex(where: { $0.id == target.projectID && $0.detached != true }),
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == target.threadID }) else { return nil }
+        return (p, t)
+    }
+
+    private func wakeForRuntimeRequest() {
+        guard let thread = conversation, let deadline = thread.snoozedUntil else { return }
+        let current = now()
+        guard deadline > current else { return }
+        try? saveThread(thread.id) { $0.snoozedUntil = current }
     }
 
     func setToolPermission(_ permission: ToolPermission) {
@@ -1929,6 +2111,9 @@ final class WorkspaceModel: ObservableObject {
         activity = ""
         error = nil
         phase = .running
+        if let thread = conversation, thread.snoozedUntil != nil {
+            try? saveThread(thread.id) { $0.snoozedUntil = nil }
+        }
     }
 
     func cancel() {
@@ -2186,11 +2371,13 @@ final class WorkspaceModel: ObservableObject {
             guard phase == .running, approval.turnID == activeTurnID,
                   approval.threadID == conversation?.id else { return }
             pendingToolApproval = approval
+            wakeForRuntimeRequest()
         case let .agentQuestion(request):
             guard phase == .running, request.scope.turnID == activeTurnID,
                   request.scope.threadID == conversation?.id,
                   !request.questions.isEmpty, pendingAgentQuestion == nil else { return }
             pendingAgentQuestion = PendingAgentQuestion(request: request)
+            wakeForRuntimeRequest()
         case let .agentQuestionEnded(end):
             guard pendingAgentQuestion?.request.scope == end.scope else { return }
             pendingAgentQuestion = nil
@@ -2239,6 +2426,7 @@ final class WorkspaceModel: ObservableObject {
             activity = ""
             repositoryRevision += 1
             phase = .ready
+            if error != nil { wakeForRuntimeRequest() }
             reconcileComposerSubmission(in: history, ended: true)
             reconcileQueue(history)
             if !confirmWorktreePrompt(in: history), conversation?.worktreeLaunch?.awaitingHistory == true {

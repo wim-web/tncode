@@ -53,6 +53,7 @@ struct WorkspaceView: View {
     @State private var openTerminals: [ThreadTerminalDrawerState] = []
     @State private var terminalDrawerReservedHeight: CGFloat = 0
     @State private var settledExpanded = false
+    @State private var customSnooze: SnoozeRequest?
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
@@ -73,6 +74,12 @@ struct WorkspaceView: View {
         let id: UUID
         let message: String
         let accessibilityID: String
+    }
+
+    private struct SnoozeRequest: Identifiable {
+        let target: ThreadSnoozeTarget
+        let fromSidebar: Bool
+        var id: ThreadSnoozeTarget { target }
     }
 
     private enum RenameTarget {
@@ -122,6 +129,12 @@ struct WorkspaceView: View {
         let thread: SidebarThread
         let match: SidebarMessageSearch.Match?
         var id: String { thread.id.uuidString + "/" + (match?.messageID ?? "") }
+    }
+
+    private struct SnoozedRow: Identifiable {
+        let link: SidebarThread
+        let deadline: Date
+        var id: String { "snoozed-\(link.id)" }
     }
 
     private enum TranscriptAnchor: Hashable {
@@ -239,6 +252,9 @@ struct WorkspaceView: View {
                 if command == .newThread { newThread() } else { searchFocused = true }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshSnoozes()
+        }
         .overlay(alignment: .topTrailing) {
             if let notice {
                 Text(notice.message)
@@ -296,6 +312,12 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
+        }
+        .sheet(item: $customSnooze) { request in
+            CustomSnoozeView(model: model, target: request.target) { confirmed in
+                customSnooze = nil
+                if confirmed { finishSnooze(request) }
+            }
         }
         .sheet(item: $choosingBranch, onDismiss: {
             if restoreBranchComposerFocus { focusCurrentComposer() }
@@ -536,7 +558,7 @@ struct WorkspaceView: View {
                                     .buttonStyle(.plain)
                                     .disabled(model.operationsInProgress && model.conversation?.id != result.thread.id)
                                     .accessibilityIdentifier("message-search-result-\(result.thread.id)-\(match.messageID)")
-                                    .contextMenu { threadActions(result.thread.thread, project: result.thread.project) }
+                                    .contextMenu { threadActions(result.thread.thread, project: result.thread.project, fromSidebar: true) }
                                 } else {
                                     threadRow(result.thread, showProject: true, highlighted: result.thread.id == highlightedID)
                                 }
@@ -553,6 +575,19 @@ struct WorkspaceView: View {
                 }
             }
 
+            if model.snoozeUndoCount > 0 {
+                HStack {
+                    let count = model.snoozeUndoCount
+                    Text(count == 1 ? "Snoozed 1 thread" : "Snoozed \(count) threads")
+                        .accessibilityIdentifier("snooze-undo-notice")
+                    Spacer()
+                    Button("Undo", action: model.undoSnooze)
+                        .accessibilityIdentifier("undo-snooze")
+                }
+                .font(.caption)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+            }
             Divider()
             Button { model.openSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
@@ -664,9 +699,14 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private func threadShelves(_ threads: [SidebarThread]) -> some View {
-        let active = model.showArchive ? threads : threads.filter { $0.thread.threadShelf == .active }
-        let pinned = model.showArchive ? [] : threads.filter { $0.thread.threadShelf == .pinned }
-        let settled = model.showArchive ? [] : threads.filter { $0.thread.threadShelf == .settled }
+        let awake = threads.filter { $0.thread.snoozeStatus(at: model.snoozeClock)?.isSnoozed != true }
+        let active = model.showArchive ? threads : awake.filter { $0.thread.threadShelf == .active }
+        let pinned = model.showArchive ? [] : awake.filter { $0.thread.threadShelf == .pinned }
+        let settled = model.showArchive ? [] : awake.filter { $0.thread.threadShelf == .settled }
+        let snoozed = threads.compactMap { link -> SnoozedRow? in
+            guard case let .snoozed(until: deadline) = link.thread.snoozeStatus(at: model.snoozeClock) else { return nil }
+            return SnoozedRow(link: link, deadline: deadline)
+        }.sorted { $0.deadline < $1.deadline }
         if !pinned.isEmpty {
             Text("Pinned").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 .padding(.leading, 7).padding(.bottom, 4)
@@ -684,6 +724,25 @@ struct WorkspaceView: View {
             }
         } else {
             ForEach(active) { link in threadRow(link, showProject: true) }
+        }
+        if !snoozed.isEmpty {
+            let expanded = model.workspace.snoozedShelfExpanded == true
+            Button {
+                model.setSnoozedShelfExpanded(!expanded)
+            } label: {
+                Label("Snoozed", systemImage: expanded ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(snoozed.count.formatted()).font(.caption).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+            .padding(.leading, 5)
+            .accessibilityIdentifier("snoozed-shelf")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            ForEach(snoozed.filter { expanded || $0.link.id == model.conversation?.id }) { row in
+                threadRow(row.link, showProject: true, status: .snoozed(until: row.deadline))
+            }
         }
         if !settled.isEmpty {
             DisclosureGroup(isExpanded: $settledExpanded) {
@@ -758,11 +817,22 @@ struct WorkspaceView: View {
         }
     }
 
-    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false) -> some View {
+    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false,
+                           status: ThreadSnoozeStatus? = nil) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
         let acceptsAttachments = !link.thread.archived && link.thread.worktreeLaunch == nil &&
             link.thread.composerSubmission == nil && (!model.operationsInProgress || selected)
+        return HStack(spacing: 5) {
+            threadSelectionButton(link, showProject: showProject, emphasized: emphasized, acceptsAttachments: acceptsAttachments)
+            snoozeRowStatus(link, status: status ?? link.thread.snoozeStatus(at: model.snoozeClock))
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func threadSelectionButton(_ link: SidebarThread, showProject: Bool, emphasized: Bool,
+                                       acceptsAttachments: Bool) -> some View {
+        let selected = model.conversation?.id == link.id
         return Button {
             openThread(link)
         } label: {
@@ -792,7 +862,7 @@ struct WorkspaceView: View {
         .accessibilityIdentifier("thread-row-\(link.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
-        .contextMenu { threadActions(link.thread, project: link.project) }
+        .contextMenu { threadActions(link.thread, project: link.project, fromSidebar: true) }
         .attachmentDropDestination(canDrop: acceptsAttachments || !model.operationsInProgress) { items in
             let urls = items.compactMap(ComposerAttachmentInput.fileURL(from:))
             if !model.operationsInProgress && urls.count == items.count &&
@@ -809,6 +879,44 @@ struct WorkspaceView: View {
         } isTargeted: { targeted in
             if targeted && acceptsAttachments { targetingAttachmentRow = link.id }
             else if targetingAttachmentRow == link.id { targetingAttachmentRow = nil }
+        }
+    }
+
+    @ViewBuilder
+    private func snoozeRowStatus(_ link: SidebarThread, status: ThreadSnoozeStatus?) -> some View {
+        let target = ThreadSnoozeTarget(projectID: link.project.id, threadID: link.id)
+        switch status {
+        case let .snoozed(until: deadline):
+            let time = ThreadSnoozeSchedule.deadlineLabel(deadline, after: model.snoozeClock)
+            HStack(spacing: 5) {
+                Text(time).lineLimit(1)
+                    .accessibilityIdentifier("snooze-deadline-\(link.id)")
+                Button {
+                    model.wakeThread(target, until: deadline)
+                } label: {
+                    Image(systemName: "clock").frame(width: 19, height: 19)
+                }
+                .buttonStyle(.plain)
+                .help("Wake thread now")
+                .accessibilityLabel("Wake thread now")
+                .accessibilityIdentifier("wake-snoozed-thread-\(link.id)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .layoutPriority(1)
+        case let .woke(at: deadline):
+            Button {
+                model.dismissWoke(target, at: deadline)
+            } label: {
+                Label("Woke", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .help("Dismiss Woke notification")
+            .accessibilityLabel("Dismiss Woke notification")
+            .accessibilityIdentifier("dismiss-woke-\(link.id)")
+        case nil:
+            EmptyView()
         }
     }
 
@@ -846,7 +954,7 @@ struct WorkspaceView: View {
     }
 
     @ViewBuilder
-    private func threadActions(_ thread: Conversation, project: Project) -> some View {
+    private func threadActions(_ thread: Conversation, project: Project, fromSidebar: Bool = false) -> some View {
         if thread.isDraft == true && !thread.archived {
             draftActions(thread, project: project)
         } else {
@@ -857,7 +965,7 @@ struct WorkspaceView: View {
             }
             .accessibilityIdentifier("find-in-thread")
             .disabled(model.operationsInProgress && model.conversation?.id != thread.id)
-            submittedThreadActions(thread, project: project)
+            submittedThreadActions(thread, project: project, fromSidebar: fromSidebar)
         }
     }
 
@@ -939,7 +1047,7 @@ struct WorkspaceView: View {
     }
 
     @ViewBuilder
-    private func submittedThreadActions(_ thread: Conversation, project: Project) -> some View {
+    private func submittedThreadActions(_ thread: Conversation, project: Project, fromSidebar: Bool) -> some View {
         if !project.isScratch {
             let included = projectFilter.selection.contains(project.id)
             Button(included ? "Show All Projects" : "Filter by \(project.title)") {
@@ -969,6 +1077,7 @@ struct WorkspaceView: View {
                                        to: thread.threadShelf == .settled ? .active : .settled)
             }
             .disabled(model.operationsInProgress)
+            threadSnoozeMenu(thread, project: project, fromSidebar: fromSidebar)
         }
         threadCopyMenu(thread, project: project)
         Button(thread.archived ? "Restore Thread" : "Archive Thread") {
@@ -976,6 +1085,52 @@ struct WorkspaceView: View {
         }
         .accessibilityIdentifier(thread.archived ? "restore-thread" : "archive-thread")
         .disabled(!model.canChangeArchive(for: thread.id))
+    }
+
+    @ViewBuilder
+    private func threadSnoozeMenu(_ thread: Conversation, project: Project, fromSidebar: Bool) -> some View {
+        let target = ThreadSnoozeTarget(projectID: project.id, threadID: thread.id)
+        let request = SnoozeRequest(target: target, fromSidebar: fromSidebar)
+        if case let .snoozed(until: deadline) = thread.snoozeStatus(at: model.snoozeClock) {
+            Button("Wake thread") { model.wakeThread(target, until: deadline) }
+                .accessibilityIdentifier("wake-thread")
+        } else {
+            Menu("Snooze") {
+                ForEach(model.snoozePresets) { preset in
+                    let time = ThreadSnoozeSchedule.deadlineLabel(preset.shownDeadline, after: model.snoozeClock)
+                    Button("\(preset.label) · \(time)") {
+                        if model.snooze(target, preset: preset) { finishSnooze(request) }
+                    }
+                    .accessibilityIdentifier("snooze-preset-\(preset.id)")
+                }
+                Divider()
+                Button("Custom…") { customSnooze = request }
+                    .accessibilityIdentifier("open-custom-snooze")
+            }
+            .accessibilityIdentifier("snooze-thread")
+            .disabled(!model.canSnooze(target))
+        }
+    }
+
+    private func finishSnooze(_ request: SnoozeRequest) {
+        guard request.fromSidebar, model.conversation?.id == request.target.threadID else { return }
+        let candidates = threads.filter {
+            $0.id == request.target.threadID || ($0.thread.isDraft != true && $0.thread.threadShelf != .settled &&
+                $0.thread.snoozeStatus(at: model.snoozeClock)?.isSnoozed != true)
+        }
+        let pinned = candidates.filter { $0.thread.threadShelf == .pinned }
+        let active = candidates.filter { $0.thread.threadShelf == .active }
+        let ordered = pinned + (grouped
+            ? active.filter { $0.project.isScratch } + filteredProjects.flatMap { project in
+                active.filter { $0.project.id == project.id }
+            }
+            : active)
+        let index = ordered.firstIndex { $0.id == request.target.threadID }
+        let next = index.flatMap { ordered.dropFirst($0 + 1).first }
+            ?? ordered.first { $0.id != request.target.threadID }
+        model.advanceAfterSidebarSnooze(request.target, next: next.map {
+            ThreadSnoozeTarget(projectID: $0.project.id, threadID: $0.id)
+        })
     }
 
     private func detail(viewport: CGSize) -> some View {
@@ -1631,6 +1786,7 @@ struct WorkspaceView: View {
             if let launch = thread.worktreeLaunch, !model.phase.isRunning {
                 WorktreeLaunchView(threadID: thread.id, launch: launch, model: model)
             }
+            snoozeConversationStatus(thread, project: project)
             if thread.archived {
                 Button("Restore Thread") {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
@@ -1697,6 +1853,34 @@ struct WorkspaceView: View {
         }
         .frame(maxWidth: .infinity)
         .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
+    }
+
+    @ViewBuilder
+    private func snoozeConversationStatus(_ thread: Conversation, project: Project) -> some View {
+        let target = ThreadSnoozeTarget(projectID: project.id, threadID: thread.id)
+        switch thread.snoozeStatus(at: model.snoozeClock) {
+        case let .snoozed(until: deadline):
+            HStack {
+                Label("Snoozed until \(ThreadSnoozeSchedule.deadlineLabel(deadline, after: model.snoozeClock))",
+                      systemImage: "clock")
+                    .accessibilityIdentifier("open-thread-snooze-status")
+                Spacer()
+                Button("Wake now") { model.wakeThread(target, until: deadline) }
+                    .accessibilityIdentifier("wake-open-thread")
+            }
+            .font(.callout)
+        case let .woke(at: deadline):
+            HStack {
+                Label("Woke from snooze", systemImage: "clock")
+                    .accessibilityIdentifier("open-thread-woke-status")
+                Spacer()
+                Button("Dismiss") { model.dismissWoke(target, at: deadline) }
+                    .accessibilityIdentifier("dismiss-open-thread-woke")
+            }
+            .font(.callout)
+        case nil:
+            EmptyView()
+        }
     }
 
     @ViewBuilder

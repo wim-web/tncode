@@ -172,6 +172,7 @@ struct Conversation: Codable, Identifiable {
     var queuedMessages: [QueuedMessage]?
     var forkOrigin: ForkOrigin?
     var linkedPullRequests: [ThreadPullRequestLink]?
+    var snoozedUntil: Date?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -179,6 +180,12 @@ struct Conversation: Codable, Identifiable {
     var hasDraftContent: Bool { composerText != nil || !(composerAttachments ?? []).isEmpty || !pullRequestLinks.isEmpty }
     var canDiscardDraft: Bool {
         isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil
+    }
+
+    func snoozeStatus(at now: Date) -> ThreadSnoozeStatus? {
+        guard !archived, let deadline = snoozedUntil else { return nil }
+        if deadline > now { return .snoozed(until: deadline) }
+        return threadShelf == .settled ? nil : .woke(at: deadline)
     }
 
     mutating func recordPrompt(_ text: String) {
@@ -371,6 +378,7 @@ struct Workspace: Codable {
     var newWorktreesStartFromRemote: Bool?
     var stashedPrompts: [StashedPrompt]?
     var threadLinkID: UUID?
+    var snoozedShelfExpanded: Bool?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
 }
