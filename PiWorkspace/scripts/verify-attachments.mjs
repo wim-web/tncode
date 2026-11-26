@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { images, note } from "./fixtures/attachments.mjs";
+import { withComposerModelFixture } from "./fixtures/composer-models.mjs";
+import { withModelRoutingFixture } from "./fixtures/model-routing.mjs";
+import { withSideChatFixture } from "./fixtures/side-chat.mjs";
 
 const workspace = resolve(import.meta.dirname, "..");
 const { values, positionals } = parseArgs({ options: { "release-suite": { type: "boolean" } }, allowPositionals: true });
@@ -59,26 +62,22 @@ const server = createServer(async (request, response) => {
   }
 });
 
-try {
-  for (const [color, image] of Object.entries(images)) {
-    mkdirSync(join(root, color));
-    writeFileSync(join(root, color, "same.png"), Buffer.from(image, "base64"));
-  }
-  writeFileSync(join(root, "note.txt"), note);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
+const node = app ? join(app, "Helpers/node") : process.execPath;
+const worker = join(sidecar, "worker.mjs");
+
+async function runSwiftTests(environment) {
   const tests = values["release-suite"] ? ["-c", "release"] : ["--filter", "ComposerAttachmentTests"];
   const run = spawn("swift", ["test", "--disable-sandbox", ...tests], {
     cwd: workspace,
     env: {
-      ...process.env,
+      ...process.env, ...environment,
       CLANG_MODULE_CACHE_PATH: join(workspace, ".build/local-clang-cache"),
       SWIFTPM_MODULECACHE_OVERRIDE: join(workspace, ".build/module-cache"),
-      PI_WORKSPACE_QUESTION_NODE: app ? join(app, "Helpers/node") : process.execPath,
-      PI_PALETTE_NODE: app ? join(app, "Helpers/node") : process.execPath,
+      PI_WORKSPACE_QUESTION_NODE: node,
+      PI_PALETTE_NODE: node,
       PI_ATTACHMENT_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/v1`,
-      PI_ATTACHMENT_TEST_NODE: app ? join(app, "Helpers/node") : process.execPath,
-      PI_ATTACHMENT_TEST_WORKER: join(sidecar, "worker.mjs"),
+      PI_ATTACHMENT_TEST_NODE: node,
+      PI_ATTACHMENT_TEST_WORKER: worker,
       PI_ATTACHMENT_TEST_FIXTURES: root,
     },
     stdio: "inherit",
@@ -87,6 +86,27 @@ try {
   if (fixtureError) throw fixtureError;
   assert.equal(signal, null);
   assert.equal(code, 0);
+}
+
+async function runReleaseSuite(fixtures, environment = {}) {
+  const [fixture, ...remaining] = fixtures;
+  if (!fixture) return runSwiftTests(environment);
+  return fixture(node, worker, additions => runReleaseSuite(remaining, { ...environment, ...additions }));
+}
+
+try {
+  for (const [color, image] of Object.entries(images)) {
+    mkdirSync(join(root, color));
+    writeFileSync(join(root, color, "same.png"), Buffer.from(image, "base64"));
+  }
+  writeFileSync(join(root, "note.txt"), note);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  if (values["release-suite"]) {
+    await runReleaseSuite([withComposerModelFixture, withModelRoutingFixture, withSideChatFixture]);
+  } else {
+    await runSwiftTests({});
+  }
   assert.equal(requests.length, 3);
   console.log(`PASS Pi SDK ${installed.version} sent exact PNG bytes and complete UTF-8 text across three turns.`);
 } finally {
