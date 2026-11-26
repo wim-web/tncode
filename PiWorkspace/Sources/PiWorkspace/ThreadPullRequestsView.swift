@@ -55,6 +55,7 @@ struct ThreadPullRequestsView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("linked-items")
         .sheet(isPresented: $showingLinkDialog) {
             LinkThreadPullRequestDialog(workspace: workspace, scope: scope)

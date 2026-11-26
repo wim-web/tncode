@@ -70,6 +70,9 @@ final class SettingsNavigationTests: XCTestCase {
         _ = try await fixture.typeQuery("model id")
         try await fixture.key(kVK_Return, "\r")
         let modelID = try await fixture.waitForField("project model ID") { $0.stringValue == "local-override" }
+        try await fixture.until("Return focuses the project model ID") {
+            modelID.currentEditor() != nil && modelID.currentEditor() === fixture.window.firstResponder
+        }
         try fixture.edit(modelID, text: "unsaved-model")
 
         _ = try await fixture.typeQuery("settings")
