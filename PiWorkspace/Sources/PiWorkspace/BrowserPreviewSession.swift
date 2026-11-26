@@ -7,19 +7,70 @@ enum BrowserProfile: String, CaseIterable {
 }
 
 @MainActor
-final class ThreadBrowserPreview: ObservableObject {
-    @Published private(set) var session = BrowserPreviewSession(profile: .standard)
-    private var inactiveSessions: [BrowserProfile: BrowserPreviewSession] = [:]
+struct ThreadBrowserPreview {
+    private(set) var tabs: [BrowserPreviewSession] = []
+    private(set) var selectedTabID: UUID?
+    private var floatingTabID: UUID?
+    private var dataStores: [BrowserProfile: WKWebsiteDataStore] = [:]
+    var isVisible = false
 
-    func selectProfile(_ profile: BrowserProfile) {
-        guard profile != session.profile else { return }
-        inactiveSessions[session.profile] = session
-        session = inactiveSessions.removeValue(forKey: profile) ?? BrowserPreviewSession(profile: profile)
+    var selectedTab: BrowserPreviewSession? { tabs.first { $0.id == selectedTabID } }
+    var floatingTab: BrowserPreviewSession? { tabs.first { $0.id == floatingTabID } }
+
+    mutating func togglePanel() {
+        if tabs.isEmpty {
+            addTab(profile: .standard)
+        } else {
+            isVisible.toggle()
+        }
+    }
+
+    mutating func addTab(profile: BrowserProfile) {
+        let dataStore = dataStores[profile] ?? WKWebsiteDataStore.nonPersistent()
+        dataStores[profile] = dataStore
+        let tab = BrowserPreviewSession(profile: profile, dataStore: dataStore)
+        tabs.append(tab)
+        selectTab(tab.id)
+        isVisible = true
+    }
+
+    mutating func selectTab(_ id: UUID) {
+        guard tabs.contains(where: { $0.id == id }) else { return }
+        selectedTabID = id
+    }
+
+    mutating func closeTab(_ id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs.remove(at: index)
+        if floatingTabID == id { floatingTabID = nil }
+        if selectedTabID == id {
+            selectedTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
+        }
+        if tabs.isEmpty { isVisible = false }
+    }
+
+    mutating func undockSelectedTab() {
+        guard let selectedTabID else { return }
+        floatingTabID = selectedTabID
+        isVisible = false
+    }
+
+    mutating func dockTab(_ id: UUID) {
+        guard floatingTabID == id else { return }
+        floatingTabID = nil
+        selectTab(id)
+        isVisible = true
+    }
+
+    mutating func dismissFloatingWindow(for id: UUID) {
+        guard floatingTabID == id else { return }
+        floatingTabID = nil
     }
 }
 
 @MainActor
-final class BrowserPreviewSession: NSObject, ObservableObject, WKNavigationDelegate {
+final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKNavigationDelegate {
+    let id = UUID()
     let profile: BrowserProfile
     let webView: WKWebView
     @Published var address = ""
@@ -33,10 +84,10 @@ final class BrowserPreviewSession: NSObject, ObservableObject, WKNavigationDeleg
     private var pendingURL: URL?
     private var urlObservation: AnyCancellable?
 
-    init(profile: BrowserProfile) {
+    init(profile: BrowserProfile, dataStore: WKWebsiteDataStore) {
         self.profile = profile
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = dataStore
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self

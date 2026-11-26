@@ -33,7 +33,7 @@ struct WorkspaceView: View {
     @FocusState private var searchFocused: Bool
     @State private var showingDetails = false
     @State private var showingChanges = false
-    @State private var browserPanels: [UUID: BrowserPanel] = [:]
+    @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
     @State private var showingTerminal = false
     @State private var choosingWorkspace = false
     @State private var confirmingTerminalClose = false
@@ -57,12 +57,6 @@ struct WorkspaceView: View {
         let thread: UUID
         let path: String
         var id: Self { self }
-    }
-
-    @MainActor
-    private struct BrowserPanel {
-        let preview = ThreadBrowserPreview()
-        var isVisible = true
     }
 
     private struct MessageSearchKey: Equatable {
@@ -691,10 +685,13 @@ struct WorkspaceView: View {
     }
 
     private func threadWorkspace(_ project: Project, _ thread: Conversation, viewportWidth: CGFloat, size: CGSize) -> some View {
-        let browser = browserPanels[thread.id]
-        let visibleBrowser = browser?.isVisible == true ? browser?.preview : nil
+        let browser = Binding(
+            get: { browserPanels[thread.id] ?? ThreadBrowserPreview() },
+            set: { browserPanels[thread.id] = $0 }
+        )
+        let browserIsVisible = browser.wrappedValue.isVisible
         let changesDirectory = showingChanges && !thread.workingLocation.needsWorktree ? model.workingDirectory : nil
-        let hasRightPanel = visibleBrowser != nil || changesDirectory != nil
+        let hasRightPanel = browserIsVisible || changesDirectory != nil
         let preferredWidth = rightPanelWidths[thread.id] ?? WorkspaceLayout.defaultRightPanelWidth
         let layout = WorkspaceLayout(
             viewportWidth: viewportWidth,
@@ -704,7 +701,7 @@ struct WorkspaceView: View {
             showingDetails: showingDetails
         )
         return VStack(spacing: 0) {
-            header(project, thread, browser: browser, detailsFitInline: layout.detailsFitInline)
+            header(project, thread, browserIsVisible: browserIsVisible, detailsFitInline: layout.detailsFitInline)
                 .overlay(alignment: .bottom) { Divider() }
 
             // Keep the conversation in the same slot as the panel opens, closes, or overlays it.
@@ -732,8 +729,8 @@ struct WorkspaceView: View {
                                 .zIndex(1)
                             }
                             Group {
-                                if let visibleBrowser {
-                                    BrowserPreviewView(preview: visibleBrowser)
+                                if browserIsVisible {
+                                    BrowserPreviewView(preview: browser)
                                 } else if let changesDirectory {
                                     SourceControlView(directory: changesDirectory, model: model)
                                         .id(changesDirectory)
@@ -746,6 +743,18 @@ struct WorkspaceView: View {
                         .background(canvas)
                     }
                 }
+        }
+        .background {
+            if !model.showingWelcome, let tab = browser.wrappedValue.floatingTab {
+                BrowserFloatingWindow(session: tab) {
+                    browser.wrappedValue.dockTab(tab.id)
+                } dismiss: {
+                    browser.wrappedValue.dismissFloatingWindow(for: tab.id)
+                }
+                .id(tab.id)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
         }
     }
 
@@ -777,8 +786,7 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func header(_ project: Project, _ thread: Conversation, browser: BrowserPanel?, detailsFitInline: Bool) -> some View {
-        let browserIsVisible = browser?.isVisible == true
+    private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool, detailsFitInline: Bool) -> some View {
         return HStack(spacing: 8) {
             let canSwitchProject = model.canSwitchDraftProject &&
                 !openTerminals.contains { $0.thread == thread.id } &&
@@ -850,11 +858,7 @@ struct WorkspaceView: View {
             .disabled(thread.workingLocation.needsWorktree)
 
             Button {
-                if browser != nil {
-                    browserPanels[thread.id]?.isVisible.toggle()
-                } else {
-                    browserPanels[thread.id] = BrowserPanel()
-                }
+                browserPanels[thread.id, default: ThreadBrowserPreview()].togglePanel()
             } label: {
                 Image(systemName: "globe")
                     .foregroundStyle(browserIsVisible ? Color.accentColor : Color.primary)
