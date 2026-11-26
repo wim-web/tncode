@@ -8,8 +8,10 @@ process.stdout.write = process.stderr.write.bind(process.stderr);
 const {
   createAgentSession,
   createExtensionRuntime,
+  formatDimensionNote,
   ModelRuntime,
   parseSessionEntries,
+  resizeImage,
   SessionManager,
   SettingsManager,
 } = await import("@earendil-works/pi-coding-agent");
@@ -28,6 +30,8 @@ let active;
 let approvals;
 const steeredMessages = new WeakMap();
 const validID = (id) => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
+const maxAttachmentBytes = 4 * 1024 * 1024;
+const maxTextAttachmentBytes = 64 * 1024;
 
 function requestCredential(operation) {
   if (!connected) return Promise.reject(new Error("Host disconnected"));
@@ -50,7 +54,8 @@ function redactValue(value) {
   if (typeof value === "string") return redact(value);
   if (Array.isArray(value)) return value.map(redactValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key), redactValue(item)]));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      value.type === "image" && key === "data" ? [key, item] : [redact(key), redactValue(item)]));
   }
   return value;
 }
@@ -88,9 +93,11 @@ function history() {
     if (entry.type !== "message") return [];
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
-    const text = redact(messageText(entry.message));
-    return text ? [{
-      id: entry.id, role, text, queuedID: entry.message.workspaceQueuedID, canFork: isForkableReply(entry),
+    const { workspaceInput, workspaceQueuedID, workspaceSubmissionID } = entry.message;
+    const text = redact(workspaceInput?.text ?? messageText(entry.message));
+    return text || workspaceInput?.attachments.length ? [{
+      id: entry.id, role, text, queuedID: workspaceQueuedID, submissionID: workspaceSubmissionID,
+      attachments: workspaceInput?.attachments, canFork: isForkableReply(entry),
     }] : [];
   });
 }
@@ -114,7 +121,7 @@ function forkConversation({ threadID, messageID }) {
       const entry = byID.get(id);
       if (!entry || entry.parentId !== parentId || parentId !== (path[index - 1]?.id ?? null)) throw new Error();
       if (entry.type !== "message") return entry;
-      const { workspaceQueuedID, ...message } = entry.message;
+      const { workspaceQueuedID, workspaceSubmissionID, ...message } = entry.message;
       return { ...entry, message };
     });
     if (!isForkableReply(prefix.at(-1))) throw new Error();
@@ -134,6 +141,68 @@ function forkConversation({ threadID, messageID }) {
   }
 }
 
+function supportsImages() {
+  return session.model?.input.includes("image") === true;
+}
+
+async function prepareInput(text, attachments = []) {
+  if (typeof text !== "string" || !Array.isArray(attachments) || attachments.length > 10 ||
+      (!text.trim() && !attachments.length)) {
+    throw new Error("Enter a message or attach up to 10 files.");
+  }
+  const parts = [redact(text)];
+  const images = [];
+  const metadata = [];
+  const ids = new Set();
+  let bytes = 0;
+  for (const attachment of attachments) {
+    const { id, name, payload } = attachment ?? {};
+    const { mimeType, data } = payload ?? {};
+    if (!validID(id) || ids.has(id) || typeof name !== "string" || !name ||
+        typeof data !== "string" || data.length > 4 * Math.ceil(maxAttachmentBytes / 3)) {
+      throw new Error("Attach the unavailable files again or remove them to send.");
+    }
+    const decoded = Buffer.from(data, "base64");
+    if (!decoded.length || decoded.toString("base64") !== data) {
+      throw new Error("Attach the unavailable files again or remove them to send.");
+    }
+    bytes += decoded.length;
+    if (bytes > maxAttachmentBytes) throw new Error("Attachments must total 4 MB or less.");
+    const safeName = redact(name);
+    if (mimeType === "text/plain") {
+      if (decoded.length > maxTextAttachmentBytes || decoded.includes(0)) {
+        throw new Error("Choose a UTF-8 text file of 64 KB or smaller.");
+      }
+      let content;
+      try { content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(decoded); }
+      catch { throw new Error("Choose a UTF-8 text file."); }
+      parts.push(`Attached text file ${JSON.stringify(safeName)}:\n${redact(content)}`);
+    } else if (
+      (mimeType === "image/png" && decoded.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") ||
+      (mimeType === "image/jpeg" && decoded.subarray(0, 3).toString("hex") === "ffd8ff")
+    ) {
+      if (!supportsImages()) throw new Error("This model does not support image input.");
+      const limits = session.model?.inputLimits?.images;
+      if (limits?.maxPerMessage && images.length >= limits.maxPerMessage) {
+        throw new Error(`This model accepts up to ${limits.maxPerMessage} images per message.`);
+      }
+      const resized = await resizeImage(decoded, mimeType, limits?.resize);
+      if (!resized) throw new Error(`Could not prepare image ${JSON.stringify(safeName)}.`);
+      images.push({ type: "image", mimeType: resized.mimeType, data: resized.data });
+      parts.push(formatDimensionNote(resized));
+    } else {
+      throw new Error("Choose a PNG, JPEG, or UTF-8 text file.");
+    }
+    ids.add(id);
+    metadata.push({ id, name: safeName, mimeType });
+  }
+  return {
+    prompt: parts.filter(Boolean).join("\n\n"),
+    images,
+    input: metadata.length ? { text: redact(text), attachments: metadata } : undefined,
+  };
+}
+
 function localModel(runtime, config) {
   const url = new URL(config.endpoint);
   if (!["http:", "https:"].includes(url.protocol) ||
@@ -147,7 +216,7 @@ function localModel(runtime, config) {
     models: [{
       id: config.model,
       name: config.model,
-      input: ["text"],
+      input: config.localImages === true ? ["text", "image"] : ["text"],
       reasoning: false,
       contextWindow: config.contextWindow,
       maxTokens: Math.min(2048, config.contextWindow - 4096),
@@ -213,12 +282,12 @@ async function open(command) {
     const safeMessage = redactValue(message);
     if (message.role === "user") {
       // Store the queue ID with the transcript entry so reopening can acknowledge it.
-      const queuedID = steeredMessages.get(message);
-      if (queuedID) {
-        safeMessage.workspaceQueuedID = queuedID;
-      } else if (active?.promptID) {
-        safeMessage.workspaceQueuedID = active.promptID;
-        active.promptID = undefined;
+      const receipt = steeredMessages.get(message) ?? active?.receipt;
+      if (receipt) {
+        safeMessage.workspaceQueuedID = receipt.queuedID;
+        safeMessage.workspaceSubmissionID = receipt.submissionID;
+        safeMessage.workspaceInput = receipt.input;
+        if (active?.receipt === receipt) active.receipt = undefined;
       }
     }
     return appendMessage(safeMessage);
@@ -237,6 +306,7 @@ async function open(command) {
     settingsManager: SettingsManager.inMemory({
       retry: { enabled: false, provider: { maxRetries: 0 } },
       cacheWarming: "off",
+      images: { autoResize: false },
     }),
     sessionManager: manager,
     resourceLoader: {
@@ -285,13 +355,13 @@ async function open(command) {
     if (event.type === "message_end") setImmediate(() => emit({ type: "history", messages: history() }));
     if (event.type === "tool_execution_start") emit({ type: "activity", text: event.toolName });
   });
-  emit({ type: "ready", messages: history() });
+  emit({ type: "ready", messages: history(), supportsImages: supportsImages() });
 }
 
-async function prompt({ turnID, text, queuedID, skipCompaction }) {
+async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, attachments }) {
   if (!session || active || !validID(turnID) || (queuedID !== undefined && !validID(queuedID)) ||
-      typeof text !== "string" || !text.trim()) return;
-  const run = { id: turnID, promptID: queuedID, mode: "waiting", cancelled: false, started: false };
+      (submissionID !== undefined && !validID(submissionID))) return;
+  const run = { id: turnID, mode: "waiting", cancelled: false, started: false };
   active = run;
   let error;
   const restoreCompaction = skipCompaction === true && session.autoCompactionEnabled;
@@ -301,9 +371,17 @@ async function prompt({ turnID, text, queuedID, skipCompaction }) {
       return;
     } else if (!credential) {
       error = "Save an API key for this provider in Settings.";
-    } else {
+    }
+    let prepared;
+    if (!error) {
+      try { prepared = await prepareInput(text, attachments); }
+      catch (inputError) { error = inputError.message; }
+    }
+    if (prepared && !run.cancelled) {
+      run.receipt = { queuedID, submissionID, input: prepared.input };
       if (restoreCompaction) session.setAutoCompactionEnabled(false);
-      await session.prompt(redact(text), {
+      await session.prompt(prepared.prompt, {
+        images: prepared.images,
         expandPromptTemplates: false,
         preflightResult: () => {
           if (restoreCompaction) session.setAutoCompactionEnabled(true);
@@ -332,7 +410,7 @@ function setInputMode(mode) {
   emit({ type: "inputMode", turnID: active.id, mode });
 }
 
-function handleQueuedInput({ type, turnID, queuedID, text }) {
+function handleQueuedInput({ type, turnID, queuedID, text, attachments }) {
   if (!validID(turnID) || !validID(queuedID)) return;
   const reject = () => emit({ type: "queueRejected", turnID, queuedID });
   if (active?.id !== turnID || active.cancelled) return reject();
@@ -343,10 +421,20 @@ function handleQueuedInput({ type, turnID, queuedID, text }) {
     emit({ type: "compactionSkipped", turnID, queuedID });
     return;
   }
-  if (active.mode !== "steer" || !session.agent.state.isStreaming ||
-      typeof text !== "string" || !text.trim()) return reject();
-  const message = { role: "user", content: [{ type: "text", text: redact(text) }], timestamp: Date.now() };
-  steeredMessages.set(message, queuedID);
+  if (active.mode !== "steer" || !session.agent.state.isStreaming) return reject();
+  const run = active;
+  const deliver = () => steer(run, queuedID, text, attachments, reject);
+  run.steering = (run.steering ?? Promise.resolve()).then(deliver);
+}
+
+async function steer(run, queuedID, text, attachments, reject) {
+  let prepared;
+  try { prepared = await prepareInput(text, attachments); }
+  catch { return reject(); }
+  if (active !== run || run.cancelled || run.mode !== "steer" || !session.agent.state.isStreaming) return reject();
+  const content = prepared.prompt ? [{ type: "text", text: prepared.prompt }, ...prepared.images] : prepared.images;
+  const message = { role: "user", content, timestamp: Date.now() };
+  steeredMessages.set(message, { queuedID, input: prepared.input });
   session.agent.steer(message);
 }
 

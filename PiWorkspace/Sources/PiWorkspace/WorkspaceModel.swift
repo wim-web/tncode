@@ -16,6 +16,7 @@ final class WorkspaceModel: ObservableObject {
     private struct QueueEdit {
         let id: UUID
         var text: String
+        var attachments: [ComposerAttachment]?
     }
 
     private struct QueueDelivery {
@@ -40,6 +41,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
     @Published private(set) var composerSaveError: String?
+    @Published private(set) var supportsImageInput = false
     @Published var showingQuitSaveFailure = false
     @Published private(set) var quitFileSaveError: String?
     let fileSaves = WorkspaceFileSaves()
@@ -114,6 +116,87 @@ final class WorkspaceModel: ObservableObject {
     }
 
     var editingQueuedMessageID: UUID? { queueEdit?.id }
+    var composerAttachments: [ComposerAttachment] {
+        if let queueEdit { return queueEdit.attachments ?? [] }
+        return conversation?.composerAttachments ?? []
+    }
+    var canEditAttachments: Bool { canUseQueue }
+    var attachmentSendError: String? { attachmentSendError(for: composerAttachments) }
+
+    private func attachmentSendError(for attachments: [ComposerAttachment]) -> String? {
+        if attachments.contains(where: { $0.payload == nil }) {
+            return "Attach the unavailable files again or remove them to send."
+        }
+        if (phase == .ready || phase.isRunning) && !supportsImageInput &&
+            attachments.contains(where: { $0.payload?.isImage == true }) {
+            return "This model does not support image input. Choose an image-capable model or remove the images."
+        }
+        return nil
+    }
+
+    func attachFiles(_ urls: [URL], in threadID: UUID, replacing attachmentID: UUID? = nil) {
+        editAttachments(in: threadID) { attachments, key in
+            let replacement = attachmentID.flatMap { id in attachments.firstIndex { $0.id == id } }
+            guard attachmentID == nil || replacement != nil else { return }
+            for url in urls {
+                guard replacement != nil || attachments.count < ComposerAttachment.maxCount else {
+                    throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
+                }
+                let name = url.lastPathComponent
+                if let key, !key.isEmpty, name.contains(key) {
+                    throw WorkspaceError("Enter your API key in Model Settings.")
+                }
+                let payload: ComposerAttachment.Payload?
+                do {
+                    payload = try ComposerAttachment.payload(for: ComposerAttachment.read(url))
+                } catch {
+                    self.error = "\(name): \(error.localizedDescription)"
+                    payload = nil
+                }
+                try Self.validateAttachment(payload, key: key, alongside: attachments.filter { $0.id != attachmentID })
+                let attachment = ComposerAttachment(id: attachmentID ?? UUID(), name: name, payload: payload)
+                if let replacement {
+                    attachments[replacement] = attachment
+                    return
+                }
+                attachments.append(attachment)
+            }
+        }
+    }
+
+    func removeAttachment(_ id: UUID, in threadID: UUID) {
+        editAttachments(in: threadID) { attachments, _ in attachments.removeAll { $0.id == id } }
+    }
+
+    private static func validateAttachment(_ payload: ComposerAttachment.Payload?, key: String?,
+                                           alongside attachments: [ComposerAttachment]) throws {
+        guard let payload else { return }
+        let total = attachments.reduce(payload.data.count) { $0 + ($1.payload?.data.count ?? 0) }
+        guard total <= ComposerAttachment.maxBytes else { throw WorkspaceError("Attachments must total 4 MB or less.") }
+        if let key, !key.isEmpty, !payload.isImage, String(decoding: payload.data, as: UTF8.self).contains(key) {
+            throw WorkspaceError("Enter your API key in Model Settings.")
+        }
+    }
+
+    private func editAttachments(in threadID: UUID, _ edit: (inout [ComposerAttachment], String?) throws -> Void) {
+        guard canEditAttachments, let conversation, conversation.id == threadID else { return }
+        var attachments = composerAttachments
+        error = nil
+        do {
+            let key = try readCredential(effectiveModel.account)
+            // Commit files already accepted when a later file exceeds a limit.
+            do { try edit(&attachments, key) }
+            catch { self.error = error.localizedDescription }
+            let updated = attachments.isEmpty ? nil : attachments
+            if queueEdit != nil {
+                queueEdit?.attachments = updated
+            } else if attachments != composerAttachments {
+                try saveThread(threadID) { $0.composerAttachments = updated }
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
     var queuedMessages: [QueuedMessage] {
         guard let queue = conversation?.queuedMessages, !queue.isEmpty else { return [] }
         let recorded = Set(messages.compactMap(\.queuedID))
@@ -127,17 +210,18 @@ final class WorkspaceModel: ObservableObject {
     var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
     var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
     var canQueueDraft: Bool {
-        canUseQueue && queueEdit == nil && !promptText.isEmpty &&
+        canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil &&
             (phase == .running || (canStartQueuedMessage && !queuedMessages.isEmpty))
     }
-    var canUpdateQueuedMessage: Bool { queueEdit != nil && !promptText.isEmpty }
+    var canUpdateQueuedMessage: Bool { queueEdit != nil && hasPrompt && attachmentSendError == nil }
     private var canUseQueue: Bool {
         conversation?.archived == false && conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil
     }
     private var promptText: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hasPrompt: Bool { !promptText.isEmpty || !composerAttachments.isEmpty }
 
     func showsInSidebar(_ thread: Conversation) -> Bool {
-        thread.isDraft != true || thread.composerText != nil || thread.worktreeLaunch != nil
+        thread.isDraft != true || thread.hasComposerContent || thread.worktreeLaunch != nil
     }
 
     func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
@@ -227,7 +311,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
     var canSend: Bool {
-        phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil && !promptText.isEmpty
+        phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil
     }
     var canRetryWorktree: Bool {
         guard !operationsInProgress, let conversation, !conversation.archived,
@@ -244,8 +328,9 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil else { return }
-        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.composerText != nil ||
-            conversation.worktreeLaunch != nil || !(conversation.queuedMessages ?? []).isEmpty {
+        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasComposerContent ||
+            conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
+            !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
             connect()
             return
@@ -274,6 +359,7 @@ final class WorkspaceModel: ObservableObject {
         pendingToolApproval = nil
         queueDelivery = QueueDelivery()
         queueEdit = nil
+        supportsImageInput = false
         phase = .closed
     }
 
@@ -507,7 +593,7 @@ final class WorkspaceModel: ObservableObject {
               var thread = conversation, project.id != projectID else { return }
         let target = workspace.projects.firstIndex { $0.id == projectID && !$0.isScratch && $0.detached != true }
         guard projectID == nil ? !project.isScratch : target != nil else { return }
-        if draft.isEmpty {
+        if !thread.hasComposerContent {
             if let projectID {
                 addConversation(in: projectID)
             } else {
@@ -795,8 +881,10 @@ final class WorkspaceModel: ObservableObject {
     func send() {
         guard canSend, let process, let conversation else { return }
         let text = promptText
+        let attachments = conversation.composerAttachments
+        let submissionID = attachments == nil ? nil : UUID()
         do {
-            guard try canUsePrompt(text, fromComposer: true) else { return }
+            guard try canUsePrompt(text, attachments: attachments, fromComposer: true) else { return }
             if conversation.workingLocation.needsWorktree {
                 let launch = WorktreeLaunch(prompt: text, originalDraft: draft)
                 try saveThread(conversation.id) {
@@ -806,7 +894,9 @@ final class WorkspaceModel: ObservableObject {
                 startWorktreeLaunch(launch, in: conversation)
                 return
             }
-            let submission = Conversation.ComposerSubmission(previousUserMessageID: messages.last { $0.role == .user }?.id)
+            let submission = Conversation.ComposerSubmission(
+                previousUserMessageID: messages.last { $0.role == .user }?.id, id: submissionID
+            )
             try saveThread(conversation.id) { $0.composerSubmission = submission }
         } catch {
             self.error = error.localizedDescription
@@ -814,7 +904,7 @@ final class WorkspaceModel: ObservableObject {
         }
         do {
             if queuedMessages.isEmpty { queueDelivery.paused = false }
-            try beginTurn(text, using: process)
+            try beginTurn(text, using: process, submissionID: submissionID, attachments: attachments)
         } catch {
             self.error = "Pi is unavailable. Reconnect to send your message."
             shutdown()
@@ -825,12 +915,14 @@ final class WorkspaceModel: ObservableObject {
         guard canQueueDraft, !steering || canSteer else { return }
         do {
             let text = promptText
-            guard try canUsePrompt(text, fromComposer: true) else { return }
-            let item = QueuedMessage(text: text)
+            let attachments = conversation?.composerAttachments
+            guard try canUsePrompt(text, attachments: attachments, fromComposer: true) else { return }
+            let item = QueuedMessage(text: text, attachments: attachments)
             guard let id = conversation?.id else { return }
             try saveThread(id) { thread in
                 thread.queuedMessages = (thread.queuedMessages ?? []) + [item]
                 thread.composerText = nil
+                thread.composerAttachments = nil
             }
             error = nil
             if steering { sendQueuedMessageNow(item.id) }
@@ -841,17 +933,18 @@ final class WorkspaceModel: ObservableObject {
 
     func editQueuedMessage(_ id: UUID) {
         guard canEditQueue, queueEdit == nil, let item = queuedMessages.first(where: { $0.id == id }) else { return }
-        queueEdit = QueueEdit(id: id, text: item.text)
+        queueEdit = QueueEdit(id: id, text: item.text, attachments: item.attachments)
     }
 
     func updateQueuedMessage() {
         guard canUpdateQueuedMessage, let edit = queueEdit else { return }
         do {
             let text = promptText
-            guard try canUsePrompt(text, fromComposer: true) else { return }
+            guard try canUsePrompt(text, attachments: edit.attachments, fromComposer: true) else { return }
             try saveQueue { queue in
                 guard let index = queue.firstIndex(where: { $0.id == edit.id }) else { return }
                 queue[index].text = text
+                queue[index].attachments = edit.attachments
             }
             cancelQueuedMessageEdit()
         } catch {
@@ -901,7 +994,8 @@ final class WorkspaceModel: ObservableObject {
         do {
             let skipping = canSkipCompaction
             try process.send(SendQueuedInput(type: skipping ? .skipCompaction : .steer, turnID: activeTurnID,
-                                             queuedID: item.id, text: skipping ? nil : item.text))
+                                             queuedID: item.id, text: skipping ? nil : item.text,
+                                             attachments: skipping ? nil : item.attachments))
             queueDelivery.inFlight.insert(item.id)
             if skipping { queueDelivery.mode = .waiting }
         } catch {
@@ -933,7 +1027,8 @@ final class WorkspaceModel: ObservableObject {
         queueDelivery.paused = true
         guard validateQueuedPrompt(item) else { return }
         do {
-            try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: skippingCompaction)
+            try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: skippingCompaction,
+                          attachments: item.attachments)
             queueDelivery.inFlight.insert(item.id)
             queueDelivery.paused = false
         } catch {
@@ -943,7 +1038,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func validateQueuedPrompt(_ item: QueuedMessage) -> Bool {
         do {
-            return try canUsePrompt(item.text)
+            return try canUsePrompt(item.text, attachments: item.attachments)
         } catch {
             self.error = error.localizedDescription
             return false
@@ -963,23 +1058,30 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         do {
-            guard try canUsePrompt(launch.prompt) else { return }
+            guard try canUsePrompt(launch.prompt, attachments: conversation.composerAttachments) else { return }
             startWorktreeLaunch(launch, in: conversation)
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    private func canUsePrompt(_ text: String, fromComposer: Bool = false) throws -> Bool {
+    private func canUsePrompt(_ text: String, attachments: [ComposerAttachment]? = nil,
+                              fromComposer: Bool = false) throws -> Bool {
+        if let reason = attachmentSendError(for: attachments ?? []) { throw WorkspaceError(reason) }
         let settings = try effectiveModel.validated()
         guard let key = try readCredential(settings.account) else {
             showingSettings = true
             return false
         }
-        guard !text.contains(key) else {
+        guard key.isEmpty || !text.contains(key) else {
             if fromComposer { draft = "" }
             error = "Enter your API key in Model Settings."
             return false
+        }
+        if !key.isEmpty, (attachments ?? []).contains(where: {
+            $0.name.contains(key) || ($0.payload.map { !$0.isImage && String(decoding: $0.data, as: UTF8.self).contains(key) } ?? false)
+        }) {
+            throw WorkspaceError("Remove the attachment that contains your API key.")
         }
         return true
     }
@@ -1111,10 +1213,12 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func beginTurn(_ text: String, using process: any PiConnection, queuedID: UUID? = nil,
-                           skippingCompaction: Bool = false) throws {
+                           skippingCompaction: Bool = false, submissionID: UUID? = nil,
+                           attachments: [ComposerAttachment]? = nil) throws {
         let turnID = UUID()
         try process.send(SendPrompt(turnID: turnID, text: text, queuedID: queuedID,
-                                    skipCompaction: skippingCompaction ? true : nil))
+                                    skipCompaction: skippingCompaction ? true : nil, submissionID: submissionID,
+                                    attachments: attachments))
         activeTurnID = turnID
         partial = ""
         activity = ""
@@ -1212,6 +1316,9 @@ final class WorkspaceModel: ObservableObject {
         guard let conversation, let launch = conversation.worktreeLaunch,
               launch.stage == .openThread, launch.canInterrupt else { return }
         do {
+            guard try canUsePrompt(launch.prompt, attachments: conversation.composerAttachments) else {
+                throw WorkspaceError("Save an API key for this provider in Settings.")
+            }
             try saveThread(conversation.id) {
                 $0.worktreeLaunch?.stage = .sendPrompt
             }
@@ -1222,7 +1329,9 @@ final class WorkspaceModel: ObservableObject {
         }
         preparingWorktree = false
         do {
-            try beginTurn(launch.prompt, using: worker)
+            let attachments = conversation.composerAttachments
+            try beginTurn(launch.prompt, using: worker, submissionID: attachments == nil ? nil : launch.id,
+                          attachments: attachments)
             queueDelivery.paused = false
         } catch {
             connectionFailed("Pi disconnected while sending the message. Reconnect to check its history.")
@@ -1231,8 +1340,13 @@ final class WorkspaceModel: ObservableObject {
 
     @discardableResult
     private func confirmWorktreePrompt(in history: [ChatMessage]) -> Bool {
-        guard let conversation, let launch = conversation.worktreeLaunch,
-              history.first(where: { $0.role == .user })?.text == launch.prompt else { return false }
+        guard let conversation, let launch = conversation.worktreeLaunch else { return false }
+        let accepted = if conversation.composerAttachments != nil, let id = launch.id {
+            history.contains { $0.role == .user && $0.submissionID == id }
+        } else {
+            history.first(where: { $0.role == .user })?.text == launch.prompt
+        }
+        guard accepted else { return false }
         preparingWorktree = false
         try? saveThread(conversation.id) {
             let nextDraft = $0.composerText
@@ -1245,13 +1359,17 @@ final class WorkspaceModel: ObservableObject {
 
     private func reconcileComposerSubmission(in history: [ChatMessage], ended: Bool = false) {
         guard let conversation, let submission = conversation.composerSubmission else { return }
-        let text = conversation.composerText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = conversation.composerText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let latest = history.last { $0.role == .user }
-        let accepted = latest.map { $0.id != submission.previousUserMessageID && $0.text == text } ?? false
+        let accepted = if let id = submission.id {
+            history.contains { $0.role == .user && $0.submissionID == id }
+        } else {
+            latest.map { $0.id != submission.previousUserMessageID && $0.text == text } ?? false
+        }
         guard accepted || ended else { return }
         guard let p = selectedProjectIndex,
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
-        if accepted, let text {
+        if accepted {
             workspace.projects[p].conversations[t].recordPrompt(text)
         } else {
             workspace.projects[p].conversations[t].composerSubmission = nil
@@ -1264,7 +1382,12 @@ final class WorkspaceModel: ObservableObject {
         guard phase == .ready, !operationsInProgress,
               let conversation, !conversation.archived,
               conversation.worktreeLaunch?.awaitingHistory == true else { return }
-        try? saveThread(conversation.id) { $0.worktreeLaunch = nil }
+        try? saveThread(conversation.id) {
+            if $0.composerAttachments != nil, let launch = $0.worktreeLaunch {
+                $0.composerText = launch.originalDraft
+            }
+            $0.worktreeLaunch = nil
+        }
     }
 
     private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
@@ -1282,9 +1405,10 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 connectionFailed("The Pi helper disconnected during Keychain access.")
             }
-        case let .ready(history):
+        case let .ready(history, supportsImages):
             guard phase == .connecting else { return }
             messages = history
+            supportsImageInput = supportsImages
             reconcileQueue(history)
             phase = .ready
             reconcileComposerSubmission(in: history, ended: true)

@@ -243,6 +243,10 @@ struct ModelSettingsView: View {
                         get: { settings.localTools == true }, set: { settings.localTools = $0 }
                     ))
                     .accessibilityIdentifier("local-tools")
+                    Toggle("Model supports image input", isOn: Binding(
+                        get: { settings.localImages == true }, set: { settings.localImages = $0 }
+                    ))
+                    .accessibilityIdentifier("local-images")
                 } else {
                     Picker("Thinking level", selection: Binding(
                         get: { settings.thinkingLevel ?? .off }, set: { settings.thinkingLevel = $0 }

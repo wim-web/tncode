@@ -41,6 +41,7 @@ struct ModelSettings: Codable, Equatable {
     var endpoint = "http://127.0.0.1:11434/v1"
     var contextWindow = 8192
     var localTools: Bool?
+    var localImages: Bool?
     var thinkingLevel: ThinkingLevel?
 
     var supportsTools: Bool { provider != .local || localTools == true }
@@ -148,6 +149,7 @@ struct WorktreeLaunch: Codable {
 struct Conversation: Codable, Identifiable {
     struct ComposerSubmission: Codable {
         let previousUserMessageID: String?
+        var id: UUID?
     }
 
     struct ForkOrigin: Codable {
@@ -164,12 +166,14 @@ struct Conversation: Codable, Identifiable {
     var isDraft: Bool?
     var worktreeLaunch: WorktreeLaunch?
     var composerText: String?
+    var composerAttachments: [ComposerAttachment]?
     var composerSubmission: ComposerSubmission?
     var queuedMessages: [QueuedMessage]?
     var forkOrigin: ForkOrigin?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
+    var hasComposerContent: Bool { composerText != nil || !(composerAttachments ?? []).isEmpty }
     var canDiscardDraft: Bool {
         isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil
     }
@@ -177,10 +181,11 @@ struct Conversation: Codable, Identifiable {
     mutating func recordPrompt(_ text: String) {
         isDraft = false
         composerText = nil
+        composerAttachments = nil
         composerSubmission = nil
         lastActiveAt = Date()
         if threadShelf == .settled { shelf = .active }
-        if ["New thread", "New conversation"].contains(title) {
+        if !text.isEmpty, ["New thread", "New conversation"].contains(title) {
             title = String((text.split(whereSeparator: \.isNewline).first ?? Substring(text)).prefix(54))
         }
     }
@@ -250,7 +255,7 @@ struct Project: Codable, Identifiable {
 
     mutating func selectDraft() {
         if let empty = conversations.first(where: {
-            $0.canDiscardDraft && $0.composerText == nil
+            $0.canDiscardDraft && !$0.hasComposerContent
         }) {
             selectedConversation = empty.id
             return

@@ -54,10 +54,15 @@ struct QueuedMessagesView: View {
             "Send into the current turn"
         }
         return HStack(spacing: 6) {
-            Text(item.text)
+            Text(item.text.isEmpty ? (item.attachments ?? []).map(\.name).joined(separator: ", ") : item.text)
                 .lineLimit(1)
                 .help(item.text)
                 .accessibilityIdentifier("queued-message-\(item.id)")
+            if let attachments = item.attachments, !attachments.isEmpty {
+                Label("\(attachments.count)", systemImage: "paperclip")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("\(attachments.count) attachments")
+            }
             Spacer(minLength: 0)
             if editing {
                 Text("Editing").foregroundStyle(.secondary)

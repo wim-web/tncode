@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const workspace = resolve(import.meta.dirname, "..");
+const app = process.argv[2] && resolve(process.argv[2], "Contents");
+const sidecar = app ? join(app, "Resources/Sidecar") : join(workspace, "Sidecar");
+const sdk = "node_modules/@earendil-works/pi-coding-agent";
+const lock = JSON.parse(readFileSync(join(workspace, "Sidecar/package-lock.json"), "utf8"));
+const installed = JSON.parse(readFileSync(join(sidecar, sdk, "package.json"), "utf8"));
+assert.equal(installed.version, lock.packages[sdk].version);
+
+const root = mkdtempSync(join(tmpdir(), "pi-attachments-"));
+const images = {
+  red: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
+  blue: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgYPgPRmAKABf2A/1+6zfzAAAAAElFTkSuQmCC",
+};
+const note = "Selected file contents Ω\nSecond fixture line.\n";
+const requests = [];
+let fixtureError;
+const server = createServer(async (request, response) => {
+  try {
+    assert.equal(request.url, "/v1/chat/completions");
+    assert.equal(request.method, "POST");
+    assert.equal(request.headers.authorization, "Bearer attachment-fixture-key");
+    const body = await new Response(request).json();
+    assert.equal(body.model, "attachment-fixture");
+    const message = body.messages.findLast(({ role }) => role === "user");
+    requests.push(message.content);
+    const text = message.content.filter(({ type }) => type === "text").map(({ text }) => text).join("");
+    assert.equal(text, `Attached text file "note.txt":\n${note}`);
+    const urls = message.content.filter(({ type }) => type === "image_url").map(({ image_url }) => image_url.url);
+    assert.deepEqual(urls, [`data:image/png;base64,${images.blue}`]);
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    for (const [delta, reason] of [[{ role: "assistant", content: "Attachment fixture received." }, null], [{}, "stop"]]) {
+      const chunk = {
+        id: "attachment-fixture", object: "chat.completion.chunk", created: 1, model: body.model,
+        choices: [{ index: 0, delta, finish_reason: reason }],
+      };
+      response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    }
+    response.end("data: [DONE]\n\n");
+  } catch (error) {
+    fixtureError = error;
+    response.destroy();
+  }
+});
+
+try {
+  for (const [color, image] of Object.entries(images)) {
+    mkdirSync(join(root, color));
+    writeFileSync(join(root, color, "same.png"), Buffer.from(image, "base64"));
+  }
+  writeFileSync(join(root, "note.txt"), note);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const run = spawn("swift", ["test", "--disable-sandbox", "--filter", "ComposerAttachmentTests"], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      CLANG_MODULE_CACHE_PATH: join(workspace, ".build/local-clang-cache"),
+      SWIFTPM_MODULECACHE_OVERRIDE: join(workspace, ".build/module-cache"),
+      PI_ATTACHMENT_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/v1`,
+      PI_ATTACHMENT_TEST_NODE: app ? join(app, "Helpers/node") : process.execPath,
+      PI_ATTACHMENT_TEST_WORKER: join(sidecar, "worker.mjs"),
+      PI_ATTACHMENT_TEST_FIXTURES: root,
+    },
+    stdio: "inherit",
+  });
+  const [code, signal] = await once(run, "close");
+  if (fixtureError) throw fixtureError;
+  assert.equal(signal, null);
+  assert.equal(code, 0);
+  assert.equal(requests.length, 1);
+  console.log(`PASS Pi SDK ${installed.version} sent the retained blue PNG bytes and complete UTF-8 note.`);
+} finally {
+  server.close();
+  rmSync(root, { recursive: true, force: true });
+}

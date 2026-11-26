@@ -1148,7 +1148,7 @@ struct WorkspaceView: View {
                     ForEach(model.messages) { message in
                         let isMatch = message.id == target?.messageID
                         VStack(alignment: .leading, spacing: 8) {
-                            messageRow(message.text, role: message.role)
+                            messageRow(message.text, role: message.role, attachments: message.attachments ?? [])
                                 .background(isMatch ? accent.opacity(0.18) : .clear,
                                             in: RoundedRectangle(cornerRadius: 11))
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
@@ -1210,17 +1210,26 @@ struct WorkspaceView: View {
         .disabled(!model.canOpenForkLink(threadID))
     }
 
-    private func messageRow(_ text: String, role: ChatMessage.Role) -> some View {
+    private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = []) -> some View {
         let rendered = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         return HStack {
             if role == .user { Spacer(minLength: 35) }
-            Text(role == .assistant ? rendered : AttributedString(text))
-                .font(.system(size: 14))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .padding(role == .user ? 11 : 0)
-                .background(role == .user ? surface : Color.clear, in: RoundedRectangle(cornerRadius: 11))
+            VStack(alignment: .leading, spacing: 6) {
+                if !text.isEmpty {
+                    Text(role == .assistant ? rendered : AttributedString(text))
+                        .font(.system(size: 14))
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+                }
+                ForEach(attachments) { attachment in
+                    Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
+                        .font(.callout)
+                        .accessibilityIdentifier("sent-attachment-\(attachment.id)")
+                }
+            }
+            .padding(role == .user ? 11 : 0)
+            .background(role == .user ? surface : Color.clear, in: RoundedRectangle(cornerRadius: 11))
             if role == .assistant { Spacer(minLength: 0) }
         }
     }
@@ -1302,6 +1311,9 @@ struct WorkspaceView: View {
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            ComposerAttachmentsView(model: model, threadID: threadID)
+                .id(threadID)
+                .padding(.bottom, 6)
             TextField(model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { model.conversation?.id == threadID ? model.draft : "" },
                 set: { model.editDraft($0, in: threadID) }

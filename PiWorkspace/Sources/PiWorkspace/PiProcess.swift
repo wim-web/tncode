@@ -8,11 +8,13 @@ struct ChatMessage: Decodable, Identifiable {
     let text: String
     var queuedID: UUID? = nil
     var canFork: Bool? = nil
+    var submissionID: UUID? = nil
+    var attachments: [SentAttachment]? = nil
 }
 
 enum PiEvent: Decodable {
     case credential(id: String, read: Bool)
-    case ready([ChatMessage])
+    case ready([ChatMessage], supportsImages: Bool = false)
     case history([ChatMessage])
     case partial(String)
     case activity(String)
@@ -27,6 +29,7 @@ enum PiEvent: Decodable {
     private enum Field: String, CodingKey {
         case type, requestID, operation, messages, text, error, turnID, queuedID, mode, threadID
     }
+    private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
         case credential, ready, history, partial, activity, toolApproval, finished, fatal
         case inputMode, queueRejected, compactionSkipped, forked
@@ -40,7 +43,10 @@ enum PiEvent: Decodable {
         case .credential:
             self = .credential(id: try fields.decode(String.self, forKey: .requestID),
                                read: try fields.decode(Operation.self, forKey: .operation) == .read)
-        case .ready: self = .ready(try fields.decode([ChatMessage].self, forKey: .messages))
+        case .ready:
+            let capabilities = try decoder.container(keyedBy: Capability.self)
+            self = .ready(try fields.decode([ChatMessage].self, forKey: .messages),
+                          supportsImages: try capabilities.decodeIfPresent(Bool.self, forKey: .supportsImages) ?? false)
         case .history: self = .history(try fields.decode([ChatMessage].self, forKey: .messages))
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
@@ -88,6 +94,8 @@ struct SendPrompt: Encodable {
     let text: String
     var queuedID: UUID?
     var skipCompaction: Bool?
+    var submissionID: UUID?
+    var attachments: [ComposerAttachment]?
 }
 struct SendQueuedInput: Encodable {
     enum Kind: String, Encodable { case steer, skipCompaction }
@@ -95,6 +103,7 @@ struct SendQueuedInput: Encodable {
     let turnID: UUID
     let queuedID: UUID
     var text: String?
+    var attachments: [ComposerAttachment]?
 }
 struct CancelPrompt: Encodable { let type = "cancel"; let turnID: UUID }
 struct CredentialResult: Encodable {
