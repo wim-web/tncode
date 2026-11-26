@@ -83,10 +83,10 @@ struct GitWorkspace: Sendable {
     }
 
     @MainActor
-    static func cloneRepository(_ remote: ProjectCloneRemote, to folder: URL) async throws -> URL {
+    static func cloneRepository(from source: String, to folder: URL) async throws -> URL {
         try await installNewRepository(at: folder) { staging in
             _ = try await GitWorkspace(path: staging.path).run(
-                ["clone", "--quiet", "--no-local", "--template=", "--", remote.argument, staging.path],
+                ["clone", "--quiet", "--no-local", "--template=", "--", source, staging.path],
                 outputLimit: 0
             )
         }

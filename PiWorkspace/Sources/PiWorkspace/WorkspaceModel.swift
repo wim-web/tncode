@@ -475,7 +475,7 @@ final class WorkspaceModel: ObservableObject {
             }
             try await runGitMutation {
                 let clone = Task {
-                    let folder = try await GitWorkspace.cloneRepository(remote, to: target)
+                    let folder = try await GitWorkspace.cloneRepository(from: remote.argument, to: target)
                     try registerCreatedRepository(folder, request: request)
                 }
                 projectCloneTask = clone
