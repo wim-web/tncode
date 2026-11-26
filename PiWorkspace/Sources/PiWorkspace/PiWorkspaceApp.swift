@@ -78,6 +78,10 @@ struct PiWorkspaceApp: App {
                     .keyboardShortcut(",")
                     .disabled(model.phase.isRunning)
             }
+            CommandGroup(after: .help) {
+                Button("Show Welcome") { model.showingWelcome = true }
+                    .disabled(model.operationsInProgress || model.showingSettings || model.projectPicker != nil)
+            }
         }
     }
 }

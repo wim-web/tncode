@@ -32,6 +32,7 @@ final class WorkspaceModel: ObservableObject {
     }
     @Published var error: String?
     @Published var showingSettings = false
+    @Published var showingWelcome = false
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
 
@@ -46,6 +47,7 @@ final class WorkspaceModel: ObservableObject {
             let store = try WorkspaceStore(root: root)
             workspace = try store.load()
             self.store = store
+            showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
         } catch {
             self.error = error.localizedDescription
         }
@@ -88,12 +90,18 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func start() {
-        guard process == nil else { return }
+        guard !showingWelcome, process == nil else { return }
         let recent = projects.max { lhs, rhs in
             if lhs.lastActivity == rhs.lastActivity { return rhs.id == workspace.selectedProject && lhs.id != rhs.id }
             return lhs.lastActivity < rhs.lastActivity
         }
         if let recent { addConversation(in: recent.id) }
+    }
+
+    func finishWelcome() {
+        guard save({ $0.welcomeCompleted = true }) else { return }
+        showingWelcome = false
+        if conversation == nil { start() }
     }
 
     func shutdown() {
@@ -146,6 +154,7 @@ final class WorkspaceModel: ObservableObject {
         let previous = project
         let occupied = Set(composerText.keys)
         guard save({
+            $0.welcomeCompleted = true
             if let index {
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
@@ -161,6 +170,7 @@ final class WorkspaceModel: ObservableObject {
                 $0.selectedProject = project.id
             }
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
+        showingWelcome = false
         if previous?.id != project?.id || previous?.path != project?.path ||
             previous?.selectedConversation != project?.selectedConversation || process == nil {
             showArchive = conversation?.archived == true

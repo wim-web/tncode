@@ -128,7 +128,7 @@ struct Conversation: Codable, Identifiable {
     var threadShelf: ThreadShelf { shelf ?? .active }
 
     mutating func recordPrompt(_ text: String) {
-        isDraft = nil
+        isDraft = false
         lastActiveAt = Date()
         if threadShelf == .settled { shelf = .active }
         if ["New thread", "New conversation"].contains(title) {
@@ -187,6 +187,7 @@ struct Workspace: Codable {
     var projects: [Project] = []
     var selectedProject: UUID?
     var model = ModelSettings()
+    var welcomeCompleted: Bool?
 }
 
 struct WorkspaceError: LocalizedError {

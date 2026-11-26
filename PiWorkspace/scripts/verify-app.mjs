@@ -31,6 +31,7 @@ const firstPartialCanFinish = new Promise(resolve => { releaseFirst = resolve; }
 let rejectNextRequest = false;
 let holdForStop = false;
 let streamClosed = false;
+let requestedWrite;
 let rejected = 0;
 let appPID;
 let launchNumber = 0;
@@ -74,6 +75,14 @@ const server = createServer(async (request, response) => {
     const body = await new Response(request).text();
     const target = { body: JSON.parse(body), fragments: [] };
     targets.push(target);
+    if (requestedWrite && target.body.messages.at(-1)?.role === "user") {
+      const call = { index: 0, id: "write-" + targets.length, type: "function",
+        function: { name: "write", arguments: JSON.stringify({ path: requestedWrite, content: "Approved fixture write.\n" }) } };
+      response.writeHead(200, { "Content-Type": "text/event-stream" }).end(
+        fixtureChunk(targets.length, { role: "assistant", tool_calls: [call] }) +
+        fixtureChunk(targets.length, {}, "tool_calls") + "data: [DONE]\n\n");
+      return;
+    }
     if (holdForStop) {
       response.on("close", () => { streamClosed = true; });
       response.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -253,8 +262,8 @@ async function openProject() {
 }
 
 async function send(prompt) {
-  await typePrompt(prompt);
   await until(() => !tree().includes("Opening thread…"), "Pi to become ready");
+  await typePrompt(prompt);
   press("send-message");
   await until(() => tree().includes("Preparing worktree…") || visible("stop-message"), "message send");
 }
@@ -357,6 +366,27 @@ async function verifyCheckout(checkout) {
   record("Changes committed only the checked file. The excluded tracked file kept both edits unstaged. The other untracked file and original checkout were unchanged.");
 }
 
+async function verifyApprovals(cwd) {
+  press("tool-permissions");
+  await until(() => visible("tool-mode-supervised"), "Supervised mode in the permissions menu");
+  press("tool-mode-supervised");
+  await until(() => visible("tool-permissions").includes("Supervised"), "Supervised selection");
+  for (const decision of ["decline", "approve"]) {
+    requestedWrite = decision + "-fixture.txt";
+    const file = join(cwd, requestedWrite);
+    await send("Request the " + decision + " fixture write.");
+    await until(() => visible(decision + "-tool"), "tool decision for " + requestedWrite);
+    assert(tree().includes(requestedWrite));
+    assert(!existsSync(file));
+    press(decision + "-tool");
+    await until(() => visible("send-message") && !tree().includes('id="tool-approval"'), "tool decision completed");
+    if (decision === "approve") assert.equal(readFileSync(file, "utf8"), "Approved fixture write.\n");
+    else assert(!existsSync(file));
+  }
+  requestedWrite = undefined;
+  record("Supervised displayed each write before execution. Decline left the file absent. Approve created only the requested file.");
+}
+
 function inspectFiles() {
   const files = readdirSync(directory, { recursive: true, withFileTypes: true });
   for (const entry of files) {
@@ -376,20 +406,32 @@ try {
   await once(server, "listening");
   const endpoint = "http://127.0.0.1:" + server.address().port + "/v1";
   writeFileSync(join(workspace, "workspace.json"), JSON.stringify({
-    projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192 },
+    projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel },
   }), { mode: 0o600 });
 
   record("Verification folder: " + directory);
   record(fixtureModel ? "Model endpoint: deterministic loopback fixture." : "Model endpoint: loopback Ollama.");
-  updateKey("--set-api-key-from-stdin", secret);
-  keySaved = true;
+  if (worktreeTest) {
+    updateKey("--set-api-key-from-stdin", secret);
+    keySaved = true;
+  }
   const firstPID = await launch();
+  const startTitle = worktreeTest ? "Start" : "Start without an agent";
+  assert(visible("start-workspace").includes(JSON.stringify(startTitle)));
+  press("start-workspace");
+  await until(() => visible("empty-open-project"), "empty workspace after Welcome");
   await settings();
+  if (!worktreeTest) {
+    keySaved = true;
+    drive("type", ["key-input"], secret);
+    await closeSettings();
+    await settings();
+  }
   await until(() => visible("remove-api-key"), "saved Keychain entry");
   await closeSettings();
   await openProject();
   record("Cancelling and an invalid path left the index empty. Registration focused the draft. Browse returned the same folder and kept its project and draft IDs.");
-  record("App opened Sample Project, created a conversation, and found the Swift-provisioned Keychain item.");
+  record("Welcome completed through " + startTitle + ". The configured model has a Keychain item.");
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const draftID = index().projects[0].selectedConversation;
   if (worktreeTest) {
@@ -468,6 +510,7 @@ try {
     assert(tree().includes("Partial reply before Stop."));
     holdForStop = false;
     record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
+    await verifyApprovals(checkout ?? project);
   }
   rejectNextRequest = true;
   await send("Check error handling.");

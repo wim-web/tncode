@@ -60,11 +60,17 @@ struct WorkspaceView: View {
     private let accent = Color(red: 0.24, green: 0.48, blue: 0.70)
 
     var body: some View {
-        HSplitView {
-            sidebar
-                .frame(minWidth: 177, idealWidth: 212, maxWidth: 238)
-            detail
-                .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            HSplitView {
+                sidebar
+                    .frame(minWidth: 177, idealWidth: 212, maxWidth: 238)
+                detail
+                    .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .opacity(model.showingWelcome ? 0 : 1)
+            .accessibilityHidden(model.showingWelcome)
+            .disabled(model.showingWelcome)
+            if model.showingWelcome { welcome }
         }
         .tint(accent)
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
@@ -114,6 +120,28 @@ struct WorkspaceView: View {
         } message: { _ in
             Text("The folder and its threads stay on disk.")
         }
+    }
+
+    private var welcome: some View {
+        let ready = model.hasKey(for: model.workspace.model)
+        return VStack(alignment: .leading, spacing: 18) {
+            Text("Welcome to Pi Workspace")
+                .font(.title.weight(.semibold))
+            Text("Connect a model to send messages with Pi. You can open projects before setting up a model.")
+                .foregroundStyle(.secondary)
+            LabeledContent("Model", value: model.workspace.model.model)
+            Button("Model Settings…") { model.showingSettings = true }
+                .accessibilityIdentifier("model-settings")
+            if let error = model.error { Text(error).foregroundStyle(.red) }
+            Button(ready ? "Start" : "Start without an agent", action: model.finishWelcome)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("start-workspace")
+        }
+        .padding(32)
+        .frame(maxWidth: 560, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(canvas)
     }
 
     private var sidebar: some View {
@@ -458,7 +486,8 @@ struct WorkspaceView: View {
     }
 
     private func conversation(_ project: Project, _ thread: Conversation) -> some View {
-        let drafting = !thread.archived && model.messages.isEmpty && model.partial.isEmpty && !model.phase.isRunning
+        let legacyDraft = model.phase == .ready && model.messages.isEmpty && thread.worktreeLaunch == nil
+        let drafting = !thread.archived && (thread.isDraft ?? legacyDraft)
         return VStack(spacing: 0) {
             if drafting {
                 Spacer()

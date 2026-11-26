@@ -109,7 +109,7 @@ async function open() {
   child.stderr.on("data", (text) => { stderr += text; });
   const worker = { child, output, closed, stderr: () => stderr };
   send(child, {
-    type: "open", cwd, sessionDir, threadID, toolPermission: "readOnly",
+    type: "open", cwd, sessionDir, threadID, toolPermission: "readFiles",
     config: {
       provider: "local", model, contextWindow: 8192,
       endpoint: `http://127.0.0.1:${server.address().port}/v1`,
