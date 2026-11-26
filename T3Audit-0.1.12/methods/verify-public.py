@@ -44,7 +44,7 @@ def git(*args):
 
 def main():
     frozen=json.loads((AUDIT/"inventory/freeze.json").read_text())
-    assert git("-C",str(UPSTREAM),"rev-parse","HEAD")==frozen["commit"],"Run git submodule update --init --recursive"
+    assert git("-C",str(UPSTREAM),"rev-parse","HEAD")==frozen["commit"],"Run git -c submodule.recurse=false submodule update --init --depth 1 -- T3Audit-0.1.12/.source"
     features=indexed(AUDIT/"inventory/features.tsv")
     entries=indexed(AUDIT/"inventory/entries.tsv")
     live=indexed(AUDIT/"inventory/runtime-entries.tsv","live_entry_id")

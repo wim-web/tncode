@@ -26,11 +26,12 @@ T3 Code (Beta) 0.1.12 を Swift／SwiftUI の macOS アプリへ移植するた�
 ## 取得・検査
 
 ```sh
-git clone --recurse-submodules --shallow-submodules https://github.com/wim-web/tncode.git
+git clone --no-recurse-submodules https://github.com/wim-web/tncode.git
 cd tncode
+git -c submodule.recurse=false submodule update --init --depth 1 -- T3Audit-0.1.12/.source
 python3 T3Audit-0.1.12/methods/verify-public.py
 ```
 
-検査には Python 3.9 以降と Git を使う。clone した後は `T3Audit-0.1.12/index.html` をブラウザーで開くと、オフラインで機能 ID、登録名、実機入口 ID を検索できる。GitHub 上では上の Markdown の索引から読める。`T3Audit-0.1.12/.source` は固定した公式ソースのサブモジュール。[テスト環境での操作手順](T3Audit-0.1.12/methods/README.md) · [T3 Code の権利表記](LICENSES/T3-Code.txt)
+T3 原本内部の参照用ツリーには URL のない入れ子の gitlink があるため、ここでは上記の1階層だけを取得する。検査には Python 3.9 以降と Git を使う。clone した後は `T3Audit-0.1.12/index.html` をブラウザーで開くと、オフラインで機能 ID、登録名、実機入口 ID を検索できる。GitHub 上では上の Markdown の索引から読める。`T3Audit-0.1.12/.source` は固定した公式ソースのサブモジュール。[テスト環境での操作手順](T3Audit-0.1.12/methods/README.md) · [T3 Code の権利表記](LICENSES/T3-Code.txt)
 
 公開版には、原本の181回の画面採取と Swift 配布版13状態から取り出した構造・座標、状態と結果の要約を収録した。実機のスクリーンショット、録画、DOM・Accessibility の生出力、端末ログ、プロファイル、認証情報は公開対象外。配置図は寸法から作成した説明用の図で、画素比較用の写真ではない。
