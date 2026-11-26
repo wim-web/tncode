@@ -13,6 +13,7 @@ Usage:
   ax menu-item PID TITLE
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
+  ax selected-text PID TEXT_AREA_IDENTIFIER
   ax frame PID IDENTIFIER
   ax web-frame PID DOM_IDENTIFIER
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
@@ -71,6 +72,7 @@ private enum Operation {
     case menuItem(String)
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
+    case selectedText(String)
     case frame(String)
     case webFrame(String)
     case sizeWindow(String, CGSize)
@@ -97,6 +99,8 @@ private enum Operation {
             self = try .dump(DisplayOptions(arguments, allowDepth: true))
         case ("get", let id?):
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
+        case ("selected-text", let id?) where arguments.count == 1:
+            self = .selectedText(id)
         case ("frame", let id?) where arguments.count == 1:
             self = .frame(id)
         case ("web-frame", let id?) where arguments.count == 1:
@@ -438,6 +442,13 @@ private func run(_ arguments: [String]) throws {
         }
     case .get(let id, let options):
         print(try line(for: element(withID: id, in: app), options: options))
+    case .selectedText(let id):
+        let target = try element(withID: id, in: app)
+        guard attribute(kAXRoleAttribute, on: target) as? String == kAXTextAreaRole,
+              let text = attribute(kAXSelectedTextAttribute, on: target) as? String else {
+            throw Failure("The requested text area does not expose a selection.")
+        }
+        print(text, terminator: "")
     case .frame(let id):
         let rect = try frame(of: element(withID: id, in: app))
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
@@ -446,7 +457,9 @@ private func run(_ arguments: [String]) throws {
         try activateForInput(app, pid: pid)
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
-        let characters: [CGKeyCode: UInt16] = [3: 0x66, 30: 0x5D, 33: 0x5B, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
+        let characters: [CGKeyCode: UInt16] = [0: 0x61, 2: 0x64, 3: 0x66, 8: 0x63, 13: 0x77,
+                                               16: 0x79, 17: 0x74, 30: 0x5D, 33: 0x5B, 35: 0x70,
+                                               36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
                                                 123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
         try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: true)
     case .webFrame(let id):
@@ -474,7 +487,16 @@ private func run(_ arguments: [String]) throws {
         try requireKeyboardAccess()
         try drag(in: frame(of: element(withID: id, in: app)), from: fraction, by: delta, to: pid)
     case .press(let id):
-        let target = try element(withID: id, in: app)
+        var target = try? element(withID: id, in: app)
+        if target == nil {
+            try activateForInput(app, pid: pid)
+            let deadline = ProcessInfo.processInfo.systemUptime + 2
+            while target == nil, ProcessInfo.processInfo.systemUptime < deadline {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+                target = try? element(withID: id, in: app)
+            }
+        }
+        guard let target else { throw Failure("No element has that identifier.") }
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")
     case .closeWindow(let id):
         let window = try element(withID: id, in: app)

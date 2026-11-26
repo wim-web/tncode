@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 export async function closeTerminalPane({ press, visible, until }, confirm = true) {
@@ -8,6 +10,31 @@ export async function closeTerminalPane({ press, visible, until }, confirm = tru
   try { press(choice); } catch (error) {
     if (!/AX error -2520[04]/.test(String(error.stderr))) throw error;
   }
+}
+
+export async function verifyInteractiveShell({ focus, keyFor, until, value }, checkout) {
+  const id = "thread-terminal";
+  focus(id);
+  const screen = () => JSON.parse(value(id).trimEnd().match(/value=(".*")$/)[1]);
+  const shell = await until(() => screen().match(/Fixture terminal PID (\d+)/)?.[1], "fixture shell PID");
+  const keys = { a: 0, c: 8, d: 2, p: 35, t: 17, w: 13, y: 16 };
+  function enter(command) {
+    for (const letter of command) keyFor(id, keys[letter]);
+    keyFor(id, 36);
+  }
+  enter("pwd");
+  await until(() => {
+    const result = screen().match(/[$#] pwd\n(.+?)\n[^\n]*[$#] /s)?.[1];
+    return result && realpathSync(result.replaceAll("\n", "")) === realpathSync(checkout);
+  }, "pwd in the interactive shell");
+  enter("cat");
+  const catPID = await until(() => Number(execFileSync("/usr/bin/pgrep", ["-P", shell, "-x", "cat"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })), "foreground cat awaiting input");
+  keyFor(id, keys.c, "ctrl");
+  enter("tty");
+  const tty = await until(() => screen().match(/\/dev\/ttys\d+/)?.[0], "tty command runs after Control-C interrupts cat");
+  assert.throws(() => process.kill(catPID, 0), { code: "ESRCH" });
+  return tty;
 }
 
 export async function verifyTerminalPanes(driver, originalPID) {

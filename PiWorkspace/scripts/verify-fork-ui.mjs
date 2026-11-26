@@ -2,17 +2,29 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+function readHistory(workspace, projectID, threadID) {
+  const dir = join(workspace, "sessions", projectID, threadID);
+  const files = readdirSync(dir).filter(name => name.endsWith(".jsonl"));
+  assert.equal(files.length, 1);
+  return readFileSync(join(dir, files[0]), "utf8");
+}
+
+const messages = file => file.trim().split("\n").map(line => JSON.parse(line)).filter(e => e.type === "message");
+
+export async function verifyInterruptedReply(driver, workspace, projectID, threadID) {
+  const id = await driver.until(() => messages(readHistory(workspace, projectID, threadID)).findLast(e =>
+    e.message.role === "assistant" && e.message.stopReason === "aborted" &&
+    e.message.content.some(p => p.text?.includes("Partial reply before Stop.")))?.id, "saved stopped response");
+  await driver.until(() => driver.visible("transcript-message-" + id) &&
+    driver.tree().includes("Pi skips this interrupted reply in future model requests."), "interrupted reply notice");
+  assert(!driver.tree().includes('id="fork-from-response-' + id + '"'));
+}
+
 export async function verifyFork(driver, { workspace, projectID, threadID, index, targets, send }) {
   const { press, until, setField, visible, value } = driver;
   const project = () => index().projects.find(p => p.id === projectID);
   const thread = id => project().conversations.find(t => t.id === id);
-  function history(id) {
-    const dir = join(workspace, "sessions", projectID, id);
-    const files = readdirSync(dir).filter(name => name.endsWith(".jsonl"));
-    assert.equal(files.length, 1);
-    return readFileSync(join(dir, files[0]), "utf8");
-  }
-  const messages = file => file.trim().split("\n").map(line => JSON.parse(line)).filter(e => e.type === "message");
+  const history = id => readHistory(workspace, projectID, id);
   const parentFile = history(threadID);
   const entries = messages(parentFile);
   const replies = entries.filter(e => e.message.role === "assistant" && e.message.stopReason === "stop");

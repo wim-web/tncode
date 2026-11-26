@@ -14,7 +14,11 @@ export async function verifyFiles(driver, checkout, project, git) {
   git(checkout, "add", "--", relative);
   writeFileSync(file, "Current worktree\n");
   writeFileSync(join(checkout, "sample.bin"), Buffer.from([0, 0x41, 0xFF, 0x10]));
-  writeFileSync(join(checkout, "long.txt"), Buffer.alloc(1024 * 1024 + 1, 65));
+  const marker = "Unique worktree line 6000 — 目印";
+  const line = "日".repeat(64) + "\n";
+  const prefix = line.repeat(5999);
+  assert(Buffer.byteLength(prefix) > 1024 * 1024);
+  writeFileSync(join(checkout, "long.txt"), prefix + marker + "\n" + line.repeat(120));
 
   const has = id => {
     try { return Boolean(visible(id)); } catch { return false; }
@@ -50,6 +54,19 @@ export async function verifyFiles(driver, checkout, project, git) {
   press(row("long.txt"));
   await until(() => visible("files-large-preview"), "large text preview");
   assert(!has("files-editor"));
+  await setField("files-large-line", "6000");
+  driver.keyFor("files-large-line", 36);
+  await until(() => driver.selectedText("files-contents") === marker, "selected full line 6000 beyond the first MiB");
+  const range = value("files-large-range");
+  press("files-large-next");
+  await until(() => value("files-large-range") !== range && visible("files-large-previous").includes("enabled=true"), "next page of large text");
+  press("files-large-previous");
+  await until(() => value("files-large-range") === range, "previous page restores its line range");
+  press("files-close-preview");
+  press(row("long.txt"));
+  await setField("files-large-line", "6000");
+  press("files-large-go");
+  await until(() => driver.selectedText("files-contents") === marker, "button selects line 6000 after reopening");
   press("files-close-preview");
   await setField("files-search", "weekly/fixture");
   await until(() => visible(row(relative)) && !has(row("long.txt")), "nested file search");

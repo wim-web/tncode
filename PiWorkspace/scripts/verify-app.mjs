@@ -11,10 +11,11 @@ import { restoreAppearance, verifyAbout, verifyAppearance, verifySettingsSearch 
 import { verifyFiles } from "./verify-workspace-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
 import { verifyCommandPalette, verifyPaletteMessage } from "./verify-command-palette.mjs";
-import { closeTerminalPane, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
-import { verifyFork } from "./verify-fork-ui.mjs";
+import { closeTerminalPane, verifyInteractiveShell, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
+import { verifyFork, verifyInterruptedReply } from "./verify-fork-ui.mjs";
 import { verifyAttachmentUI } from "./verify-attachment-ui.mjs";
-import { linkFixturePullRequest, verifyRestoredLink } from "./verify-linked-prs.mjs";
+import { linkFixturePullRequest, verifyLinkOnlyDraftMove, verifyRestoredLink } from "./verify-linked-prs.mjs";
+import { verifyProjectClone } from "./verify-project-clone.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -208,7 +209,7 @@ const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
 function pressDismissal(id) {
   try { press(id); }
-  catch (error) { if (!String(error.stderr).includes("AX error -25204")) throw error; }
+  catch (error) { if (!/AX error -2520[04]/.test(String(error.stderr))) throw error; }
 }
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
@@ -216,6 +217,7 @@ const panelDriver = {
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
+  selectedText: id => drive("selected-text", [id]),
   checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
@@ -494,7 +496,8 @@ async function verifyExistingDraft(projectID, savedID, checkout) {
   await until(() => visible("new-thread-project-" + projectID), "project chooser for a new draft");
   press("new-thread-project-" + projectID);
   await until(() => visible("composer").includes("focused=true"), "chosen project's draft");
-  const index = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  const readIndex = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  const index = readIndex();
   assert.equal(index.selectedProject, projectID);
   assert.notEqual(index.projects.find(p => p.id === projectID).selectedConversation, savedID);
   press("choose-workspace");
@@ -504,6 +507,7 @@ async function verifyExistingDraft(projectID, savedID, checkout) {
   await until(() => !tree().includes('id="worktree-base"') && visible("choose-workspace").includes("Worktree"), "existing checkout selected");
   await verifyDraftCopy("draft-copy-path", checkout);
   await verifyDraftCopy("draft-copy-branch", git(checkout, "branch", "--show-current"));
+  await verifyLinkOnlyDraftMove(panelDriver, readIndex);
   assert.equal(targets.length, requestCount);
   const worktrees = git(project, "worktree", "list", "--porcelain");
   const rootEdit = git(project, "diff", "--", "base.txt");
@@ -522,6 +526,11 @@ async function verifyExistingDraft(projectID, savedID, checkout) {
   assert.deepEqual(git(project, "worktree", "list", "--porcelain"), worktrees);
   assert.equal(git(project, "diff", "--", "base.txt"), rootEdit);
   record("Work locally after a failed checkout sent the original prompt once from the project folder. Existing checkouts and edits stayed intact.");
+  press("toggle-terminal");
+  await until(() => visible("thread-terminal").includes("focused=true"), "fallback project's terminal");
+  const terminal = await verifyInteractiveShell(panelDriver, project);
+  await closeTerminalPane(panelDriver);
+  record("In the project folder, typed pwd printed the root. Control-C interrupted cat, and the shell then ran tty on " + terminal + ".");
   press("thread-row-" + savedID);
   await until(() => tree().includes(firstPrompt), "resume the submitted conversation");
   record("The new-thread project chooser opened a separate draft in the selected project. Copy on its existing worktree returned that checkout's path and current branch without sending a model request.");
@@ -879,6 +888,9 @@ try {
       assert.equal(Number(readFileSync(shellProof, "utf8")), previewShellPID);
       process.kill(previewShellPID, 0);
       assert(drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."));
+      const terminal = await verifyInteractiveShell(panelDriver, checkout);
+      record("In the linked worktree, typed pwd printed the checkout. Control-C interrupted cat, and the shell then ran tty on " + terminal + ".");
+      record("Files selected the exact text of line 6000 beyond the first MiB after paging and reopening. The image preview exposed its dimensions and zoom. The repaired two-page PDF opened, searched to its second page and survived cancelling export.");
       record("Files searched and refreshed the checkout tree, showed binary and large-text previews, and saved only the working file. Git's staged bytes, parent checkout, browser page, composer text, and live PTY survived. Read-only and externally changed files retained their pending edits.");
       await closeTerminalPane(panelDriver);
     }
@@ -946,8 +958,9 @@ try {
     press("stop-message");
     await until(() => streamClosed && visible("send-message"), "Stop to close the active model stream");
     assert(tree().includes("Partial reply before Stop."));
+    await verifyInterruptedReply(panelDriver, workspace, projectID, threadID);
     holdForStop = false;
-    record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
+    record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation. The saved aborted message showed its replay notice and had no new-fork button.");
     await verifyApprovals(checkout ?? project);
     await verifyQueue(panelDriver, {
       workspace, projectID: previous.selectedProject, threadID, requestCount: () => targets.length, send, quit, launch,
@@ -962,6 +975,9 @@ try {
     await verifyScratch(threadID);
     await verifySettingsSearch(panelDriver, index);
     record("Settings search on General handled no results and Escape. Return focused the project model ID and license search. SwiftTerm's packaged license was readable, and switching panes preserved the unsaved model edit without changing its stored value.");
+    await verifyProjectClone(panelDriver, { directory, git, index, quit, launch, requestCount: () => targets.length, verifyMoves: worktreeTest });
+    record("Cloning the temporary bare repository preserved an occupied destination. The new checkout matched its exact branch, HEAD, origin and bytes. Its project and draft IDs survived relaunch without a model request.");
+    if (worktreeTest) record("A blocked file edit could be copied from another checkout and followed the moved worktree after write access returned. A same-byte replacement stayed protected through Quit and explicit discard.");
   }
   rejectNextRequest = true;
   await send("Check error handling.");

@@ -59,3 +59,27 @@ export async function verifyRestoredLink(driver, child, conversation) {
   assert.deepEqual(conversation().linkedPullRequests ?? [], []);
   await closeLinks(driver);
 }
+
+export async function verifyLinkOnlyDraftMove(driver, index) {
+  const { press, until, visible } = driver;
+  const source = index().selectedProject;
+  const other = index().projects.find(p => p.title === "Second Project").id;
+  function current() {
+    const state = index();
+    const project = state.projects.find(p => p.id === state.selectedProject);
+    return project.conversations.find(t => t.id === project.selectedConversation);
+  }
+  const id = current().id;
+  assert(!current().composerText && !current().composerAttachments?.length);
+  await linkFixturePullRequest(driver, current);
+  for (const target of [other, source]) {
+    press("thread-project");
+    await until(() => visible("draft-project-picker"), "draft project submenu");
+    press("draft-project-picker");
+    await until(() => visible("draft-project-" + target), "destination for the linked draft");
+    press("draft-project-" + target);
+    await until(() => index().selectedProject === target && current().id === id, "the same PR-only draft moved to the chosen project");
+    assert.deepEqual(current().linkedPullRequests.map(l => l.reference), [reference]);
+    assert.equal(index().projects.flatMap(p => p.conversations).filter(t => t.id === id).length, 1);
+  }
+}
