@@ -2,7 +2,7 @@ stage	id	title	audit_status	result	evidence_ref
 01	CFG-038	Project overview	部分	未評価	-
 01	CFG-122	Add project starts in	未対応	未評価	-
 01	CFG-135	Welcome page	未対応	未評価	-
-01	CHAT-002	下書きを開く	部分	未評価	-
+01	CHAT-002	下書きを開く	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 別プロジェクトの未送信下書きに戻り、コンポーザーに同じ入力を確認
 01	CHAT-003	下書きを破棄	未対応	未評価	-
 01	CHAT-004	下書きのパスをコピー	部分	未評価	-
 01	CHAT-005	下書きのブランチ名をコピー	未対応	未評価	-
@@ -10,35 +10,35 @@ stage	id	title	audit_status	result	evidence_ref
 01	CHAT-022	ホームへ移動	未対応	未評価	-
 01	CHAT-053	プロジェクトを選んで下書きを作成	同等候補	未評価	-
 01	CHAT-054	現在のプロジェクトで下書きを作成	同等候補	未評価	-
-01	CHAT-056	プロジェクトなしで下書きを作成	未対応	未評価	-
-01	CHAT-057	scratch スレッドをプロジェクトへ変換	未対応	未評価	-
-01	CHAT-058	既存フォルダをプロジェクトに追加	同等候補	未評価	-
-01	CHAT-059	既存の登録を開き直す	同等候補	未評価	-
-01	CHAT-072	初回 Welcome から開始	構成差	未評価	-
-01	CHAT-073	エージェントなしで初回セットアップを完了	構成差	未評価	-
+01	CHAT-056	プロジェクトなしで下書きを作成	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの scratch 下書き・初回送信を確認。接続先が scratch に対応しない場合の画面は未検証
+01	CHAT-057	scratch スレッドをプロジェクトへ変換	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 専用フォルダーから送信後に通常プロジェクトへ変換。同じフォルダー、スレッド UUID、履歴ファイルの内容を確認
+01	CHAT-058	既存フォルダをプロジェクトに追加	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Local folder で既存パスを選び、下書きの入力フォーカスとサイドバーのプロジェクト・会話を確認
+01	CHAT-059	既存の登録を開き直す	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 直接入力、Browse、同じフォルダーを指す別名から重複登録されない
+01	CHAT-072	初回 Welcome から開始	構成差	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 専用 Keychain を設定した初回 Welcome から Start。再起動時は下書きを表示
+01	CHAT-073	エージェントなしで初回セットアップを完了	構成差	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model / キーなしの初回 Welcome から Start without an agent。設定後に初回送信・再開
 01	CHAT-283	空の下書きから別プロジェクトの下書きを開く	部分	未評価	-
 01	CHAT-284	入力済みの下書きを別プロジェクトへ移す	未対応	未評価	-
 01	CHAT-285	下書きをプロジェクトなしへ切り替える	未対応	未評価	-
 01	CHAT-286	下書き見出しからプロジェクト追加へ進む	部分	未評価	-
-01	DEV-001	フォルダーをプロジェクトに登録する	同等候補	未評価	-
+01	DEV-001	フォルダーをプロジェクトに登録する	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 取消・無効パスでは0件。通常パス、Browse、シンボリックリンクは同一登録
 01	DEV-002	ローカルフォルダーをドロップして登録する	未対応	未評価	-
-01	DEV-262	名前からGitプロジェクトを新規作成する	未対応	未評価	-
+01	DEV-262	名前からGitプロジェクトを新規作成する	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 占有済みの名前を拒否。空いている名前で親フォルダー内に Git リポジトリと下書きを作成
 01	NAV-002	チャットの共通レイアウト	同等候補	未評価	-
-01	NAV-003	ホームから最近のプロジェクトの下書きへ移動	部分	未評価	-
+01	NAV-003	ホームから最近のプロジェクトの下書きへ移動	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数の登録先で、再起動直後に最近活動したプロジェクトの新規下書き、その後に元の履歴を選択
 01	NAV-004	ウェルカムを開く	部分	未評価	-
 01	NAV-014	下書きスレッドを開く	部分	未評価	-
 01	NAV-131	新規スレッドを始める	部分	未評価	-
 01	NAV-132	ローカル新規スレッドを始める	部分	未評価	-
 01	NAV-133	プロジェクトなしで新規スレッドを始める	未対応	未評価	-
 01	NAV-159	選んだプロジェクトに新規スレッドを作る	部分	未評価	-
-01	NAV-169	既存ディレクトリをプロジェクトとして追加	部分	未評価	-
+01	NAV-169	既存ディレクトリをプロジェクトとして追加	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 Git プロジェクトから ../Sample Project を指定し、元の ID を開く。子フォルダー指定は ProjectSourcesTests
 01	NAV-186	フォルダーパスをキーで補完	未対応	未評価	-
 01	NAV-195	新規作成から既存プロジェクトを開く	部分	未評価	-
-01	NAV-232	OS の選択ダイアログからフォルダーを追加	同等候補	未評価	-
+01	NAV-232	OS の選択ダイアログからフォルダーを追加	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / OS パネルの取消と確定の両方を実行し、登録後のプロジェクト・下書き ID を照合
 01	RPC-006	ローカル環境の有効化と起動進捗	構成差	未評価	-
 01	RPC-037	プロジェクトの追加・編集・削除	部分	未評価	-
 01	SRC-S01	起動後に接続案内、空、下書き準備のいずれかを表示する	部分	未評価	-
-01	SRC-S02	メッセージ送信前に作業場所やモデルを選び、スレッドを開始する	部分	未評価	-
+01	SRC-S02	メッセージ送信前に作業場所やモデルを選び、スレッドを開始する	部分	未検証	84e132a PiWorkspace/Tests/PiWorkspaceTests/WorkspaceLayoutTests.swift + 実配布版AX / T3Audit-0.1.12/screens/panel-measurements.tsv / 3幅9状態で AX 入力欄の幅は原本どおり。1440pt 下書きの左端は AX=494pt、原本=493.5pt。配布版の画像比較は未検証
 01	SRC-S32	初回起動でプロバイダー・プロジェクトの準備を進める	部分	未評価	-
 01	SRC-S36	モーダル内を操作し、タイトルバーとウィンドウを扱う	構成差	未評価	-
 01	UI-1480	チャット・スレッド・IndexDraftLanding（_chat.index）	部分	未評価	-
@@ -71,11 +71,11 @@ stage	id	title	audit_status	result	evidence_ref
 02	CFG-039	Default model	部分	未評価	-
 02	CFG-105	Response streaming	未対応	未評価	-
 02	CFG-116	Continue threads after restarts	未対応	未評価	-
-02	CHAT-001	スレッドを開く	部分	未評価	-
+02	CHAT-001	スレッドを開く	部分	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの再起動・履歴再開は確認。異なる環境にある同名スレッドでの照合が残る
 02	CHAT-087	下書きの本文を保存・再開	未対応	未評価	-
-02	CHAT-088	下書きの初回送信	部分	未評価	-
-02	CHAT-089	既存スレッドの新規ターンを送信	同等候補	未評価	-
-02	CHAT-100	実行を割り込んで止める	部分	未評価	-
+02	CHAT-088	下書きの初回送信	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 初回の UUID が変わらず、送信文はモデル要求に1件。保存したサイドバー行から同じ履歴を開く
+02	CHAT-089	既存スレッドの新規ターンを送信	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 再起動後の2通目の要求に1往復目の履歴が入り、同じスレッドに応答を表示
+02	CHAT-100	実行を割り込んで止める	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 受信途中に Stop。ループバック接続が閉じ、Send と部分応答を同じ会話で確認
 02	CHAT-101	中断した実行を再開	未対応	未評価	-
 02	CHAT-108	単一モデルを選択	部分	未評価	-
 02	CHAT-266	エラー・プロバイダー状態の案内を閉じる	未対応	未評価	-
@@ -145,7 +145,7 @@ stage	id	title	audit_status	result	evidence_ref
 03	CHAT-226	失敗した worktree 準備を再試行	部分	未評価	-
 03	CHAT-227	スレッドの記録ブランチを復元	部分	未評価	-
 03	DEV-003	ドラフトをローカル作業にする	同等候補	未評価	-
-03	DEV-004	ドラフトで新規worktreeを選ぶ	同等候補	未評価	-
+03	DEV-004	ドラフトで新規worktreeを選ぶ	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 worktree の選択だけでは checkout は1件。保存した base は main
 03	DEV-005	worktreeのローカルベースrefを選ぶ	部分	未評価	-
 03	DEV-006	remoteのrefを起点にする	未対応	未評価	-
 03	DEV-007	直近のworktreeを別ドラフトで再利用する	部分	未評価	-
@@ -153,7 +153,7 @@ stage	id	title	audit_status	result	evidence_ref
 03	DEV-009	検出したrepoをすべて選ぶ	未対応	未評価	-
 03	DEV-010	repo選択をすべて外す	未対応	未評価	-
 03	DEV-011	複数repoに共通の希望ベースを指定する	未対応	未評価	-
-03	DEV-012	worktreeドラフトの初回メッセージを送る	同等候補	未評価	-
+03	DEV-012	worktreeドラフトの初回メッセージを送る	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 準備成功後の checkout は計2件。選択した新規 checkout で初回のユーザー文1件と応答を確認
 03	DEV-013	ベースのfetchステージを確認する	未対応	未評価	-
 03	DEV-014	checkoutステージの進捗を確認する	部分	未評価	-
 03	DEV-015	submodule初期化を行う	未対応	未評価	-
@@ -164,8 +164,8 @@ stage	id	title	audit_status	result	evidence_ref
 03	DEV-020	準備スクリプトの端末を開く	未対応	未評価	-
 03	DEV-021	準備中のworktreeを取り消す	未対応	未評価	-
 03	DEV-022	準備を中断してローカルで送信し直す	部分	未評価	-
-03	DEV-023	準備失敗を表示する	部分	未評価	-
-03	DEV-024	失敗した準備runを再試行する	部分	未評価	-
+03	DEV-023	準備失敗を表示する	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 既存ブランチと保存先障害で作成が失敗し、モデル要求0件。元の本文と createCheckout の失敗段階を保持
+03	DEV-024	失敗した準備runを再試行する	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 枝名を直し、保存先も修復。再起動後の同一 UUID の Retry で一つの追加 checkout と初回ユーザー文1件
 03	DEV-025	再起動時に準備中だったrunを終端化する	未対応	未評価	-
 03	DEV-026	消えたworktreeを次の利用時に再作成する	未対応	未評価	-
 03	DEV-027	worktreeレイアウトのコマンドを承認する	未対応	未評価	-
@@ -277,9 +277,9 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-149	親スレッドを開く	未対応	未評価	-
 04	CHAT-150	分岐・文脈転送の関連先を開く	未対応	未評価	-
 04	CHAT-151	フォークを元の会話へマージ	未対応	未評価	-
-04	CHAT-160	要求を一度だけ承認	未対応	未評価	-
+04	CHAT-160	要求を一度だけ承認	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 一時ファイルへの write は承認前に作用がなく、Approve 後に作成。重複・古い回答は tool-approval.test.mjs
 04	CHAT-161	要求をセッション内で許可	未対応	未評価	-
-04	CHAT-162	要求を拒否	未対応	未評価	-
+04	CHAT-162	要求を拒否	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Decline で要求が終了し対象ファイルは作成されない。停止・切断は tool-approval.test.mjs
 04	CHAT-163	承認要求をキャンセル	未対応	未評価	-
 04	CHAT-164	プロバイダー独自の承認に応答	未対応	未評価	-
 04	CHAT-165	入力を送って承認を拒否・方向転換	未対応	未評価	-
@@ -604,13 +604,13 @@ stage	id	title	audit_status	result	evidence_ref
 05	CHAT-008	番号でスレッドへ移動	未対応	未評価	-
 05	CHAT-009	スレッドの複数選択	未対応	未評価	-
 05	CHAT-010	プロジェクトでスレッドを絞る	同等候補	未評価	-
-05	CHAT-011	複数のプロジェクトで絞る	部分	未評価	-
+05	CHAT-011	複数のプロジェクトで絞る	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 3件から2件をチェックし2件だけ表示。All Projects で3件に戻る
 05	CHAT-012	プロジェクト絞り込みを解除	同等候補	未評価	-
 05	CHAT-014	プロジェクトのパスをコピー	部分	未評価	-
 05	CHAT-015	プロジェクトをピン留め	未対応	未評価	-
 05	CHAT-016	プロジェクトのピンを解除	未対応	未評価	-
 05	CHAT-017	プロジェクト設定へ移動	未対応	未評価	-
-05	CHAT-018	サイドバーのスレッド検索	部分	未評価	-
+05	CHAT-018	サイドバーのスレッド検索	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / プロジェクト名で下書きを開き、以前の応答だけにある文で再検索して該当発言 ID を開く
 05	CHAT-019	スレッド検索の解除	部分	未評価	-
 05	CHAT-020	メインサイドバーの開閉	未対応	未評価	-
 05	CHAT-021	閲覧履歴を戻る・進む	未対応	未評価	-
@@ -936,8 +936,8 @@ stage	id	title	audit_status	result	evidence_ref
 06	CHAT-240	スレッド詳細の表示項目を選ぶ	未対応	未評価	-
 06	CHAT-241	スレッド詳細項目の表示を初期化	未対応	未評価	-
 06	DEV-042	Gitを初期化する	未対応	未評価	-
-06	DEV-048	変更をコミットする	部分	未評価	-
-06	DEV-049	コミットするファイルを選ぶ	部分	未評価	-
+06	DEV-048	変更をコミットする	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 空のコミット文では実行不可。入力した文が選択したファイルだけの Git コミットの件名に一致
+06	DEV-049	コミットするファイルを選ぶ	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 選択したファイルだけが HEAD に入り、除外した tracked ファイルの2つの編集は未ステージで残る
 06	DEV-055	作業差分を開く	同等候補	未評価	-
 06	DEV-056	比較対象のbranchを切り替える	未対応	未評価	-
 06	DEV-057	未コミット差分だけを見る	部分	未評価	-
@@ -979,7 +979,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	DEV-153	大きなテキストをプレビューする	未対応	未評価	-
 06	DEV-154	バイナリファイルをプレビューする	未対応	未評価	-
 06	DEV-155	プレビュー中のファイルを保存またはダウンロードする	未対応	未評価	-
-06	DEV-156	チャット下部の端末を表示・非表示にする	同等候補	未評価	-
+06	DEV-156	チャット下部の端末を表示・非表示にする	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 端末を閉じずに非表示・再表示し、同一シェル PID と既存の出力を確認。Close 後はシェルが終了
 06	DEV-157	端末を右パネルに新規作成する	未対応	未評価	-
 06	DEV-158	新しい端末タブを作る	未対応	未評価	-
 06	DEV-159	端末を水平方向に分割する	未対応	未評価	-
@@ -1201,7 +1201,7 @@ stage	id	title	audit_status	result	evidence_ref
 07	CFG-019	Providers を開く	部分	未評価	-
 07	CFG-025	Threads を開く	未対応	未評価	-
 07	CFG-026	/settings → /settings/general	部分	未評価	-
-07	CFG-029	設定スコープ	未対応	未評価	-
+07	CFG-029	設定スコープ	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルプロジェクトの上書きと継承復元、再起動、Keychain 保持を確認。異なる環境間のスコープは未検証
 07	CFG-030	設定を検索	未対応	未評価	-
 07	CFG-031	Advanced を開く	未対応	未評価	-
 07	CFG-037	Project defaults and overrides	未対応	未評価	-
@@ -1701,7 +1701,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	DEV-052	コミットとpushを連続実行する	未対応	未評価	-
 08	DEV-053	既定branchへの操作を確認してfeature branchへ振り替える	未対応	未評価	-
 08	DEV-054	リポジトリをforgeに公開する	未対応	未評価	-
-08	DEV-073	forge上のPR一覧を検索する	未対応	未評価	-
+08	DEV-073	forge上のPR一覧を検索する	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 模擬 gh でチェックアウトを特定し、一覧・詳細・CI の失敗から成功への更新を確認。ラベル検索・ページ送り・実 forge は未検証
 08	DEV-074	PR一覧を著者で絞る	未対応	未評価	-
 08	DEV-075	PR一覧をラベルで絞る	未対応	未評価	-
 08	DEV-076	branchからPRを作成する	未対応	未評価	-
@@ -1802,7 +1802,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	RPC-049	Issue の閲覧とスレッドとの関連付け	未対応	未評価	-
 08	RPC-050	Issue の作成・更新・コメント	未対応	未評価	-
 08	RPC-051	Issue トラッカーの接続とプロジェクト割り当て	未対応	未評価	-
-08	SRC-S18	PR、Issue とスレッドに関連する項目をタブで閲覧する	未対応	未評価	-
+08	SRC-S18	PR、Issue とスレッドに関連する項目をタブで閲覧する	未対応	要修正	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 模擬ghでPR一覧・詳細・CI更新を確認。Issueタブとスレッドへのリンクは未実装
 08	SRC-S30	PR と Issue の一覧を検索し、詳細を開く	未対応	未評価	-
 08	SRC-S44	差分の表示と PR リンクの扱いを変更する	未対応	未評価	-
 08	SRC-S54	ソース管理と Issue tracker の環境接続を構成する	未対応	未評価	-
@@ -2056,8 +2056,8 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-179	ブラウザータブを作る	未対応	未評価	-
 09	DEV-180	ブラウザープロファイルを指定してタブを開く	未対応	未評価	-
 09	DEV-181	アドレスや検索語から移動する	未対応	未評価	-
-09	DEV-182	ブラウザー履歴を戻る	未対応	未評価	-
-09	DEV-183	ブラウザー履歴を進む	未対応	未評価	-
+09	DEV-182	ブラウザー履歴を戻る	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ループバックの2ページ目から Back で1ページ目を表示
+09	DEV-183	ブラウザー履歴を進む	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Back 後に Forward で2ページ目の見出しを再表示
 09	DEV-184	ページを更新する	未対応	未評価	-
 09	DEV-185	ページの読み込みを停止する	未対応	未評価	-
 09	DEV-186	キャッシュを無視する再読み込みを実行する	未対応	未評価	-
@@ -2065,7 +2065,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-189	ページ内の文字を検索する	未対応	未評価	-
 09	DEV-190	DevToolsを開く	未対応	未評価	-
 09	DEV-191	ブラウザーの色設定を切り替える	未対応	未評価	-
-09	DEV-192	ズームを拡大・縮小・リセットする	未対応	未評価	-
+09	DEV-192	ズームを拡大・縮小・リセットする	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 配布版で倍率110%を確認。pageZoom の増減・reset は個別 WebKit 試験。基準画面の描画比較が残る
 09	DEV-193	プレビュープロファイルのCookieを消去する	未対応	未評価	-
 09	DEV-194	プレビューのキャッシュを消去する	未対応	未評価	-
 09	DEV-195	ページや要素を注釈としてチャットに渡す	未対応	未評価	-
@@ -2143,7 +2143,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-305	録画にキーとマウス入力を表示する	未対応	未評価	-
 09	DEV-306	ブラウザー録画の上限fpsを選ぶ	未対応	未評価	-
 09	DEV-332	プレビューのアドレス欄にフォーカスする	未対応	未評価	-
-09	DEV-333	プレビューの表示を切り替える	未対応	未評価	-
+09	DEV-333	プレビューの表示を切り替える	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / プレビューを閉じて再表示し、同一スレッドの2ページ目と110%の倍率を保持
 09	HOST-144	音声入力のマイクとショートカットを設定	未対応	未評価	-
 09	HOST-145	デバイス上で Apple Speech を使用	未対応	未評価	-
 09	HOST-146	指定環境上の音声認識を使用	未対応	未評価	-
@@ -2207,7 +2207,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	RPC-081	Snap Shot の許可・設定・取得	未対応	未評価	-
 09	RPC-082	音声入力エンジンの準備・文字起こし	未対応	未評価	-
 09	RPC-085	デスクトップの Preview ゲスト内処理	未対応	未評価	-
-09	SRC-S16	Web ページや起動中のサーバーをタブ・浮動枠で表示する	未対応	未評価	-
+09	SRC-S16	Web ページや起動中のサーバーをタブ・浮動枠で表示する	未対応	要修正	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 配布版でHTTPページ・戻る・進む・ズーム・スレッド内再表示を確認。浮動枠と複数タブは未実装
 09	SRC-S17	端末ホストと接続状態を見て端末ストリームを開く	未対応	未評価	-
 09	SRC-S46	マイク、文字起こし、辞書と後処理を設定する	未対応	未評価	-
 09	SRC-S47	キャプチャと SnapShots のショートカットを設定する	未対応	未評価	-
@@ -2822,7 +2822,7 @@ stage	id	title	audit_status	result	evidence_ref
 12	RPC-080	デスクトップ CLI コマンドの導入と削除	未対応	未評価	-
 12	RPC-084	スレッド制御と配信の内部処理	部分	未評価	-
 12	RPC-086	デスクトップ初期化時の保存データ移行	構成差	未評価	-
-12	SRC-S34	起動待ち・ルートエラーから復旧し、エラー情報を取得する	部分	未評価	-
+12	SRC-S34	起動待ち・ルートエラーから復旧し、エラー情報を取得する	部分	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 破損・バックアップありの配布版で復旧し、元の破損データと会話履歴を保持。全起動障害・詳細コピーは未検証
 12	SRC-S59	更新、背景処理、ストレージの状態・設定を確認する	未対応	未評価	-
 12	SRC-S61	アプリ情報と法務文書を開く	構成差	未評価	-
 12	SRC-S63	実行環境の障害、遅い処理、集計とログを閲覧する	未対応	未評価	-
