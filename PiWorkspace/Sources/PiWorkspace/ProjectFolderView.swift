@@ -89,7 +89,7 @@ struct ProjectFolderView: View {
         .frame(width: 485)
         .disabled(submitting)
         .interactiveDismissDisabled(submitting)
-        .onChange(of: page, initial: true) { _, page in
+        .task(id: page) {
             switch page {
             case .sources: focusedField = nil
             case .localFolder: focusedField = .path

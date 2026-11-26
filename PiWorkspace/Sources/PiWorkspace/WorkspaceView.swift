@@ -1529,15 +1529,18 @@ struct WorkspaceView: View {
 
     private func finishCommandPalette() {
         let action = paletteAction
+        let previousFocus = paletteReturnFocus
         paletteAction = nil
-        switch paletteReturnFocus {
-        case .search: searchFocused = true
-        case .composer(let id) where model.conversation?.id == id: focusedComposer = id
-        default: break
-        }
         paletteReturnFocus = nil
-
-        guard let action, model.canOpenCommandPalette else { return }
+        guard let action else {
+            switch previousFocus {
+            case .search: searchFocused = true
+            case .composer(let id) where model.conversation?.id == id: focusedComposer = id
+            default: break
+            }
+            return
+        }
+        guard model.canOpenCommandPalette else { return }
         switch action {
         case .chooseProject:
             break
