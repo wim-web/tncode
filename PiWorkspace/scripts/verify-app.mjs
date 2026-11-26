@@ -189,6 +189,10 @@ async function until(check, label, timeout = 20_000) {
 const visible = (id) => drive("get", [id]);
 const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
+function pressDismissal(id) {
+  try { press(id); }
+  catch (error) { if (!String(error.stderr).includes("AX error -25204")) throw error; }
+}
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings,
   value: id => drive("get", [id, "--values"]),
@@ -239,7 +243,7 @@ async function waitForExit(id) {
 }
 
 async function quit() {
-  press("terminate:");
+  pressDismissal("terminate:");
   await waitForExit(appPID);
   appPID = undefined;
 }
@@ -337,11 +341,7 @@ async function openProject() {
     await until(() => visible("open-panel"), "system folder picker");
     if (folder) await until(() => { drive("select-folder", [folder]); return true; }, "select the exact fixture folder in the native browser");
     await until(() => visible(button).includes("enabled=true"), "enabled native picker button");
-    try {
-      press(button);
-    } catch (error) {
-      if (!String(error.stderr).includes("AX error -25204")) throw error;
-    }
+    pressDismissal(button);
     await until(() => !tree().includes('id="open-panel"') && visible("project-path"), "return to the project path");
   }
   await finishFolderPicker("CancelButton");
@@ -427,7 +427,7 @@ exec /bin/sh -i
   appendFileSync(join(project, "README.md"), "Uncommitted fixture line.\n");
 }
 
-async function chooseNewWorktree(branch) {
+async function chooseNewWorktree(branch, expectedCheckouts = 1) {
   await until(() => visible("choose-workspace"), "thread workspace button");
   press("choose-workspace");
   await until(() => visible("worktree-branch"), "worktree creation controls");
@@ -435,7 +435,7 @@ async function chooseNewWorktree(branch) {
   await setField("worktree-branch", branch);
   press("create-worktree");
   await until(() => tree().includes("New worktree") && !tree().includes("worktree-branch"), "selected worktree draft");
-  assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 1);
+  assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, expectedCheckouts);
   try { press("toggle-changes"); } catch { /* the button is disabled for a pending checkout */ }
   assert(!tree().includes('id="git-refresh"'));
 }
@@ -480,6 +480,23 @@ async function verifyExistingDraft(projectID, savedID, checkout) {
   await verifyDraftCopy("draft-copy-path", checkout);
   await verifyDraftCopy("draft-copy-branch", git(checkout, "branch", "--show-current"));
   assert.equal(targets.length, requestCount);
+  const worktrees = git(project, "worktree", "list", "--porcelain");
+  const rootEdit = git(project, "diff", "--", "base.txt");
+  await chooseNewWorktree("main", 2);
+  const prompt = "Run this fallback in the project folder.";
+  await typePrompt(prompt);
+  await until(() => visible("send-message").includes("enabled=true"), "ready for failed checkout");
+  press("send-message");
+  await until(() => visible("worktree-launch-work-locally") && visible("worktree-launch-error"), "recoverable checkout failure");
+  assert.equal(targets.length, requestCount);
+  press("worktree-launch-work-locally");
+  await until(() => targets.length === requestCount + 1 && replyVisible(targets.at(-1)) && visible("send-message"), "one completed fallback turn");
+  const messages = targets.at(-1).body.messages;
+  assert.equal(messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes(prompt)).length, 1);
+  assert(messages.some(message => message.role === "system" && JSON.stringify(message.content).includes(project)));
+  assert.deepEqual(git(project, "worktree", "list", "--porcelain"), worktrees);
+  assert.equal(git(project, "diff", "--", "base.txt"), rootEdit);
+  record("Work locally after a failed checkout sent the original prompt once from the project folder. Existing checkouts and edits stayed intact.");
   press("thread-row-" + savedID);
   await until(() => tree().includes(firstPrompt), "resume the submitted conversation");
   record("The new-thread project chooser opened a separate draft in the selected project. Copy on its existing worktree returned that checkout's path and current branch without sending a model request.");
@@ -610,7 +627,7 @@ async function verifySidebar(savedID) {
     rmdirSync(backup);
     renameSync(held, backup);
   }
-  press("retry-save-and-quit");
+  pressDismissal("retry-save-and-quit");
   await waitForExit(appPID);
   appPID = undefined;
   await launch();
@@ -767,6 +784,14 @@ try {
     await until(() => !tree().includes("Opening thread…"), "draft helper ready");
     press("send-message");
     await until(() => tree().includes("already exists") && visible("retry-worktree"), "branch collision");
+    press("worktree-launch-cancel");
+    await until(() => visible("send-message").includes("enabled=true") && drive("get", ["composer", "--values"]).includes(firstPrompt),
+                "Cancel restores the original unsent prompt");
+    assert.equal(targets.length, 0);
+    assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 1);
+    record("Cancel restored the unsent worktree draft before any model request, without creating a checkout.");
+    press("send-message");
+    await until(() => tree().includes("already exists") && visible("retry-worktree"), "retry collision after cancellation");
     assert.equal(targets.length, 0);
     await chooseNewWorktree("ui-worktree");
     const obstruction = join(workspace, "worktrees", index().projects[0].id, draftID);
@@ -913,7 +938,7 @@ try {
   await closeSettings();
   await quit();
   const transcripts = inspectFiles();
-  assert.equal(transcripts.length, fixtureModel ? 2 : 1);
+  assert.equal(transcripts.length, fixtureModel ? (worktreeTest ? 3 : 2) : 1);
   record("No auth.json or plaintext key under the project, app data, transcripts, or captured logs. Keychain test item removed.");
   if (fixtureModel) {
     const previousIndex = JSON.parse(readFileSync(join(workspace, "workspace.previous.json"), "utf8"));
@@ -927,7 +952,7 @@ try {
     assert(readdirSync(workspace).some(name => name.startsWith("workspace.corrupt-") && readFileSync(join(workspace, name), "utf8") === damaged));
     await quit();
     assert.deepEqual(inspectFiles().sort(), transcripts.sort());
-    record("The recovery screen restored the previous project index, retained the damaged bytes and kept both session histories.");
+    record("The recovery screen restored the previous project index, retained the damaged bytes and kept all " + transcripts.length + " session histories.");
   }
 } catch (error) {
   let message = error.message.replaceAll(secret, "[redacted]");
