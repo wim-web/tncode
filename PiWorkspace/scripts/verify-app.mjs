@@ -10,7 +10,7 @@ import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests }
 import { restoreAppearance, verifyAbout, verifyAppearance, verifySettingsSearch } from "./verify-settings-panels.mjs";
 import { verifyFiles } from "./verify-workspace-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
-import { verifyCommandPalette } from "./verify-command-palette.mjs";
+import { verifyCommandPalette, verifyPaletteMessage } from "./verify-command-palette.mjs";
 import { closeTerminalPane, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
 import { verifyFork } from "./verify-fork-ui.mjs";
 import { verifyAttachmentUI } from "./verify-attachment-ui.mjs";
@@ -212,6 +212,7 @@ function pressDismissal(id) {
 }
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
+  focus: id => drive("type", [id], ""),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
@@ -539,9 +540,6 @@ async function verifyCheckout(checkout) {
   press("toggle-terminal");
   await until(() => visible("thread-terminal"), "PTY terminal in the app");
   await until(() => visible("thread-terminal").includes("focused=true"), "terminal has keyboard focus");
-  panelDriver.keyFor("thread-terminal", 40, "cmd");
-  await delay(250);
-  assert(visible("thread-terminal").includes("focused=true") && !tree().includes('id="command-palette"'));
   const proof = join(checkout, "tty-proof.txt");
   await until(() => existsSync(proof), "PTY proof file in the selected worktree");
   assert.equal(realpathSync(readFileSync(proof, "utf8").trim()), checkout);
@@ -709,6 +707,7 @@ async function verifySidebar(savedID) {
   press("thread-row-" + savedID);
   await until(() => index().selectedProject === first.id, "submitted thread after discard");
   record("Discard removed only the selected draft. Its project and the second project's unsent text remained.");
+  return match[2];
 }
 
 async function verifyScratch(originalThread) {
@@ -791,10 +790,6 @@ try {
   record("Welcome completed through " + startTitle + ". The configured model has a Keychain item.");
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const draftID = index().projects[0].selectedConversation;
-  if (fixtureModel) {
-    await verifySettingsSearch(panelDriver, index);
-    record("Settings search on General handled no results and Escape. Return focused the project model ID and license search. SwiftTerm's packaged license was readable, and switching panes preserved the unsaved model edit without changing its stored value.");
-  }
   if (worktreeTest) {
     press("choose-workspace");
     await until(() => visible("use-project-workspace"), "local folder workspace");
@@ -959,11 +954,14 @@ try {
       gate() { let release; nextQueueResponse = new Promise(resolve => { release = resolve; }); return release; }
     });
     record("Five queued instructions collapsed and expanded without changing the total. Cancel/edit, reorder and removal kept their item IDs. Two steers arrived during the active run and the remaining items ran in order. Stop and relaunch held pending items until explicitly started or resumed; Pi recorded eight distinct delivery IDs exactly once.");
-    await verifySidebar(threadID);
+    const matchedMessage = await verifySidebar(threadID);
     await verifyCommandPalette(panelDriver, index, () => targets.length);
+    await verifyPaletteMessage(panelDriver, index, threadID, matchedMessage, "Partial reply before Stop.");
     record("Command-K opened and closed the palette; Escape, Backspace and Return preserved focus and draft ownership. The project selector created one draft, the modal folder picker kept the shortcut, and Home and Search opened their workspace destinations.");
     if (worktreeTest) await verifyExistingDraft(previous.selectedProject, threadID, checkout);
     await verifyScratch(threadID);
+    await verifySettingsSearch(panelDriver, index);
+    record("Settings search on General handled no results and Escape. Return focused the project model ID and license search. SwiftTerm's packaged license was readable, and switching panes preserved the unsaved model edit without changing its stored value.");
   }
   rejectNextRequest = true;
   await send("Check error handling.");

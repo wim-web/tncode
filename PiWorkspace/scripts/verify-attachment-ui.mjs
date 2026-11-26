@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { images, note } from "./fixtures/attachments.mjs";
 
@@ -7,13 +7,12 @@ export async function verifyAttachmentUI(driver, { workspace, checkout, conversa
   const { press, visible, until, selectPath, tree } = driver;
   const attachments = () => conversation().composerAttachments ?? [];
   const before = targets.length;
-  async function choose(name, folder, replacementID) {
+  async function choose(name, replacementID) {
     const original = new Set(attachments().map(a => a.id));
     press(replacementID ? "reattach-attachment-" + replacementID : "attach-files");
     await until(() => visible("open-panel"), "native attachment picker");
-    const path = folder ? join(checkout, folder) : checkout;
-    if (folder) await until(() => { selectPath(path); return true; }, "fixture folder in attachment picker");
-    await until(() => { selectPath(join(path, name)); return true; }, "fixture file " + join(path, name));
+    const path = join(checkout, name);
+    await until(() => { selectPath(path); return true; }, "fixture file " + path);
     await until(() => visible("OKButton").includes("enabled=true"), "file selection enabled");
     driver.dismiss("OKButton");
     return until(() => attachments().find(a => a.name === name && a.payload &&
@@ -25,18 +24,21 @@ export async function verifyAttachmentUI(driver, { workspace, checkout, conversa
     driver.dismiss("close-image-preview");
     await until(() => !tree().includes('id="close-image-preview"'), "close image preview");
   }
-  for (const [color, data] of Object.entries(images)) {
-    mkdirSync(join(checkout, color));
-    writeFileSync(join(checkout, color, "same.png"), Buffer.from(data, "base64"));
-  }
   writeFileSync(join(checkout, "note.txt"), note);
   press("attach-files");
   await until(() => visible("open-panel"), "attachment picker to cancel");
   driver.dismiss("CancelButton");
   await until(() => !tree().includes('id="open-panel"'), "cancel without attaching");
   assert.equal(attachments().length, 0);
-  const red = await choose("same.png", "red");
-  const blue = await choose("same.png", "blue");
+  const imagePath = join(checkout, "same.png");
+  const picked = {};
+  for (const [color, bytes] of Object.entries(images)) {
+    writeFileSync(imagePath, Buffer.from(bytes, "base64"), { flag: "wx" });
+    picked[color] = await choose("same.png");
+    mkdirSync(join(checkout, color));
+    renameSync(imagePath, join(checkout, color, "same.png"));
+  }
+  const { red, blue } = picked;
   const text = await choose("note.txt");
   assert.notEqual(red.id, blue.id);
   assert.equal(red.payload.data, images.red);
@@ -50,7 +52,8 @@ export async function verifyAttachmentUI(driver, { workspace, checkout, conversa
   await launch();
   await until(() => visible("reattach-attachment-" + red.id) && visible("send-message").includes("enabled=false"),
               "unavailable attachment blocks submission");
-  const repaired = await choose("same.png", "red", red.id);
+  renameSync(join(checkout, "red", "same.png"), imagePath);
+  const repaired = await choose("same.png", red.id);
   assert.equal(repaired.payload.data, images.red);
   assert.deepEqual(attachments().map(a => a.id), [red.id, blue.id, text.id]);
   await preview(red.id);

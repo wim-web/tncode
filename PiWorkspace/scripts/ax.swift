@@ -331,6 +331,18 @@ private func requireKeyboardAccess() throws {
     }
 }
 
+private func activateForInput(_ app: AXUIElement, pid: pid_t) throws {
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier != pid else { return }
+    try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
+                       "Activate the designated application")
+    NSRunningApplication(processIdentifier: pid)?.activate()
+    let deadline = ProcessInfo.processInfo.systemUptime + 2
+    while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+        guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure("The designated application did not gain focus.") }
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025))
+    }
+}
+
 private func postKey(
     _ code: CGKeyCode, to pid: pid_t, flags: CGEventFlags = [], units: [UInt16] = [], frontmost: Bool = false
 ) throws {
@@ -400,6 +412,7 @@ private func run(_ arguments: [String]) throws {
         try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
                            "Activate the selected application")
     case .menuCommand(let key):
+        try activateForInput(app, pid: pid)
         let matches = Tree(root: app).map(\.element).filter { item in
             attribute(kAXRoleAttribute, on: item) as? String == kAXMenuItemRole &&
             (attribute(kAXMenuItemCmdCharAttribute, on: item) as? String)?.lowercased() == key.lowercased() &&
@@ -411,6 +424,7 @@ private func run(_ arguments: [String]) throws {
         }
         try requireSuccess(AXUIElementPerformAction(command, kAXPressAction as CFString), "Invoke menu command")
     case .menuItem(let title):
+        try activateForInput(app, pid: pid)
         let matches = Tree(root: app).map(\.element).filter {
             attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
             attribute(kAXTitleAttribute, on: $0) as? String == title &&
@@ -429,16 +443,7 @@ private func run(_ arguments: [String]) throws {
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .keyFocused(let id, let code, let flags):
         try requireKeyboardAccess()
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
-            try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
-                               "Activate the designated keyboard target")
-            NSRunningApplication(processIdentifier: pid)?.activate()
-            let deadline = ProcessInfo.processInfo.systemUptime + 2
-            while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
-                guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure("The designated application did not gain focus.") }
-                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025))
-            }
-        }
+        try activateForInput(app, pid: pid)
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
         let characters: [CGKeyCode: UInt16] = [3: 0x66, 30: 0x5D, 33: 0x5B, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,

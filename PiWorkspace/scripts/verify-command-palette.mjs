@@ -1,5 +1,25 @@
 import assert from "node:assert/strict";
 
+export async function verifyPaletteMessage(driver, index, threadID, messageID, term) {
+  const { press, visible, value, until, setField, keyFor } = driver;
+  const other = index().projects.find(p => p.title === "Second Project");
+  const draft = other.conversations.find(t => t.composerText);
+  press("thread-row-" + draft.id);
+  await until(() => value("composer").includes(JSON.stringify(draft.composerText)), "other project's unfinished draft");
+  await setField("composer", draft.composerText);
+  if (!visible("composer").includes("focused=true")) driver.focus("composer");
+  keyFor("composer", 40, "cmd");
+  await until(() => visible("command-palette-search").includes("focused=true"), "palette opened from a different thread");
+  await setField("command-palette-search", term);
+  const result = "command-palette-message-" + threadID + "-" + messageID;
+  await until(() => visible("command-palette-in-messages") && visible(result), "Pi message result with its original entry ID");
+  press(result);
+  await until(() => value("thread-find-query").includes(JSON.stringify(term)) && value("thread-find-match-count").includes("1 of 1") &&
+                    visible("transcript-message-" + messageID), "Find opened on the matching Pi message");
+  assert.equal(index().projects.find(p => p.id === other.id).conversations.find(t => t.id === draft.id).composerText, draft.composerText);
+  press("thread-find-close");
+}
+
 export async function verifyCommandPalette({ press, visible, value, setField, tree, until, menuItem, keyFor }, index, requestCount) {
   const before = index();
   const original = before.projects.find(project => project.id === before.selectedProject);

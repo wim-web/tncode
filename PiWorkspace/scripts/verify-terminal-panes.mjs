@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 
 export async function closeTerminalPane({ press, visible, until }, confirm = true) {
   press("close-terminal");
@@ -28,6 +29,9 @@ export async function verifyTerminalPanes(driver, originalPID) {
     return pid;
   }
   await until(() => focused(originalPID), "first terminal PID and focus");
+  keyFor("thread-terminal", 40, "cmd");
+  await delay(250);
+  assert(focused(originalPID) && !driver.tree().includes('id="command-palette-search"'));
   const second = await add("new-terminal");
   const third = await add("split-terminal-horizontal");
   const [left, row, width] = frame("terminal-pane-2");
