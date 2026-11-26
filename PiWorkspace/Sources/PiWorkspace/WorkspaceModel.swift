@@ -37,7 +37,6 @@ final class WorkspaceModel: ObservableObject {
     private var store: WorkspaceStore?
     private let vault: KeyVault
     private var process: PiProcess?
-    private var firstPrompt: String?
 
     init(root: URL, keychainService: String) {
         vault = KeyVault(service: keychainService)
@@ -64,6 +63,7 @@ final class WorkspaceModel: ObservableObject {
     var canChangeWorkspace: Bool {
         guard !operationsInProgress,
               let store, let project, let conversation, !conversation.archived else { return false }
+        if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout { return false }
         let history = store.history(project: project.id, conversation: conversation.id)
         do {
             return try !FileManager.default.contentsOfDirectory(atPath: history.path)
@@ -76,7 +76,13 @@ final class WorkspaceModel: ObservableObject {
     }
     var canSend: Bool {
         phase == .ready && !operationsInProgress && conversation?.archived == false &&
+        conversation?.worktreeLaunch == nil &&
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var canRetryWorktree: Bool {
+        guard !operationsInProgress, let conversation, !conversation.archived,
+              let launch = conversation.worktreeLaunch else { return false }
+        return !launch.awaitingHistory
     }
 
     func start() {
@@ -279,15 +285,22 @@ final class WorkspaceModel: ObservableObject {
                 return .newWorktree(branch: branch, base: base)
             }
         }
-        try saveLocation(location, for: conversation.id)
+        try saveThread(conversation.id) { thread in
+            if thread.workingLocation != location, var launch = thread.worktreeLaunch {
+                launch.stage = location.needsWorktree ? .createCheckout : .openThread
+                launch.failure = nil
+                thread.worktreeLaunch = launch
+            }
+            thread.location = location
+        }
         connect()
     }
 
-    private func saveLocation(_ location: ThreadLocation, for conversationID: UUID) throws {
+    private func saveThread(_ conversationID: UUID, _ edit: (inout Conversation) -> Void) throws {
         guard let index = selectedProjectIndex,
               let thread = workspace.projects[index].conversations.firstIndex(where: { $0.id == conversationID }),
-              save({ $0.projects[index].conversations[thread].location = location }) else {
-            throw WorkspaceError("Could not save the thread workspace.")
+              save({ edit(&$0.projects[index].conversations[thread]) }) else {
+            throw WorkspaceError(error ?? "Could not save the thread.")
         }
     }
 
@@ -309,76 +322,101 @@ final class WorkspaceModel: ObservableObject {
 
     func send() {
         guard canSend, let process, let conversation else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            guard let key = try vault.read(workspace.model.account) else {
-                showingSettings = true
-                return
-            }
-            let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.contains(key) else {
+            guard try canUsePrompt(text, fromComposer: true) else { return }
+            if conversation.workingLocation.needsWorktree {
+                let launch = WorktreeLaunch(prompt: text)
+                try saveThread(conversation.id) {
+                    $0.recordPrompt(text)
+                    $0.worktreeLaunch = launch
+                }
                 draft = ""
-                error = "Enter your API key in Model Settings."
-                return
-            }
-            if conversation.isDraft == true, let p = selectedProjectIndex,
-               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation.id }) {
-                guard save({ $0.projects[p].conversations[t].isDraft = nil }) else { return }
-            }
-            if case let .newWorktree(branch, base) = conversation.workingLocation {
-                startWorktree(branch: branch, base: base, thread: conversation.id, prompt: text)
+                startWorktreeLaunch(launch, in: conversation)
             } else {
                 try send(text, using: process)
             }
         } catch {
-            self.error = "Pi is unavailable. Reconnect to send your message."
-            shutdown()
+            if conversation.workingLocation.needsWorktree {
+                self.error = error.localizedDescription
+            } else {
+                self.error = "Pi is unavailable. Reconnect to send your message."
+                shutdown()
+            }
         }
     }
 
-    private func startWorktree(branch: String, base: String, thread: UUID, prompt: String) {
+    func retryWorktree() {
+        guard canRetryWorktree, let conversation, let launch = conversation.worktreeLaunch else { return }
+        do {
+            guard try canUsePrompt(launch.prompt) else { return }
+            startWorktreeLaunch(launch, in: conversation)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func canUsePrompt(_ text: String, fromComposer: Bool = false) throws -> Bool {
+        guard let key = try vault.read(workspace.model.account) else {
+            showingSettings = true
+            return false
+        }
+        guard !text.contains(key) else {
+            if fromComposer { draft = "" }
+            error = "Enter your API key in Model Settings."
+            return false
+        }
+        return true
+    }
+
+    private func startWorktreeLaunch(_ launch: WorktreeLaunch, in thread: Conversation) {
         guard let store, let project else { return }
         preparingWorktree = true
         error = nil
         Task {
+            var stage = WorktreeLaunch.Stage.openThread
             do {
-                let git = GitWorkspace(path: project.path)
-                let path = try await runGitMutation {
-                    let destination = try store.worktree(project: project.id, conversation: thread)
-                    let canonical = destination.resolvingSymlinksInPath().standardizedFileURL.path
-                    if let existing = try await git.worktrees().first(where: { $0.path == canonical && $0.branch == branch }) {
-                        return existing.path
+                var location = thread.workingLocation
+                if case let .newWorktree(branch, base) = location {
+                    stage = .createCheckout
+                    let git = GitWorkspace(path: project.path)
+                    let path = try await runGitMutation {
+                        let destination = try store.worktree(project: project.id, conversation: thread.id)
+                        let canonical = destination.resolvingSymlinksInPath().standardizedFileURL.path
+                        if let existing = try await git.worktrees().first(where: { $0.path == canonical && $0.branch == branch }) {
+                            return existing.path
+                        }
+                        return try await git.createWorktree(at: canonical, branch: branch, base: base)
                     }
-                    return try await git.createWorktree(at: canonical, branch: branch, base: base)
+                    location = .worktree(path: path, base: base)
                 }
-                try saveLocation(.worktree(path: path, base: base), for: thread)
-                firstPrompt = prompt
+                try saveThread(thread.id) {
+                    $0.location = location
+                    $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: .openThread)
+                }
                 connect()
-                if phase != .connecting { clearWorktreePrompt() }
             } catch let failure {
-                clearWorktreePrompt()
-                error = failure.localizedDescription
+                failWorktreeLaunch(at: stage, message: failure.localizedDescription)
             }
         }
     }
 
-    private func clearWorktreePrompt() {
+    private func failWorktreeLaunch(at stage: WorktreeLaunch.Stage, message: String) {
         preparingWorktree = false
-        firstPrompt = nil
+        guard let conversation, let launch = conversation.worktreeLaunch else { return }
+        do {
+            try saveThread(conversation.id) {
+                $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: stage, failure: message)
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func send(_ text: String, using process: PiProcess) throws {
+        guard let id = conversation?.id else { throw WorkspaceError("Select a thread before sending.") }
+        try saveThread(id) { $0.recordPrompt(text) }
         try process.send(SendPrompt(text: text))
-        if let p = selectedProjectIndex, let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation?.id }) {
-            save {
-                var thread = $0.projects[p].conversations[t]
-                thread.lastActiveAt = Date()
-                if thread.threadShelf == .settled { thread.shelf = .active }
-                if ["New thread", "New conversation"].contains(thread.title) {
-                    thread.title = String((text.split(whereSeparator: \.isNewline).first ?? Substring(text)).prefix(54))
-                }
-                $0.projects[p].conversations[t] = thread
-            }
-        }
         draft = ""
         partial = ""
         activity = ""
@@ -409,9 +447,10 @@ final class WorkspaceModel: ObservableObject {
         repositoryRevision += 1
         guard let store, let project, let conversation, let directory = workingDirectory else { return }
         error = nil
+        if let launch = conversation.worktreeLaunch, !preparingWorktree, !launch.awaitingHistory { return }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
-            error = "The thread’s workspace folder is no longer available."
+            connectionFailed("The thread’s workspace folder is no longer available.")
             return
         }
         phase = .connecting
@@ -425,9 +464,7 @@ final class WorkspaceModel: ObservableObject {
             }
             worker.onClose = { [weak self, weak worker] in
                 guard let self, let worker, self.process === worker else { return }
-                self.shutdown()
-                self.clearWorktreePrompt()
-                if self.error == nil { self.error = "The Pi helper exited. Reconnect to this conversation." }
+                self.connectionFailed(self.error ?? "The Pi helper exited. Reconnect to this conversation.")
             }
             try worker.send(OpenConversation(
                 cwd: directory,
@@ -437,9 +474,47 @@ final class WorkspaceModel: ObservableObject {
                 allowEdits: project.allowEdits
             ))
         } catch {
-            shutdown()
-            self.error = error.localizedDescription
+            connectionFailed(error.localizedDescription)
         }
+    }
+
+    private func connectionFailed(_ message: String) {
+        shutdown()
+        if preparingWorktree {
+            failWorktreeLaunch(at: .openThread, message: message)
+        } else {
+            error = message
+        }
+    }
+
+    private func submitWorktreePrompt(using worker: PiProcess) {
+        guard let conversation, let launch = conversation.worktreeLaunch else { return }
+        do {
+            try saveThread(conversation.id) {
+                $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: .sendPrompt)
+            }
+            try send(launch.prompt, using: worker)
+            preparingWorktree = false
+        } catch {
+            shutdown()
+            failWorktreeLaunch(at: .sendPrompt, message: error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    private func confirmWorktreePrompt(in history: [ChatMessage]) -> Bool {
+        guard let conversation, let launch = conversation.worktreeLaunch,
+              history.first(where: { $0.role == .user })?.text == launch.prompt else { return false }
+        preparingWorktree = false
+        try? saveThread(conversation.id) { $0.worktreeLaunch = nil }
+        return true
+    }
+
+    func dismissUnconfirmedWorktreePrompt() {
+        guard phase == .ready, !operationsInProgress,
+              let conversation, !conversation.archived,
+              conversation.worktreeLaunch?.awaitingHistory == true else { return }
+        try? saveThread(conversation.id) { $0.worktreeLaunch = nil }
     }
 
     private func receive(_ event: PiEvent, from worker: PiProcess, account: String) {
@@ -455,24 +530,18 @@ final class WorkspaceModel: ObservableObject {
             do {
                 try worker.send(result)
             } catch {
-                shutdown()
-                self.error = "The Pi helper disconnected during Keychain access."
+                connectionFailed("The Pi helper disconnected during Keychain access.")
             }
         case let .ready(history):
             messages = history
             phase = .ready
-            if let firstPrompt {
-                clearWorktreePrompt()
-                do {
-                    try send(firstPrompt, using: worker)
-                } catch {
-                    shutdown()
-                    self.error = "The worktree was created. Reconnect to send your message."
-                }
+            if !confirmWorktreePrompt(in: history), preparingWorktree {
+                submitWorktreePrompt(using: worker)
             }
         case let .history(history):
             messages = history
             partial = ""
+            confirmWorktreePrompt(in: history)
         case let .partial(text):
             partial = text
             activity = ""
@@ -482,13 +551,15 @@ final class WorkspaceModel: ObservableObject {
             messages = history
             partial = ""
             activity = ""
-            self.error = error
             repositoryRevision += 1
             phase = .ready
-        case let .fatal(error):
-            shutdown()
-            clearWorktreePrompt()
             self.error = error
+            if !confirmWorktreePrompt(in: history), conversation?.worktreeLaunch?.awaitingHistory == true {
+                self.error = nil
+                failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")
+            }
+        case let .fatal(error):
+            connectionFailed(error)
         }
     }
 }

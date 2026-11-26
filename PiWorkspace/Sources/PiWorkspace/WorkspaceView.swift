@@ -602,15 +602,20 @@ struct WorkspaceView: View {
                 HStack {
                     Text(error).foregroundStyle(.red)
                     Spacer()
-                    if model.phase == .closed { Button("Reconnect", action: model.connect) }
+                    if model.phase == .closed && !model.canRetryWorktree {
+                        Button("Reconnect", action: model.connect)
+                    }
                 }
                 .font(.callout)
+            }
+            if let launch = thread.worktreeLaunch, !model.phase.isRunning {
+                WorktreeLaunchView(launch: launch, model: model)
             }
             if thread.archived {
                 Button("Restore Thread") {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
                 }
-            } else {
+            } else if thread.worktreeLaunch == nil || model.phase.isRunning {
                 inputCard(project, threadID: thread.id)
             }
             HStack {

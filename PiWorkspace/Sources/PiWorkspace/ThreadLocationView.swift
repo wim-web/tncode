@@ -92,6 +92,10 @@ struct ThreadLocationView: View {
                 repository = state
                 base = state.branch ?? state.branches.first ?? ""
                 branch = "thread-" + (model.conversation?.id.uuidString.prefix(8).lowercased() ?? "work")
+                if case let .newWorktree(savedBranch, savedBase) = model.conversation?.workingLocation {
+                    branch = savedBranch
+                    if state.branches.contains(savedBase) { base = savedBase }
+                }
             } catch {
                 repository = nil
             }

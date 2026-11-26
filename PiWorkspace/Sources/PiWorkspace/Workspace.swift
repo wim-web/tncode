@@ -94,6 +94,26 @@ enum ThreadShelf: String, Codable {
     case active, pinned, settled
 }
 
+struct WorktreeLaunch: Codable {
+    enum Stage: String, Codable {
+        case createCheckout, openThread, sendPrompt
+
+        var label: String {
+            switch self {
+            case .createCheckout: "Create worktree"
+            case .openThread: "Open thread"
+            case .sendPrompt: "Send first message"
+            }
+        }
+    }
+
+    let prompt: String
+    var stage: Stage = .createCheckout
+    var failure: String?
+
+    var awaitingHistory: Bool { stage == .sendPrompt && failure == nil }
+}
+
 struct Conversation: Codable, Identifiable {
     let id: UUID
     var title: String
@@ -102,9 +122,19 @@ struct Conversation: Codable, Identifiable {
     var location: ThreadLocation?
     var shelf: ThreadShelf?
     var isDraft: Bool?
+    var worktreeLaunch: WorktreeLaunch?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
+
+    mutating func recordPrompt(_ text: String) {
+        isDraft = nil
+        lastActiveAt = Date()
+        if threadShelf == .settled { shelf = .active }
+        if ["New thread", "New conversation"].contains(title) {
+            title = String((text.split(whereSeparator: \.isNewline).first ?? Substring(text)).prefix(54))
+        }
+    }
 }
 
 struct ProjectPickerRequest: Identifiable {
