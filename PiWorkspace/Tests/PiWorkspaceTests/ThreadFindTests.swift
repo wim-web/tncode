@@ -141,6 +141,17 @@ final class ThreadFindTests: XCTestCase {
 
         try await openFind(selection, in: "Edit queued message")
         model.selectConversation(other.id, in: project.id)
+        XCTAssertEqual(model.conversation?.id, first.id)
+        XCTAssertEqual(model.editingQueuedMessageID, queued.id)
+        XCTAssertNotNil(model.activeThreadFind)
+        try await app.key(kVK_Escape, "\u{1b}")
+        let guardedSelection = try await returnedSelection(in: "Edit queued message")
+        XCTAssertEqual(guardedSelection, selection)
+        model.cancelQueuedMessageEdit()
+        model.draft = unicode
+        try await openFind(selection)
+        model.selectConversation(other.id, in: project.id)
+        XCTAssertEqual(model.conversation?.id, other.id)
         let newThreadSelection = try await returnedSelection()
         XCTAssertNotEqual(newThreadSelection, selection)
         XCTAssertEqual(model.draft, unicode)
