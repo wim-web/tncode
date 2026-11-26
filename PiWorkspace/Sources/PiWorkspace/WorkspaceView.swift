@@ -131,8 +131,15 @@ struct WorkspaceView: View {
         .tint(accent)
         .background {
             WindowKeyMonitor { event, window in
-                guard !event.isARepeat, case .toggle? = CommandPaletteSession.Key(event) else { return false }
-                return openCommandPalette(in: window)
+                guard !event.isARepeat else { return false }
+                if case .toggle? = CommandPaletteSession.Key(event) {
+                    return openCommandPalette(in: window)
+                }
+                guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift],
+                      event.charactersIgnoringModifiers?.lowercased() == "x",
+                      acceptsWorkspaceCommands(in: window), model.canChangeWorkspace else { return false }
+                chooseWorkspace()
+                return true
             }
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -1571,13 +1578,16 @@ struct WorkspaceView: View {
         (try? ProjectFolder.existing(at: URL(fileURLWithPath: project.path, isDirectory: true))) != nil
     }
 
+    private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
+        model.canOpenCommandPalette && !model.showingCommandPalette && window === NSApp.mainWindow &&
+            window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
+            !choosingWorkspace && !choosingThreadProject && terminalWorkspaceChange == nil &&
+            rename == nil && removingProject == nil
+    }
+
     @discardableResult
     private func openCommandPalette(in eventWindow: NSWindow? = nil) -> Bool {
-        guard model.canOpenCommandPalette, !model.showingCommandPalette,
-              let window = eventWindow ?? NSApp.keyWindow, window === NSApp.mainWindow,
-              window.attachedSheet == nil, NSApp.modalWindow == nil, !ThreadTerminal.hasFocus(in: window),
-              !choosingWorkspace, !choosingThreadProject, terminalWorkspaceChange == nil,
-              rename == nil, removingProject == nil else { return false }
+        guard let window = eventWindow ?? NSApp.keyWindow, acceptsWorkspaceCommands(in: window) else { return false }
         paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         model.showingCommandPalette = true
         return true
