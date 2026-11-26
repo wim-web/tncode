@@ -106,6 +106,7 @@ export async function createUsageFixture(root, sidecar = join(import.meta.dirnam
   const shared = hostedReply(parent, { timestamp: now - 2 * hour, tokens: [60, 20, 15, 5], cost: 0.00125 });
   const parentFile = parent.getSessionFile();
   const forkRef = addThread(alpha, "Usage fork");
+  alpha.conversations.at(-1).forkOrigin = { threadID: parent.getSessionId(), messageID: shared };
   mkdirSync(forkRef.dir, { recursive: true });
   const forkFile = join(forkRef.dir, forkRef.id + ".jsonl");
   const forkHeader = SessionManager.inMemory(alpha.path, { id: forkRef.id, parentSession: parentFile }).getHeader();
@@ -150,7 +151,7 @@ export async function createUsageFixture(root, sidecar = join(import.meta.dirnam
 
   return {
     alpha: alpha.id, beta: beta.id, now: new Date(now).toISOString(), workspaceFile,
-    betaFile: betaSession.getSessionFile(),
+    betaFile: betaSession.getSessionFile(), forkFile,
     appendUsage: () => localReply(betaSession, Date.now(), [10, 13, 0]),
   };
 }

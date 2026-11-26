@@ -10,10 +10,15 @@ enum UsagePeriod: Int, CaseIterable, Identifiable {
         self == .pastDay ? "Past 24h" : "\(rawValue) days"
     }
 
-    func start(at now: Date, calendar: Calendar) -> Date {
-        if self == .pastDay { return now.addingTimeInterval(-86_400) }
+    func window(at now: Date, calendar: Calendar) -> Range<Date> {
+        if self == .pastDay {
+            let end = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970 / 60) * 60)
+            return end.addingTimeInterval(-86_400)..<end
+        }
         let today = calendar.startOfDay(for: now)
-        return calendar.date(byAdding: .day, value: 1 - rawValue, to: today) ?? today
+        let firstDay = calendar.date(byAdding: .day, value: 1 - rawValue, to: today) ?? today
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86_400)
+        return firstDay..<nextDay
     }
 
     func bucket(for date: Date, calendar: Calendar) -> Date {
@@ -102,9 +107,9 @@ struct WorkspaceUsage: Sendable {
 
     func readout(period: UsagePeriod, project: UsageProject?, hiddenProviders: Set<String?> = [],
                  model: UsageModel? = nil) -> UsageReadout {
-        let start = period.start(at: readAt, calendar: calendar)
+        let window = period.window(at: readAt, calendar: calendar)
         var result = UsageReadout()
-        for entry in entries where entry.date >= start && !hiddenProviders.contains(entry.model.provider) {
+        for entry in entries where window.contains(entry.date) && !hiddenProviders.contains(entry.model.provider) {
             if let project, !entry.projects.contains(project) { continue }
             if let model, entry.model != model { continue }
             result.total.add(entry)
@@ -137,7 +142,7 @@ struct WorkspaceUsage: Sendable {
 
         var recorded: [UsageEntry.Identity: UsageEntry] = [:]
         var incomplete: [UsageProject: Int] = [:]
-        let earliest = UsagePeriod.quarter.start(at: now, calendar: calendar)
+        let earliest = UsagePeriod.quarter.window(at: now, calendar: calendar).lowerBound
         let decoder = JSONDecoder()
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions.insert(.withFractionalSeconds)
@@ -148,6 +153,7 @@ struct WorkspaceUsage: Sendable {
                 try Task.checkCancellation()
                 do {
                     guard let file = try WorkspaceHistory.open(in: fd, projectID: project.id, threadID: thread.id) else {
+                        if thread.isDraft == false || thread.forkOrigin != nil { incomplete[scope, default: 0] += 1 }
                         continue
                     }
                     defer { try? file.close() }

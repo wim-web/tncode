@@ -302,9 +302,9 @@ struct UsageSettingsView: View {
     private func timelineChart(_ readout: UsageReadout, snapshot: WorkspaceUsage) -> some View {
         if metric.amount(in: readout.total).sum > 0 {
             let unit: Calendar.Component = period == .pastDay ? .hour : .day
-            let start = period.bucket(for: period.start(at: snapshot.readAt, calendar: snapshot.calendar),
-                                      calendar: snapshot.calendar)
-            let lastBucket = period.bucket(for: snapshot.readAt, calendar: snapshot.calendar)
+            let window = period.window(at: snapshot.readAt, calendar: snapshot.calendar)
+            let start = period.bucket(for: window.lowerBound, calendar: snapshot.calendar)
+            let lastBucket = period.bucket(for: window.upperBound.addingTimeInterval(-1), calendar: snapshot.calendar)
             let end = snapshot.calendar.date(byAdding: unit, value: 1, to: lastBucket) ?? snapshot.readAt
             let reported = readout.times.filter { metric.amount(in: $0.value).recorded > 0 }
             Chart(reported.sorted { $0.key < $1.key }, id: \.key) { row in

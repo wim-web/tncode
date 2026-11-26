@@ -6,6 +6,33 @@ import XCTest
 @testable import PiWorkspace
 
 final class WorkspaceUsageTests: XCTestCase {
+    func testPastDayIncludesOnlyTheLast1440CompletedMinutes() {
+        let minute = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = minute.addingTimeInterval(45)
+        let window = UsagePeriod.pastDay.window(at: now, calendar: .current)
+        let first = minute.addingTimeInterval(-86_400)
+        XCTAssertFalse(window.contains(first.addingTimeInterval(-0.001)))
+        XCTAssertTrue(window.contains(first))
+        XCTAssertTrue(window.contains(minute.addingTimeInterval(-0.001)))
+        XCTAssertFalse(window.contains(minute))
+        XCTAssertFalse(window.contains(now))
+    }
+
+    func testMissingForkMakesItsProjectIncompleteUntilTheFileReturns() async throws {
+        let fixture = try UsageFixture()
+        let fork = fixture.ids.forkFile
+        let moved = fixture.root.appendingPathComponent("removed-history.jsonl")
+        try FileManager.default.moveItem(at: fork, to: moved)
+        let missing = try await fixture.snapshot()
+        XCTAssertEqual(missing.incompleteHistories(in: .project(fixture.ids.alpha)), 1)
+        XCTAssertEqual(missing.incompleteHistories(in: .project(fixture.ids.beta)), 0)
+        XCTAssertEqual(missing.readout(period: .month, project: nil).total.tokens[.total]?.sum, 420)
+        try FileManager.default.moveItem(at: moved, to: fork)
+        let restored = try await fixture.snapshot()
+        XCTAssertEqual(restored.incompleteHistories(in: nil), 0)
+        XCTAssertEqual(restored.readout(period: .month, project: nil).total.tokens[.total]?.sum, 480)
+    }
+
     func testPiAccountingAcrossPeriodsProjectsProvidersAndCopies() async throws {
         let fixture = try UsageFixture()
         let snapshot = try await fixture.snapshot()
@@ -137,8 +164,9 @@ private struct UsageFixture {
         let beta: UUID
         let now: Date
         let betaFile: URL
+        let forkFile: URL
 
-        private enum Field: String, CodingKey { case alpha, beta, now, betaFile }
+        private enum Field: String, CodingKey { case alpha, beta, now, betaFile, forkFile }
 
         init(from decoder: Decoder) throws {
             let fields = try decoder.container(keyedBy: Field.self)
@@ -149,6 +177,7 @@ private struct UsageFixture {
             formatter.formatOptions.insert(.withFractionalSeconds)
             now = try XCTUnwrap(formatter.date(from: timestamp))
             betaFile = URL(fileURLWithPath: try fields.decode(String.self, forKey: .betaFile))
+            forkFile = URL(fileURLWithPath: try fields.decode(String.self, forKey: .forkFile))
         }
     }
 
