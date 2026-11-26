@@ -18,6 +18,14 @@ struct WorkspaceFilesView: View {
     @State private var showingExplorer = true
     @State private var recovery: WorkspaceFileSaveSession?
 
+    static func saveFocusedFile(in window: NSWindow) -> Bool {
+        guard let editor = window.firstResponder as? NSTextView,
+              let coordinator = editor.delegate as? FileTextView.Coordinator,
+              let session = coordinator.saveSession, editor.isEditable, session.isEditable else { return false }
+        session.flush()
+        return true
+    }
+
     private var target: WorkspaceFileTarget? {
         selection.map { WorkspaceFileTarget(location: location, path: $0) }
     }
@@ -457,7 +465,7 @@ private struct WorkspaceFilePreviewView: View {
                 WorkspaceRenderedFileView(format: renderFormat, text: text, openLink: openMarkdownLink)
             } else {
                 FileTextView(text: text, editable: session.isEditable, wraps: wraps,
-                             identifier: "files-editor") { text in
+                             identifier: "files-editor", saveSession: session) { text in
                     guard self.session === session else { return }
                     session.edit(text, from: source)
                 }
@@ -698,6 +706,7 @@ private struct FileTextView: NSViewRepresentable {
     let wraps: Bool
     let identifier: String
     var reveal: (id: UUID, range: NSRange)?
+    var saveSession: WorkspaceFileSaveSession?
     var edit: ((String) -> Void)?
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -724,6 +733,7 @@ private struct FileTextView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let textView = scroll.documentView as? NSTextView else { return }
+        context.coordinator.saveSession = saveSession
         context.coordinator.edit = nil
         textView.isEditable = editable
         textView.setAccessibilityIdentifier(identifier)
@@ -752,9 +762,11 @@ private struct FileTextView: NSViewRepresentable {
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.edit = nil
+        coordinator.saveSession = nil
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
+        weak var saveSession: WorkspaceFileSaveSession?
         var edit: ((String) -> Void)?
         var revealed: UUID?
 

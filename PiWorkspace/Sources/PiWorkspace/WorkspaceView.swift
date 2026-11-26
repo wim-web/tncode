@@ -200,8 +200,13 @@ struct WorkspaceView: View {
                 }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
                 if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "s",
-                   acceptsWorkspaceKeys(in: window), model.conversation?.archived == false,
+                   acceptsWorkspaceKeys(in: window),
                    (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true {
+                    if WorkspaceFilesView.saveFocusedFile(in: window) { return true }
+                    guard let editor = window.firstResponder as? ComposerTextField.Editor,
+                          let target = editor.owner?.composerTarget, model.conversation?.id == target.threadID,
+                          model.attachmentTarget(for: target.threadID) == target, model.conversation?.archived == false,
+                          model.pendingToolApproval == nil, model.pendingAgentQuestion == nil else { return false }
                     return handleComposerStashShortcut()
                 }
                 if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "u",
