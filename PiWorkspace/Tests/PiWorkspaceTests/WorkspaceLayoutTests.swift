@@ -53,4 +53,27 @@ final class WorkspaceLayoutTests: XCTestCase {
         XCTAssertEqual(layout.chatWidth, 380)
         XCTAssertEqual(layout.resizedRightPanelWidth(drag: 200), 360)
     }
+
+    func testExpandedChatWidthsRespectTheCanvasAndPanels() {
+        let samples: [(mode: ChatWidth, details: Bool, right: CGFloat?, x: CGFloat, width: CGFloat)] = [
+            (.comfortable, false, nil, 613.5, 710),
+            (.wide, false, nil, 405.5, 1126),
+            (.full, false, nil, 318, 1301),
+            (.full, true, nil, 318, 1025),
+            (.full, false, 540, 318, 761),
+        ]
+        for sample in samples {
+            let layout = WorkspaceLayout(
+                viewportWidth: 1680,
+                workspaceSize: CGSize(width: 1423, height: 720),
+                preferredRightPanelWidth: sample.right,
+                rightPanelDrag: 0,
+                showingDetails: sample.details,
+                chatWidthMode: sample.mode
+            )
+            XCTAssertEqual(layout.rightPanelWidth, sample.right ?? 0)
+            XCTAssertEqual(257 + layout.composerLeading + WorkspaceLayout.editorInset, sample.x)
+            XCTAssertEqual(layout.composerWidth - 2 * WorkspaceLayout.editorInset, sample.width)
+        }
+    }
 }

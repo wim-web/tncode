@@ -11,7 +11,6 @@ struct WorkspaceLayout {
 
     private static let minimumSplitWidth: CGFloat = 360
     private static let chatGutter: CGFloat = 48
-    private static let maximumComposerWidth: CGFloat = 736
     private static let detailsClearance: CGFloat = 32
     private static let minimumDetailsChatWidth: CGFloat = 640
 
@@ -21,6 +20,7 @@ struct WorkspaceLayout {
     let rightPanelDrag: CGFloat
     let showingDetails: Bool
     var miniPlayer: BrowserMiniPlayerPlacement? = nil
+    var chatWidthMode: ChatWidth = .comfortable
 
     static func sidebarWidth(in viewportWidth: CGFloat, preferred: CGFloat, drag: CGFloat = 0) -> CGFloat {
         let limits = 177...max(defaultSidebarWidth, floor(viewportWidth) - 640)
@@ -66,7 +66,13 @@ struct WorkspaceLayout {
         // Give the existing composer controls room when a resized sidebar and panel share a narrow window.
         let gutter = min(Self.chatGutter, max(16, (chatWidth - 240) / 2))
         let laneEnd = composerLaneEnd(gutter: gutter)
-        return max(0, min(Self.maximumComposerWidth, min(chatWidth - gutter * 2, laneEnd - gutter)))
+        let available = min(chatWidth - gutter * 2, laneEnd - gutter)
+        let maximum: CGFloat = switch chatWidthMode {
+        case .comfortable: 736
+        case .wide: 1152
+        case .full: available
+        }
+        return max(0, min(maximum, available))
     }
 
     var composerLeading: CGFloat {

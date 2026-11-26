@@ -17,6 +17,7 @@ struct DroppedProjectFolder: Transferable {
 
 struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
+    let chatWidthMode: ChatWidth
     var browserDefaults: UserDefaults = .standard
     var draftPasteboard: NSPasteboard = .general
     @Environment(\.colorScheme) private var colorScheme
@@ -771,7 +772,8 @@ struct WorkspaceView: View {
             preferredRightPanelWidth: hasRightPanel ? preferredWidth : nil,
             rightPanelDrag: rightPanelDrag,
             showingDetails: showingDetails,
-            miniPlayer: browser.wrappedValue.miniPlayer?.placement
+            miniPlayer: browser.wrappedValue.miniPlayer?.placement,
+            chatWidthMode: chatWidthMode
         )
         return VStack(spacing: 0) {
             header(project, thread, browserIsVisible: browserIsVisible, detailsFitInline: layout.detailsFitInline)

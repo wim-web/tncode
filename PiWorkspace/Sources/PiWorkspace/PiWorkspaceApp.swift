@@ -9,8 +9,10 @@ import SwiftUI
 struct PiWorkspaceApp: App {
     @Environment(\.openWindow) private var openWindow
     @StateObject private var model: WorkspaceModel
+    @StateObject private var appearance: AppearanceSettings
     @State private var launched = false
     @State private var showingBrowserSettings = false
+    @State private var showingAppearanceSettings = false
     private let browserDefaults: UserDefaults
     private let draftPasteboard: NSPasteboard
     private let launchProject: URL?
@@ -57,6 +59,8 @@ struct PiWorkspaceApp: App {
         }
         let model = WorkspaceModel(root: root, keychainService: keychainService)
         _model = StateObject(wrappedValue: model)
+        let appearanceDefaults = override == nil ? .standard : UserDefaults(suiteName: "dev.piworkspace.appearance.\(scope)")
+        _appearance = StateObject(wrappedValue: AppearanceSettings(defaults: appearanceDefaults))
         termination = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { [weak model] _ in model?.terminate() }
     }
@@ -67,11 +71,15 @@ struct PiWorkspaceApp: App {
                 if let failure = model.startupFailure {
                     WorkspaceStartupRecoveryView(model: model, failure: failure)
                 } else {
-                    WorkspaceView(model: model, browserDefaults: browserDefaults, draftPasteboard: draftPasteboard)
+                    WorkspaceView(model: model, chatWidthMode: appearance.chatWidth, browserDefaults: browserDefaults, draftPasteboard: draftPasteboard)
                         .onAppear(perform: launchWorkspace)
                 }
             }
                 .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView(defaults: browserDefaults) }
+                .sheet(isPresented: $showingAppearanceSettings) { AppearanceSettingsView(settings: appearance) }
+                .onChange(of: appearance.colorScheme, initial: true) { _, scheme in
+                    scheme.apply(to: NSApplication.shared)
+                }
                 .frame(minWidth: 800, minHeight: 540)
         }
         .defaultSize(width: 1080, height: 720)
@@ -84,10 +92,14 @@ struct PiWorkspaceApp: App {
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
-                    .disabled(model.startupFailure != nil || model.phase.isRunning || showingBrowserSettings)
+                    .disabled(model.startupFailure != nil || model.phase.isRunning
+                              || showingBrowserSettings || showingAppearanceSettings)
+                Button("Appearance Settings…") { showingAppearanceSettings = true }
+                    .accessibilityIdentifier("appearance-settings-menu")
+                    .disabled(model.showingSettings || showingBrowserSettings || showingAppearanceSettings)
                 Button("Browser Settings…") { showingBrowserSettings = true }
                     .accessibilityIdentifier("browser-settings-menu")
-                    .disabled(model.showingSettings || showingBrowserSettings)
+                    .disabled(model.showingSettings || showingBrowserSettings || showingAppearanceSettings)
             }
             CommandGroup(after: .help) {
                 Button("Show Welcome") { model.showingWelcome = true }
