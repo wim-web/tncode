@@ -293,6 +293,185 @@ final class WorkspaceFilesTests: XCTestCase {
     }
 
     @MainActor
+    func testMarkdownSourceAndRenderedDraftStayInTheirCheckoutOffscreen() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let local = try folder("local", in: root)
+        let linked = root.appendingPathComponent("linked")
+        let path = "Guide.MDX"
+        let markup = """
+        # Local heading
+
+        **Bold text**, *emphasis*, `inline()` and [Docs](https://example.test/docs).
+
+        > A quoted note
+        > - A nested bullet
+
+        3. A numbered item
+
+        | Name | Value |
+        | --- | ---: |
+        | café | 42 |
+
+        ```swift
+        let value = 42
+        ```
+        """
+        let file = try write(markup, path, in: local)
+        _ = try git(local, ["init", "-q"])
+        _ = try git(local, ["add", "--", path])
+        _ = try git(local, ["commit", "-qm", "Markdown fixture"])
+        _ = try git(local, ["worktree", "add", "--detach", "--", linked.path, "HEAD"])
+        let linkedMarkup = "# Linked heading\n\n[Open sibling](Sibling.md)"
+        let linkedFile = try write(linkedMarkup, path, in: linked)
+        try write("# Linked sibling", "Sibling.md", in: linked)
+        try write("# Parent sibling", "Sibling.md", in: local)
+        XCTAssertEqual(chmod(linkedFile.path, 0o444), 0)
+        let project = Project(id: UUID(), path: local.path, title: "Fixture")
+        var thread = Conversation(id: UUID(), title: "Fixture Thread")
+        let localTarget = try target(path, thread: thread, project: project)
+        thread.location = .worktree(path: linked.path, base: "HEAD")
+        let linkedTarget = try target(path, thread: thread, project: project)
+        let saves = WorkspaceFileSaves()
+        let panel = FilesPanelFixture(location: localTarget.location, selection: path, saves: saves)
+        let suite = "RenderedFilesTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let (window, host) = hostFiles(panel, defaults: defaults)
+        defer { window.contentView = nil }
+
+        func textView(_ id: String) -> NSTextView? {
+            firstSubview(in: host) {
+                guard let view = $0 as? NSTextView, view.accessibilityIdentifier() == id else { return nil }
+                return view
+            }
+        }
+        let sourceID = "files-editor"
+        let markdownID = "files-rendered-markdown"
+        try await waitFor { textView(sourceID)?.string == markup }
+
+        defaults.set(true, forKey: "files-render-markdown")
+        try await waitFor { textView(markdownID)?.string.hasPrefix("Local heading") == true }
+        let view = try XCTUnwrap(textView(markdownID))
+        XCTAssertFalse(view.isEditable)
+        let storage = try XCTUnwrap(view.textStorage)
+        let rendered = view.string
+        for phrase in ["Bold text", "emphasis", "inline()", "A quoted note", "•\tA nested bullet",
+                       "3.\tA numbered item", "let value = 42", "café"] {
+            XCTAssertTrue(rendered.contains(phrase), phrase)
+        }
+        func offset(of value: String) throws -> Int {
+            NSRange(try XCTUnwrap(rendered.range(of: value)), in: rendered).location
+        }
+        let heading = try XCTUnwrap(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        XCTAssertGreaterThan(heading.pointSize, NSFont.systemFontSize)
+        let bold = try XCTUnwrap(storage.attribute(.font, at: offset(of: "Bold text"), effectiveRange: nil) as? NSFont)
+        XCTAssertTrue(NSFontManager.shared.traits(of: bold).contains(.boldFontMask))
+        let link = try storage.attribute(.link, at: offset(of: "Docs"), effectiveRange: nil) as? URL
+        XCTAssertEqual(link?.absoluteString, "https://example.test/docs")
+        let style = try storage.attribute(.paragraphStyle, at: offset(of: "42"), effectiveRange: nil)
+            as? NSParagraphStyle
+        let cell = try XCTUnwrap(style?.textBlocks.first as? NSTextTableBlock)
+        XCTAssertEqual(cell.startingRow, 1)
+        XCTAssertEqual(cell.startingColumn, 1)
+
+        defaults.set(false, forKey: "files-render-markdown")
+        try await waitFor { textView(sourceID)?.string == markup }
+        let editor = try XCTUnwrap(textView(sourceID))
+        XCTAssertTrue(editor.isEditable)
+        XCTAssertEqual(chmod(file.path, 0o444), 0)
+        let draft = "# Draft heading\n\n**Pending edit**"
+        editor.insertText(draft, replacementRange: NSRange(location: 0, length: markup.utf16.count))
+        try await waitFor { saves.hasDraft(for: localTarget) }
+        defaults.set(true, forKey: "files-render-markdown")
+        try await waitFor { textView(markdownID)?.string.contains("Pending edit") == true }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), markup)
+
+        panel.location = linkedTarget.location
+        try await waitFor { textView(markdownID)?.string == "Linked heading\nOpen sibling" }
+        XCTAssertFalse(saves.hasDraft(for: linkedTarget))
+        let linkedView = try XCTUnwrap(textView(markdownID))
+        let linkRange = try XCTUnwrap(linkedView.string.range(of: "Open sibling"))
+        let linkOffset = NSRange(linkRange, in: linkedView.string).location
+        let siblingURL = try XCTUnwrap(linkedView.textStorage?.attribute(.link, at: linkOffset, effectiveRange: nil) as? URL)
+        XCTAssertEqual(linkedView.delegate?.textView?(linkedView, clickedOnLink: siblingURL, at: linkOffset), true)
+        try await waitFor { textView(markdownID)?.string == "Linked sibling" }
+        panel.selection = path
+        defaults.set(false, forKey: "files-render-markdown")
+        try await waitFor { textView(sourceID)?.string == linkedMarkup }
+        XCTAssertFalse(try XCTUnwrap(textView(sourceID)).isEditable)
+
+        panel.location = localTarget.location
+        try await waitFor { textView(sourceID)?.string == draft }
+        XCTAssertFalse(try XCTUnwrap(textView(sourceID)).isEditable)
+    }
+
+    @MainActor
+    func testDelimitedTableRendersCellsAndRefreshesAfterParseFailureOffscreen() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let csv = "Name,Notes,Empty\r\n\"A, B\",\"say \"\"hi\"\"\r\nagain 東京\",\r\n"
+        let file = try write("\u{FEFF}" + csv, "data.CSV", in: root)
+        _ = try write("Name\tNotes\rBob\t\"one\ttwo\"\r", "data.tsv", in: root)
+        let project = Project(id: UUID(), path: root.path, title: "Fixture")
+        let target = try target(file.lastPathComponent, thread: Conversation(id: UUID(), title: "Thread"),
+                                project: project)
+        let saves = WorkspaceFileSaves()
+        let session = saves.acquire(target)
+        defer { saves.release(session) }
+        let panel = FilesPanelFixture(location: target.location, selection: target.path, saves: saves)
+        let suite = "RenderedFilesTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let (window, host) = hostFiles(panel, defaults: defaults)
+        defer { window.contentView = nil }
+
+        func table() -> NSTableView? {
+            firstSubview(in: host) { $0 as? NSTableView }
+        }
+        func cell(_ column: Int) -> String? {
+            (table()?.view(atColumn: column, row: 0, makeIfNecessary: false) as? NSTableCellView)?.textField?.stringValue
+        }
+        try await waitFor { cell(0) == "A, B" }
+        let initial = try XCTUnwrap(table())
+        XCTAssertEqual(initial.accessibilityIdentifier(), "files-rendered-table")
+        XCTAssertNotNil(initial.headerView)
+        XCTAssertEqual(initial.tableColumns.map(\.title), ["Name", "Notes", "Empty"])
+        XCTAssertEqual(initial.numberOfRows, 1)
+        XCTAssertEqual(cell(1), "say \"hi\"\r\nagain 東京")
+        XCTAssertEqual(cell(2), "")
+        let notes = try XCTUnwrap(initial.view(atColumn: 1, row: 0, makeIfNecessary: false) as? NSTableCellView)
+        try await waitFor {
+            host.layoutSubtreeIfNeeded()
+            return notes.frame.height > initial.rowHeight
+        }
+
+        panel.selection = "data.tsv"
+        try await waitFor { cell(1) == "one\ttwo" }
+        XCTAssertEqual(table()?.tableColumns.map(\.title), ["Name", "Notes"])
+        panel.selection = target.path
+        try await waitFor { cell(0) == "A, B" }
+
+        let broken = "Name,Notes\nAlice,\"unfinished"
+        try Data(broken.utf8).write(to: file, options: .atomic)
+        await session.refresh()
+        XCTAssertThrowsError(try WorkspaceDelimitedTable(text: broken, delimiter: .comma)) {
+            XCTAssertEqual($0.localizedDescription, "Unclosed quoted field in row 2.")
+        }
+        try await waitFor { table() == nil }
+        defaults.set(false, forKey: "files-render-table")
+        try await waitFor {
+            firstSubview(in: host) { ($0 as? NSTextView)?.string } == broken
+        }
+        defaults.set(true, forKey: "files-render-table")
+        try Data("\"A, B\";Value\r\nZoë;2,5".utf8).write(to: file, options: .atomic)
+        await session.refresh()
+        try await waitFor { cell(0) == "Zoë" }
+        XCTAssertEqual(table()?.tableColumns.map(\.title), ["A, B", "Value"])
+        XCTAssertEqual(cell(1), "2,5")
+    }
+
+    @MainActor
     func testPDFKitPagingZoomSearchAndRestoringViewOffscreen() async throws {
         let reader = WorkspacePDFReader()
         _ = NSApplication.shared
@@ -818,6 +997,17 @@ final class WorkspaceFilesTests: XCTestCase {
     @MainActor
     private func findPDFCanvas(in view: NSView) -> WorkspacePDFCanvas? {
         firstSubview(in: view) { $0 as? WorkspacePDFCanvas }
+    }
+
+    @MainActor
+    private func hostFiles(_ panel: FilesPanelFixture, defaults: UserDefaults) -> (NSWindow, NSView) {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 850, height: 520),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: FilesPanelFixtureView(fixture: panel).defaultAppStorage(defaults))
+        host.sizingOptions = []
+        window.contentView = host
+        return (window, host)
     }
 
     @MainActor

@@ -277,6 +277,8 @@ private struct WorkspaceFilePreviewView: View {
     @State private var confirmDiscard = false
     @State private var wraps = true
     @State private var reload = 0
+    @AppStorage("files-render-markdown") private var rendersMarkdown = false
+    @AppStorage("files-render-table") private var rendersTable = true
 
     private struct ReadRequest: Equatable {
         let session: ObjectIdentifier?
@@ -288,8 +290,18 @@ private struct WorkspaceFilePreviewView: View {
 
     private var pathComponents: [String] { target.path.components(separatedBy: "/") }
 
+    private var renderFormat: WorkspaceFileRenderFormat? {
+        guard session?.editorSource != nil else { return nil }
+        return WorkspaceFileRenderFormat(path: target.path)
+    }
+
+    private func renderPreference(for format: WorkspaceFileRenderFormat) -> Binding<Bool> {
+        format == .markdown ? $rendersMarkdown : $rendersTable
+    }
+
     private var canWrap: Bool {
         if case .success(.largeText) = session?.preview { return true }
+        if let renderFormat, renderPreference(for: renderFormat).wrappedValue { return false }
         return session?.editorSource != nil
     }
 
@@ -304,6 +316,16 @@ private struct WorkspaceFilePreviewView: View {
                 if draft != nil {
                     Text("Unsaved").foregroundStyle(.secondary)
                         .accessibilityIdentifier("files-unsaved")
+                }
+                if let renderFormat {
+                    let preference = renderPreference(for: renderFormat)
+                    let rendered = preference.wrappedValue
+                    let previewIcon = renderFormat == .markdown ? "doc.richtext" : "tablecells"
+                    fileButton(renderFormat.toggleLabel(rendered: rendered),
+                               rendered ? "chevron.left.forwardslash.chevron.right" : previewIcon,
+                               id: "files-toggle-rendered") {
+                        preference.wrappedValue.toggle()
+                    }
                 }
                 previewMenu
                 if session?.editorSource != nil {
@@ -430,10 +452,15 @@ private struct WorkspaceFilePreviewView: View {
     @ViewBuilder
     private var content: some View {
         if let session, let source = session.editorSource {
-            FileTextView(text: draft?.text ?? source.text, editable: session.isEditable, wraps: wraps,
-                         identifier: "files-editor") { text in
-                guard self.session === session else { return }
-                session.edit(text, from: source)
+            let text = draft?.text ?? source.text
+            if let renderFormat, renderPreference(for: renderFormat).wrappedValue {
+                WorkspaceRenderedFileView(format: renderFormat, text: text, openLink: openMarkdownLink)
+            } else {
+                FileTextView(text: text, editable: session.isEditable, wraps: wraps,
+                             identifier: "files-editor") { text in
+                    guard self.session === session else { return }
+                    session.edit(text, from: source)
+                }
             }
         } else {
             switch session?.preview {
@@ -460,6 +487,27 @@ private struct WorkspaceFilePreviewView: View {
                                  remember: { saves.rememberPDFPosition($0, for: target) },
                                  retry: { reload += 1 }, save: { savePDF(file) })
             }
+        }
+    }
+
+    private func openMarkdownLink(_ url: URL) {
+        guard activeTarget() == target else { return }
+        switch url.scheme?.lowercased() {
+        case "http", "https", "mailto":
+            NSWorkspace.shared.open(url)
+        case nil:
+            guard url.host == nil, !url.path.isEmpty else { return }
+            let root = URL(fileURLWithPath: target.location.directory, isDirectory: true).standardizedFileURL
+            let base = root.appendingPathComponent(target.path).deletingLastPathComponent()
+            let destination = URL(fileURLWithPath: url.path, relativeTo: base).standardizedFileURL
+            let prefix = root.path == "/" ? "/" : root.path + "/"
+            guard destination.path.hasPrefix(prefix) else { return }
+            let relative = String(destination.path.dropFirst(prefix.count))
+            if (try? WorkspaceFiles(directory: target.location.directory).fileURL(relative)) != nil {
+                openFile(relative)
+            }
+        default:
+            break
         }
     }
 
