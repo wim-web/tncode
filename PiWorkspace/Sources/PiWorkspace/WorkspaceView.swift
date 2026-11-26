@@ -24,6 +24,8 @@ struct WorkspaceView: View {
     @State private var projectFilter = SidebarProjectFilter()
     @State private var showingSidebarFilters = false
     @State private var highlightedSearchThread: UUID?
+    @State private var messageSearchResult: (key: MessageSearchKey, matches: [UUID: SidebarMessageSearch.Match])?
+    @State private var messageJump: MessageJump?
     @FocusState private var searchFocused: Bool
     @State private var showingDetails = false
     @State private var showingChanges = false
@@ -59,13 +61,30 @@ struct WorkspaceView: View {
         var isVisible = true
     }
 
+    private struct MessageSearchKey: Equatable {
+        let search: SidebarMessageSearch
+        let latestMessageID: String?
+    }
+
+    private struct MessageJump: Equatable {
+        let requestID = UUID()
+        let projectID: UUID
+        let threadID: UUID
+        let messageID: String
+    }
+
+    private enum TranscriptAnchor: Hashable {
+        case message(String)
+        case latest
+    }
+
     private var orderedProjects: [Project] { SidebarProjectFilter.orderedProjects(model.projects) }
     private var filteredProjects: [Project] { projectFilter.projects(in: orderedProjects) }
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var threads: [SidebarThread] {
         let scope = projectFilter.selection.isEmpty ? model.threadProjects : filteredProjects
-        return SidebarThread.matching(in: scope, search: searchTerm, archived: model.showArchive)
+        return SidebarThread.matching(in: scope, search: "", archived: model.showArchive)
             .filter { $0.project.isScratch || model.showsInSidebar($0.thread) }
     }
 
@@ -107,6 +126,12 @@ struct WorkspaceView: View {
                         if !Task.isCancelled { self.createdProject = nil }
                     }
             }
+        }
+        .onChange(of: model.conversation?.id) { _, id in
+            if messageJump?.threadID != id { messageJump = nil }
+        }
+        .onChange(of: model.phase.isRunning) { _, running in
+            if running { messageJump = nil }
         }
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
         .sheet(isPresented: $choosingWorkspace) {
@@ -187,7 +212,17 @@ struct WorkspaceView: View {
     }
 
     private var sidebar: some View {
-        let visibleThreads = threads
+        let scopedThreads = threads
+        let titleMatches = scopedThreads.filter { $0.matchesTitle(searchTerm) }
+        let messageCandidates = scopedThreads.filter { !$0.matchesTitle(searchTerm) }
+        let key = MessageSearchKey(
+            search: SidebarMessageSearch(query: searchTerm, threads: messageCandidates.map {
+                SidebarMessageSearch.Thread(projectID: $0.project.id, threadID: $0.id)
+            }),
+            latestMessageID: searchTerm.isEmpty ? nil : model.messages.last?.id
+        )
+        let messageMatches = messageSearchResult?.key == key ? messageSearchResult?.matches : nil
+        let visibleThreads = titleMatches + messageCandidates.filter { messageMatches?[$0.id] != nil }
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
@@ -218,7 +253,7 @@ struct WorkspaceView: View {
             .padding(.horizontal, 14)
             .frame(height: 42)
 
-            sidebarSearch(visibleThreads)
+            sidebarSearch(visibleThreads, messageMatches: messageMatches ?? [:])
 
             if model.showArchive {
                 Button {
@@ -239,14 +274,17 @@ struct WorkspaceView: View {
                         if searchTerm.isEmpty {
                             threadShelves(visibleThreads)
                         } else if visibleThreads.isEmpty {
-                            Text("No matching threads")
+                            Text(messageMatches == nil && !messageCandidates.isEmpty
+                                 ? "Searching thread messages…" : "No matching threads")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(7)
+                                .accessibilityIdentifier("thread-search-status")
                         } else {
                             ForEach(visibleThreads) { link in
                                 threadRow(link, showProject: true,
-                                          highlighted: link.id == highlightedID)
+                                          highlighted: link.id == highlightedID,
+                                          messageMatch: messageMatches?[link.id])
                             }
                         }
                     }
@@ -273,6 +311,17 @@ struct WorkspaceView: View {
             .padding(13)
         }
         .background(rail)
+        .task(id: key) {
+            guard !key.search.query.isEmpty else { return }
+            do {
+                if !key.search.threads.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
+                let matches = try await model.searchMessages(key.search)
+                try Task.checkCancellation()
+                messageSearchResult = (key, matches)
+            } catch {
+                // Replacing the query or scope cancels the old result.
+            }
+        }
         .contentShape(Rectangle())
         .overlay {
             if targetingProjectDrop && !model.operationsInProgress {
@@ -314,7 +363,8 @@ struct WorkspaceView: View {
         if let id = model.project?.id { collapsed.remove(id) }
     }
 
-    private func sidebarSearch(_ results: [SidebarThread]) -> some View {
+    private func sidebarSearch(_ results: [SidebarThread],
+                               messageMatches: [UUID: SidebarMessageSearch.Match]) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
@@ -325,7 +375,9 @@ struct WorkspaceView: View {
                 .accessibilityIdentifier("thread-search")
                 .onChange(of: query) { _, _ in highlightedSearchThread = nil }
                 .onSubmit {
-                    if !searchTerm.isEmpty, let result = searchResult(in: results) { openThread(result) }
+                    if !searchTerm.isEmpty, let result = searchResult(in: results) {
+                        openThread(result, messageMatch: messageMatches[result.id])
+                    }
                 }
                 .onExitCommand(perform: query.isEmpty ? nil : clearSearch)
                 .onKeyPress(keys: [.upArrow, .downArrow]) { press in
@@ -477,11 +529,12 @@ struct WorkspaceView: View {
         }
     }
 
-    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false) -> some View {
+    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false,
+                           messageMatch: SidebarMessageSearch.Match? = nil) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
         return Button {
-            openThread(link)
+            openThread(link, messageMatch: messageMatch)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 if showProject {
@@ -497,6 +550,12 @@ struct WorkspaceView: View {
                 Text(link.thread.title)
                     .font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
+                if let messageMatch {
+                    Label(messageMatch.excerpt, systemImage: "text.bubble")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 9)
@@ -506,7 +565,8 @@ struct WorkspaceView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("thread-row-\(link.id)")
+        .accessibilityIdentifier(messageMatch.map { "message-search-result-\(link.id)-\($0.messageID)" }
+                                 ?? "thread-row-\(link.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project) }
@@ -732,8 +792,9 @@ struct WorkspaceView: View {
     }
 
     private func conversation(_ project: Project, _ thread: Conversation) -> some View {
+        let jump = messageJump.flatMap { $0.projectID == project.id && $0.threadID == thread.id ? $0 : nil }
         let legacyDraft = model.phase == .ready && model.messages.isEmpty && thread.worktreeLaunch == nil
-        let drafting = !thread.archived && (thread.isDraft ?? legacyDraft)
+        let drafting = jump == nil && !thread.archived && (thread.isDraft ?? legacyDraft)
         return VStack(spacing: 0) {
             if drafting {
                 Spacer()
@@ -743,7 +804,7 @@ struct WorkspaceView: View {
                 composer(project, thread)
                 Spacer(minLength: 45)
             } else {
-                transcript
+                transcript(jump)
                 composer(project, thread)
             }
         }
@@ -833,18 +894,30 @@ struct WorkspaceView: View {
         }
     }
 
-    private var transcript: some View {
-        ScrollViewReader { reader in
+    private func transcript(_ jump: MessageJump?) -> some View {
+        let target = jump.flatMap { request in model.messages.contains { $0.id == request.messageID } ? request : nil }
+        return ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 23) {
+                    if jump != nil, target == nil, model.phase == .ready {
+                        Text("The matching message is no longer available.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                     ForEach(model.messages) { message in
+                        let isMatch = message.id == target?.messageID
                         messageRow(message.text, role: message.role)
+                            .background(isMatch ? accent.opacity(0.18) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 11))
+                            .accessibilityIdentifier("transcript-message-\(message.id)")
+                            .accessibilityAddTraits(isMatch ? .isSelected : [])
+                            .id(TranscriptAnchor.message(message.id))
                     }
                     if !model.partial.isEmpty {
                         messageRow(model.partial, role: .assistant)
                             .accessibilityIdentifier("streaming-reply")
                     }
-                    Color.clear.frame(height: 1).id("latest")
+                    Color.clear.frame(height: 1).id(TranscriptAnchor.latest)
                 }
                 .frame(maxWidth: 710)
                 .padding(.vertical, 22)
@@ -852,8 +925,15 @@ struct WorkspaceView: View {
                 .frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("transcript")
-            .onChange(of: model.messages.count) { _, _ in reader.scrollTo("latest", anchor: .bottom) }
-            .onChange(of: model.partial) { _, _ in reader.scrollTo("latest", anchor: .bottom) }
+            .onChange(of: target, initial: true) { _, target in
+                if let target { reader.scrollTo(TranscriptAnchor.message(target.messageID), anchor: .center) }
+            }
+            .onChange(of: model.messages.count) { _, _ in
+                if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
+            }
+            .onChange(of: model.partial) { _, _ in
+                if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
+            }
         }
     }
 
@@ -1029,6 +1109,7 @@ struct WorkspaceView: View {
     private func clearSearch() {
         query = ""
         highlightedSearchThread = nil
+        messageSearchResult = nil
     }
 
     private func searchResult(in results: [SidebarThread]) -> SidebarThread? {
@@ -1042,9 +1123,13 @@ struct WorkspaceView: View {
         return .handled
     }
 
-    private func openThread(_ item: SidebarThread) {
+    private func openThread(_ item: SidebarThread, messageMatch: SidebarMessageSearch.Match? = nil) {
         model.selectConversation(item.id, in: item.project.id)
-        guard model.conversation?.id == item.id, !searchTerm.isEmpty else { return }
+        guard model.project?.id == item.project.id, model.conversation?.id == item.id else { return }
+        messageJump = messageMatch.map {
+            MessageJump(projectID: item.project.id, threadID: item.id, messageID: $0.messageID)
+        }
+        guard !searchTerm.isEmpty else { return }
         collapsed.remove(item.project.id)
         if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
         searchFocused = false

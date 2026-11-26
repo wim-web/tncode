@@ -30,6 +30,12 @@ final class WorkspaceModel: ObservableObject {
     func showsInSidebar(_ thread: Conversation) -> Bool {
         thread.isDraft != true || composerText[thread.id] != nil
     }
+
+    func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
+        guard let root = store?.root else { return [:] }
+        return try await search.matches(in: root)
+    }
+
     @Published var error: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published var showingSettings = false

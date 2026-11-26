@@ -401,9 +401,13 @@ final class WorkspaceStore {
     }
 
     func history(project: UUID, conversation: UUID) -> URL {
-        root.appendingPathComponent("sessions", isDirectory: true)
-            .appendingPathComponent(project.uuidString, isDirectory: true)
-            .appendingPathComponent(conversation.uuidString, isDirectory: true)
+        Self.historyComponents(project: project, conversation: conversation).reduce(root) {
+            $0.appendingPathComponent($1, isDirectory: true)
+        }
+    }
+
+    static func historyComponents(project: UUID, conversation: UUID) -> [String] {
+        ["sessions", project.uuidString, conversation.uuidString]
     }
 
     func makeScratchProject(for thread: Conversation) throws -> Project {

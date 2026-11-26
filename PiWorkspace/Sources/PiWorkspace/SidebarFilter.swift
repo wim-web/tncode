@@ -35,12 +35,18 @@ struct SidebarThread: Identifiable {
     let thread: Conversation
     var id: UUID { thread.id }
 
+    func matchesTitle(_ search: String) -> Bool {
+        search.isEmpty || thread.title.localizedCaseInsensitiveContains(search) ||
+            project.title.localizedCaseInsensitiveContains(search)
+    }
+
     static func matching(in projects: [Project], search: String, archived: Bool) -> [Self] {
         projects.flatMap { project in
-            let matchesProject = search.isEmpty || project.title.localizedCaseInsensitiveContains(search)
             return project.conversations.filter {
-                $0.archived == archived && (matchesProject || $0.title.localizedCaseInsensitiveContains(search))
+                $0.archived == archived
             }.map { Self(project: project, thread: $0) }
+        }.filter {
+            $0.matchesTitle(search)
         }.sorted { ($0.thread.lastActiveAt ?? .distantPast) > ($1.thread.lastActiveAt ?? .distantPast) }
     }
 }
