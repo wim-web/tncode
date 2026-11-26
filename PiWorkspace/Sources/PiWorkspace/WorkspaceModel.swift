@@ -663,11 +663,15 @@ final class WorkspaceModel: ObservableObject {
     }
     private var canChangeWorkingDirectory: Bool {
         guard !operationsInProgress,
-              let store, let project, let conversation, !conversation.archived,
-              conversation.composerSubmission == nil else { return false }
+              let conversation, !conversation.archived, conversation.composerSubmission == nil else { return false }
         if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout || !launch.canInterrupt {
             return false
         }
+        return threadHasNoSavedHistory
+    }
+
+    private var threadHasNoSavedHistory: Bool {
+        guard let store, let project, let conversation else { return false }
         let history = store.history(project: project.id, conversation: conversation.id)
         do {
             return try !FileManager.default.contentsOfDirectory(atPath: history.path)
@@ -756,7 +760,8 @@ final class WorkspaceModel: ObservableObject {
         activeTurnID = nil
         pendingToolApproval = nil
         pendingAgentQuestion = nil
-        queueDelivery = QueueDelivery(paused: !keepingQueue || queueDelivery.paused)
+        queueDelivery = QueueDelivery(paused: !keepingQueue || queueDelivery.paused,
+                                      skipAfterTurn: keepingQueue ? queueDelivery.skipAfterTurn : nil)
         if !keepingQueue { queueEdit = nil }
         supportsImageInput = false
         phase = .closed
@@ -1833,8 +1838,9 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private var lockedModelAccount: String? {
-        guard phase.isRunning || messages.contains(where: { $0.role == .user }) else { return nil }
-        return connectedModel?.account ?? (try? effectiveModel.validated())?.account
+        guard phase.isRunning || messages.contains(where: { $0.role == .user }) ||
+                (phase == .closed && (conversation?.isDraft == false || !threadHasNoSavedHistory)) else { return nil }
+        return connectedModel?.account ?? ((try? effectiveModel.validated()) ?? effectiveModel).account
     }
 
     private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
@@ -1882,7 +1888,6 @@ final class WorkspaceModel: ObservableObject {
 
     var canUseInheritedComposerModel: Bool {
         guard conversation?.modelSelection != nil else { return false }
-        if !phase.isRunning { return true }
         return lockedModelAccount.map { $0 == (try? inheritedModel.validated())?.account } ?? true
     }
 
@@ -2267,12 +2272,12 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func startQueuedMessage(_ item: QueuedMessage, skippingCompaction: Bool = false) {
+    private func startQueuedMessage(_ item: QueuedMessage) {
         guard canStartQueuedMessage, let process else { return }
         queueDelivery.paused = true
         guard validateQueuedPrompt(item) else { return }
         do {
-            try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: skippingCompaction,
+            try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: item.skipCompaction == true,
                           attachments: item.attachments)
             queueDelivery.inFlight.insert(item.id)
             queueDelivery.paused = false
@@ -2291,9 +2296,12 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func drainQueue() {
-        guard canStartQueuedMessage, !queueDelivery.paused,
-              let first = queuedMessages.first, queueEdit?.id != first.id else { return }
-        startQueuedMessage(first)
+        guard canStartQueuedMessage, !queueDelivery.paused else { return }
+        let queue = queuedMessages
+        let selected = queue.first { $0.id == queueDelivery.skipAfterTurn } ?? queue.first
+        guard let selected, queueEdit?.id != selected.id else { return }
+        queueDelivery.skipAfterTurn = nil
+        startQueuedMessage(selected)
     }
 
     func retryWorktree(threadID: UUID, launchID: UUID?) {
@@ -2798,7 +2806,18 @@ final class WorkspaceModel: ObservableObject {
             }
         case let .compactionSkipped(turnID, queuedID):
             guard activeTurnID == turnID, phase == .running, queueDelivery.inFlight.contains(queuedID) else { return }
-            queueDelivery.skipAfterTurn = queuedID
+            do {
+                try saveQueue { queue in
+                    if let index = queue.firstIndex(where: { $0.id == queuedID }) {
+                        queue[index].skipCompaction = true
+                    }
+                }
+                queueDelivery.skipAfterTurn = queuedID
+                queueDelivery.paused = false
+            } catch {
+                self.error = error.localizedDescription
+                queueDelivery.paused = true
+            }
         case let .forked(threadID, error):
             finishFork(threadID, failure: error)
         case let .finished(turnID, history, error):
@@ -2810,7 +2829,6 @@ final class WorkspaceModel: ObservableObject {
             var undelivered = queueDelivery.inFlight.subtracting(recorded)
             if let skipped { undelivered.remove(skipped) }
             queueDelivery.inFlight.removeAll()
-            queueDelivery.skipAfterTurn = nil
             queueDelivery.mode = .waiting
             if error != nil || !undelivered.isEmpty { queueDelivery.paused = true }
             if let error { self.error = error }
@@ -2830,10 +2848,7 @@ final class WorkspaceModel: ObservableObject {
                 self.error = nil
                 failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")
             }
-            if let skipped, let item = queuedMessages.first(where: { $0.id == skipped }) {
-                startQueuedMessage(item, skippingCompaction: true)
-                if phase != .ready { return }
-            }
+            if queueDelivery.paused { queueDelivery.skipAfterTurn = nil }
             // Reopen the same history on the new model before the next queued turn.
             if connectedModel != (try? effectiveModel.validated()) {
                 connect(keepingThread: true)
