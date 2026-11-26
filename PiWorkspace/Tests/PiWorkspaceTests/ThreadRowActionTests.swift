@@ -5,16 +5,16 @@ import XCTest
 
 @MainActor
 final class ThreadRowActionTests: XCTestCase {
-    func testCopyTargetsUseTheirOwnCheckoutAndPasteTheLocalThreadReference() async throws {
+    func testCopyTargetsUseTheirOwnCheckoutAndPasteTheThreadLinkAsText() async throws {
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
         model.connect()
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let local = ThreadCopyTarget(root: fixture.workspace, project: fixture.project, thread: fixture.local)
-        let linked = ThreadCopyTarget(root: fixture.workspace, project: fixture.project, thread: fixture.linked)
-        let scratch = ThreadCopyTarget(root: fixture.workspace, project: fixture.scratch, thread: fixture.scratchThread)
+        let local = ThreadCopyTarget(project: fixture.project, thread: fixture.local)
+        let linked = ThreadCopyTarget(project: fixture.project, thread: fixture.linked)
+        let scratch = ThreadCopyTarget(project: fixture.scratch, thread: fixture.scratchThread)
 
         for (target, path) in [(local, fixture.repo.path), (linked, fixture.checkout.path), (scratch, fixture.scratch.path)] {
             try await target.copy(.path, to: board)
@@ -34,15 +34,16 @@ final class ThreadRowActionTests: XCTestCase {
         }
         try await linked.copy(.id, to: board)
         XCTAssertEqual(board.string(forType: .string), fixture.linked.id.uuidString)
-        try await linked.copy(.reference, to: board)
+        try model.copyThreadReference(fixture.linked.id, in: fixture.project.id, to: board)
         let record = try JSONDecoder().decode(ThreadReference.self,
             from: XCTUnwrap(board.data(forType: ThreadReference.pasteboardType)))
-        XCTAssertEqual(record.projectID, fixture.project.id)
-        XCTAssertEqual(record.threadID, fixture.linked.id)
+        XCTAssertEqual(record.link.projectID, fixture.project.id)
+        XCTAssertEqual(record.link.threadID, fixture.linked.id)
         XCTAssertEqual(record.title, fixture.linked.title)
-        XCTAssertEqual(board.string(forType: .string), record.historyURL.absoluteString)
-        XCTAssertTrue(record.historyURL.isFileURL)
-        XCTAssertEqual(try Data(contentsOf: record.historyURL.appendingPathComponent("seed.jsonl")), fixture.historyBytes)
+        let text = try XCTUnwrap(board.string(forType: .string))
+        XCTAssertEqual(text, record.link.text)
+        XCTAssertEqual(URL(string: text)?.scheme, "pi-workspace")
+        XCTAssertFalse(text.contains(fixture.workspace.path))
         XCTAssertNil(board.string(forType: .fileURL))
         XCTAssertEqual(model.conversation?.id, fixture.local.id)
 
@@ -53,8 +54,139 @@ final class ThreadRowActionTests: XCTestCase {
         let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
         editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
         editor.paste(nil)
-        XCTAssertEqual(model.draft, record.historyURL.absoluteString)
+        XCTAssertEqual(model.draft, text)
         XCTAssertTrue(model.composerAttachments.isEmpty)
+    }
+
+    func testOpeningCopiedLinksAfterRelinkingAndRelaunchReadsRealPiHistory() async throws {
+        guard let nodePath = ProcessInfo.processInfo.environment["PI_PALETTE_NODE"] else {
+            throw XCTSkip("Set PI_PALETTE_NODE to the absolute path of Node.")
+        }
+        let fixture = try Fixture()
+        let node = URL(fileURLWithPath: nodePath)
+        let sidecar = try fixture.seedPiHistory(node: node)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let linkedText: String
+        let retargeted = fixture.root.appendingPathComponent("Retargeted Project", isDirectory: true)
+        try FileManager.default.createDirectory(at: retargeted, withIntermediateDirectories: false)
+        let projectID = fixture.project.id
+        let localID = fixture.local.id
+        let linkedID = fixture.linked.id
+        do {
+            let model = fixture.open()
+            model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+            model.draft = "Keep the original draft 🧪"
+            try model.copyThreadReference(linkedID, in: projectID, to: board)
+            linkedText = try XCTUnwrap(board.string(forType: .string))
+            try model.copyThreadReference(localID, in: projectID, to: board)
+            let localText = try XCTUnwrap(board.string(forType: .string))
+            // Exercise an outside app carrying only the URL text.
+            board.clearContents()
+            board.setString(" \(localText)\n", forType: .string)
+            try model.openProject(retargeted, request: .init(relinking: projectID, startThread: false,
+                                                           initialPath: retargeted.path, basePath: nil))
+            model.renameProject(projectID, title: "Renamed project")
+            model.renameConversation(localID, in: projectID, title: "Renamed local thread")
+            model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+            model.terminate()
+        }
+
+        let model = WorkspaceModel(root: fixture.workspace, keychainService: fixture.root.lastPathComponent,
+                                   readCredential: { _ in nil }) { config, cwd in
+            try PiProcess(config: config, cwd: cwd, executable: node,
+                          arguments: [sidecar.appendingPathComponent("worker.mjs").path])
+        }
+        defer { model.terminate() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        XCTAssertEqual(model.conversation?.id, fixture.scratchThread.id)
+        model.openThreadLink(from: board)
+        XCTAssertNil(model.threadLinkError)
+        XCTAssertEqual(model.project?.title, "Renamed project")
+        XCTAssertEqual(model.conversation?.id, localID)
+        XCTAssertEqual(model.workingDirectory, retargeted.resolvingSymlinksInPath().path)
+        _ = try await host.waitFor("renamed title and Pi history") {
+            model.messages.last?.text == "Latest active fixture reply mentions local-history."
+                && host.element("conversation-title")?.accessibilityLabel?() == "Renamed local thread" ? true : nil
+        }
+        XCTAssertTrue(model.openThreadLink(linkedText))
+        XCTAssertEqual(model.workingDirectory, fixture.checkout.path)
+        _ = try await host.waitFor("linked checkout’s Pi history") {
+            model.messages.last?.text == "Latest active fixture reply mentions worktree-history." ? true : nil
+        }
+        model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+        XCTAssertEqual(model.draft, "Keep the original draft 🧪")
+    }
+
+    func testRejectedLinksKeepTheDraftAndActiveTurn() throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let id = fixture.linked.id
+        let projectID = fixture.project.id
+        model.connect()
+        model.draft = "Keep me in this thread"
+        try model.copyThreadReference(id, in: projectID, to: board)
+        let text = try XCTUnwrap(board.string(forType: .string))
+        let workspaceID = try XCTUnwrap(model.workspace.threadLinkID)
+        let otherRoot = fixture.root.appendingPathComponent("Foreign workspace", isDirectory: true)
+        let clone = try WorkspaceStore(root: otherRoot)
+        try clone.save(model.workspace)
+        let foreign = ThreadLink(workspaceID: workspaceID, root: clone.root, projectID: projectID, threadID: id)
+        let wrongProject = ThreadLink(workspaceID: workspaceID, root: fixture.workspace,
+                                      projectID: fixture.scratch.id, threadID: id)
+        let missingThread = ThreadLink(workspaceID: workspaceID, root: fixture.workspace, projectID: projectID, threadID: UUID())
+
+        for (input, errorText) in [(fixture.checkout.absoluteString, "Pi Workspace thread link"),
+                                   (text + "?path=/tmp", "Pi Workspace thread link"),
+                                   (text + "/", "Pi Workspace thread link"),
+                                   (foreign.text, "different Pi Workspace"),
+                                   (wrongProject.text, "unavailable"),
+                                   (missingThread.text, "unavailable"),
+                                   (text, "history is missing or invalid")] {
+            XCTAssertFalse(model.openThreadLink(input))
+            XCTAssertTrue(model.threadLinkError?.contains(errorText) == true, model.threadLinkError ?? "No error")
+            XCTAssertEqual(model.conversation?.id, fixture.local.id)
+            XCTAssertEqual(model.draft, "Keep me in this thread")
+        }
+
+        try FileManager.default.removeItem(at: fixture.historyFile)
+        XCTAssertFalse(model.openThreadLink(text))
+        XCTAssertTrue(model.threadLinkError?.contains("history is missing or invalid") == true)
+        XCTAssertEqual(model.draft, "Keep me in this thread")
+
+        func writeHeader(id: UUID) throws {
+            try Data("{\"type\":\"session\",\"version\":3,\"id\":\"\(id)\"}\n".utf8).write(to: fixture.historyFile)
+        }
+        try writeHeader(id: fixture.local.id)
+        XCTAssertFalse(model.openThreadLink(text))
+        XCTAssertTrue(model.threadLinkError?.contains("history is missing or invalid") == true)
+        try writeHeader(id: id)
+        let movedCheckout = fixture.root.appendingPathComponent("Moved checkout")
+        try FileManager.default.moveItem(at: fixture.checkout, to: movedCheckout)
+        XCTAssertFalse(model.openThreadLink(text))
+        XCTAssertTrue(model.threadLinkError?.contains("checkout is unavailable") == true)
+        try FileManager.default.moveItem(at: movedCheckout, to: fixture.checkout)
+
+        model.archiveConversation(id, in: projectID, archived: true)
+        try model.copyThreadReference(id, in: projectID, to: board)
+        XCTAssertEqual(board.string(forType: .string), text)
+        XCTAssertFalse(model.openThreadLink(text))
+        XCTAssertTrue(model.threadLinkError?.contains("Restore it from the archive") == true)
+        XCTAssertEqual(model.draft, "Keep me in this thread")
+        model.archiveConversation(id, in: projectID, archived: false)
+
+        model.send()
+        XCTAssertEqual(model.phase, .running)
+        let runningDraft = model.draft
+        XCTAssertFalse(model.openThreadLink(text))
+        XCTAssertTrue(model.threadLinkError?.contains("Finish the current operation") == true)
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        XCTAssertEqual(model.phase, .running)
+        XCTAssertEqual(model.draft, runningDraft)
     }
 
     func testRenameArchiveAndRestoreKeepHistoryCheckoutAndDirtyDrafts() async throws {
@@ -195,6 +327,30 @@ final class ThreadRowActionTests: XCTestCase {
             WorkspaceModel(root: workspace, keychainService: root.lastPathComponent, readCredential: { _ in "fixture-key" }) { _, _ in
                 Connection()
             }
+        }
+
+        func seedPiHistory(node: URL) throws -> URL {
+            let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+            let sidecar = package.appendingPathComponent("Sidecar")
+            try XCTSkipUnless(FileManager.default.fileExists(atPath:
+                sidecar.appendingPathComponent("node_modules/@earendil-works/pi-coding-agent/package.json").path),
+                "Install the Sidecar dependencies to run the Pi history fixture.")
+            let script = package.appendingPathComponent("scripts/fixtures/palette-message-history.mjs")
+            try FileManager.default.removeItem(at: historyFile)
+            for (thread, path, keyword) in [(local, repo.path, "local-history"), (linked, checkout.path, "worktree-history")] {
+                let process = Process()
+                process.executableURL = node
+                process.arguments = [script.path, sidecar.path, workspace.path, project.id.uuidString,
+                                     thread.id.uuidString, path, keyword, keyword]
+                process.environment = ["PI_CODING_AGENT_DIR": root.appendingPathComponent("pi-fixture").path,
+                                       "PI_OFFLINE": "1", "PI_TELEMETRY": "0"]
+                process.standardOutput = FileHandle.nullDevice
+                try process.run()
+                process.waitUntilExit()
+                guard process.terminationStatus == 0 else { throw WorkspaceError("Could not seed Pi history.") }
+            }
+            return sidecar
         }
 
         static func git(_ arguments: [String], in folder: URL) throws {

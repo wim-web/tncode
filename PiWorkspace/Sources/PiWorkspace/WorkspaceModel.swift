@@ -413,6 +413,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     @Published var error: String?
+    @Published var threadLinkError: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published var settingsRequest: SettingsRequest?
     @Published private(set) var showingWelcome = false
@@ -982,12 +983,78 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress,
               let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
               workspace.projects[index].conversations.contains(where: { $0.id == id }),
-              conversation?.id != id else { return }
-        guard save({
-            $0.selectedProject = projectID
-            $0.projects[index].selectedConversation = id
-        }) else { return }
+              project?.id != projectID || conversation?.id != id else { return }
+        do { try selectConversation(id, at: index) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func selectConversation(_ id: UUID, at projectIndex: Int) throws {
+        var updated = workspace
+        updated.selectedProject = updated.projects[projectIndex].id
+        updated.projects[projectIndex].selectedConversation = id
+        try persist(updated)
         connect()
+    }
+
+    func copyThreadReference(_ id: UUID, in projectID: UUID, to pasteboard: NSPasteboard) throws {
+        guard let thread = threadProjects.first(where: { $0.id == projectID })?.conversations.first(where: { $0.id == id }),
+              thread.isDraft != true else {
+            throw WorkspaceError("This thread doesn’t have a link.")
+        }
+        let workspaceID = workspace.threadLinkID ?? UUID()
+        if workspace.threadLinkID == nil {
+            var updated = workspace
+            updated.threadLinkID = workspaceID
+            try persist(updated)
+        }
+        let link = ThreadLink(workspaceID: workspaceID, root: root, projectID: projectID, threadID: id)
+        try ThreadReference(link: link, title: thread.title).copy(to: pasteboard)
+    }
+
+    @discardableResult
+    func openThreadLink(_ text: String) -> Bool {
+        do {
+            try navigateToThreadLink(text)
+            threadLinkError = nil
+            showingWelcome = false
+            showArchive = false
+            return true
+        } catch {
+            threadLinkError = error.localizedDescription
+            return false
+        }
+    }
+
+    func openThreadLink(from pasteboard: NSPasteboard) {
+        openThreadLink(pasteboard.string(forType: .string) ?? "")
+    }
+
+    private func navigateToThreadLink(_ text: String) throws {
+        guard let link = ThreadLink(text: text) else { throw WorkspaceError("Enter a Pi Workspace thread link.") }
+        guard store != nil else { throw WorkspaceError("Finish opening the workspace and try the thread link again.") }
+        guard let workspaceID = workspace.threadLinkID,
+              link.workspace == ThreadLink.workspaceScope(id: workspaceID, root: root) else {
+            throw WorkspaceError("This thread link belongs to a different Pi Workspace.")
+        }
+        guard let index = workspace.projects.firstIndex(where: { $0.id == link.projectID && $0.detached != true }),
+              let thread = workspace.projects[index].conversations.first(where: { $0.id == link.threadID }),
+              thread.isDraft != true else { throw WorkspaceError("The linked thread is unavailable.") }
+        guard !thread.archived else { throw WorkspaceError("The linked thread is archived. Restore it from the archive and try again.") }
+        let selected = project?.id == link.projectID && conversation?.id == link.threadID
+        if selected, phase != .closed { return }
+        guard !operationsInProgress, queueEdit == nil else {
+            throw WorkspaceError("Finish the current operation or queued message edit and try the thread link again.")
+        }
+        let directory = thread.workingLocation.directory(in: workspace.projects[index])
+        var isDirectory: ObjCBool = false
+        guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil,
+              directory.hasPrefix("/"), !directory.utf8.contains(0),
+              FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw WorkspaceError("The linked thread’s checkout is unavailable.")
+        }
+        try WorkspaceHistory.checkThread(in: root, projectID: link.projectID, threadID: link.threadID)
+        if selected { connect() }
+        else { try selectConversation(link.threadID, at: index) }
     }
 
     func canOpenForkLink(_ id: UUID) -> Bool {

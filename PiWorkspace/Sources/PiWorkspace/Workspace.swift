@@ -363,6 +363,7 @@ struct Workspace: Codable {
     var worktreesDirectory: String?
     var newWorktreesStartFromRemote: Bool?
     var stashedPrompts: [StashedPrompt]?
+    var threadLinkID: UUID?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
 }

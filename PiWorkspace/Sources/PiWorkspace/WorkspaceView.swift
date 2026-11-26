@@ -849,10 +849,10 @@ struct WorkspaceView: View {
 
     private var copyBranchReadRequest: CopyBranchReadRequest {
         var paths = Set(threads.compactMap {
-            ThreadCopyTarget(root: model.root, project: $0.project, thread: $0.thread).branchReadPath
+            ThreadCopyTarget(project: $0.project, thread: $0.thread).branchReadPath
         })
         if let project = model.project, let thread = model.conversation,
-           let path = ThreadCopyTarget(root: model.root, project: project, thread: thread).branchReadPath {
+           let path = ThreadCopyTarget(project: project, thread: thread).branchReadPath {
             paths.insert(path)
         }
         return CopyBranchReadRequest(paths: paths, revision: model.repositoryRevision)
@@ -870,7 +870,7 @@ struct WorkspaceView: View {
     }
 
     private func threadCopyMenu(_ thread: Conversation, project: Project) -> some View {
-        let target = ThreadCopyTarget(root: model.root, project: project, thread: thread)
+        let target = ThreadCopyTarget(project: project, thread: thread)
         let hasBranch = target.branchReadPath.map(checkoutsWithBranches.contains) ?? (target.draftBase?.isEmpty == false)
         let prefix = target.isDraft ? "draft-copy" : "thread-copy"
         return Menu("Copy") {
@@ -883,8 +883,14 @@ struct WorkspaceView: View {
                     .accessibilityIdentifier(prefix + "-branch")
             }
             if !target.isDraft {
-                Button("Thread") { copy(.reference, from: target) }
+                if thread.isDraft != true {
+                    Button("Thread") {
+                        copyTask?.cancel()
+                        do { try model.copyThreadReference(thread.id, in: project.id, to: workspacePasteboard) }
+                        catch { model.error = error.localizedDescription }
+                    }
                     .accessibilityIdentifier("thread-copy-reference")
+                }
                 Button("Thread ID") { copy(.id, from: target) }
                     .accessibilityIdentifier("thread-copy-id")
             }

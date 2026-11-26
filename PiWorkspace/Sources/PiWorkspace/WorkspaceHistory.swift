@@ -2,6 +2,24 @@ import Darwin
 import Foundation
 
 enum WorkspaceHistory {
+    private struct SessionHeader: Decodable {
+        let type: String
+        let version: Int
+        let id: String
+    }
+
+    static func checkThread(in root: URL, projectID: UUID, threadID: UUID) throws {
+        let rootFD = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard rootFD >= 0 else { throw accessError(errno) }
+        defer { close(rootFD) }
+        guard let file = try open(in: rootFD, projectID: projectID, threadID: threadID),
+              let prefix = try file.read(upToCount: 64 * 1024),
+              let header = try? JSONDecoder().decode(SessionHeader.self, from: prefix.prefix(while: { $0 != 0x0A })),
+              header.type == "session", header.version > 0, header.id == threadID.uuidString else {
+            throw WorkspaceError("The linked thread’s history is missing or invalid.")
+        }
+    }
+
     static func open(in rootFD: Int32, projectID: UUID, threadID: UUID) throws -> FileHandle? {
         var directoryFD = dup(rootFD)
         guard directoryFD >= 0 else { throw accessError(errno) }

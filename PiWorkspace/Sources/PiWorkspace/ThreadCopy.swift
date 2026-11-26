@@ -1,9 +1,9 @@
 import AppKit
+import CryptoKit
 
 struct ThreadCopyTarget {
-    enum Field { case path, branch, reference, id }
+    enum Field { case path, branch, id }
 
-    let root: URL
     let project: Project
     let thread: Conversation
 
@@ -42,9 +42,6 @@ struct ThreadCopyTarget {
                 throw WorkspaceError("This thread’s checkout has no current branch.")
             }
             text = branch
-        case .reference:
-            try ThreadReference(root: root, projectID: project.id, thread: thread).copy(to: pasteboard)
-            return
         case .id:
             text = thread.id.uuidString
         }
@@ -55,27 +52,52 @@ struct ThreadCopyTarget {
     }
 }
 
-struct ThreadReference: Codable {
-    static let pasteboardType = NSPasteboard.PasteboardType("dev.piworkspace.thread-reference.v1")
+struct ThreadLink: Codable {
+    static let scheme = "pi-workspace"
+    private static let authority = "\(scheme)://thread/"
 
+    let workspace: String
     let projectID: UUID
     let threadID: UUID
-    let title: String
-    let historyURL: URL
 
-    init(root: URL, projectID: UUID, thread: Conversation) {
+    init(workspaceID: UUID, root: URL, projectID: UUID, threadID: UUID) {
+        workspace = Self.workspaceScope(id: workspaceID, root: root)
         self.projectID = projectID
-        threadID = thread.id
-        title = thread.title
-        historyURL = WorkspaceStore.historyComponents(project: projectID, conversation: thread.id)
-            .reduce(root.standardizedFileURL) { $0.appendingPathComponent($1, isDirectory: true) }
+        self.threadID = threadID
     }
+
+    init?(text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.prefix(Self.authority.count).lowercased() == Self.authority else { return nil }
+        let parts = text.dropFirst(Self.authority.count).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts[0] == "v1", parts[1].wholeMatch(of: #/[0-9a-f]{64}/#) != nil,
+              let projectID = UUID(uuidString: String(parts[2])), let threadID = UUID(uuidString: String(parts[3])) else {
+            return nil
+        }
+        workspace = String(parts[1])
+        self.projectID = projectID
+        self.threadID = threadID
+    }
+
+    var text: String { "\(Self.authority)v1/\(workspace)/\(projectID)/\(threadID)" }
+
+    static func workspaceScope(id: UUID, root: URL) -> String {
+        let path = root.resolvingSymlinksInPath().standardizedFileURL.path
+        return SHA256.hash(data: Data("\(id)/\(path)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct ThreadReference: Codable {
+    static let pasteboardType = NSPasteboard.PasteboardType("dev.piworkspace.thread-reference.v2")
+
+    let link: ThreadLink
+    let title: String
 
     @MainActor
     func copy(to pasteboard: NSPasteboard) throws {
         let item = NSPasteboardItem()
         let record = try JSONEncoder().encode(self)
-        guard item.setString(historyURL.absoluteString, forType: .string),
+        guard item.setString(link.text, forType: .string),
               item.setData(record, forType: Self.pasteboardType) else {
             throw WorkspaceError("Couldn’t copy the thread reference.")
         }

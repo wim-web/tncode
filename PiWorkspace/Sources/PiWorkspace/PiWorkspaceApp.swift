@@ -72,6 +72,22 @@ struct PiWorkspaceApp: App {
                         .onAppear(perform: launchWorkspace)
                 }
             }
+                .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
+                .onOpenURL { url in
+                    if model.openThreadLink(url.absoluteString) { launched = true }
+                }
+                .safeAreaInset(edge: .top) {
+                    if let error = model.threadLinkError {
+                        HStack {
+                            Text(error)
+                                .accessibilityIdentifier("thread-link-error")
+                            Spacer()
+                            Button("Dismiss") { model.threadLinkError = nil }
+                        }
+                        .padding(8)
+                        .background(.bar)
+                    }
+                }
                 .sheet(item: $model.settingsRequest, onDismiss: {
                     guard showWelcomeAfterSettings else { return }
                     showWelcomeAfterSettings = false
@@ -99,9 +115,10 @@ struct PiWorkspaceApp: App {
                 }
                 .frame(minWidth: 800, minHeight: 540)
         }
+        .handlesExternalEvents(matching: [ThreadLink.scheme])
         .defaultSize(width: 1080, height: 720)
         .commands {
-            WorkspaceSidebarCommands(model: model)
+            WorkspaceSidebarCommands(model: model, workspacePasteboard: workspacePasteboard)
             CommandGroup(replacing: .appInfo) {
                 Button("About \(AboutInfo().name)") { openWindow(id: AboutView.windowID) }
                     .accessibilityIdentifier("about-menu")
@@ -174,6 +191,7 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
 
 private struct WorkspaceSidebarCommands: Commands {
     @ObservedObject var model: WorkspaceModel
+    let workspacePasteboard: NSPasteboard
     @FocusedValue(\.editingComposer) private var editingComposer
 
     private var workspaceOpen: Bool {
@@ -202,6 +220,9 @@ private struct WorkspaceSidebarCommands: Commands {
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
             .disabled(editingComposer != true)
+            Button("Open Thread Link from Clipboard") { model.openThreadLink(from: workspacePasteboard) }
+                .accessibilityIdentifier("open-thread-link-from-clipboard")
+                .disabled(!workspaceOpen || model.projectPicker != nil)
             Button("Command Palette…", action: model.requestCommandPalette)
                 .keyboardShortcut("k")
                 .accessibilityIdentifier("open-command-palette")
