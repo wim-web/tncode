@@ -15,13 +15,22 @@ enum ComposerAttachmentInput: Transferable {
 
     static let contentTypes: [UTType] = [.fileURL, .png, .jpeg, .tiff]
 
+    static func readAttachments(from items: [NSPasteboardItem]) -> [Self] {
+        Array(items.lazy.compactMap(Self.init(pasteboardItem:)).prefix(ComposerAttachment.maxCount + 1))
+    }
+
+    static func fileURL(from item: NSPasteboardItem) -> URL? {
+        guard let string = item.string(forType: .fileURL), let url = URL(string: string),
+              ComposerAttachment.isLocalFile(url) else { return nil }
+        return url
+    }
+
     init?(pasteboardItem item: NSPasteboardItem) {
         for type in Self.contentTypes {
             let format = NSPasteboard.PasteboardType(type.identifier)
             guard item.types.contains(format) else { continue }
             if type == .fileURL {
-                guard let string = item.string(forType: format), let url = URL(string: string),
-                      ComposerAttachment.isLocalFile(url) else { return nil }
+                guard let url = Self.fileURL(from: item) else { return nil }
                 self = .file(url)
             } else {
                 guard let data = item.data(forType: format) else { return nil }

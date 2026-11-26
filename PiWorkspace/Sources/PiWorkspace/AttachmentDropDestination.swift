@@ -1,10 +1,20 @@
 import SwiftUI
 
+extension View {
+    func attachmentDropDestination(canDrop: Bool, perform: @escaping ([NSPasteboardItem]) -> Bool,
+                                   isTargeted: @escaping (Bool) -> Void) -> some View {
+        overlay {
+            AttachmentDropDestination(canDrop: canDrop, perform: perform, isTargeted: isTargeted)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// AppKit routes drags by registered pasteboard type, independently of mouse hit testing.
-struct ComposerFieldDropTarget: NSViewRepresentable {
-    var canAttach: () -> Bool
-    var attach: ([ComposerAttachmentInput]) -> Bool
-    var isTargeted: (Bool) -> Void
+struct AttachmentDropDestination: NSViewRepresentable {
+    let canDrop: Bool
+    let perform: ([NSPasteboardItem]) -> Bool
+    let isTargeted: (Bool) -> Void
 
     func makeNSView(context: Context) -> Destination {
         let view = Destination()
@@ -18,12 +28,12 @@ struct ComposerFieldDropTarget: NSViewRepresentable {
     }
 
     final class Destination: NSView {
-        var target: ComposerFieldDropTarget?
+        var target: AttachmentDropDestination?
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-            let accepts = sender.draggingSourceOperationMask.contains(.copy) && target?.canAttach() == true
+            let accepts = sender.draggingSourceOperationMask.contains(.copy) && target?.canDrop == true
             target?.isTargeted(accepts)
             return accepts ? .copy : []
         }
@@ -34,10 +44,9 @@ struct ComposerFieldDropTarget: NSViewRepresentable {
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
             defer { target?.isTargeted(false) }
-            guard sender.draggingSourceOperationMask.contains(.copy), let target, target.canAttach() else { return false }
-            let inputs = (sender.draggingPasteboard.pasteboardItems ?? []).lazy.compactMap(ComposerAttachmentInput.init)
-            let batch = Array(inputs.prefix(ComposerAttachment.maxCount + 1))
-            return !batch.isEmpty && target.attach(batch)
+            guard sender.draggingSourceOperationMask.contains(.copy), let target, target.canDrop,
+                  let items = sender.draggingPasteboard.pasteboardItems, !items.isEmpty else { return false }
+            return target.perform(items)
         }
     }
 }

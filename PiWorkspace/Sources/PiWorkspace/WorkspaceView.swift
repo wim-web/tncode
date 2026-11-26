@@ -658,16 +658,15 @@ struct WorkspaceView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project) }
-        .dropDestination(for: ComposerAttachmentInput.self) { items, _ in
-            let folders = items.compactMap { item -> URL? in
-                guard case .file(let url) = item,
-                      (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
-                return url
+        .attachmentDropDestination(canDrop: acceptsAttachments || !model.operationsInProgress) { items in
+            let urls = items.compactMap(ComposerAttachmentInput.fileURL(from:))
+            if !model.operationsInProgress && urls.count == items.count &&
+                urls.allSatisfy({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) {
+                return openDroppedProjects(urls)
             }
-            if !folders.isEmpty && folders.count == items.count && !model.operationsInProgress {
-                return openDroppedProjects(folders)
-            }
-            guard acceptsAttachments, model.attach(items, to: ComposerAttachmentTarget(threadID: link.id)) else {
+            let attachments = ComposerAttachmentInput.readAttachments(from: items)
+            guard acceptsAttachments, !attachments.isEmpty,
+                  model.attach(attachments, to: ComposerAttachmentTarget(threadID: link.id)) else {
                 return false
             }
             openThread(link)
@@ -1420,12 +1419,6 @@ struct WorkspaceView: View {
                 }
                 .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
-                .overlay {
-                    ComposerFieldDropTarget(canAttach: { model.canEditAttachments },
-                                            attach: { model.attach($0, to: target) },
-                                            isTargeted: { targetingComposerDrop = $0 })
-                        .accessibilityHidden(true)
-                }
                 .accessibilityIdentifier("composer")
                 .disabled(model.conversation?.worktreeLaunch != nil || model.conversation?.composerSubmission != nil)
             ViewThatFits(in: .horizontal) {
@@ -1448,9 +1441,9 @@ struct WorkspaceView: View {
                 .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(0.11))
                 .allowsHitTesting(false)
         }
-        .dropDestination(for: ComposerAttachmentInput.self) { items, _ in
-            guard model.canEditAttachments else { return false }
-            return model.attach(items, to: target)
+        .attachmentDropDestination(canDrop: model.canEditAttachments) { items in
+            let attachments = ComposerAttachmentInput.readAttachments(from: items)
+            return !attachments.isEmpty && model.canEditAttachments && model.attach(attachments, to: target)
         } isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments }
         .onPasteCommand(of: ComposerAttachmentInput.contentTypes) { providers in
             guard model.canEditAttachments else { return }

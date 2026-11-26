@@ -29,8 +29,25 @@ final class ComposerFieldDropTests: XCTestCase {
         defer { board.releaseGlobally() }
         let drag = FileDrag(board: board)
 
-        for (placeholder, file) in [("Ask Pi anything", "draft.txt"), ("Edit queued message", "queue.txt")] {
-            if file == "queue.txt" { model.editQueuedMessage(queued.id) }
+        func dropPNG(_ name: String, color: NSColor, onto destination: AttachmentDropDestination.Destination) throws -> Data {
+            let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+                                                 bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            bitmap.setFillColor(color.cgColor)
+            bitmap.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+            let image = try XCTUnwrap(bitmap.makeImage())
+            let bytes = try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+            let url = root.appendingPathComponent(name)
+            try bytes.write(to: url)
+            board.clearContents()
+            XCTAssertTrue(board.writeObjects([url as NSURL]))
+            XCTAssertEqual(destination.draggingEntered(drag), .copy)
+            XCTAssertTrue(destination.performDragOperation(drag))
+            return bytes
+        }
+
+        for (placeholder, file) in [("Ask Pi anything", "red.png"), ("Edit queued message", "queue.png")] {
+            if file == "queue.png" { model.editQueuedMessage(queued.id) }
             func field() -> NSTextField? {
                 descendant(in: host) { ($0 as? NSTextField)?.placeholderString == placeholder } as? NSTextField
             }
@@ -40,10 +57,13 @@ final class ComposerFieldDropTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(10))
             }
             let composer = try XCTUnwrap(field(), placeholder)
-            let destination = try XCTUnwrap(descendant(in: host) { $0 is ComposerFieldDropTarget.Destination }
-                as? ComposerFieldDropTarget.Destination)
+            let destination = try XCTUnwrap(descendant(in: host) { view in
+                let fieldBounds = composer.convert(composer.bounds, to: view)
+                return view is AttachmentDropDestination.Destination && view.bounds.contains(fieldBounds)
+            } as? AttachmentDropDestination.Destination)
             let bounds = composer.convert(composer.bounds, to: destination)
-            XCTAssertTrue(destination.bounds.contains(NSPoint(x: bounds.midX, y: bounds.midY)))
+            XCTAssertGreaterThan(destination.bounds.width, bounds.width)
+            XCTAssertGreaterThan(destination.bounds.height, bounds.height)
             let center = composer.convert(NSPoint(x: composer.bounds.midX, y: composer.bounds.midY), to: host.superview)
             let hit = host.hitTest(center)
             XCTAssertTrue(hit === composer || hit?.isDescendant(of: composer) == true, String(describing: hit))
@@ -61,12 +81,7 @@ final class ComposerFieldDropTests: XCTestCase {
             let selection = editor.selectedRange()
             let markedRange = editor.markedRange()
             let draftBeforeDrop = model.draft
-            let url = root.appendingPathComponent(file)
-            try Data(file.utf8).write(to: url)
-            board.clearContents()
-            XCTAssertTrue(board.writeObjects([url as NSURL]))
-            XCTAssertEqual(destination.draggingEntered(drag), .copy)
-            XCTAssertTrue(destination.performDragOperation(drag))
+            let bytes = try dropPNG(file, color: .red, onto: destination)
             host.layoutSubtreeIfNeeded()
             XCTAssertTrue(window.firstResponder === editor)
             XCTAssertEqual(editor.selectedRange(), selection)
@@ -76,15 +91,31 @@ final class ComposerFieldDropTests: XCTestCase {
             editor.insertText((original as NSString).substring(with: range), replacementRange: markedRange)
             XCTAssertEqual(editor.string, original)
             XCTAssertEqual(model.composerAttachments.map(\.name), [file])
-            XCTAssertEqual(model.composerAttachments.first?.payload?.data, Data(file.utf8))
+            XCTAssertEqual(model.composerAttachments.first?.payload?.data, bytes)
         }
+        // The sidebar row always owns the thread draft, including while its queue editor is open.
+        let row = try XCTUnwrap(descendant(in: host) { view in
+            view is AttachmentDropDestination.Destination &&
+                view.convert(view.bounds, to: host).maxX <= WorkspaceLayout.defaultSidebarWidth
+        } as? AttachmentDropDestination.Destination)
+        let blue = try dropPNG("blue.png", color: .blue, onto: row)
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["queue.png"])
         model.updateQueuedMessage()
         let data = try Data(contentsOf: root.appendingPathComponent("workspace.json"))
         let saved = try XCTUnwrap(JSONDecoder().decode(Workspace.self, from: data).projects.first?.conversations.first)
         XCTAssertEqual(saved.composerText, "Keep typing")
-        XCTAssertEqual(saved.composerAttachments?.map(\.name), ["draft.txt"])
+        XCTAssertEqual(saved.composerAttachments?.map(\.name), ["red.png", "blue.png"])
+        XCTAssertEqual(saved.composerAttachments?.last?.payload?.data, blue)
+        XCTAssertNotEqual(saved.composerAttachments?.first?.payload?.data, blue)
         XCTAssertEqual(saved.queuedMessages?.first?.text, "Queued prompt")
-        XCTAssertEqual(saved.queuedMessages?.first?.attachments?.map(\.name), ["queue.txt"])
+        XCTAssertEqual(saved.queuedMessages?.first?.attachments?.map(\.name), ["queue.png"])
+
+        let folder = root.appendingPathComponent("Dropped Project", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        board.clearContents()
+        XCTAssertTrue(board.writeObjects([folder as NSURL]))
+        XCTAssertTrue(row.performDragOperation(drag))
+        XCTAssertEqual(model.project?.path, folder.path)
     }
 
     func testNativeRepresentationsPreferFileURLAndIgnorePlainTextPaths() throws {
