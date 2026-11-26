@@ -2058,20 +2058,20 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-181	アドレスや検索語から移動する	未対応	未評価	-
 09	DEV-182	ブラウザー履歴を戻る	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ループバックの2ページ目から Back で1ページ目を表示
 09	DEV-183	ブラウザー履歴を進む	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Back 後に Forward で2ページ目の見出しを再表示
-09	DEV-184	ページを更新する	未対応	未評価	-
-09	DEV-185	ページの読み込みを停止する	未対応	未評価	-
+09	DEV-184	ページを更新する	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Refresh 後の実 WebKit に revision 1 から 2 へ更新したページを表示
+09	DEV-185	ページの読み込みを停止する	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 遅延 GET を Stop で中断し、サーバーで切断を確認。Reload で同じ URL の応答を表示
 09	DEV-186	キャッシュを無視する再読み込みを実行する	未対応	未評価	-
 09	DEV-187	プレビューページをシステムブラウザーで開く	未対応	未評価	-
 09	DEV-189	ページ内の文字を検索する	未対応	未評価	-
 09	DEV-190	DevToolsを開く	未対応	未評価	-
 09	DEV-191	ブラウザーの色設定を切り替える	未対応	未評価	-
-09	DEV-192	ズームを拡大・縮小・リセットする	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 配布版で倍率110%を確認。pageZoom の増減・reset は個別 WebKit 試験。基準画面の描画比較が残る
+09	DEV-192	ズームを拡大・縮小・リセットする	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / AX で実 HTML ボタンの幅を取得し 110%・90%・100% の倍率表示と描画幅を照合
 09	DEV-193	プレビュープロファイルのCookieを消去する	未対応	未評価	-
 09	DEV-194	プレビューのキャッシュを消去する	未対応	未評価	-
 09	DEV-195	ページや要素を注釈としてチャットに渡す	未対応	未評価	-
 09	DEV-196	プレビューのスクリーンショットを保存する	未対応	未評価	-
 09	DEV-197	プレビューを録画して停止する	未対応	未評価	-
-09	DEV-198	チャット上へブラウザーをフロートする	未対応	未評価	-
+09	DEV-198	チャット上へブラウザーをフロートする	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / チャット内 Mini Player をマウスで移動・拡縮し、右パネルと別窓の往復後も同じ文書・倍率・入力文を確認
 09	DEV-199	別ウィンドウにプレビューを出す	未対応	合格	a40fe3d PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ネイティブの別窓に同じ文書を表示。Dock 後と別窓を閉じた後に元のタブ・文書・倍率・未送信文・端末PIDを確認
 09	DEV-200	ブラウザーのdevice toolbarを開閉する	未対応	未評価	-
 09	DEV-201	viewportプリセットを選ぶ	未対応	未評価	-
@@ -2085,7 +2085,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-214	ブラウザータブを複製する	未対応	未評価	-
 09	DEV-215	ブラウザータブの音をミュート・解除する	未対応	未評価	-
 09	DEV-218	外部ブラウザーのCookieをプロファイルへ取り込む	未対応	未評価	-
-09	DEV-219	プレビューの到達不可を調べて再読み込みする	未対応	未評価	-
+09	DEV-219	プレビューの到達不可を調べて再読み込みする	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカル接続を切断し、Details に失敗 URL とエラーコードを表示。接続復旧後に画面の Reload で同じ URL を再取得
 09	DEV-220	端末機能の初回セットアップを行う	未対応	未評価	-
 09	DEV-221	simulatorまたはemulatorを開く	未対応	未評価	-
 09	DEV-222	端末候補を再探索する	未対応	未評価	-
@@ -2207,7 +2207,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	RPC-081	Snap Shot の許可・設定・取得	未対応	未評価	-
 09	RPC-082	音声入力エンジンの準備・文字起こし	未対応	未評価	-
 09	RPC-085	デスクトップの Preview ゲスト内処理	未対応	未評価	-
-09	SRC-S16	Web ページや起動中のサーバーをタブ・浮動枠で表示する	未対応	要修正	a40fe3d PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数タブ・プロファイル・別窓・ドック復帰を実配布版で確認。チャット内 Mini Player とその移動・リサイズは未実装
+09	SRC-S16	Web ページや起動中のサーバーをタブ・浮動枠で表示する	未対応	要修正	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / タブ・プロファイル別の履歴、Mini Player の移動・リサイズ、別窓、新しい内容への更新、中断、接続エラー復帰を確認。サーバー候補・注釈・キャプチャなどは未実装
 09	SRC-S17	端末ホストと接続状態を見て端末ストリームを開く	未対応	未評価	-
 09	SRC-S46	マイク、文字起こし、辞書と後処理を設定する	未対応	未評価	-
 09	SRC-S47	キャプチャと SnapShots のショートカットを設定する	未対応	未評価	-
