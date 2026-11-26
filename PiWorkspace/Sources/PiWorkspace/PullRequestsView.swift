@@ -9,171 +9,346 @@ struct PullRequestsButton: View {
             Image(systemName: "arrow.triangle.branch")
         }
         .buttonStyle(.plain)
-        .help("Pull Requests")
-        .accessibilityLabel("Pull Requests")
+        .help("Pull Requests and Issues")
+        .accessibilityLabel("Pull Requests and Issues")
         .accessibilityIdentifier("pull-requests")
         .sheet(isPresented: $presented) {
-            PullRequestsView(directory: directory)
+            GitHubBrowserView(directory: directory)
         }
     }
 }
 
-private enum PullRequestLoad<Value> {
+private enum GitHubDetailLoad<Value> {
     case loading
     case loaded(Value)
     case failed(String)
 }
 
-private struct PullRequestsView: View {
+private struct GitHubBrowserView: View {
     let directory: String
     @Environment(\.dismiss) private var dismiss
-    @State private var filter: PullRequestFilter = .open
-    @State private var refresh = 0
-    @State private var selection: Selection?
-    @State private var listing: PullRequestLoad<GitHubPullRequestList> = .loading
+    @State private var tab: GitHubBrowseKind = .pullRequests
+    @StateObject private var pullRequests: GitHubBrowserModel
+    @StateObject private var issues: GitHubBrowserModel
 
-    private struct Selection: Hashable {
-        let repository: GitHubRepository
-        let number: Int
-    }
-
-    private struct Request: Hashable {
-        let filter: PullRequestFilter
-        let refresh: Int
+    init(directory: String) {
+        self.directory = directory
+        let reader = GitHubReader(directory: directory)
+        _pullRequests = StateObject(wrappedValue: .init(kind: .pullRequests, reader: reader))
+        _issues = StateObject(wrappedValue: .init(kind: .issues, reader: reader))
     }
 
     var body: some View {
-        let request = Request(filter: filter, refresh: refresh)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Pull Requests").font(.headline)
-                    Text(directory)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("pr-checkout")
-                }
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                tabButton("Pull Requests", kind: .pullRequests, id: "github-tab-pull-requests")
+                tabButton("Issues", kind: .issues, id: "github-tab-issues")
                 Spacer()
-                Picker("State", selection: $filter) {
-                    ForEach(PullRequestFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .fixedSize()
-                .accessibilityIdentifier("pr-filter")
-                Button { refresh += 1 } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh pull requests")
-                .accessibilityLabel("Refresh pull requests")
-                .accessibilityIdentifier("pr-refresh")
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("pr-close")
             }
-            .padding(16)
+            .padding([.horizontal, .top], 16)
+            GitHubListView(directory: directory, model: tab == .pullRequests ? pullRequests : issues)
+                .id(tab)
+        }
+        .frame(minWidth: 660, idealWidth: 730, minHeight: 425, idealHeight: 510)
+    }
+
+    private func tabButton(_ title: String, kind: GitHubBrowseKind, id: String) -> some View {
+        Button { tab = kind } label: {
+            Text(title)
+                .fontWeight(tab == kind ? .semibold : .regular)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(tab == kind ? Color.accentColor.opacity(0.16) : .clear,
+                            in: RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(tab == kind ? .isSelected : [])
+        .accessibilityIdentifier(id)
+    }
+}
+
+private struct GitHubListView: View {
+    let directory: String
+    @ObservedObject var model: GitHubBrowserModel
+
+    private var prefix: String { model.kind.idPrefix }
+    private var itemName: String { model.kind.itemName }
+
+    var body: some View {
+        let request = model.request
+        VStack(alignment: .leading, spacing: 0) {
+            controls
             Divider()
-            switch listing {
+            switch model.listing {
             case .loading:
-                ProgressView("Loading pull requests…")
+                ProgressView("Loading \(itemName)s…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("\(prefix)-list-loading")
             case .failed(let message):
-                Text(message)
-                    .multilineTextAlignment(.center)
-                    .padding(24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("pr-list-error")
-            case .loaded(let list):
+                VStack(spacing: 12) {
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("\(prefix)-list-error")
+                    Button("Retry") { model.refresh() }
+                        .accessibilityIdentifier("\(prefix)-list-retry")
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .loaded(let list, let paging):
                 HStack(spacing: 0) {
-                    listColumn(list, filter: request.filter)
-                        .frame(width: 240)
+                    listColumn(list, paging: paging)
+                        .frame(width: 250)
                     Divider()
-                    if let selection, selection.repository == list.repository {
-                        PullRequestDetailsView(directory: directory, repository: selection.repository,
-                                               number: selection.number)
-                            .id(selection)
-                    } else {
-                        Text(list.items.isEmpty ? "" : "Select a pull request")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    details
                 }
             }
         }
-        .frame(minWidth: 660, idealWidth: 730, minHeight: 425, idealHeight: 510)
-        .task(id: request) { await load(request.filter) }
+        .task(id: request) { await model.load(request) }
     }
 
-    private func listColumn(_ list: GitHubPullRequestList, filter: PullRequestFilter) -> some View {
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: directory)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("\(prefix)-checkout")
+            HStack(spacing: 8) {
+                TextField("Search \(itemName)s, or label:bug", text: $model.searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Search \(itemName)s")
+                    .accessibilityIdentifier("\(prefix)-search")
+                    .onSubmit { model.applySearch(filter: model.query.filter) }
+                Button("Search") { model.applySearch(filter: model.query.filter) }
+                    .accessibilityIdentifier("\(prefix)-search-submit")
+                Picker("State", selection: Binding(
+                    get: { model.query.filter },
+                    set: { model.applySearch(filter: $0) }
+                )) {
+                    ForEach(model.kind.filters) { filter in
+                        Text(filter.title).tag(filter)
+                    }
+                }
+                .fixedSize()
+                .accessibilityIdentifier("\(prefix)-filter")
+                Button { model.refresh() } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh \(itemName)s")
+                .accessibilityLabel("Refresh \(itemName)s")
+                .accessibilityIdentifier("\(prefix)-refresh")
+            }
+        }
+        .padding(16)
+    }
+
+    @ViewBuilder
+    private var details: some View {
+        if let selection = model.selection {
+            Group {
+                switch model.kind {
+                case .pullRequests:
+                    PullRequestDetailsView(directory: directory, repository: selection.repository, number: selection.number)
+                case .issues:
+                    IssueDetailsView(directory: directory, repository: selection.repository, number: selection.number)
+                }
+            }
+            .id(selection)
+        } else if case .loaded(let list, _) = model.listing {
+            Text(list.items.isEmpty ? "" : "Select a \(itemName)")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func listColumn(_ list: GitHubListPage, paging: GitHubBrowserModel.Paging) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: list.repository.slug)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .accessibilityIdentifier("pr-repository")
+                .accessibilityIdentifier("\(prefix)-repository")
                 .padding(12)
             Divider()
             if list.items.isEmpty {
-                Text(filter == .all ? "No pull requests" : "No \(filter.rawValue) pull requests")
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("pr-list-empty")
-                    .padding(12)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.query.text.isEmpty ? "No \(itemName)s" : "No matching \(itemName)s")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("\(prefix)-list-empty")
+                    if !model.query.text.isEmpty {
+                        Button("Clear search") {
+                            model.searchText = ""
+                            model.applySearch(filter: model.query.filter)
+                        }
+                        .accessibilityIdentifier("\(prefix)-search-clear")
+                    }
+                }
+                .padding(12)
                 Spacer()
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         ForEach(list.items) { item in
-                            let target = Selection(repository: list.repository, number: item.number)
-                            Button { selection = target } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(verbatim: item.title)
-                                        .font(.callout.weight(.medium))
-                                        .lineLimit(2)
-                                    Text("#\(item.number) · \(item.stateLabel)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                                .background(selection == target ? Color.accentColor.opacity(0.14) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 6))
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(selection == target ? .isSelected : [])
-                            .accessibilityIdentifier("pr-row-\(item.number)")
+                            row(item, repository: list.repository)
                         }
                     }
                     .padding(4)
                 }
-                if list.items.count == GitHubPullRequests.listLimit {
-                    Text("Showing the latest \(GitHubPullRequests.listLimit)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(12)
-                }
+            }
+            if list.next != nil {
+                Divider()
+                pageControls(paging)
+                    .padding(12)
             }
         }
         .frame(maxHeight: .infinity)
     }
 
-    @MainActor
-    private func load(_ filter: PullRequestFilter) async {
-        guard !Task.isCancelled else { return }
-        listing = .loading
-        do {
-            let list = try await GitHubPullRequests(directory: directory).list(filter)
-            guard !Task.isCancelled else { return }
-            if let selection,
-               selection.repository != list.repository || !list.items.contains(where: { $0.number == selection.number }) {
-                self.selection = nil
+    private func row(_ item: GitHubListItem, repository: GitHubRepository) -> some View {
+        let selected = model.selection?.repository == repository && model.selection?.number == item.number
+        return Button { model.select(item, in: repository) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: item.title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                Text("#\(item.number) · \(item.stateLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                let labels = item.labelNames
+                if !labels.isEmpty {
+                    Text(verbatim: labels.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            listing = .loaded(list)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(selected ? Color.accentColor.opacity(0.14) : .clear,
+                        in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("\(prefix)-row-\(item.number)")
+    }
+
+    @ViewBuilder
+    private func pageControls(_ paging: GitHubBrowserModel.Paging) -> some View {
+        switch paging {
+        case .idle:
+            Button("Load more \(itemName)s") { model.loadMore() }
+                .accessibilityIdentifier("\(prefix)-load-more")
+        case .loading:
+            ProgressView("Loading more \(itemName)s…")
+                .controlSize(.small)
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("\(prefix)-page-error")
+                Button("Retry") { model.loadMore() }
+                    .accessibilityIdentifier("\(prefix)-page-retry")
+            }
+        }
+    }
+}
+
+private struct IssueDetailsView: View {
+    let directory: String
+    let repository: GitHubRepository
+    let number: Int
+    @State private var refresh = 0
+    @State private var content: GitHubDetailLoad<GitHubIssueDetails> = .loading
+
+    var body: some View {
+        Group {
+            switch content {
+            case .loading:
+                ProgressView("Loading #\(number)…")
+            case .failed(let message):
+                VStack(spacing: 12) {
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("issue-detail-error")
+                    Button("Retry") { refresh += 1 }
+                        .accessibilityIdentifier("issue-detail-retry")
+                }
+                .padding(24)
+            case .loaded(let issue):
+                ScrollView {
+                    summary(issue)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: refresh) { await load() }
+    }
+
+    private func summary(_ issue: GitHubIssueDetails) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(verbatim: "#\(issue.number) \(issue.title)")
+                .font(.title3.weight(.semibold))
+                .accessibilityIdentifier("issue-detail-title")
+            HStack {
+                Text(issue.state.capitalized)
+                    .accessibilityIdentifier("issue-detail-state")
+                if let login = issue.author?.login, !login.isEmpty {
+                    Text(verbatim: "· @\(login)")
+                        .accessibilityIdentifier("issue-detail-author")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            if !issue.labels.isEmpty {
+                Text(verbatim: issue.labels.map(\.name).joined(separator: ", "))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("issue-detail-labels")
+            }
+            HStack {
+                Link(destination: issue.url) {
+                    Label("Open on GitHub", systemImage: "arrow.up.right.square")
+                }
+                .accessibilityIdentifier("issue-open")
+                Spacer()
+                Button { refresh += 1 } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh issue")
+                .accessibilityLabel("Refresh issue")
+                .accessibilityIdentifier("issue-detail-refresh")
+            }
+            Divider()
+            Text("Description").font(.headline)
+            if issue.body.isEmpty {
+                Text("No description").foregroundStyle(.secondary)
+            } else {
+                Text(verbatim: issue.body)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("issue-detail-body")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+    }
+
+    @MainActor
+    private func load() async {
+        guard !Task.isCancelled else { return }
+        content = .loading
+        do {
+            let issue = try await GitHubReader(directory: directory).issueDetails(for: number, in: repository)
+            guard !Task.isCancelled else { return }
+            content = .loaded(issue)
         } catch {
             guard !Task.isCancelled else { return }
-            listing = .failed(error.localizedDescription)
+            content = .failed(error.localizedDescription)
         }
     }
 }
@@ -182,7 +357,7 @@ private struct PullRequestDetailsView: View {
     let directory: String
     let repository: GitHubRepository
     let number: Int
-    @State private var content: PullRequestLoad<GitHubPullRequestDetails> = .loading
+    @State private var content: GitHubDetailLoad<GitHubPullRequestDetails> = .loading
 
     var body: some View {
         Group {
@@ -271,7 +446,7 @@ private struct PullRequestDetailsView: View {
     @MainActor
     private func load() async {
         do {
-            let details = try await GitHubPullRequests(directory: directory).details(for: number, in: repository)
+            let details = try await GitHubReader(directory: directory).pullRequestDetails(for: number, in: repository)
             guard !Task.isCancelled else { return }
             content = .loaded(details)
         } catch {

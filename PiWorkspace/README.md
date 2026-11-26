@@ -74,18 +74,22 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model --worktree
 
 The verifier writes its report under `dist/verification-*/logs`. It uses an isolated workspace and a disposable Keychain item. The worktree run also checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
 
-### Verify pull request reads
+### Verify GitHub reads
 
-From this directory, run the Swift verifier with the mock GitHub CLI. It creates a disposable repository and linked worktree.
+From this directory, run the Swift verifier with the mock GitHub CLI. It creates a disposable repository and linked worktree. It checks PR and Issue reads, search, pagination, retry, and responses that arrive after a newer request.
 
 ```sh
 mkdir -p .build
 swiftc -module-cache-path .build/pr-test-cache \
     Sources/PiWorkspace/GitWorkspace.swift Sources/PiWorkspace/GitHubPullRequests.swift \
+    Sources/PiWorkspace/GitHubBrowse.swift \
     scripts/verify-github-pull-requests.swift -o .build/verify-github-pull-requests
 .build/verify-github-pull-requests "$PWD/scripts/fixtures/github-read"
 ```
 
-For a packaged-app check, initialize a disposable checkout with fetch remote `git@github.com:fixture/workspace.git`. Launch the app binary with `scripts/fixtures/github-read` on the front of PATH. Pass the checkout with `--project` and a disposable app store with `--workspace`. Set `PI_GH_FIXTURE_STATE` to a file containing `initial`, then replace its contents with `updated` and press Refresh to exercise a changed head and check result.
+For a packaged-app check, initialize a disposable checkout with fetch remote `git@github.com:fixture/workspace.git`. Launch the app binary with `scripts/fixtures/github-read` on the front of PATH. Pass the checkout with `--project` and a disposable app store with `--workspace`. Set `PI_GH_FIXTURE_STATE` to a file containing `initial`.
 
-The accessibility IDs for this flow are `pull-requests`, `pr-checkout`, `pr-repository`, `pr-filter`, `pr-refresh`, `pr-row-42`, `pr-detail-title`, `pr-check-status-0`, `pr-open`, `pr-check-open-0`, and `pr-close`. The Swift verifier checks the fixture link destinations without opening a browser.
+- Open `pull-requests` and switch tabs with `github-tab-pull-requests` or `github-tab-issues`. Each list uses the `pr-` or `issue-` prefix for `checkout`, `repository`, `search`, `search-submit`, `filter`, `refresh`, and `load-more`.
+- Search for `label:bug`. The PR list shows `pr-row-42`, then adds `pr-row-44`. The Issue list shows `issue-row-71`, then adds `issue-row-73`. In the Issue list, select **Closed** to see `issue-row-70`. Search for `empty` with **Open** selected to exercise `list-empty` and `search-clear`.
+- Select `pr-row-42` to inspect `pr-detail-title`, `pr-check-status-0`, `pr-open`, and `pr-check-open-0`. Select `issue-row-71` to inspect `issue-detail-title`, `issue-detail-state`, `issue-detail-author`, `issue-detail-labels`, `issue-detail-body`, and `issue-open`. The Swift verifier checks link destinations.
+- Change the fixture state to `updated` and refresh to see a changed PR head and Issue description. Use `no-auth` or `network` with list refresh to exercise `list-error` and `list-retry`. Use `page-error` with **Load more** to exercise `page-error` and `page-retry`. Use `missing` with `issue-detail-refresh` to exercise `issue-detail-error` and `issue-detail-retry`. Restore `initial` before retrying. Close the browser with `pr-close`.

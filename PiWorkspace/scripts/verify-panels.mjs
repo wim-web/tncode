@@ -175,7 +175,9 @@ export async function verifyPullRequests({ press, visible, tree, until }, stateF
   await until(() => tree().includes("new-head") && tree().includes("Update checkout (updated)") && tree().includes('value="Success"'),
               "refreshed pull request head and successful check");
   const calls = readFileSync(logFile, "utf8").trim().split("\n");
-  assert(calls.length >= 4 && calls.every(call => call.startsWith(checkout + "|pr ")));
+  assert(calls.every(call => call.startsWith(checkout + "|")));
+  assert(calls.filter(call => call.startsWith(checkout + "|api graphql ")).length >= 2);
+  assert(calls.filter(call => call.startsWith(checkout + "|pr view ")).length >= 2);
   assert(visible("pr-open"));
   assert(visible("pr-check-open-0"));
   press("pr-close");

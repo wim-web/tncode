@@ -2,10 +2,6 @@
 set -eu
 
 expected_repo="${PI_GH_FIXTURE_REPO:-github.com/fixture/workspace}"
-if [ -n "${PI_GH_FIXTURE_LOG:-}" ]; then
-    printf '%s\n' "$(pwd -P)|$*" >> "$PI_GH_FIXTURE_LOG"
-fi
-
 test "$GH_HOST" = github.com
 test "$GH_PROMPT_DISABLED" = 1
 test "$GH_NO_UPDATE_NOTIFIER" = 1
@@ -17,6 +13,25 @@ mode=initial
 if [ -n "${PI_GH_FIXTURE_STATE:-}" ]; then
     mode=$(/bin/cat "$PI_GH_FIXTURE_STATE")
 fi
+if [ -n "${PI_GH_FIXTURE_LOG:-}" ]; then
+    command=$(printf '%s' "$*" | /usr/bin/tr '\n' ' ')
+    printf '%s\n' "$(pwd -P)|$command" >> "$PI_GH_FIXTURE_LOG"
+fi
+case "$mode" in
+    held|held-error)
+        : > "$PI_GH_FIXTURE_GATE.started"
+        remaining=200
+        while [ ! -f "$PI_GH_FIXTURE_GATE.release" ] && [ "$remaining" -gt 0 ]; do
+            /bin/sleep 0.05
+            remaining=$((remaining - 1))
+        done
+        test -f "$PI_GH_FIXTURE_GATE.release"
+        if [ "$mode" = held-error ]; then
+            printf '%s\n' 'dial tcp: fixture request lost its connection' >&2
+            exit 1
+        fi
+        ;;
+esac
 case "$mode" in
     no-auth) printf '%s\n' 'To get started, run gh auth login' >&2; exit 4 ;;
     forbidden) printf '%s\n' 'HTTP 403: Resource not accessible' >&2; exit 1 ;;
@@ -25,23 +40,172 @@ case "$mode" in
     malformed) printf 'not JSON\n'; exit 0 ;;
 esac
 
+item() {
+    printf '{"number":%s,"title":"%s","state":"%s","repository":{"nameWithOwner":"%s"},"labels":{"nodes":%s}%s}' \
+        "$1" "$2" "$3" "$repo_slug" "$4" "${5:-}"
+}
+
+page() {
+    if [ -n "$1" ]; then
+        page_info=$(printf '{"hasNextPage":true,"endCursor":"%s"}' "$1")
+    else
+        page_info='{"hasNextPage":false,"endCursor":null}'
+    fi
+    if [ "$scope" = repository ]; then
+        printf '{"data":{"repository":{"items":{"pageInfo":%s,"nodes":[%s]}}}}\n' "$page_info" "$2"
+    else
+        printf '{"data":{"items":{"pageInfo":%s,"nodes":[%s]}}}\n' "$page_info" "$2"
+    fi
+}
+
+graphql() {
+    test "$1" = api
+    test "$2" = graphql
+    test "$3" = --hostname
+    test "$4" = github.com
+    test "$5" = --raw-field
+    document=${6#query=}
+    case "$document" in 'query('*'pageInfo { hasNextPage endCursor }'*) ;; *) return 64 ;; esac
+    shift 6
+
+    repo_slug=${expected_repo#github.com/}
+    state=ALL
+    case "$document" in
+        *'... on PullRequest'*) kind=pr; resource=pullRequests; type=is:pr ;;
+        *'... on Issue'*) kind=issue; resource=issues; type=is:issue ;;
+        *) return 64 ;;
+    esac
+    case "$document" in
+        *'items: search(query: $search, type: ISSUE, first: 50, after: $after)'*)
+            scope=search
+            test "$1" = --raw-field
+            case "$2" in
+                "search=repo:$repo_slug $type is:closed is:unmerged sort:created-desc "*) state=CLOSED ;;
+                "search=repo:$repo_slug $type is:open sort:created-desc "*) state=OPEN ;;
+                "search=repo:$repo_slug $type is:closed sort:created-desc "*) state=CLOSED ;;
+                "search=repo:$repo_slug $type is:merged sort:created-desc "*) state=MERGED ;;
+                "search=repo:$repo_slug $type sort:created-desc "*) ;;
+                *) return 64 ;;
+            esac
+            terms=${2#*sort:created-desc }
+            shift 2
+            ;;
+        *"items: $resource(first: 50, after: "*)
+            scope=repository
+            test "$1" = --raw-field
+            test "$2" = "owner=${repo_slug%%/*}"
+            test "$3" = --raw-field
+            test "$4" = "name=${repo_slug#*/}"
+            shift 4
+            case "$document" in
+                *'states: [OPEN]'*) state=OPEN ;;
+                *'states: [MERGED]'*) state=MERGED ;;
+                *'states: [CLOSED]'*) state=CLOSED ;;
+            esac
+            ;;
+        *) return 64 ;;
+    esac
+    after=
+    if [ "$#" -gt 0 ]; then
+        test "$#" = 2
+        test "$1" = --raw-field
+        case "$2" in after=*) after=${2#after=} ;; *) return 64 ;; esac
+        if [ "$mode" = page-error ]; then
+            printf '%s\n' 'dial tcp: fixture next page could not connect' >&2
+            return 1
+        fi
+    fi
+
+    bug='[{"name":"bug"}]'
+    docs='[{"name":"documentation"}]'
+    draft=',"isDraft":true'
+    ready=',"isDraft":false'
+    pr=$(item 42 'Update checkout' OPEN "$bug" "$draft")
+    pr_docs=$(item 43 'No checks yet' OPEN "$docs" "$ready")
+    pr_next=$(item 44 'Fix checkout retry' OPEN "$bug" "$ready")
+    pr_merged=$(item 41 'Previous change' MERGED '[]' "$ready")
+    issue=$(item 71 'Checkout socket timeout' OPEN "$bug")
+    issue_docs=$(item 72 'Document worktree setup' OPEN "$docs")
+    issue_next=$(item 73 'Retry slow worker' OPEN '[{"name":"bug"},{"name":"needs triage"}]')
+    issue_closed=$(item 70 'Old socket timeout' CLOSED "$bug")
+    if [ "$mode" = empty ]; then
+        page '' ''
+        return
+    fi
+    if [ "$mode" = wrong-repo ]; then
+        repo_slug=fixture/unrelated
+        page '' "$(item 90 'Unrelated issue' OPEN '[]')"
+        return
+    fi
+    if [ "$mode" = updated ]; then
+        pr=$(item 42 'Update checkout (updated)' OPEN "$bug" "$ready")
+        issue=$(item 71 'Checkout socket timeout (updated)' OPEN "$bug")
+    fi
+
+    case "$scope:$kind:$state:$after" in
+        repository:pr:OPEN:) if [ "$mode" = updated ]; then page '' "$pr"; else page '' "$pr,$pr_docs"; fi ;;
+        repository:pr:MERGED:) page '' "$pr_merged" ;;
+        repository:pr:CLOSED:) page '' '' ;;
+        repository:pr:ALL:) page '' "$pr,$pr_docs,$pr_merged" ;;
+        repository:issue:OPEN:) page 'issues:2==' "$issue,$issue_docs" ;;
+        repository:issue:OPEN:issues:2==) page '' "$issue_next" ;;
+        repository:issue:CLOSED:) page '' "$issue_closed" ;;
+        repository:issue:ALL:) page '' "$issue,$issue_docs,$issue_next,$issue_closed" ;;
+        search:pr:OPEN:)
+            case "$terms" in
+                'label:"bug"') page 'pull-requests:2==' "$pr" ;;
+                '"checkout"') page '' "$pr,$pr_next" ;;
+                'label:"documentation"') page '' "$pr_docs" ;;
+                '"empty"') page '' '' ;;
+                *) return 64 ;;
+            esac
+            ;;
+        search:pr:OPEN:pull-requests:2==)
+            test "$terms" = 'label:"bug"'
+            page '' "$pr,$pr_next"
+            ;;
+        search:pr:CLOSED:) test "$terms" = 'label:"bug"'; page '' '' ;;
+        search:issue:OPEN:)
+            case "$terms" in
+                'label:"bug"') page 'issue-search:2==' "$issue" ;;
+                '"socket"') page '' "$issue" ;;
+                '"slow worker" label:"needs triage"') page '' "$issue_next" ;;
+                '"repo:fixture/unrelated" "OR" "$(printf" "wrong)"')
+                    page '' ''
+                    ;;
+                '"empty"') page '' '' ;;
+                *) return 64 ;;
+            esac
+            ;;
+        search:issue:OPEN:issue-search:2==)
+            test "$terms" = 'label:"bug"'
+            page '' "$issue_next"
+            ;;
+        search:issue:CLOSED:) test "$terms" = 'label:"bug"'; page '' "$issue_closed" ;;
+        *) return 64 ;;
+    esac
+}
+
+if [ "${1:-}" = api ]; then
+    graphql "$@"
+    exit
+fi
+
 fields=number,title,state,isDraft,author
 case "$*" in
-    "pr list --state open --limit 50 --json $fields --repo $expected_repo")
+    "issue view 71 --json number,title,state,author,labels,body --repo $expected_repo")
+        if [ "$mode" = missing ]; then
+            printf '%s\n' "GraphQL: Could not resolve to an Issue with the number of 71." >&2
+            exit 1
+        fi
         if [ "$mode" = updated ]; then
-            printf '%s\n' '[{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"}}]'
+            printf '%s\n' '{"number":71,"title":"Checkout socket timeout (updated)","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"Updated fixture issue description."}'
         else
-            printf '%s\n' '[{"number":42,"title":"Update checkout","state":"OPEN","isDraft":true,"author":{"login":"fixture-author"}},{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null}]'
+            printf '%s\n' '{"number":71,"title":"Checkout socket timeout","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"Fixture issue description."}'
         fi
         ;;
-    "pr list --state merged --limit 50 --json $fields --repo $expected_repo")
-        printf '%s\n' '[{"number":41,"title":"Previous change","state":"MERGED","isDraft":false,"author":null}]'
-        ;;
-    "pr list --state closed --limit 50 --json $fields --repo $expected_repo")
-        printf '[]\n'
-        ;;
-    "pr list --state all --limit 50 --json $fields --repo $expected_repo")
-        printf '%s\n' '[{"number":42,"title":"Update checkout","state":"OPEN","isDraft":true,"author":{"login":"fixture-author"}},{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null},{"number":41,"title":"Previous change","state":"MERGED","isDraft":false,"author":null}]'
+    "issue view 73 --json number,title,state,author,labels,body --repo $expected_repo")
+        printf '%s\n' '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":""}'
         ;;
     "pr view 42 --json $fields,headRefName,baseRefName,body,statusCheckRollup --repo $expected_repo")
         if [ "$mode" = missing ]; then

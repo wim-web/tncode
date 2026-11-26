@@ -1,17 +1,10 @@
 import Darwin
 import Foundation
 
-enum PullRequestFilter: String, CaseIterable, Identifiable, Sendable {
-    case open, merged, closed, all
-
-    var id: Self { self }
-    var title: String { rawValue.capitalized }
-}
-
 struct GitHubRepository: Hashable, Sendable {
     let slug: String
 
-    fileprivate var cliName: String { "github.com/" + slug }
+    var cliName: String { "github.com/" + slug }
 
     fileprivate init?(remote: String) {
         let path: String
@@ -37,26 +30,20 @@ struct GitHubRepository: Hashable, Sendable {
     }
 }
 
-struct GitHubPullRequest: Decodable, Identifiable, Sendable {
-    struct Author: Decodable, Sendable {
-        let login: String
-    }
+struct GitHubAuthor: Decodable, Sendable {
+    let login: String
+}
 
+struct GitHubPullRequest: Decodable, Sendable {
     let number: Int
     let title: String
     let state: String
     let isDraft: Bool
-    let author: Author?
+    let author: GitHubAuthor?
 
-    var id: Int { number }
     var stateLabel: String { state == "OPEN" && isDraft ? "Draft" : state.capitalized }
 
     fileprivate static let fields = "number,title,state,isDraft,author"
-}
-
-struct GitHubPullRequestList: Sendable {
-    let repository: GitHubRepository
-    let items: [GitHubPullRequest]
 }
 
 struct GitHubPullRequestDetails: Sendable {
@@ -109,9 +96,7 @@ struct GitHubCheck: Decodable, Sendable {
     }
 }
 
-struct GitHubPullRequests: Sendable {
-    static let listLimit = 50
-
+struct GitHubReader: Sendable {
     private let directory: String
     private let environment: [String: String]
     private let timeout: DispatchTimeInterval
@@ -129,29 +114,17 @@ struct GitHubPullRequests: Sendable {
         }
     }
 
-    func list(_ filter: PullRequestFilter) async throws -> GitHubPullRequestList {
-        let repository = try await repository()
-        let items: [GitHubPullRequest] = try await read(
-            ["pr", "list", "--state", filter.rawValue, "--limit", String(Self.listLimit),
-             "--json", GitHubPullRequest.fields], repository: repository
-        )
-        guard items.allSatisfy({ $0.number > 0 }), Set(items.map(\.number)).count == items.count else {
-            throw ReadError.invalidResponse
-        }
-        return GitHubPullRequestList(repository: repository, items: items)
-    }
-
-    func details(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubPullRequestDetails {
-        guard number > 0 else { throw ReadError.invalidResponse }
-        let repository = try await repository()
-        guard repository == expectedRepository else { throw ReadError.repositoryChanged }
+    func pullRequestDetails(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubPullRequestDetails {
+        guard number > 0 else { throw ReadError.invalidResponse(.pullRequests) }
+        let repository = try await repository(matching: expectedRepository)
         let response: DetailResponse = try await read(
             ["pr", "view", String(number), "--json",
-             GitHubPullRequest.fields + ",headRefName,baseRefName,body,statusCheckRollup"], repository: repository
+             GitHubPullRequest.fields + ",headRefName,baseRefName,body,statusCheckRollup", "--repo", repository.cliName],
+            for: .pullRequests
         )
         guard response.pullRequest.number == number,
               let url = URL(string: "https://\(repository.cliName)/pull/\(number)") else {
-            throw ReadError.invalidResponse
+            throw ReadError.invalidResponse(.pullRequests)
         }
         return GitHubPullRequestDetails(
             pullRequest: response.pullRequest,
@@ -163,7 +136,13 @@ struct GitHubPullRequests: Sendable {
         )
     }
 
-    private func repository() async throws -> GitHubRepository {
+    func repository(matching expected: GitHubRepository? = nil) async throws -> GitHubRepository {
+        let repository = try await checkoutRepository()
+        guard expected == nil || repository == expected else { throw ReadError.repositoryChanged }
+        return repository
+    }
+
+    private func checkoutRepository() async throws -> GitHubRepository {
         try Task.checkCancellation()
         let remotes: [(name: String, url: String)]
         do {
@@ -184,7 +163,7 @@ struct GitHubPullRequests: Sendable {
         return repository
     }
 
-    private func read<Value: Decodable>(_ arguments: [String], repository: GitHubRepository) async throws -> Value {
+    func read<Value: Decodable>(_ arguments: [String], for kind: GitHubBrowseKind) async throws -> Value {
         try Task.checkCancellation()
         let cli = (environment["PATH"] ?? "").split(separator: ":")
             .lazy.filter { $0.hasPrefix("/") }
@@ -211,7 +190,7 @@ struct GitHubPullRequests: Sendable {
         let process = Process()
         process.executableURL = cli
         process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
-        process.arguments = arguments + ["--repo", repository.cliName]
+        process.arguments = arguments
         process.environment = childEnvironment
 
         let result: WorkspaceCommand.Capture
@@ -222,7 +201,7 @@ struct GitHubPullRequests: Sendable {
         }
         try Task.checkCancellation()
         guard result.exitedNormally else {
-            throw result.status == SIGTERM ? ReadError.timedOut : ReadError.readFailed
+            throw result.status == SIGTERM ? ReadError.timedOut : ReadError.readFailed(kind)
         }
         guard result.status == 0 else {
             let stderr = result.errorMessage.lowercased()
@@ -233,19 +212,19 @@ struct GitHubPullRequests: Sendable {
                 throw ReadError.accessDenied
             }
             if stderr.contains("http 404") || stderr.contains("could not resolve to") {
-                throw ReadError.notFound
+                throw ReadError.notFound(kind)
             }
             if ["error connecting", "dial tcp", "network is unreachable", "timeout", "no such host"]
                 .contains(where: stderr.contains) {
                 throw ReadError.network
             }
-            throw ReadError.readFailed
+            throw ReadError.readFailed(kind)
         }
         guard !result.output.truncated else { throw ReadError.responseTooLarge }
         do {
             return try JSONDecoder().decode(Value.self, from: result.output.bytes)
         } catch {
-            throw ReadError.invalidResponse
+            throw ReadError.invalidResponse(kind)
         }
     }
 
@@ -270,10 +249,11 @@ struct GitHubPullRequests: Sendable {
         }
     }
 
-    private enum ReadError: LocalizedError {
+    enum ReadError: LocalizedError {
         case checkoutUnavailable, noGitHubRemote, ambiguousRemote, repositoryChanged
-        case cliUnavailable, launchFailed, authentication, accessDenied, notFound, network, timedOut
-        case readFailed, responseTooLarge, invalidResponse
+        case cliUnavailable, launchFailed, authentication, accessDenied, network, timedOut
+        case notFound(GitHubBrowseKind), readFailed(GitHubBrowseKind), invalidResponse(GitHubBrowseKind)
+        case responseTooLarge, invalidSearch
 
         var errorDescription: String? {
             switch self {
@@ -285,12 +265,13 @@ struct GitHubPullRequests: Sendable {
             case .launchFailed: "Couldn’t start GitHub CLI (gh) in this checkout."
             case .authentication: "Sign in with `gh auth login` in Terminal, then refresh."
             case .accessDenied: "GitHub denied access. Check your GitHub CLI account’s repository permissions."
-            case .notFound: "GitHub couldn’t find the pull request or repository. Check access and refresh."
+            case .notFound(let kind): "GitHub couldn’t find the \(kind.itemName) or repository. Check access and refresh."
             case .network: "Couldn’t reach GitHub. Check your connection and refresh."
             case .timedOut: "The GitHub request timed out. Check your connection and refresh."
-            case .readFailed: "Couldn’t read pull requests from GitHub. Check your GitHub CLI setup and refresh."
+            case .readFailed(let kind): "Couldn’t read \(kind.itemName)s from GitHub. Check your GitHub CLI setup and refresh."
             case .responseTooLarge: "The GitHub response was too large to display."
-            case .invalidResponse: "GitHub CLI returned an unreadable pull request response."
+            case .invalidResponse(let kind): "GitHub CLI returned an unreadable \(kind.itemName) response."
+            case .invalidSearch: "Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces."
             }
         }
     }
