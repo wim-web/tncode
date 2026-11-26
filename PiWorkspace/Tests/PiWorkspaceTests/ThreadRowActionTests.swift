@@ -5,6 +5,59 @@ import XCTest
 
 @MainActor
 final class ThreadRowActionTests: XCTestCase {
+    func testCommandSSavesOnlyTheFocusedFile() async throws {
+        let queue = QueuedMessage(text: "Keep queued")
+        let fixture = try Fixture(queuedMessages: [queue])
+        let file = fixture.repo.appendingPathComponent("shortcut.txt")
+        try Data("old-file".utf8).write(to: file)
+        let model = fixture.open()
+        defer { model.terminate() }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        try await host.press("toggle-files")
+        try await host.press("files-row-shortcut.txt")
+        let editor: NSTextView = try await host.waitFor("Files editor") { host.element("files-editor") as? NSTextView }
+        XCTAssertTrue(host.window.makeFirstResponder(editor))
+        editor.insertText("new-file", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        let selection = NSRange(location: 1, length: 3)
+        editor.setSelectedRange(selection)
+        XCTAssertEqual(try String(contentsOf: file), "old-file")
+        XCTAssertTrue(host.window.firstResponder === editor)
+        try host.pressCommandS()
+        XCTAssertEqual(try String(contentsOf: file), "new-file")
+        XCTAssertEqual(editor.selectedRange(), selection)
+        XCTAssertTrue(host.window.firstResponder === editor)
+        XCTAssertEqual(model.draft, "Other draft")
+        XCTAssertTrue(model.stashedPrompts.isEmpty)
+        XCTAssertEqual(model.queuedMessages.map(\.id), [queue.id])
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        let branch = try await GitWorkspace(path: fixture.repo.path).currentBranch()
+        XCTAssertEqual(branch, "main")
+    }
+
+    func testCommandSInAnotherTextFieldLeavesTheComposerAlone() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        _ = try await host.waitFor("composer") { host.composer }
+        let search = NSSearchField(frame: NSRect(x: 0, y: 0, width: 120, height: 24))
+        host.host.addSubview(search)
+        search.stringValue = "Query"
+        XCTAssertTrue(host.window.makeFirstResponder(search))
+        let editor = try XCTUnwrap(search.currentEditor())
+        XCTAssertTrue(host.window.firstResponder === editor)
+        try host.pressCommandS()
+        XCTAssertEqual(model.draft, "Other draft")
+        XCTAssertTrue(model.stashedPrompts.isEmpty)
+        XCTAssertEqual(editor.string, "Query")
+    }
+
     func testCopyTargetsUseTheirOwnCheckoutAndPasteTheThreadLinkAsText() async throws {
         let fixture = try Fixture()
         let model = fixture.open()
@@ -285,7 +338,7 @@ final class ThreadRowActionTests: XCTestCase {
         let workspace: URL
         let repo: URL
         let checkout: URL
-        let local = Conversation(id: UUID(), title: "Local thread", isDraft: false, composerText: "Other draft")
+        let local: Conversation
         let scratchThread = Conversation(id: UUID(), title: "Scratch thread", isDraft: false)
         let linked: Conversation
         let project: Project
@@ -295,7 +348,9 @@ final class ThreadRowActionTests: XCTestCase {
             {"type":"message","id":"linked-reply","role":"assistant","text":"Keep the linked checkout history."}
             """.utf8)
 
-        init() throws {
+        init(queuedMessages: [QueuedMessage]? = nil) throws {
+            local = Conversation(id: UUID(), title: "Local thread", isDraft: false, composerText: "Other draft",
+                                 queuedMessages: queuedMessages)
             root = FileManager.default.temporaryDirectory.appendingPathComponent("Thread Actions \(UUID())", isDirectory: true)
             workspace = root.appendingPathComponent("workspace", isDirectory: true)
             repo = root.appendingPathComponent("Project Files", isDirectory: true)
@@ -441,6 +496,14 @@ final class ThreadRowActionTests: XCTestCase {
             let message = "Timed out waiting for \(description)."
             XCTFail(message)
             throw WorkspaceError(message)
+        }
+
+        func pressCommandS() throws {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                                                       timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                       characters: "s", charactersIgnoringModifiers: "s",
+                                                       isARepeat: false, keyCode: 1))
+            NSApp.sendEvent(event)
         }
 
         func press(_ id: String) async throws {
