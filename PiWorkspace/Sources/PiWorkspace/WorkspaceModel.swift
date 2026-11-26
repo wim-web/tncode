@@ -250,7 +250,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     // Return false to let the field editor replace its selection using AppKit.
-    func foldPastedText(_ text: String, inlineLength: Int, in target: ComposerAttachmentTarget) -> Bool {
+    func foldPastedText(_ text: String, inlineLength: Int, in target: ComposerAttachmentTarget,
+                        didAttach: ((ComposerAttachment) -> Void)? = nil) -> Bool {
         guard conversation?.id == target.threadID, attachmentTarget(for: target.threadID) == target,
               canEditAttachments else { return true }
         guard !text.isEmpty else { return false }
@@ -263,7 +264,9 @@ final class WorkspaceModel: ObservableObject {
                 return false
             }
         }
-        _ = attach([.pastedText(text)], to: target)
+        if attach([.pastedText(text)], to: target), let attachment = composerAttachments.last {
+            didAttach?(attachment)
+        }
         return true
     }
 

@@ -58,7 +58,7 @@ struct WorkspaceView: View {
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
-    @State private var createdProject: UUID?
+    @State private var notice: Notice?
     @State private var checkoutsWithBranches: Set<String> = []
     @State private var copyTask: Task<Void, Never>?
     @FocusState private var focusedComposer: UUID?
@@ -68,6 +68,12 @@ struct WorkspaceView: View {
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
     @State private var targetingComposerDrop = false
+
+    private struct Notice {
+        let id: UUID
+        let message: String
+        let accessibilityID: String
+    }
 
     private enum RenameTarget {
         case project(UUID)
@@ -213,17 +219,17 @@ struct WorkspaceView: View {
         }
         .onChange(of: model.projects.map(\.id)) { _, ids in projectFilter.retainProjects(ids) }
         .overlay(alignment: .topTrailing) {
-            if let createdProject {
-                Text("Project created")
+            if let notice {
+                Text(notice.message)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
                     .padding(10)
                     .allowsHitTesting(false)
-                    .accessibilityIdentifier("project-created")
-                    .task(id: createdProject) {
+                    .accessibilityIdentifier(notice.accessibilityID)
+                    .task(id: notice.id) {
                         try? await Task.sleep(for: .seconds(3))
-                        if !Task.isCancelled { self.createdProject = nil }
+                        if !Task.isCancelled { self.notice = nil }
                     }
             }
         }
@@ -889,7 +895,9 @@ struct WorkspaceView: View {
 
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
         Button("Turn into project") {
-            if model.convertScratchThread(thread.id, in: project.id) { createdProject = project.id }
+            if model.convertScratchThread(thread.id, in: project.id) {
+                notice = Notice(id: project.id, message: "Project created", accessibilityID: "project-created")
+            }
         }
         .accessibilityIdentifier("turn-into-project")
         .disabled(model.operationsInProgress)
@@ -1656,7 +1664,12 @@ struct WorkspaceView: View {
                     model.editDraft($0, in: threadID)
                 }
             ), pasteboard: workspacePasteboard, drop: drop) { text, inlineLength in
-                model.foldPastedText(text, inlineLength: inlineLength, in: target)
+                model.foldPastedText(text, inlineLength: inlineLength, in: target) { attachment in
+                    let size = ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .binary)
+                    notice = Notice(id: attachment.id,
+                                    message: "Large paste attached as \(attachment.name) (\(size)). Use ⌘⇧V to keep a paste inline.",
+                                    accessibilityID: "large-paste-attached")
+                }
             }
                 .id(target)
                 .focused($focusedComposer, equals: threadID)
