@@ -1,6 +1,6 @@
 # tncode 実装手順書
 
-T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](PiWorkspace/README.md) から完成させる手順。工程01〜03の代表操作は、配布版の試験でフォルダー登録・会話の再開・worktree 準備失敗後の Retry まで通した。続きは作業表の `result` と `evidence_ref` で対象と残る検証条件を確認する。工程番号は依存関係から決めた推奨順。
+T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](PiWorkspace/README.md) から完成させる手順。配布版では、フォルダー補完、下書きの終了・復元、worktree 準備の再試行・取消・ローカルでの再送を確認した。外観切り替え、ブラウザーのタブ・Mini Player、アプリ情報も個別に照合した。各操作の結果と残る検証条件は作業表の `result` と `evidence_ref` に記録する。工程番号は依存関係から決めた推奨順。
 
 **全件の担当は [工程別の作業表](docs/implementation-order.tsv) にある。** 操作・設定・分岐1,494行、通信87行、UI 実装単位1,491行、画面61件、実機追加の入力2件を、それぞれ1工程に割り当てた。ソース上の10,763の入口と実機入口1,091件は [宣言の対応表](T3Audit-0.1.12/inventory/entries.tsv) と [実機の対応表](T3Audit-0.1.12/inventory/runtime-entries.tsv) の `feature_id` で担当工程を引く。
 

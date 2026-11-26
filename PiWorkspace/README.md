@@ -27,7 +27,7 @@ If a project folder moves, use **Relink Folder** in its context menu to point th
 
 Choose **Start without a project** on the empty home screen to work in a private folder. The thread menu's **Turn into project** action registers that folder and keeps the conversation history.
 
-Unsent composer text stays with its thread when you switch threads or quit. Right-click a draft in the sidebar to copy its working path or selected branch, open its project settings, or discard it. A worktree preparation failure saves the submitted prompt so you can retry after relaunch.
+Unsent composer text stays with its thread when you switch threads or quit. If saving fails, the app keeps the draft open. Restore write access, then select **Retry Saving** or **Retry and Quit**. Right-click a draft in the sidebar to copy its working path or selected branch, open its project settings, or discard it.
 
 Pi can read files with models that support tools. Choose **Supervised** to approve or decline individual shell and edit requests. **Shell and edits** enables those tools for the project. They use the permissions of your macOS user.
 
@@ -42,7 +42,7 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 ## Work in a Git checkout
 
 1. In a draft, use the workspace control below the composer. Choose the project folder, an existing worktree, or a new worktree and its base branch.
-2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch.
+2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch. Before Pi starts the turn, **Cancel** returns the text to the draft. **Work locally** sends it from the project folder.
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.

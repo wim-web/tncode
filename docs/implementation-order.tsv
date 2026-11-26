@@ -4,11 +4,11 @@ stage	id	title	audit_status	result	evidence_ref
 01	CFG-135	Welcome page	未対応	未評価	-
 01	CHAT-002	下書きを開く	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 別プロジェクトの未送信下書きに戻り、コンポーザーに同じ入力を確認
 01	CHAT-003	下書きを破棄	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 下書きメニューから破棄し、対応する UUID が保存一覧から消え、他プロジェクトの未送信本文が残ることを確認
-01	CHAT-004	下書きのパスをコピー	部分	未評価	-
-01	CHAT-005	下書きのブランチ名をコピー	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 作成予定 worktree の下書きで Copy → Branch を操作し、専用の macOS ペーストボードから選択済みの base 名 main を取得
+01	CHAT-004	下書きのパスをコピー	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Copy → Path を通常フォルダー・作成予定・既存 worktree の下書きで実行し、macOS の検証専用ペーストボード上の各実パスと照合
+01	CHAT-005	下書きのブランチ名をコピー	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 作成予定の選択 base と既存 checkout の現在のブランチを Copy → Branch で取得し、選択値・git branch --show-current と照合
 01	CHAT-013	プロジェクトフォルダから新規作成	同等候補	未評価	-
 01	CHAT-022	ホームへ移動	未対応	未評価	-
-01	CHAT-053	プロジェクトを選んで下書きを作成	同等候補	未評価	-
+01	CHAT-053	プロジェクトを選んで下書きを作成	同等候補	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数プロジェクトから New Thread で一つを選び、選んだプロジェクトと新しい下書き UUID およびフォーカスを確認
 01	CHAT-054	現在のプロジェクトで下書きを作成	同等候補	未評価	-
 01	CHAT-056	プロジェクトなしで下書きを作成	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの scratch 下書き・初回送信を確認。接続先が scratch に対応しない場合の画面は未検証
 01	CHAT-057	scratch スレッドをプロジェクトへ変換	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 専用フォルダーから送信後に通常プロジェクトへ変換。同じフォルダー、スレッド UUID、履歴ファイルの内容を確認
@@ -72,7 +72,7 @@ stage	id	title	audit_status	result	evidence_ref
 02	CFG-105	Response streaming	未対応	未評価	-
 02	CFG-116	Continue threads after restarts	未対応	未評価	-
 02	CHAT-001	スレッドを開く	部分	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの再起動・履歴再開は確認。異なる環境にある同名スレッドでの照合が残る
-02	CHAT-087	下書きの本文を保存・再開	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 二つの未送信本文を別 UUID に入力。アプリ終了・再起動・スレッド切替後に各本文を復元し、モデル要求数が増えないことを確認
+02	CHAT-087	下書きの本文を保存・再開	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 二つの未送信本文を別 UUID で復元。書き込み障害中の Quit が取り消され、修復し Retry and Quit した後も最後の編集が残った。送信数は増えない
 02	CHAT-088	下書きの初回送信	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 初回の UUID が変わらず、送信文はモデル要求に1件。保存したサイドバー行から同じ履歴を開く
 02	CHAT-089	既存スレッドの新規ターンを送信	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 再起動後の2通目の要求に1往復目の履歴が入り、同じスレッドに応答を表示
 02	CHAT-100	実行を割り込んで止める	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 受信途中に Stop。ループバック接続が閉じ、Send と部分応答を同じ会話で確認
@@ -162,8 +162,8 @@ stage	id	title	audit_status	result	evidence_ref
 03	DEV-018	setupからエージェントへ引き渡す	部分	未評価	-
 03	DEV-019	準備カードの詳細を展開する	未対応	未評価	-
 03	DEV-020	準備スクリプトの端末を開く	未対応	未評価	-
-03	DEV-021	準備中のworktreeを取り消す	未対応	未評価	-
-03	DEV-022	準備を中断してローカルで送信し直す	部分	未評価	-
+03	DEV-021	準備中のworktreeを取り消す	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 準備中の取消は WorktreeLaunchTests の実 Git と同期用 FIFO で確認。配布版で衝突後の Cancel が本文を下書きへ戻し、モデル要求 0 件、checkout 1 件を維持
+03	DEV-022	準備を中断してローカルで送信し直す	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 衝突後の Work locally が元の本文をプロジェクト直下から1回だけ送信。既存の全 checkout と root の編集が一致。WorktreeLaunchTests で変更済み・所有外の保護も確認
 03	DEV-023	準備失敗を表示する	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 既存ブランチと保存先障害で作成が失敗し、モデル要求0件。元の本文と createCheckout の失敗段階を保持
 03	DEV-024	失敗した準備runを再試行する	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 枝名を直し、保存先も修復。再起動後の同一 UUID の Retry で一つの追加 checkout と初回ユーザー文1件
 03	DEV-025	再起動時に準備中だったrunを終端化する	未対応	未評価	-
@@ -611,7 +611,7 @@ stage	id	title	audit_status	result	evidence_ref
 05	CHAT-016	プロジェクトのピンを解除	未対応	未評価	-
 05	CHAT-017	プロジェクト設定へ移動	未対応	未評価	-
 05	CHAT-018	サイドバーのスレッド検索	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / プロジェクト名で下書きを開き、以前の応答だけにある文で再検索して該当発言 ID を開く
-05	CHAT-019	スレッド検索の解除	部分	未評価	-
+05	CHAT-019	スレッド検索の解除	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / 検索を Clear ボタンと Escape キーで各1回解除し、送信済み行と未送信の下書きが両方戻ることを確認
 05	CHAT-020	メインサイドバーの開閉	未対応	未評価	-
 05	CHAT-021	閲覧履歴を戻る・進む	未対応	未評価	-
 05	CHAT-023	スレッドをピン留め	同等候補	未評価	-
@@ -1193,7 +1193,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-727	プロジェクト・スクリプト・SCRIPT_ICONS（操作候補）	未対応	未評価	-
 06	UI-728	プロジェクト・スクリプト・ProjectScriptEditorDialog	未対応	未評価	-
 06	UI-729	プロジェクト・スクリプト・ProjectScriptEditorForm	未対応	未評価	-
-07	CFG-003	Appearance を開く	未対応	未評価	-
+07	CFG-003	Appearance を開く	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / Pi Workspace メニューから Appearance Settings を開き、配色と会話幅の設定を操作
 07	CFG-005	/settings/beta → /settings/labs	構成差	未評価	-
 07	CFG-012	General を開く	未対応	未評価	-
 07	CFG-015	Labs を開く	未対応	未評価	-
@@ -1206,12 +1206,12 @@ stage	id	title	audit_status	result	evidence_ref
 07	CFG-031	Advanced を開く	未対応	未評価	-
 07	CFG-037	Project defaults and overrides	未対応	未評価	-
 07	CFG-040	Fallback model	未対応	未評価	-
-07	CFG-042	Color scheme	部分	未評価	-
+07	CFG-042	Color scheme	部分	未検証	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / 配布版で Light・Dark・System の選択、終了後の Dark の復元、System へのリセットを確認。AppKit 試験で System 継承を確認。OS 自体の明暗変更中の配布版追従は未検証
 07	CFG-043	Themes	未対応	未評価	-
 07	CFG-044	Contrast	未対応	未評価	-
 07	CFG-045	Glass opacity	未対応	未評価	-
 07	CFG-046	Diff colors	未対応	未評価	-
-07	CFG-047	Chat width	未対応	未評価	-
+07	CFG-047	Chat width	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / 同じ下書きで Comfortable・Wide・Full を適用し、入力欄を AX で 710・1126・1301 pt と採寸。AppearanceSettingsTests でも会話列と入力欄を両順序で確認
 07	CFG-048	HTML preview width	未対応	未評価	-
 07	CFG-050	Effort display	未対応	未評価	-
 07	CFG-051	Render math	未対応	未評価	-
@@ -2742,22 +2742,22 @@ stage	id	title	audit_status	result	evidence_ref
 11	UI-503	チャット・スレッド・WorkflowOpeningBlock（操作候補）	未対応	未評価	-
 11	UI-504	チャット・スレッド・WorkflowMemberRow	未対応	未評価	-
 11	UI-505	チャット・スレッド・WorkflowScript	未対応	未評価	-
-12	CFG-001	About を開く	部分	未評価	-
+12	CFG-001	About を開く	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / アプリメニューと Model Settings の About から同じネイティブ画面を開き、配布物の version と build を照合
 12	CFG-010	Diagnostics を開く	未対応	未評価	-
 12	CFG-016	Maintenance を開く	未対応	未評価	-
-12	CFG-017	Open source licenses を開く	未対応	未評価	-
+12	CFG-017	Open source licenses を開く	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / About の Open source licenses で同梱依存の一覧を開き、SwiftTerm を検索して個別の LICENSE 本文を表示
 12	CFG-024	/settings/storage → /settings/maintenance	構成差	未評価	-
 12	CFG-036	Artifacts and logs	未対応	未評価	-
 12	CFG-117	Keep awake while agents work	未対応	未評価	-
 12	CFG-128	Quit shortcut	未対応	未評価	-
-12	CFG-131	Version	部分	未評価	-
+12	CFG-131	Version	部分	要修正	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / 配布物の Info.plist と About の version・build が一致。設定検索から Version への移動と配布向け更新操作は未実装
 12	CFG-132	Update track	未対応	未評価	-
 12	CFG-133	t3 command	未対応	未評価	-
 12	CFG-136	Privacy policy	未対応	未評価	-
 12	CFG-137	OpenTelemetry export	未対応	未評価	-
 12	CFG-138	Diagnostics	未対応	未評価	-
 12	CFG-139	Agent feedback	未対応	未評価	-
-12	CFG-140	Open source licenses	未対応	未評価	-
+12	CFG-140	Open source licenses	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / アプリ情報内のリンクから同梱ライセンス一覧・個別本文を表示し、実際の梱包データの著作権表記と照合
 12	CFG-228	Shared background policy	未対応	未評価	-
 12	CFG-230	Active host power interval	未対応	未評価	-
 12	CFG-231	Idle host power interval	未対応	未評価	-
@@ -2794,12 +2794,12 @@ stage	id	title	audit_status	result	evidence_ref
 12	HOST-203	組織設定の禁止・ロックを確認	未対応	未評価	-
 12	HOST-215	プロバイダーへセッションのフィードバックを送る	未対応	未評価	-
 12	NAV-039	Maintenance	未対応	未評価	-
-12	NAV-041	About	部分	未評価	-
+12	NAV-041	About	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / アプリメニューと Model Settings の画面リンクから About を開き、バンドル名と版を照合
 12	NAV-043	Diagnostics	未対応	未評価	-
-12	NAV-044	Open source licenses	未対応	未評価	-
+12	NAV-044	Open source licenses	未対応	要修正	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / About の画面リンクからオフラインライセンスを開いて検索と詳細を確認。URL 自体による /settings/open-source-licenses の移動は未実装
 12	NAV-045	旧 Integrations	構成差	未評価	-
 12	NAV-046	旧 Storage	構成差	未評価	-
-12	NAV-048	ネイティブ About を開く	同等候補	未評価	-
+12	NAV-048	ネイティブ About を開く	同等候補	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / macOS アプリメニューの About Pi Workspace でバンドルの version と build が一致することを確認
 12	NAV-049	ネイティブメニューから更新を確認	未対応	未評価	-
 12	NAV-056	フォーカス中の開発者ツールを閉じる	対象外	未評価	-
 12	NAV-067	本体レンダラーを再読込	構成差	未評価	-
