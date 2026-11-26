@@ -61,6 +61,7 @@ function commandKey(code, ...modifiers) {
 }
 function menu(title) {
   assert(focused(), "The composer must own focus before Edit > " + title);
+  drive("open-menu", ["Edit"]);
   drive("menu-item", [title]);
 }
 let savedIDs = [];
@@ -99,6 +100,10 @@ try {
 
   execFileSync(writer, [board, "text"], { input: boundary });
   commandKey(9);
+  await until(() => {
+    const notice = drive("get", ["large-paste-attached", "--values"]);
+    return notice.includes("pasted-text.txt") && notice.includes("32") && notice.includes("⌘⇧V");
+  }, "the attached filename, size and inline shortcut");
   await expectDraft(seed, [textAttachment], "Cmd-V attached exactly 32,768 UTF-8 bytes and preserved the seed.");
 
   focus();
@@ -106,9 +111,11 @@ try {
   await expectDraft(boundary, [textAttachment], "Edit > Paste and Match Style restored the same bytes inline.");
   commandKey(6);
   await expectDraft(seed, [textAttachment], "Undo restored the seeded draft and kept its original attachment.");
+  drive("open-menu", ["Edit"]);
   await until(() => /enabled=true/.test(drive("get", ["redo:"])), "Edit > Redo");
   drive("press", ["redo:"]);
   await expectDraft(boundary, [textAttachment], "Edit > Redo reapplied the full text without duplicating the attachment.");
+  drive("open-menu", ["Edit"]);
   await until(() => /enabled=true/.test(drive("get", ["undo:"])), "Edit > Undo");
   drive("press", ["undo:"]);
   await expectDraft(seed, [textAttachment], "Edit > Undo restored the seed again.");
@@ -130,6 +137,17 @@ try {
   await expectDraft(alternative, [textAttachment, pngAttachment], "Cmd-Shift-V chose the PNG's text alternative.");
   commandKey(6);
   await expectDraft(seed, [textAttachment, pngAttachment], "Both files, the seed, and the other row survived.");
+  focus();
+  execFileSync(writer, [board, "text"], { input: "a".repeat(120_001) });
+  commandKey(9);
+  await until(() => drive("get", ["composer-error", "--values"]).includes("64 KB"), "oversized paste feedback");
+  assert.equal(drive("selection", ["composer"]).trim(), "0 " + seed.length);
+  await expectDraft(seed, [textAttachment, pngAttachment], "A 120,001-unit paste preserved the selected text and both attachment IDs.");
+  const small = boundary.slice(0, -1);
+  assert.equal(Buffer.byteLength(small), size - 1);
+  execFileSync(writer, [board, "text"], { input: small });
+  commandKey(9);
+  await expectDraft(small, [textAttachment, pngAttachment], "A smaller paste recovered inline at 32,767 UTF-8 bytes.");
 } catch (error) {
   try { writeFileSync(join(root, "failure-ui.txt"), drive("dump", ["--values"]), { mode: 0o600 }); } catch {}
   throw error;

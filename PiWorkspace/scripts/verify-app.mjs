@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -22,8 +22,13 @@ import { createWorkspaceControlsFixture, setWorktreeLocation, verifyWorkspaceCon
 import { verifyConversationControls } from "./verify-conversation-controls.mjs";
 import { verifyDraftProjects } from "./verify-draft-project-chooser.mjs";
 import { verifyWorktreeBases } from "./verify-worktree-bases.mjs";
+import { verifyThreadActions } from "./verify-thread-actions.mjs";
+import { verifySidebarPersistence } from "./verify-sidebar-persistence.mjs";
+import { verifyChatImages } from "./verify-chat-images.mjs";
 
-const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
+const packagedApp = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
+let app = packagedApp;
+let linkTestBundleDirectory;
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), /accessibility=true keyboard=true/);
@@ -37,8 +42,9 @@ symlinkSync(directory, join(reportDirectory, "fixture"), "dir");
 const project = join(directory, "Sample Project");
 const worktreeTest = process.argv.includes("--worktree");
 const basesOnly = process.argv.includes("--worktree-bases-only");
+const imagesOnly = process.argv.includes("--image-preview-only");
 const projectFlowsOnly = process.argv.includes("--project-flows-only") || basesOnly;
-const fixtureModel = process.argv.includes("--fixture-model") || projectFlowsOnly;
+const fixtureModel = process.argv.includes("--fixture-model") || projectFlowsOnly || imagesOnly;
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
 const customWorktrees = join(directory, "Custom Worktrees");
@@ -196,7 +202,8 @@ const server = createServer(async (request, response) => {
 
 function drive(operation, id, input) {
   return execFileSync(ax, [operation, String(appPID), ...id], {
-    encoding: "utf8", input, timeout: 5_000, stdio: ["pipe", "pipe", "pipe"],
+    encoding: "utf8", input, timeout: ["select-folder", "select-path"].includes(operation) ? 15_000 : 5_000,
+    stdio: ["pipe", "pipe", "pipe"],
   });
 }
 
@@ -232,7 +239,7 @@ const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
 function pressDismissal(id) {
   try { press(id); }
-  catch (error) { if (!/AX error -2520[04]/.test(String(error.stderr))) throw error; }
+  catch (error) { if (!/AX error -2520[045]/.test(String(error.stderr))) throw error; }
 }
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
@@ -244,10 +251,13 @@ const panelDriver = {
   value: id => drive("get", [id, "--values"]),
   selectedText: id => drive("selected-text", [id]),
   checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
+  checkImage: png => { execFileSync(ax, ["check-image", pasteboard], { input: Buffer.from(png, "base64"), stdio: "pipe" }); return true; },
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", [name]),
+  openThreadLink: link => drive("open-thread-link", [link]),
   showMenu: id => drive("show-menu", [id]),
+  click: (id, ...flags) => drive("click", [id, ...flags]),
   pick: (id, title) => drive("pick", [id, title]),
   segment: (group, label) => drive("segment", [group, label]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
@@ -330,10 +340,8 @@ async function setField(id, text, ready = () => true) {
 }
 
 async function typePrompt(prompt) {
-  await until(() => visible("composer"), "message composer");
-  const displayed = () => drive("get", ["composer", "--values"]).includes("value=" + JSON.stringify(prompt));
-  if (!displayed()) drive("type", ["composer", "--replace"], prompt);
-  await until(displayed, "prompt text in the composer");
+  await until(() => visible("composer").includes("enabled=true"), "editable message composer");
+  await setField("composer", prompt);
 }
 
 async function chooseLocalFolder(entry = "open-project") {
@@ -417,7 +425,10 @@ async function openProject() {
   await setField("project-path", join(directory, "missing folder"));
   await finishFolderPicker("OKButton", project);
   const returnedPath = drive("get", ["project-path", "--values"]);
-  assert(returnedPath.includes("value=" + JSON.stringify(project)), "Browse did not return the selected folder");
+  const valueStart = returnedPath.indexOf(" value=");
+  assert(valueStart >= 0, "Browse returned no folder path");
+  const selectedPath = JSON.parse(returnedPath.slice(valueStart + " value=".length));
+  assert.equal(realpathSync(selectedPath), realpathSync(project), "Browse did not return the selected folder");
   press("confirm-project");
   await until(() => !tree().includes('id="project-path"'), "confirmed OS folder");
   assert.equal(index().projects.length, 1);
@@ -619,7 +630,7 @@ async function verifyCheckout(checkout) {
   await until(() => visible("thread-terminal").includes("focused=true"), "terminal has keyboard focus");
   const proof = join(checkout, "tty-proof.txt");
   await until(() => existsSync(proof), "PTY proof file in the selected worktree");
-  assert.equal(realpathSync(readFileSync(proof, "utf8").trim()), checkout);
+  assert.equal(realpathSync(readFileSync(proof, "utf8").trim()), realpathSync(checkout));
   assert(!existsSync(join(project, "tty-proof.txt")));
   const shellProof = join(checkout, "retained-shell.txt");
   await until(() => existsSync(shellProof), "terminal shell PID");
@@ -1108,7 +1119,9 @@ try {
   const usageOnly = process.argv.includes("--usage-only");
   const controlsOnly = process.argv.includes("--workspace-controls-only");
   const conversationOnly = process.argv.includes("--conversation-controls-only");
-  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly;
+  const threadActionsOnly = process.argv.includes("--thread-actions-only");
+  const sidebarOnly = process.argv.includes("--sidebar-and-checks-only");
+  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly || threadActionsOnly || sidebarOnly || imagesOnly;
   if (focused) {
     record("Verification folder: " + reportDirectory);
     record("Isolated fixture: " + directory);
@@ -1134,6 +1147,26 @@ try {
     });
     await quit();
     record("The new Git branch started at the selected alternate commit. Choosing a branch already in use moved the same draft to its linked checkout and preserved the original checkout and index.");
+  }
+  if (imagesOnly) {
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    releaseFirst();
+    await verifyChatImages(panelDriver, { root: join(directory, "chat-images"), key: secret, credential: updateKey,
+      removeFixtureCredential, launch, quit, targets, record, endpoint: "http://127.0.0.1:" + server.address().port + "/v1" });
+    assert.equal(inspectFiles().length, 1);
+  }
+  if (sidebarOnly) {
+    await verifySidebarPersistence(panelDriver, { root: join(directory, "grouped-sidebar"), git, launch, quit, record,
+      stateFile: forgeState, logFile: forgeLog });
+  }
+  if (threadActionsOnly) {
+    linkTestBundleDirectory = mkdtempSync("/private/tmp/pi-link-test-app-");
+    app = join(linkTestBundleDirectory, "Pi Workspace.app");
+    execFileSync("/bin/cp", ["-cR", packagedApp, app]);
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+    await verifyThreadActions(panelDriver, { root: join(directory, "thread-actions"), app, git, launch, quit, record });
+    assert.equal(inspectFiles().length, 2);
   }
   if (conversationOnly) {
     await verifyConversationControls(panelDriver, {
@@ -1166,8 +1199,10 @@ try {
       try {
         process.kill(appPID, "SIGTERM");
         await waitForExit(appPID);
+        appPID = undefined;
       } catch (terminationError) {
-        if (terminationError.code !== "ESRCH") message += " (app exit not confirmed)";
+        if (terminationError.code === "ESRCH") appPID = undefined;
+        else message += " (app exit not confirmed)";
       }
     }
   }
@@ -1183,6 +1218,7 @@ try {
   server.closeAllConnections();
   server.close();
   execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
+  if (linkTestBundleDirectory && !appPID) rmSync(linkTestBundleDirectory, { recursive: true, force: true });
   const preferenceChecks = [[usageWorkspace, "browser", "usagePeriod"]];
   if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
   for (const [root, feature, key] of preferenceChecks) {

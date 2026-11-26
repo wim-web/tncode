@@ -1,0 +1,211 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { seedPaletteMessageHistory } from "./fixtures/palette-message-history.mjs";
+
+export async function verifyThreadActions(driver, { root, app, git, launch, quit, record }) {
+  const { until, visible, value, tree, press, dismiss, setField, keyFor, focus, showMenu, checkCopy } = driver;
+  const titleField = "sheet-field=Thread title";
+  const project = join(root, "Project"), checkout = join(root, "Linked checkout");
+  mkdirSync(project, { recursive: true });
+  const file = join(project, "shortcut.txt");
+  writeFileSync(file, "old file\n");
+  git(project, "init", "--template=", "-b", "main");
+  git(project, "config", "core.hooksPath", "/dev/null");
+  git(project, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Start");
+  git(project, "worktree", "add", "-b", "topic/keep-edits", checkout, "HEAD");
+  const uuid = () => randomUUID().toUpperCase();
+  const projectID = uuid(), draftID = uuid(), mainID = uuid(), linkedID = uuid();
+  const note = { id: uuid(), name: "notes.txt", payload: { data: Buffer.from("日本語のメモ\n").toString("base64"), mimeType: "text/plain" } };
+  const seed = "  First draft 🌱  ", prefix = "Waiting on review", joined = prefix + "\n\n" + seed.trim();
+  const indexPath = join(root, "workspace.json");
+  writeFileSync(indexPath, JSON.stringify({ selectedProject: projectID, welcomeCompleted: true,
+    projects: [{ id: projectID, title: "Thread actions", path: project, allowEdits: false, selectedConversation: draftID, conversations: [
+      { id: draftID, title: "Unsent draft", isDraft: true, archived: false, composerText: seed, composerAttachments: [note] },
+      { id: mainID, title: "Main conversation", isDraft: false, archived: false },
+      { id: linkedID, title: "Linked conversation", isDraft: false, archived: false, location: { worktree: { path: checkout, base: "main" } } },
+    ] }], model: { provider: "local", model: "thread-action-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 },
+  }), { mode: 0o600 });
+  const seedHistory = (threadID, cwd) => seedPaletteMessageHistory({
+    sidecar: join(app, "Contents/Resources/Sidecar"), workspace: root, projectID, threadID, cwd, keyword: "thread action fixture",
+  });
+  const mainHistory = await seedHistory(mainID, project);
+  const linkedHistory = await seedHistory(linkedID, checkout);
+  const mainHistoryBytes = readFileSync(mainHistory.historyPath);
+  const historyBytes = readFileSync(linkedHistory.historyPath);
+  const index = () => JSON.parse(readFileSync(indexPath, "utf8"));
+  const selected = () => index().projects[0].selectedConversation;
+  const thread = id => index().projects[0].conversations.find(t => t.id === id);
+  const entries = () => index().stashedPrompts ?? [];
+  const composer = text => value("composer").includes("value=" + JSON.stringify(text));
+  const has = id => tree().includes('id="' + id + '"');
+  const row = id => "thread-row-" + id;
+  async function context(id, action) {
+    await until(() => { showMenu(row(id)); return true; }, "right-click the target thread");
+    await until(() => visible(action), "thread context menu " + action);
+  }
+  async function copy(id, field, expected) {
+    await context(id, "thread-copy");
+    press("thread-copy");
+    await until(() => visible("thread-copy-" + field), "copy submenu " + field);
+    dismiss("thread-copy-" + field);
+    await until(() => checkCopy(expected), "copied value of " + field);
+    assert.equal(selected(), draftID);
+  }
+  async function openRename() {
+    await context(linkedID, "rename-thread");
+    for (let attempt = 0; attempt < 2; attempt++) {
+      dismiss("rename-thread");
+      try {
+        await until(() => value(titleField).includes("Linked conversation") && visible("cancel-rename"), "rename the targeted thread", 3000);
+        return;
+      } catch (error) {
+        if (attempt || !has("rename-thread")) throw error;
+      }
+    }
+  }
+  async function stash(count) {
+    focus("composer");
+    keyFor("composer", 1, "cmd");
+    return await until(() => entries().length === count && composer("") && entries()[0], "persisted stash and emptied composer");
+  }
+  async function toggleArchive() {
+    press("thread-filters");
+    await until(() => visible("show-thread-archive"), "archive filter");
+    press("show-thread-archive");
+    dismiss("close-thread-filters");
+  }
+
+  await launch("model-settings", root);
+  await until(() => composer(seed) && visible("remove-attachment-" + note.id), "saved draft with its note");
+  press("toggle-files");
+  await until(() => visible("files-row-shortcut.txt"), "workspace file beside the chat draft");
+  press("files-row-shortcut.txt");
+  await setField("files-editor", "Saved from Files.");
+  keyFor("files-editor", 1, "cmd");
+  await until(() => readFileSync(file, "utf8") === "Saved from Files." && composer(seed) && entries().length === 0,
+              "Command-S saved the focused file and preserved the other draft");
+  dismiss("files-close");
+  await until(() => !has("files-editor") && composer(seed), "return from Files to the same draft");
+  record("Command-S in the Files editor wrote shortcut.txt and left the chat draft, attachment and stash untouched.");
+  const first = await stash(1);
+  assert.equal(first.prompt, seed.trim());
+  assert.deepEqual(first.attachments, [note]);
+  await setField("composer", "Store this separately");
+  const second = await stash(2);
+  assert.deepEqual(entries().map(e => e.id), [second.id, first.id]);
+  await setField("composer", prefix);
+  await quit();
+  await launch("model-settings", root);
+  await until(() => selected() === draftID && composer(prefix), "draft and stash after relaunch");
+  press("open-composer-stash");
+  await until(() => visible("restore-stashed-prompt-" + first.id), "original stash entry");
+  dismiss("close-composer-stash");
+  await until(() => !has("composer-stash"), "closed stash without consuming either entry");
+  assert.equal(entries().length, 2);
+  press("open-composer-stash");
+  dismiss("restore-stashed-prompt-" + first.id);
+  await until(() => composer(joined) && visible("remove-attachment-" + note.id) && entries().length === 1, "restore the chosen text and file");
+  assert.deepEqual(thread(draftID).composerAttachments, [note]);
+  press("open-composer-stash");
+  const backup = join(root, "workspace.previous.json");
+  renameSync(backup, backup + ".saved");
+  try {
+    mkdirSync(backup);
+    writeFileSync(join(backup, "fixture-blocker"), "", { flag: "wx" });
+    dismiss("delete-stashed-prompt-" + second.id);
+    await until(() => visible("composer-error") && visible("delete-stashed-prompt-" + second.id), "failed deletion kept the entry and reported the save failure");
+    assert.deepEqual(entries().map(entry => entry.id), [second.id]);
+  } finally {
+    unlinkSync(join(backup, "fixture-blocker"));
+    rmdirSync(backup);
+    renameSync(backup + ".saved", backup);
+  }
+  dismiss("delete-stashed-prompt-" + second.id);
+  await until(() => !entries().length && !has("open-composer-stash"), "delete the remaining entry");
+  await quit();
+  await launch("model-settings", root);
+  await until(() => composer(joined) && visible("remove-attachment-" + note.id), "restored draft survives quit");
+  assert.deepEqual(entries(), []);
+  const only = await stash(1);
+  focus("composer");
+  keyFor("composer", 1, "cmd");
+  await until(() => composer(joined) && !entries().length && visible("remove-attachment-" + note.id), "empty composer restored the sole entry via Command-S");
+  assert.deepEqual(only.attachments, [note]);
+  record("Command-S stashed two prompts by ID. After relaunch Restore appended the selected trimmed text after two newlines and restored the exact note bytes. A blocked save preserved the entry, retry deleted it across relaunch, and Command-S in an empty composer restored the sole entry.");
+
+  await copy(mainID, "path", project);
+  await copy(mainID, "branch", "main");
+  await copy(linkedID, "path", checkout);
+  await copy(linkedID, "branch", "topic/keep-edits");
+  await copy(linkedID, "id", linkedID);
+  await context(linkedID, "thread-copy");
+  press("thread-copy");
+  await until(() => visible("thread-copy-reference"), "Copy Thread in the linked row menu");
+  dismiss("thread-copy-reference");
+  focus("composer");
+  driver.selection("composer", joined.length, 0);
+  keyFor("composer", 9, "cmd");
+  const link = await until(() => {
+    const text = thread(draftID).composerText ?? "";
+    if (!text.startsWith(joined)) return false;
+    const actual = text.slice(joined.length);
+    return /^pi-workspace:\/\/thread\/v1\/[0-9a-f]{64}\//.test(actual) && actual.endsWith("/" + projectID + "/" + linkedID) && actual;
+  }, "paste the actual copied URL at the draft caret");
+  assert(checkCopy(link));
+  keyFor("composer", 6, "cmd");
+  await until(() => composer(joined), "undo the temporary link paste");
+  driver.menuItem("Open Thread Link from Clipboard");
+  await until(() => selected() === linkedID && visible("transcript-message-" + linkedHistory.latestID), "open the copied thread link from Edit");
+  press(row(draftID));
+  await until(() => composer(joined), "return to the original draft after opening a link");
+  driver.openThreadLink(link.slice(0, -linkedID.length) + uuid());
+  await until(() => visible("thread-link-error") && selected() === draftID && composer(joined), "unknown thread link kept the draft");
+  driver.openThreadLink(link);
+  await until(() => selected() === linkedID && visible("transcript-message-" + linkedHistory.latestID) && !has("thread-link-error"), "Launch Services reopened the matching Pi thread");
+  press(row(draftID));
+  await until(() => composer(joined) && visible("remove-attachment-" + note.id), "original draft intact after both URL opens");
+  record("The private board pasted the linked thread URL. Edit and macOS Launch Services both reopened its original Pi message. An unknown thread ID showed an error and preserved the draft.");
+  await openRename();
+  await setField(titleField, "Cancel this rename");
+  dismiss("cancel-rename");
+  await until(() => !has("cancel-rename") && visible(row(linkedID)).includes("Linked conversation"), "cancel left the title unchanged");
+  await openRename();
+  await setField(titleField, "Renamed linked branch");
+  dismiss("save-rename");
+  await until(() => thread(linkedID).title === "Renamed linked branch" && visible(row(linkedID)).includes("Renamed linked branch"), "saved title on the original row");
+  assert.equal(selected(), draftID);
+  press(row(linkedID));
+  await until(() => visible("transcript-message-" + linkedHistory.latestID) && visible("conversation-title").includes("Renamed linked branch"), "renamed thread, same Pi history");
+  const followUp = "Do another review on this checkout.";
+  await setField("composer", followUp);
+  press("conversation-title");
+  await until(() => visible("archive-thread"), "archive open conversation");
+  dismiss("archive-thread");
+  await until(() => thread(linkedID).archived && selected() !== linkedID && !has(row(linkedID)), "archive removed the active row and opened a draft");
+  await toggleArchive();
+  await until(() => visible(row(linkedID)), "archived thread row");
+  press(row(linkedID));
+  await until(() => visible("restore-open-thread") && visible("transcript-message-" + linkedHistory.latestID), "archive retained its history");
+  dismiss("restore-open-thread");
+  await until(() => visible(row(linkedID)) && composer(followUp) && !thread(linkedID).archived, "restore returned to the existing draft text");
+  await quit();
+  await launch("model-settings", root);
+  await until(() => selected() === linkedID && composer(followUp) && visible("transcript-message-" + linkedHistory.latestID), "restored conversation after relaunch");
+  assert.equal(thread(linkedID).location.worktree.path, checkout);
+  const reopened = readFileSync(linkedHistory.historyPath);
+  assert(reopened.subarray(0, historyBytes.length).equals(historyBytes), "The original Pi records changed.");
+  const appended = reopened.subarray(historyBytes.length).toString().trim();
+  if (appended) {
+    const change = JSON.parse(appended);
+    assert.equal(change.type, "thinking_level_change");
+    assert.equal(change.thinkingLevel, "off");
+  }
+  assert.deepEqual(thread(draftID).composerAttachments, [note]);
+  assert.equal(thread(draftID).composerText, joined);
+  assert.equal(thread(mainID).title, "Main conversation");
+  assert(readFileSync(mainHistory.historyPath).equals(mainHistoryBytes), "The other thread's history changed.");
+  await quit();
+  record("Right-click Copy returned each row's own Git path and branch plus the linked thread ID while the draft stayed selected. Rename, archive, restore and relaunch preserved the original Pi record bytes, unsent follow-up, checkout and the other draft. Pi's first-open thinking-level record was the only permitted append.");
+}

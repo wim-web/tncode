@@ -9,8 +9,11 @@ Usage:
   ax trust
   ax workspace-path ABSOLUTE_PATH
   ax check-copy TEST_PASTEBOARD < expected.txt
+  ax check-image TEST_PASTEBOARD < expected.png
   ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
+  ax open-thread-link PID LOCAL_THREAD_URL
+  ax open-menu PID MENU_TITLE
   ax menu-command PID CHARACTER
   ax menu-item PID TITLE [--no-activate]
   ax pick PID POPUP_IDENTIFIER OPTION_TITLE
@@ -24,6 +27,7 @@ Usage:
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax drop-fixture PID WORKSPACE WINDOW_IDENTIFIER TARGET_IDENTIFIER FIXTURE_PATH
   ax press PID IDENTIFIER
+  ax click PID IDENTIFIER [shift]
   ax show-menu PID IDENTIFIER
   ax segment PID GROUP_IDENTIFIER LABEL
   ax close-window PID WINDOW_IDENTIFIER
@@ -39,6 +43,7 @@ dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
 AXDescription, and AXPlaceholderValue. set/type read UTF-8 stdin verbatim.
 type and key target PID. drag, drop-fixture and show-menu require an unobstructed frontmost window.
+Use sheet-field=PLACEHOLDER to select the single matching text field in an open sheet.
 Common keycodes: Return 36, Escape 53,
 Tab 48, Space 49, Left 123, Right 124, Down 125, Up 126, G 5.
 """
@@ -75,6 +80,8 @@ private struct DisplayOptions {
 
 private enum Operation {
     case activate
+    case openThreadLink(String)
+    case openMenu(String)
     case menuCommand(String)
     case menuItem(String)
     case pick(String, String)
@@ -88,7 +95,7 @@ private enum Operation {
     case drag(String, CGPoint, CGSize)
     case dropFixture(workspace: String, window: String, target: String, path: String)
     case press(String)
-    case showMenu(String)
+    case click(String, CGMouseButton, CGEventFlags)
     case segment(String, String)
     case closeWindow(String)
     case selectFolder(String)
@@ -103,6 +110,10 @@ private enum Operation {
         switch (name, identifier) {
         case ("activate", nil):
             self = .activate
+        case ("open-thread-link", let url?) where arguments.count == 1:
+            self = .openThreadLink(url)
+        case ("open-menu", let title?) where arguments.count == 1:
+            self = .openMenu(title)
         case ("menu-command", let key?) where arguments.count == 1 && key.count == 1:
             self = .menuCommand(key)
         case ("menu-item", let title?) where arguments.count == 1:
@@ -144,7 +155,9 @@ private enum Operation {
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
         case ("show-menu", let id?) where arguments.count == 1:
-            self = .showMenu(id)
+            self = .click(id, .right, [])
+        case ("click", let id?) where arguments.count == 1 || arguments.dropFirst().elementsEqual(["shift"]):
+            self = .click(id, .left, arguments.count == 2 ? .maskShift : [])
         case ("segment", let id?) where arguments.count == 2:
             self = .segment(id, arguments[arguments.startIndex + 1])
         case ("close-window", let id?) where arguments.count == 1:
@@ -270,8 +283,23 @@ private struct Tree: Sequence, IteratorProtocol {
 }
 
 private func element(withID identifier: String, in app: AXUIElement) throws -> AXUIElement {
+    if identifier.hasPrefix("sheet-field=") {
+        let label = String(identifier.dropFirst("sheet-field=".count))
+        let sheets = Tree(root: app, maxDepth: 5, skipMenuBar: true).map(\.element).filter {
+            attribute(kAXRoleAttribute, on: $0) as? String == kAXSheetRole
+        }
+        let fields = sheets.flatMap { sheet in
+            Tree(root: sheet, maxDepth: 6).map(\.element).filter {
+                attribute(kAXRoleAttribute, on: $0) as? String == kAXTextFieldRole &&
+                    attribute(kAXPlaceholderValueAttribute, on: $0) as? String == label
+            }
+        }
+        guard fields.count == 1, let field = fields.first else { throw Failure("Expected one matching text field in the sheet.") }
+        return field
+    }
+    let panelControl = ["open-panel", "save-panel", "OKButton", "CancelButton", "where popup"].contains(identifier)
     var match: AXUIElement?
-    for node in Tree(root: app) {
+    for node in Tree(root: app, maxDepth: panelControl ? 7 : nil, skipMenuBar: panelControl) {
         guard attribute(kAXIdentifierAttribute, on: node.element) as? String == identifier else {
             continue
         }
@@ -345,9 +373,14 @@ private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to 
     var pressed = false
     defer {
         if pressed, let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left) {
+            up.setIntegerValueField(.mouseEventClickState, value: 1)
             if targetOwns(last) { up.post(tap: .cghidEventTap) } else { up.postToPid(pid) }
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.3
+            repeat {
+                Thread.sleep(forTimeInterval: 0.025)
+            } while CGEventSource.buttonState(.combinedSessionState, button: .left) && ProcessInfo.processInfo.systemUptime < deadline
         }
-        CGWarpMouseCursorPosition(savedPosition)
+        if CGEvent(source: nil)?.location == last { CGWarpMouseCursorPosition(savedPosition) }
     }
     for (index, current) in points.enumerated() {
         guard targetOwns(current) else { throw Failure("The target window lost the drag.") }
@@ -684,6 +717,13 @@ private func run(_ arguments: [String]) throws {
         print(URL(fileURLWithPath: arguments[1], isDirectory: true).standardizedFileURL.path)
         return
     }
+    if arguments.count == 2, arguments[0] == "check-image" {
+        guard arguments[1].hasPrefix("dev.piworkspace.verification.") else { throw Failure("Expected a verification pasteboard.") }
+        let expected = FileHandle.standardInput.readDataToEndOfFile()
+        let board = NSPasteboard(name: .init(arguments[1]))
+        guard !expected.isEmpty, board.data(forType: .png) == expected else { throw Failure("The copied PNG differs from the fixture.") }
+        return
+    }
     if arguments.count == 2, ["check-copy", "release-test-pasteboard"].contains(arguments[0]) {
         guard arguments[1].hasPrefix("dev.piworkspace.verification.") else { throw Failure("A verification pasteboard is required.") }
         let board = NSPasteboard(name: .init(arguments[1]))
@@ -721,6 +761,42 @@ private func run(_ arguments: [String]) throws {
     switch operation {
     case .activate:
         try activateForInput(app, pid: pid)
+    case .openThreadLink(let link):
+        let args = try processArguments(pid)
+        guard let running = NSRunningApplication(processIdentifier: pid), running.bundleIdentifier == "dev.piworkspace.app",
+              let bundle = running.bundleURL, bundle.deletingLastPathComponent().lastPathComponent.hasPrefix("pi-link-test-app-"),
+              let option = args.firstIndex(of: "--workspace"), args.indices.contains(option + 1),
+              URL(fileURLWithPath: args[option + 1]).deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-verification-"),
+              let url = URL(string: link), url.scheme == "pi-workspace", url.host == "thread" else {
+            throw Failure("Opening a thread link requires the dedicated app copy and its verification workspace.")
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.allowsRunningApplicationSubstitution = false
+        config.addsToRecentItems = false
+        let completed = DispatchGroup()
+        completed.enter()
+        var receiver: pid_t?
+        NSWorkspace.shared.open([url], withApplicationAt: bundle, configuration: config) { app, _ in
+            receiver = app?.processIdentifier
+            completed.leave()
+        }
+        let deadline = ProcessInfo.processInfo.systemUptime + 4
+        while completed.wait(timeout: .now()) == .timedOut {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure("Launch Services did not return.") }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025))
+        }
+        guard receiver == pid else { throw Failure("Launch Services did not reuse the verification process.") }
+    case .openMenu(let title):
+        try activateForInput(app, pid: pid)
+        guard let raw = attribute(kAXMenuBarAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() else {
+            throw Failure("The designated application has no menu bar.")
+        }
+        let bar = unsafeBitCast(raw, to: AXUIElement.self)
+        let items = (attribute(kAXChildrenAttribute, on: bar) as? [AXUIElement] ?? []).filter {
+            attribute(kAXTitleAttribute, on: $0) as? String == title
+        }
+        guard items.count == 1, let menu = items.first else { throw Failure("Expected one menu with the specified title.") }
+        try requireSuccess(AXUIElementPerformAction(menu, kAXPressAction as CFString), "Open menu")
     case .menuCommand(let key):
         try activateForInput(app, pid: pid)
         let matches = Tree(root: app).map(\.element).filter { item in
@@ -887,10 +963,10 @@ private func run(_ arguments: [String]) throws {
         }
         guard let target else { throw Failure("No element has that identifier.") }
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")
-    case .showMenu(let id):
+    case .click(let id, let button, let flags):
         try requireKeyboardAccess()
         guard ![CGMouseButton.left, .right, .center].contains(where: { CGEventSource.buttonState(.combinedSessionState, button: $0) }) else {
-            throw Failure("Opening a context menu requires an idle pointer.")
+            throw Failure("Clicking a control requires an idle pointer.")
         }
         try activateForInput(app, pid: pid)
         let target = try element(withID: id, in: app)
@@ -898,10 +974,12 @@ private func run(_ arguments: [String]) throws {
         let point = CGPoint(x: rect.midX, y: rect.midY)
         guard DragWindow.at(point)?.pid == pid, hitTest(target, at: point),
               let previous = CGEvent(source: nil)?.location,
-              let down = CGEvent(mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right),
-              let up = CGEvent(mouseEventSource: nil, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right) else {
-            throw Failure("The context menu target is not exposed at its own screen position.")
+              let down = CGEvent(mouseEventSource: nil, mouseType: button == .right ? .rightMouseDown : .leftMouseDown, mouseCursorPosition: point, mouseButton: button),
+              let up = CGEvent(mouseEventSource: nil, mouseType: button == .right ? .rightMouseUp : .leftMouseUp, mouseCursorPosition: point, mouseButton: button) else {
+            throw Failure("The target is not exposed at its own screen position.")
         }
+        down.flags = flags
+        up.flags = flags
         down.setIntegerValueField(.mouseEventClickState, value: 1)
         up.setIntegerValueField(.mouseEventClickState, value: 1)
         down.post(tap: .cghidEventTap)

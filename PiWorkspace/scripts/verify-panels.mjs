@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 
 export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
@@ -176,20 +176,38 @@ async function verifyPageControls({ press, visible, tree, until, setField, webFr
   await until(() => tree().includes("Server recovered") && !tree().includes('id="browser-error-details"'), "repaired server");
 }
 
+export async function verifyCheckLog({ press, dismiss, visible, tree, until }, stateFile, logFile, checkout) {
+  writeFileSync(stateFile, "check-logs-denied\n");
+  press("pr-refresh");
+  await until(() => visible("pr-check-log-1"), "failed Actions job log");
+  press("pr-check-log-1");
+  await until(() => tree().includes("denied access") && visible("pr-check-log-retry"), "job log permission error");
+  writeFileSync(stateFile, "check-logs\n");
+  press("pr-check-log-retry");
+  await until(() => visible("pr-check-log-text") && tree().includes("ONLY-TESTS-61002"), "the selected job's line after retry");
+  assert(!tree().includes("ONLY-LINT"), "A different job supplied the log.");
+  const log = readFileSync(logFile, "utf8").split("\n").filter(line => line.includes("actions/jobs/61002/logs"));
+  assert(log.length >= 2 && log.every(line => line.startsWith(realpathSync(checkout) + "|")));
+  dismiss("pr-check-log-back");
+  await until(() => visible("pr-check-log-1") && !tree().includes('id="pr-check-log-text"'), "back to the PR checks");
+}
+
 export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
   const { press, visible, tree, until, setField, pick } = driver;
+  const checkoutPrefix = realpathSync(checkout) + "|";
   press("pull-requests");
   await until(() => visible("pr-row-42"), "pull requests in fixture checkout");
   press("pr-row-42");
   await until(() => tree().includes("fixture-branch") && tree().includes('value="Failure"'), "initial pull request head and failing check");
+  await verifyCheckLog(driver, stateFile, logFile, checkout);
   writeFileSync(stateFile, "updated\n");
   press("pr-refresh");
   await until(() => tree().includes("new-head") && tree().includes("Update checkout (updated)") && tree().includes('value="Success"'),
               "refreshed pull request head and successful check");
   const calls = readFileSync(logFile, "utf8").trim().split("\n");
-  assert(calls.every(call => call.startsWith(checkout + "|")));
-  assert(calls.filter(call => call.startsWith(checkout + "|api graphql ")).length >= 2);
-  assert(calls.filter(call => call.startsWith(checkout + "|pr view ")).length >= 2);
+  assert(calls.every(call => call.startsWith(checkoutPrefix)));
+  assert(calls.filter(call => call.startsWith(checkoutPrefix + "api graphql ")).length >= 2);
+  assert(calls.filter(call => call.startsWith(checkoutPrefix + "pr view ")).length >= 2);
   assert(visible("pr-open"));
   assert(visible("pr-check-open-0"));
   writeFileSync(stateFile, "initial\n");
@@ -237,7 +255,7 @@ export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
   press("issue-list-retry");
   await until(() => visible("issue-row-71"), "issue list recovered");
   const allCalls = readFileSync(logFile, "utf8").trim().split("\n");
-  assert(allCalls.every(call => call.startsWith(checkout + "|")));
+  assert(allCalls.every(call => call.startsWith(checkoutPrefix)));
   assert(allCalls.some(call => call.includes("|issue view 71 ")));
   assert(allCalls.some(call => call.includes("after=issue-search:2==")));
   assert(allCalls.some(call => call.includes("after=pull-requests:2==")));

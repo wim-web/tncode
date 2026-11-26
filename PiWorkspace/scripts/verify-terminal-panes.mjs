@@ -63,6 +63,12 @@ export async function verifyTerminalPanes(driver, originalPID) {
   const handle = "terminal-drawer-resize-handle";
   const drawerHeight = () => Number(value(handle).match(/value="?([\d.]+)/)?.[1]);
   await until(() => drawerHeight() === 280, "reference default for the terminal drawer");
+  let layout, lastMove;
+  await until(() => {
+    const measured = [frame("workspace"), frame(handle), frame("thread-terminal")].flat().join();
+    if (layout !== measured) { layout = measured; lastMove = Date.now(); }
+    return Date.now() - lastMove >= 250;
+  }, "window, divider and terminal have finished resizing");
   const limits = value(handle);
   assert(Number(limits.match(/max=([\d.]+)/)?.[1]) >= 360, "The test window needs room for the 360-point drawer: " + limits);
   const initialPane = frame("thread-terminal")[3];

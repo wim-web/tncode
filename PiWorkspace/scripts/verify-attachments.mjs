@@ -75,6 +75,7 @@ try {
       CLANG_MODULE_CACHE_PATH: join(workspace, ".build/local-clang-cache"),
       SWIFTPM_MODULECACHE_OVERRIDE: join(workspace, ".build/module-cache"),
       PI_WORKSPACE_QUESTION_NODE: app ? join(app, "Helpers/node") : process.execPath,
+      PI_PALETTE_NODE: app ? join(app, "Helpers/node") : process.execPath,
       PI_ATTACHMENT_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/v1`,
       PI_ATTACHMENT_TEST_NODE: app ? join(app, "Helpers/node") : process.execPath,
       PI_ATTACHMENT_TEST_WORKER: join(sidecar, "worker.mjs"),
