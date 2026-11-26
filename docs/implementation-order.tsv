@@ -1,5 +1,5 @@
 stage	id	title	audit_status	result	evidence_ref
-01	CFG-038	Project overview	部分	未評価	-
+01	CFG-038	Project overview	部分	未検証	007ec89 ProjectOverviewSettingsView, verify-project-settings.mjs, SidebarPersistenceTests / 操作対象UUIDの名前・保存・ピン・登録パス・Git作業コピー・モデル設定を接続。同名2プロジェクトで登録パス、別対象への上書き、リンクした作業先の入力維持を署名済みテストバンドルで確認。独自アイコン、環境別設定とcheckoutのグループ管理、配布アプリでの全入口照合が残る。
 01	CFG-122	Add project starts in	未対応	合格	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs, ProjectSourcesTests / General で開始フォルダーを保存。配布版の Local folder 欄はそのパスを表示し、Browse はそこにだけある子フォルダーを選択できた。Git URL にも同じ親を使い、Reset で既定へ復帰。
 01	CFG-135	Welcome page	未対応	合格	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs / Settings 検索で Welcome page を選び、About の実ボタンから案内を表示。閉じると同じスレッドと下書き本文が戻り、入力欄にフォーカスが戻った。
 01	CHAT-002	下書きを開く	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 別プロジェクトの未送信下書きに戻り、コンポーザーに同じ入力を確認
@@ -7,9 +7,9 @@ stage	id	title	audit_status	result	evidence_ref
 01	CHAT-004	下書きのパスをコピー	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Copy → Path を通常フォルダー・作成予定・既存 worktree の下書きで実行し、macOS の検証専用ペーストボード上の各実パスと照合
 01	CHAT-005	下書きのブランチ名をコピー	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 作成予定の選択 base と既存 checkout の現在のブランチを Copy → Branch で取得し、選択値・git branch --show-current と照合
 01	CHAT-013	プロジェクトフォルダから新規作成	同等候補	未検証	ca81b7b CHAT-E0021–22、Sidebar.tsx:1301、SidebarProjectFolderHeader.tsx:122。verification-vyt6rj/logs/report.txt:47 の verify-app.mjs:538–545 は全体の新規ボタン。14975f6 WorkspaceView.swift:689,764 の対象フォルダ行の新規ボタンと右クリック New Thread を別々に開き、別プロジェクトから作成先 ID を確認する試験が残る。
-01	CHAT-022	ホームへ移動	未対応	未評価	-
+01	CHAT-022	ホームへ移動	未対応	未検証	65c4c29 SidebarPersistenceTests, verify-sidebar-persistence.mjs / サイドバーのアプリ名を押すと選択解除してホームへ戻り、スレッド行を押すと同じ下書きIDと本文に復帰することを画面外の実ビューで確認。元の閲覧履歴の Back と配布版確認が残る。
 01	CHAT-053	プロジェクトを選んで下書きを作成	同等候補	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数プロジェクトから New Thread で一つを選び、選んだプロジェクトと新しい下書き UUID およびフォーカスを確認
-01	CHAT-054	現在のプロジェクトで下書きを作成	同等候補	未評価	-
+01	CHAT-054	現在のプロジェクトで下書きを作成	同等候補	未検証	ca81b7b ChatHeader.tsx:272・chatRouteCommands.ts:114・CommandPalette.tsx:1361。9d689f5 NewThreadShortcutTests の画面外 AppKit で、見出し・現在プロジェクトのパレット行・⌘⇧N からローカル下書きを開き、既存の UUID・本文・添付・作業先を照合。署名済みアプリからの各入口は verify-new-thread-routes.mjs で照合する。
 01	CHAT-056	プロジェクトなしで下書きを作成	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの scratch 下書き・初回送信を確認。接続先が scratch に対応しない場合の画面は未検証
 01	CHAT-057	scratch スレッドをプロジェクトへ変換	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 専用フォルダーから送信後に通常プロジェクトへ変換。同じフォルダー、スレッド UUID、履歴ファイルの内容を確認
 01	CHAT-058	既存フォルダをプロジェクトに追加	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Local folder で既存パスを選び、下書きの入力フォーカスとサイドバーのプロジェクト・会話を確認
@@ -23,40 +23,40 @@ stage	id	title	audit_status	result	evidence_ref
 01	DEV-001	フォルダーをプロジェクトに登録する	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 取消・無効パスでは0件。通常パス、Browse、シンボリックリンクは同一登録
 01	DEV-002	ローカルフォルダーをドロップして登録する	未対応	合格	e9f968e PiWorkspace/scripts/verify-file-drops.mjs / macOS の NSDraggingSession から未登録フォルダーをサイドバーへ落とし、専用プロジェクトの実体パス、選択状態と新しいスレッドを確認。元の2件の添付下書きも保持。
 01	DEV-262	名前からGitプロジェクトを新規作成する	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 占有済みの名前を拒否。空いている名前で親フォルダー内に Git リポジトリと下書きを作成
-01	NAV-002	チャットの共通レイアウト	同等候補	未評価	-
+01	NAV-002	チャットの共通レイアウト	同等候補	未検証	ca81b7b _chat.tsx:13–46 と chat/threadFindStore.ts:162–173 がモーダル中に保持するのは会話内 Find。未認証は /pair。56975be PiWorkspaceApp.swift:91–102 と WorkspaceModel.swift:489–512。probe.log:2 で Model Settings と Usage の要求を開閉し、選択スレッド・Find 語・同じ検索リクエスト ID の保持を確認。pWUwR7 verify-conversation-controls.mjs:89–112 は一致間移動・復旧、1jtGNd:39 は Usage 開閉を個別に確認。配布版で Find の2件目から両モーダルを開閉して同じ選択範囲と件数へ戻る分岐、未認証/hosted は未検証。
 01	NAV-003	ホームから最近のプロジェクトの下書きへ移動	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 複数の登録先で、再起動直後に最近活動したプロジェクトの新規下書き、その後に元の履歴を選択
 01	NAV-004	ウェルカムを開く	部分	未検証	f6ca7f9 PiWorkspace/scripts/verify-workspace-controls.mjs / ネイティブ Help と Settings から Welcome を表示。フォルダー追加の取消と Close で元の下書きに戻った。URL の /welcome と未認証環境の /pair 遷移は未実装。
-01	NAV-014	下書きスレッドを開く	部分	未評価	-
-01	NAV-131	新規スレッドを始める	部分	未評価	-
-01	NAV-132	ローカル新規スレッドを始める	部分	未評価	-
-01	NAV-133	プロジェクトなしで新規スレッドを始める	未対応	未評価	-
+01	NAV-014	下書きスレッドを開く	部分	要修正	ca81b7b _chat.draft.$draftId.tsx:4、ThreadRouteView.tsx:167–217 は既存下書き ID を開き、昇格後はスレッドへ、未知・非表示は / へ戻す。56975be WorkspaceModel.swift:1051–1056,1084–1094 は未送信の共有・受信を拒否。probe.log:1 で同じストアの正しいスコープ・プロジェクト・既存未送信 UUID を渡し、The linked thread is unavailable と元の選択の維持を再現。verification-1WC4hF の Launch Services 再開は送信済みリンク。
+01	NAV-131	新規スレッドを始める	部分	未検証	ca81b7b keybindings.ts:115–116・chatRouteCommands.ts:151–167。9d689f5 NewThreadShortcutTests で ⌘N・⌘⇧O と登録0・1・2件の組合せを再生。0件は No project のある選択、1件はそのローカル下書き、2件はフィルター外も含む選択。取消時の index バイト一致、ターミナルが入力を保持することを画面外で確認。File メニューと配布版実キーは未検証。
+01	NAV-132	ローカル新規スレッドを始める	部分	未検証	ca81b7b keybindings.ts:117・chatRouteCommands.ts:114–121,141。9d689f5 NewThreadShortcutTests で ⌘⇧N が worktree からプロジェクト直下へ、scratch から最後に利用した登録先へ、登録なしなら候補へ進むことを確認。現在先のパレット行も実行。前面の配布版での到達は未検証。
+01	NAV-133	プロジェクトなしで新規スレッドを始める	未対応	未検証	ca81b7b keybindings.ts:118・CommandPalette.tsx:948,1396。1jtGNd はサイドバー経由の私有フォルダーからの送信・変換。9d689f5 NewThreadShortcutTests は画面外で ⌘⌥N・パレットの直行と No project 子行から各1件の scratch を作成し、登録済みプロジェクトとキュー編集中の状態を保持。配布版の File メニュー・各キーと環境別の利用可否が残る。
 01	NAV-159	選んだプロジェクトに新規スレッドを作る	部分	未検証	ca81b7b NAV-E0319,0367,0383,0395、CommandPalette.tsx:314,918–931,1387、chatRouteCommands.ts:151–164。verification-vyt6rj/logs/report.txt:44,47 / verification-r8AwY8/logs/report.txt:31 でパレット→別プロジェクト→Return、サイドバーの新規ボタン→選択を確認（verify-command-palette.mjs:54–65、verify-app.mjs:538–545）。複数候補で新規ショートカットから Projects を直接開く経路と、同一論理グループなら操作元 checkout を選ぶ分岐が残る。
 01	NAV-169	既存ディレクトリをプロジェクトとして追加	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 Git プロジェクトから ../Sample Project を指定し、元の ID を開く。子フォルダー指定は ProjectSourcesTests
 01	NAV-186	フォルダーパスをキーで補完	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / パス入力欄で Tab が空白を含む共通接頭辞を補完。矢印で選んだ階層と唯一の子へ Tab で移り、Return で既存プロジェクトに復帰
-01	NAV-195	新規作成から既存プロジェクトを開く	部分	未評価	-
+01	NAV-195	新規作成から既存プロジェクトを開く	部分	未検証	ca81b7b CommandPalette.tsx:2462–2473,2515–2535,2592–2597。9d689f5 NewThreadShortcutTests.testAddExistingProjectFromNewProjectForm で新規作成中に Add existing project → Local folder へ戻り、同じ登録 UUID を開いて登録数が増えないことを確認。前面の配布版は未検証。
 01	NAV-232	OS の選択ダイアログからフォルダーを追加	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / OS パネルの取消と確定の両方を実行し、登録後のプロジェクト・下書き ID を照合
 01	RPC-006	ローカル環境の有効化と起動進捗	構成差	未評価	-
 01	RPC-037	プロジェクトの追加・編集・削除	部分	未評価	-
-01	SRC-S01	起動後に接続案内、空、下書き準備のいずれかを表示する	部分	未評価	-
-01	SRC-S02	メッセージ送信前に作業場所やモデルを選び、スレッドを開始する	部分	未検証	84e132a PiWorkspace/Tests/PiWorkspaceTests/WorkspaceLayoutTests.swift + 実配布版AX / T3Audit-0.1.12/screens/panel-measurements.tsv / 3幅9状態で AX 入力欄の幅は原本どおり。1440pt 下書きの左端は AX=494pt、原本=493.5pt。配布版の画像比較は未検証
-01	SRC-S32	初回起動でプロバイダー・プロジェクトの準備を進める	部分	未評価	-
-01	SRC-S36	モーダル内を操作し、タイトルバーとウィンドウを扱う	構成差	未評価	-
-01	UI-1480	チャット・スレッド・IndexDraftLanding（_chat.index）	部分	未評価	-
-01	UI-1481	チャット・スレッド・DraftStartError（_chat.index）	未対応	未評価	-
-01	UI-1488	認証・初期設定・WelcomeRouteView（welcome）（操作候補）	未対応	未評価	-
+01	SRC-S01	起動後に接続案内、空、下書き準備のいずれかを表示する	部分	要修正	ca81b7b _chat.index.tsx:25–118。1jtGNd で空 Home の登録・scratch・破棄・起動時の本文復元。bc542f0 StartupDraftTests は保存失敗と同じ対象での再試行を確認。9850768 の非キー描画（英語・暗色・1080×720・1倍）では見出し上端338px・幅346px、操作は同じ高さ414px。背景とサイドバーの色も原本に一致し、ヘッダーの階調・地模様・アイコンには差が残る。Hosted 未接続・起動待ちと /new の経路も未検証。 98dcbbc の統合ビューを2倍のウィンドウから1倍のバッファーに描画した場合、見出し上端338px・幅344px（原本346px）、操作は x514・y414・幅309px。画面収録は使用していない。
+01	SRC-S02	メッセージ送信前に作業場所やモデルを選び、スレッドを開始する	部分	要修正	84e132a WorkspaceLayoutTests と画面幅3種の配布版 AX。c516b66 は原本のカードを3幅で画面外描画と照合し、1080幅のカード外周 y304–415・内部 #0F0F0F、実 NSTextField は x318・y317・幅701・高さ54（原本 y317.3・高さ53.5）。権限は作業先の右側へ移動。文字の描画位置、境界線、音声入力など一部操作と前面表示に差・未検証が残る。 98dcbbc の同じ描画ではカード外周 x305–1031・y304–415 と塗りが一致し、入力欄は x318・y317.5・幅701・高さ53.5。
+01	SRC-S32	初回起動でプロバイダー・プロジェクトの準備を進める	部分	未検証	ca81b7b FirstRunGate.tsx:83–181 と WelcomePage.tsx:275–338,1400–1466。56975be WorkspaceView.swift:397–424 の新規 Welcome。verification-2vocQa:5 は設定済み Start、1jtGNd:9–11 は Start without an agent 後の Keychain・初回応答、5BKoTT verify-workspace-controls.mjs:78–106 は Help/About からの再表示、Browse 取消と同じ下書きへのフォーカス復帰。設定読込待ち/接続タイムアウト、候補選択・一部失敗後のインポート再試行、エージェント設定・電話連携の条件別動作、初回画面の外観は未検証。
+01	SRC-S36	モーダル内を操作し、タイトルバーとウィンドウを扱う	構成差	未検証	ca81b7b AppRouteModal.tsx:77–145 は初期フォーカス、Esc と背景押下の区別・キーボード時の入口復帰。DesktopAppSettings.ts:52–69 / DesktopWindow.ts:55–97,335–374 は既定1100×780・最小400×360 DIP とタイトルバー。56975be PiWorkspaceApp.swift:91–119 は SwiftUI シートと既定1080×720・内容の最小指定800×540 pt。5BKoTT:2 は Browse の取消と Welcome を閉じて composer に復帰、1jtGNd:32,34,39 はパレット、設定検索、Usage の操作。実窓の最小枠、Settings/フォルダーの Tab/Esc/背景クリック別フォーカスとタイトルバーのドラッグ・ボタン位置は未検証。
+01	UI-1480	チャット・スレッド・IndexDraftLanding（_chat.index）	部分	未検証	ca81b7b _chat.index.tsx:56–91。bc542f0 StartupDraftTests で保存を塞いで初期化→再試行を繰り返し、選択済みの対象プロジェクト・既存の別下書きと編集を保持。修復後は1件だけ新規作成し再起動でも同じ UUID。途中で会話を明示選択すると保留中の再試行は取り消される。配布版からの実行を照合中。
+01	UI-1481	チャット・スレッド・DraftStartError（_chat.index）	未対応	未検証	ca81b7b _chat.index.tsx:94–118。5f045e4 の実 AppKit 画面外試験で Couldn’t start a new thread と Try again を識別し、保存先の修復後に同じプロジェクトで1件の下書きにフォーカス。bc542f0 の統合済み StartupDraftTests も成功。署名済みアプリの前面からの試験は未検証。
+01	UI-1488	認証・初期設定・WelcomeRouteView（welcome）（操作候補）	未対応	未検証	ca81b7b welcome.tsx:13–60 の /welcome は #agents の既知/未知環境を解決し、onDone で指定プロジェクトの下書き、指定なし/開始失敗なら /、未認証は /pair。56975be WorkspaceView.swift:397–424、5BKoTT:2 と verify-workspace-controls.mjs:78–106 で Help/About→Welcome→閉じる、元 UUID・本文・フォーカスを確認。URL と #agents、インポート先指定完了と失敗復帰の到達性は未検証。
 01	UI-149	プロジェクト・スクリプト・NoProjectsHero	部分	合格	ca81b7b NoProjectsHero.tsx:42,47–50、97e53bd PiWorkspace/scripts/verify-app.mjs / 空ホームの Add project から登録・Browse を確認。Start without a project は専用フォルダーに下書きを作り、Discard 後に空ホームと登録0件へ戻った。
 01	UI-154	プロジェクト・スクリプト・ProjectFavicon（操作候補）	構成差	未評価	-
 01	UI-155	プロジェクト・スクリプト・AutomaticProjectFavicon（操作候補）	構成差	未評価	-
 01	UI-156	プロジェクト・スクリプト・ProjectFaviconImage（操作候補）	構成差	未評価	-
-01	UI-185	アプリ共通・T3Wordmark（操作候補）	構成差	未評価	-
-01	UI-211	アプリ共通・WorkspacePageContainer（操作候補）	構成差	未評価	-
-01	UI-212	アプリ共通・WorkspacePageHeader（操作候補）	構成差	未評価	-
-01	UI-320	チャット・スレッド・DraftHeroHeadline	部分	未評価	-
-01	UI-689	認証・初期設定・FirstRunRecovery	未対応	未評価	-
+01	UI-185	アプリ共通・T3Wordmark（操作候補）	構成差	未検証	ca81b7b T3Wordmark.tsx:3–9 は SVG に props を渡す。SidebarChrome.tsx:170–189 では親 Link が Home を担当し、V2LifecycleRow.tsx:151 と TimelineToolActivityIcon.tsx:248 は装飾として使用。56975be WorkspaceView.swift:449 は文字ラベル、1jtGNd:32 は別のパレット項目。クリック不足は CHAT-022、ロゴ表示の照合は未検証。
+01	UI-211	アプリ共通・WorkspacePageContainer（操作候補）	構成差	未検証	ca81b7b WorkspacePageContainer.tsx:7–26 は readable/wide/expanded の幅と余白を定める div。利用先に Settings（settingsLayout.tsx:662）・Usage（UsagePage.tsx:531）がある。1jtGNd:15,34,39 の計測対象は composer 幅、設定項目への移動と Usage 表示。56975be の Settings/Usage コンテンツ枠それぞれの幅・余白の実測比較が残る。
+01	UI-212	アプリ共通・WorkspacePageHeader（操作候補）	構成差	未検証	ca81b7b WorkspacePageHeader.tsx:6–27 と _chat.index.tsx:103 は Electron のドラッグ領域とタイトルバーの予約余白を持つ header。56975be PiWorkspaceApp.swift:116–119 と 5BKoTT:2 で Welcome の開閉経路は確認。空画面/Welcome のネイティブ窓でタイトルバーのドラッグ可能域、高さ、ウィンドウボタンとの間隔は未検証。
+01	UI-320	チャット・スレッド・DraftHeroHeadline	部分	要修正	ca81b7b DraftHeroHeadline.tsx:205–232,261–301,318–342。ePS1w8 verify-draft-project-chooser.mjs:53–100 は検索0件→Esc、アクセント差のある検索→Return、保存済み下書きの選択、移動・No project・追加/取消後の同じ UUID/本文/添付を確認。56975be DraftProjectPicker.swift のピン付き印は選択行を表示するだけ。原本の候補行での Pin ボタンと検索欄からの Pin キー操作が欠ける。候補なしの見出し直行、scratch からのフォーカス復帰も別分岐。
+01	UI-689	認証・初期設定・FirstRunRecovery	未対応	未検証	ca81b7b FirstRunGate.tsx:172–218 は設定読込失敗なら設定を再取得する Retry（実行中無効）、接続待ち超過なら Reload。56975be WorkspaceStartupRecoveryView.swift:33–44 の Retry はストアを再度開く。1jtGNd:38 は破損インデックス復元と履歴3件の保存。設定再取得・Still connecting からの Reload は未検証。
 01	UI-690	認証・初期設定・WelcomePage	部分	未検証	ca81b7b onboarding/WelcomePage.tsx:295–322 (UI-E2432 UI-E2433)、PiWorkspace/scripts/verify-app.mjs / 初回 Start と Start without an agent から進み、登録と初回応答を確認。インポート選択が残る。
-01	UI-691	認証・初期設定・TelemetryNotice	未対応	未評価	-
-01	UI-692	認証・初期設定・AgentsSection	部分	未評価	-
-01	UI-693	認証・初期設定・ProjectsSection	部分	未評価	-
+01	UI-691	認証・初期設定・TelemetryNotice	未対応	未検証	ca81b7b WelcomePage.tsx:346–378 は標準/管理ポリシーで文言を切り替え、どちらにも privacy policy リンク。56975be WorkspaceView.swift:397–424 の Welcome にリンクなし。IMPLEMENTATION.md:133 で Swift のテレメトリ既定オフは決定済み。verify-default-telemetry.mjs の同梱 Pi ヘルパー通信試験は通知・リンクの確認とは別。オフ時の案内または製品差の明示が残る。
+01	UI-692	認証・初期設定・AgentsSection	部分	未検証	ca81b7b WelcomePage.tsx:576–630,679–765 は利用中インスタンスの設定、無効なプロバイダーの Turn on、Set up、CLI と再検出。56975be WorkspaceView.swift:401–421 の Model Settings と 1jtGNd:9–11 / 2vocQa:5,7–8 で構成済み/未構成から初回送信。検出済み・無効なインスタンスから各アクションを起動して復帰する経路は未検証。
+01	UI-693	認証・初期設定・ProjectsSection	部分	要修正	ca81b7b WelcomePage.tsx:798–954 は既存候補の再スキャン、推奨/全件/全解除、選択した履歴の取り込みを扱う。56975be WorkspaceView.swift:397–424 は手動 Add Project。5BKoTT:2 の Welcome→フォルダー選択→取消と 1jtGNd:8 の登録は実測済み。候補のレビュー・選択とスキャン失敗後に Retry する入口が欠ける。
 01	UI-694	認証・初期設定・PhoneSection	未対応	未評価	-
 01	UI-695	認証・初期設定・PhoneConnectLink	未対応	未評価	-
 01	UI-696	認証・初期設定・OnboardingCodexSetup（操作候補）	未対応	未評価	-
@@ -66,8 +66,8 @@ stage	id	title	audit_status	result	evidence_ref
 01	UI-700	認証・初期設定・ImportRepositoryGroup	未対応	未評価	-
 01	UI-701	認証・初期設定・ImportCandidateRow	未対応	未評価	-
 01	UI-702	認証・初期設定・CliPathSetup	未対応	未評価	-
-01	UI-732	アプリ共通・NewThreadLinkView	未対応	未評価	-
-01	UI-733	アプリ共通・PullRequestLinkCheckout	未対応	未評価	-
+01	UI-732	アプリ共通・NewThreadLinkView	未対応	要修正	ca81b7b _chat.new.tsx:9–32、NewThreadLinkView.tsx:369–400 はプロンプト付き新規作成リンクの再オープン、該当リポジトリの Clone、Use without project を扱う。56975be ThreadCopy.swift:55–84 は既存スレッド URL 用。1WC4hF verify-thread-actions.mjs:142–169 は保存済み会話の再開、1jtGNd:33,35 は個別の scratch/clone。リンクからプロンプトを保ったままこれらへ分岐する入口が欠ける。
+01	UI-733	アプリ共通・PullRequestLinkCheckout	未対応	要修正	ca81b7b NewThreadLinkView.tsx:413–451 は PR 付き新規作成リンクの Check out から prompt-link handoff を開始し処理中無効。56975be PiWorkspaceApp.swift:75–77 と ThreadCopy.swift:55–84 は既存スレッド URL のみ。5BKoTT:4–5 のブランチ変更と linked checkout への下書き移動は配布版で確認したが、PR リンクから選んだ checkout と指定プロンプトで開始する経路が欠ける。
 02	CFG-039	Default model	部分	未評価	-
 02	CFG-105	Response streaming	未対応	未評価	-
 02	CFG-116	Continue threads after restarts	未対応	未評価	-
@@ -303,7 +303,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-191	コードブロックをコピー	部分	未評価	-
 04	CHAT-192	コードの行折り返しを切り替え	未対応	未評価	-
 04	CHAT-194	Mermaid のソースと図を切り替え	未対応	未評価	-
-04	CHAT-195	履歴の画像・動画を拡大	未対応	未評価	-
+04	CHAT-195	履歴の画像・動画を拡大	未対応	要修正	653a849,fe38e02 verify-chat-images.mjs（配布版 30a1zr）。保存済み Pi 履歴を開き直し、同名の赤・青 PNG を往復、Copy Image の全バイトと閉じた際のフォーカスを照合。動画、Markdown 内メディア、失われたメディアを配布版で開く分岐が残る。
 04	CHAT-205	外部リンクをシステムブラウザーで開く	部分	未評価	-
 04	CHAT-206	外部リンクの URL をコピー	未対応	未評価	-
 04	CHAT-248	プロンプト履歴を前後に再利用	未対応	未評価	-
@@ -411,7 +411,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-250	チャット・スレッド・ComposerAttachmentMediaRow	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:235,341 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / 同名 PNG の別 ID をそれぞれ開き、該当 ID の拡大表示を確認。赤だけ削除し、再起動後の要求には青画像のバイト列だけが残る。動画再生・アップロード再試行は未検証
 04	UI-251	チャット・スレッド・ComposerAttachmentFileList	未対応	未評価	-
 04	UI-252	チャット・スレッド・ComposerFilePreviewDialog	未対応	未評価	-
-04	UI-253	チャット・スレッド・ComposerRestingImagePreviews	未対応	未評価	-
+04	UI-253	チャット・スレッド・ComposerRestingImagePreviews	未対応	未検証	ca81b7b UI-E1009–1010。配布版 30a1zr verify-chat-images.mjs で入力前の同名 PNG 2件を ID ごとに表示し、前後移動・復帰と両方のバイトを照合。枚数超過時の Show more と押下中のフォーカスは未検証。
 04	UI-254	チャット・スレッド・ComposerQueuedAttachmentRow	未対応	未評価	-
 04	UI-255	チャット・スレッド・ComposerAttachInput	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:751 / Swift 76041dc ComposerAttachmentsView.fileImporter / PiWorkspace/scripts/verify-attachment-ui.mjs / 同じパスを別内容で2回選び直し、別 ID と赤・青の各バイト列を保存。1回のパネルで複数ファイルを同時選択する経路と挿入失敗時のフォーカスは未検証
 04	UI-256	チャット・スレッド・ComposerAttachButton	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:776 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / Attach Files から OS 選択パネルを開く。取消後の添付0件と、再度開いて確定した PNG の ID・内容を照合。対象は選択パネルを開くボタン。原本の pointer down 時に入力フォーカスを保つ動作は未検証
@@ -460,7 +460,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-315	チャット・スレッド・Main（操作候補）	構成差	未評価	-
 04	UI-316	チャット・スレッド・ContextStrip（操作候補）	構成差	未評価	-
 04	UI-321	チャット・スレッド・ExpandedVideo	未対応	未評価	-
-04	UI-322	チャット・スレッド・ExpandedImageDialog	未対応	要修正	原本 ca81b7b ExpandedImageDialog.tsx:200,212,293 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / 同名 PNG 2個を別々に開き、各 ID の拡大画像と Close 後の閉じた状態を照合。表示中の前後移動・動画プレビューは未実装
+04	UI-322	チャット・スレッド・ExpandedImageDialog	未対応	要修正	ca81b7b ExpandedImageDialog.tsx:165–293。653a849,fe38e02 verify-chat-images.mjs（30a1zr）。同名の PNG 2件で Previous/Next が末尾・先頭に循環し、テキスト添付を飛ばす。Copy Image は元のバイトに一致。キューの1枚だけの状態で矢印が消え、Escape が元のボタンへ戻る。動画・外部リンク・保存パネルの完了分岐が残る。
 04	UI-323	チャット・スレッド・ExpandedImageDialogHost	未対応	未評価	-
 04	UI-338	チャット・スレッド・LinkedThread	未対応	未評価	-
 04	UI-339	チャット・スレッド・MarkdownCodeBlockFrame（操作候補）	未対応	未評価	-
@@ -482,7 +482,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-376	チャット・スレッド・ProposedPlanCard	未対応	未評価	-
 04	UI-377	チャット・スレッド・SavePlanToWorkspaceForm	未対応	未評価	-
 04	UI-383	チャット・スレッド・QueuedRunsControl	未対応	未検証	原本 ca81b7b QueuedRunsControl.tsx:314,367,387,418,445 / Swift 76041dc QueuedMessagesView / PiWorkspace/scripts/verify-message-queue.mjs / 5件の表示が2行から5行へ展開。編集取消で元の2本文、更新で同一 ID、削除で4件。Send now を実行中と停止後に押し、再開を含む計8配達の順・ID が一致。圧縮中の Send now と保存中の無効化は未検証
-04	UI-384	チャット・スレッド・QueuedMessage	未対応	未評価	-
+04	UI-384	チャット・スレッド・QueuedMessage	未対応	未検証	ca81b7b UI-E1396–1400。配布版 30a1zr verify-chat-images.mjs でキュー行の画像を開き、同一キュー項目に候補が1件のみで、閉じるとその行の同じボタンへ戻ることを確認。送信者スレッド・自動実行設定へのリンクと本文の折り畳みは未検証。
 04	UI-385	チャット・スレッド・ReadOnlyComposerStatus（操作候補）	部分	未評価	-
 04	UI-386	チャット・スレッド・ReadOnlyThreadTimeline	部分	未評価	-
 04	UI-388	チャット・スレッド・PendingSecretRequestForm	未対応	未評価	-
@@ -599,21 +599,21 @@ stage	id	title	audit_status	result	evidence_ref
 05	CFG-318	Add snooze option	未対応	未評価	-
 05	CFG-319	Remove snooze option	未対応	未評価	-
 05	CFG-320	Reset snooze options to default	未対応	未評価	-
-05	CHAT-006	下書きのプロジェクト設定を開く	未対応	未検証	ca81b7b threadActionMenu.logic.ts:81、Sidebar.tsx:2644。14975f6 WorkspaceView.swift:816 に下書き用 Project settings がある。verification-vyt6rj/logs/report.txt:27 の設定は verify-app.mjs:305 の model-settings 経由。同名プロジェクトの非選択下書きの行メニューから開き、操作元の設定 ID を照合する試験が残る。
+05	CHAT-006	下書きのプロジェクト設定を開く	未対応	未検証	007ec89 verify-project-settings.mjs, SidebarPersistenceTests / 非選択の下書きの Project settings は、その行の実UUIDから対象の Overview を開く。同名プロジェクトと編集中の別checkoutを区別するオフスクリーン試験済み。配布版の行メニューを再検証する。
 05	CHAT-007	スレッド間を順に移動	未対応	未評価	-
 05	CHAT-008	番号でスレッドへ移動	未対応	未評価	-
 05	CHAT-009	スレッドの複数選択	未対応	未評価	-
 05	CHAT-010	プロジェクトでスレッドを絞る	同等候補	未検証	ed84013 verify-sidebar-persistence.mjs / 3件からプロジェクトの名前を通常クリックして1件に絞った。非表示の Gamma の下書きは選択されたままで、再起動後も復元。検索欄で候補を絞る経路、非選択スレッドの行メニューからの設定が残る。
 05	CHAT-011	複数のプロジェクトで絞る	部分	未検証	ed84013 verify-sidebar-persistence.mjs, SidebarPersistenceTests / 署名済みアプリで Shift クリックにより Beta を追加・解除し、両方で選択パネルが開いたまま。通常クリックで1件に絞り、チェックボックスで複数選択、再起動後も保持。元の Shift-Return のキーボード経路が残る。
 05	CHAT-012	プロジェクト絞り込みを解除	同等候補	未検証	ed84013 verify-sidebar-persistence.mjs / All Projects で絞り込みを解除し、Gamma の行を復元。Alpha の折りたたみと編集中のスレッドを保った。0件一覧での専用解除ボタンと、スレッドのメニューからの解除が残る。
-05	CHAT-014	プロジェクトのパスをコピー	部分	未検証	ca81b7b CHAT-E0023、Sidebar.tsx:1302,1321–1322 はフォルダ行から workspaceRoot をコピー。verification-vyt6rj/logs/report.txt:9,47 / verify-app.mjs:513–526 は下書きタイトルの Copy。14975f6 WorkspaceView.swift:763–772 のプロジェクトメニューには Copy path がない。別 checkout の会話を選んだまま対象フォルダ行からコピーし、対象ルートを貼付照合する操作が残る。
+05	CHAT-014	プロジェクトのパスをコピー	部分	未検証	007ec89 verify-project-settings.mjs, SidebarPersistenceTests / 非選択フォルダーの Copy path と Overview は登録パスを使う。同名2件とリンクした別checkoutで専用ペーストボードを照合。欠損フォルダーは通知し、以前のコピーを保つ。配布版の右クリックとボード書込失敗が残る。
 05	CHAT-015	プロジェクトをピン留め	未対応	未検証	ca81b7b CHAT-E0024–25、Sidebar.tsx:1307,3199,3285、CommandPalette.tsx:1834。14975f6 WorkspaceView.swift:649,700,775 にピンメニュー、CommandPalette.swift:88–112 にピン操作なし。SidebarFilterTests.swift:41,67 はモデル直呼び。署名版でフォルダ行・プロジェクト候補・パレットからピン留めし、再表示・再起動後の印を確認する試験が残る。
 05	CHAT-016	プロジェクトのピンを解除	未対応	未検証	ca81b7b CHAT-E0026–27、Sidebar.tsx:1306、CommandPalette.tsx:1834。14975f6 WorkspaceView.swift:775 に解除ボタン、CommandPalette.swift:88–112 に解除操作なし。SidebarFilterTests.swift:74 はモデル直呼び。署名版でフォルダ行・候補・パレットから解除し、印の消失と再ピンを確認する試験が残る。
-05	CHAT-017	プロジェクト設定へ移動	未対応	未検証	ca81b7b CHAT-E0028–32 はフォルダメニュー、パレット、タイトルメニュー、プロジェクト候補の歯車、スレッド行メニュー。verification-vyt6rj/logs/report.txt:27 の verify-app.mjs:305 は model-settings。14975f6 WorkspaceView.swift:763,816,848 と CommandPalette.swift:88–112 を照合。同名の異なる対象を各入口から開いて設定先 ID を確認する試験が残る。フォルダメニュー・パレットには専用項目なし。
+05	CHAT-017	プロジェクト設定へ移動	未対応	未検証	007ec89 verify-project-settings.mjs, SidebarPersistenceTests / フォルダーのメニュー・グループ・絞り込み・パレットから対象プロジェクトの設定へ接続。同名フォルダーを区別し、別プロジェクトのモデル変更で作業中の入力を保持。配布版の各入口と外部環境スコープは未検証。
 05	CHAT-018	サイドバーのスレッド検索	部分	合格	655b427,2a58e63 verify-conversation-controls.mjs, verify-app.mjs / 配布版で固有のタイトルだけを入力し、履歴のない下書きを1件表示。プロジェクト名と過去の本文でも検索でき、表示にない添付内の語は候補から除外。表示された caption を選ぶと元の Pi 発言と正確な範囲が開いた。
 05	CHAT-019	スレッド検索の解除	部分	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / 検索を Clear ボタンと Escape キーで各1回解除し、送信済み行と未送信の下書きが両方戻ることを確認
 05	CHAT-020	メインサイドバーの開閉	未対応	未評価	-
-05	CHAT-021	閲覧履歴を戻る・進む	未対応	未評価	-
+05	CHAT-021	閲覧履歴を戻る・進む	未対応	未検証	578f3cc WorkspaceModel, ThreadRowActionTests / Home・送信済み会話・下書きの確定した移動をセッション内に記録。戻る・進むで元の対象を復元し、壊れたリンクとキュー編集中の拒否は履歴を変えなかった。配布版の操作が残る。
 05	CHAT-023	スレッドをピン留め	同等候補	未評価	-
 05	CHAT-024	スレッドのピンを外す	部分	未評価	-
 05	CHAT-025	ピン留めの並び替え	未対応	未評価	-
@@ -623,10 +623,10 @@ stage	id	title	audit_status	result	evidence_ref
 05	CHAT-029	Settle を解除	同等候補	未評価	-
 05	CHAT-030	スレッドごとの自動 Settle を既定に従わせる	未対応	未評価	-
 05	CHAT-031	スレッドごとの自動 Settle を停止	未対応	未評価	-
-05	CHAT-032	プリセットで Snooze	未対応	未評価	-
-05	CHAT-033	任意の期限で Snooze	未対応	未評価	-
-05	CHAT-034	期限前に Snooze を解除	未対応	未評価	-
-05	CHAT-035	期限到来の Woke 通知を消す	未対応	未評価	-
+05	CHAT-032	プリセットで Snooze	未対応	未検証	b9198a1 ThreadSnoozeTests / 実ストアと画面外の UI でプリセット期限、元の配置、キューと未送信文の保持を確認。配布版の実メニューを再検証する。
+05	CHAT-033	任意の期限で Snooze	未対応	未検証	b9198a1 ThreadSnoozeTests / ローカル日時または期間を検証して保存する。期限の境界・不正入力とストア再読込を確認。配布版の日時・期間入力待ち。
+05	CHAT-034	期限前に Snooze を解除	未対応	未検証	b9198a1 ThreadSnoozeTests / 期限前の Wake と5秒間の Undo で元の配置を復元。別ワークスペースを変更しない。配布版のサイドバー操作を再検証する。
+05	CHAT-035	期限到来の Woke 通知を消す	未対応	未検証	b9198a1 ThreadSnoozeTests / 期限直前とちょうど期限の表示を区別し、期限後に再起動しても Woke を解除できた。配布版での表示と再起動を照合する。
 05	CHAT-036	スレッドのタイトルを手入力で変更	同等候補	未検証	cdda756 verify-thread-actions.mjs, ThreadRowActionTests / 別のスレッドを開いたまま対象行を右クリックして名前変更を取り消し、もう一度開いて保存。対象行と会話見出しは新しい名前で、スレッドIDと履歴は同一。配布版の空入力と保存失敗分岐が残る。
 05	CHAT-037	タイトルをエージェントで再生成	部分	未評価	-
 05	CHAT-038	スレッドを未読にする	未対応	未評価	-
@@ -1795,7 +1795,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	NAV-229	Escape で Pull Requests 一覧から離れる	未対応	未評価	-
 08	RPC-041	ソース管理アカウントの接続	未対応	未評価	-
 08	RPC-042	リポジトリのクローンと公開	未対応	未評価	-
-08	RPC-045	PR 一覧、差分、チェックの閲覧	未対応	未検証	da23724 verify-panels.mjs, PullRequestCheckLogTests / checkout の PR 一覧と詳細、選択したチェックのログを配布版で確認。権限失敗後の再試行、同名2チェックのジョブIDの区別を確認。PRの差分とレビューガイドの経路は未対応。
+08	RPC-045	PR 一覧、差分、チェックの閲覧	未対応	未検証	da23724,b850cbc verify-panels.mjs, verify-github-pull-requests.swift / PR 一覧・詳細・同名チェックのログと権限失敗からの再試行を配布版で確認。Code タブは GitHub のファイル一覧と選択パッチを取得し、名前変更・バイナリ・ページング、head／base／checkout の変更を隔離 CLI と実ビューで照合。レビューガイドと配布版の差分確認が残る。
 08	RPC-046	PR の作成・更新・マージと CI 再実行	未対応	未評価	-
 08	RPC-047	PR レビュー、コメント、担当者の変更	未対応	未評価	-
 08	RPC-048	PR のスレッド連携と監視	未対応	未評価	-

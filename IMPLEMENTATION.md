@@ -40,6 +40,8 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 **終了条件**　同じフォルダー、README の同じ変更1行、同じプロンプトで比較を始められる。基準は英語・ダーク・1080×720・倍率1。数値の取り方と [181回の採寸](T3Audit-0.1.12/screens/captures.tsv) を照合する。台帳検査の成功が保証するのは資料の整合性まで。
 
+原本と Swift 版 `98dcbbc` のホームと下書きを、英語・ダークの同じ1080×720の画像に描画した。ホームの操作はどちらも y414 に横並びになった。下書きカードは x305–1031・y304–415、塗りは `#0F0F0F` で一致した。2倍の Mac ウィンドウを1倍のバッファーへ描画した場合、ホームの見出しは Swift が2ピクセル狭い。通常の入力欄は3幅でリサイズして位置・高さ・キャレットを再検査できる。[実入力欄の回帰試験](PiWorkspace/Tests/PiWorkspaceTests/AppearanceSettingsTests.swift)
+
 ### 01　既存フォルダーから下書きを開く
 
 [ProjectFolderView](PiWorkspace/Sources/PiWorkspace/ProjectFolderView.swift)、[Workspace](PiWorkspace/Sources/PiWorkspace/Workspace.swift)、[WorkspaceModel](PiWorkspace/Sources/PiWorkspace/WorkspaceModel.swift)、[WorkspaceView](PiWorkspace/Sources/PiWorkspace/WorkspaceView.swift) が入口。空のホーム → Add project → Local folder → 下書きを最初に通す。プロジェクト ID、正規化したパス、表示名、選択状態を保存し、再登録とフォルダー移動後の再リンクを区別する。次に初回案内、プロジェクトなしの下書き、ドロップ、キーボードでの移動を合わせる。
@@ -47,6 +49,8 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 **終了条件**　CHAT-058、DEV-001、NAV-232 を、直接入力と Browse の両方で実行する。OS の選択パネルで対象を選んで確定し、戻ったシートで登録すると対象の下書きにフォーカスが移り、再起動後も同じ ID で開く。取消・存在しないパス・同じフォルダーの再登録で、重複や意図しない選択変更が起きない。Browse の確定・登録は以前の調査で未検証だった経路。
 
 配布版の下書き見出しからプロジェクトを検索すると、空の下書きでは移動先の保存済み下書きが開く。入力済みなら同じスレッド ID、本文、添付を持って移動し、モデルは移動先の設定に切り替わる。プロジェクト追加を取り消した場合と登録を完了した場合も、元の下書きに戻った。[下書き移動の配布試験](PiWorkspace/scripts/verify-draft-project-chooser.mjs)
+
+起動時に新規下書きを保存できなかった場合は、保存先を修復して **Try again** を押す。元々開く予定だったプロジェクトに下書きが1件でき、別の会話を選んだ場合は再試行を取り消す。新規スレッドは ⌘N と ⌘⇧O、現在または最後に使ったプロジェクトは ⌘⇧N、プロジェクトなしは ⌘⌥N で開く。登録数が0・1・2件の場合とターミナルにフォーカスがある場合を、画面外の AppKit で確認した。[起動時の再試行](PiWorkspace/Tests/PiWorkspaceTests/StartupDraftTests.swift)・[ショートカットの試験](PiWorkspace/Tests/PiWorkspaceTests/NewThreadShortcutTests.swift)
 
 ### 02　Pi に送り、同じ会話を続ける
 
@@ -73,6 +77,8 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 ローカル Pi の質問では、2件の選択と自由入力をまとめて返し、後続の書き込みには個別の承認が必要だった。質問を表示したまま停止・終了すると保留中の書き込みは実行されず、再起動後に同じスレッドを1回だけ継続した。画像の添付では、入力欄と別スレッド行へ実際に落としたファイルの名前とバイトをそれぞれ照合した。[質問の配布試験](PiWorkspace/scripts/verify-conversation-controls.mjs)・[ドラッグ試験](PiWorkspace/scripts/verify-file-drops.mjs)
 
 専用ペーストボードで32,767バイトのテキストを貼ると本文に入り、32,768バイトでは名前とサイズを表示して添付になった。保管した下書きは再起動後に ID で復元でき、本文と添付を一緒に戻せた。[貼り付け試験](PiWorkspace/scripts/verify-native-paste.mjs)・[一時保管試験](PiWorkspace/scripts/verify-thread-actions.mjs)
+
+配布版で同名の赤・青 PNG を下書きと送信済み履歴から開き、前後への移動、元のボタンへのフォーカス復帰、**Copy Image** が返す両方のバイト列を確認した。テキスト添付は画像の巡回対象から外れ、別のキュー項目にある画像はその項目だけで開いた。[画像の配布試験](PiWorkspace/scripts/verify-chat-images.mjs)
 
 **終了条件**　CHAT-090〜099、141〜151、160〜169。同じ無害な編集を要求し、承認前と拒否時はファイルが変わらず、承認時に一度だけ変わる。実行中に2通保留し、一方を編集し他方を削除して送信順を照合する。親からの分岐でコピーした履歴と、Pi の同じセッションへ復帰した場合を区別する。原本の既往試験では Steer の画面到達とプロバイダーの受理に確認範囲の差がある。[確認済みの遷移](T3Audit-0.1.12/results/transitions.tsv)
 
