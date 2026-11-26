@@ -1020,6 +1020,80 @@ final class WorkspaceModel: ObservableObject {
         connect()
     }
 
+    struct BranchPickerScope: Equatable, Identifiable {
+        let projectID: UUID
+        let threadID: UUID
+        let location: ThreadLocation
+        let directory: String
+
+        var id: UUID { threadID }
+    }
+
+    var branchPickerScope: BranchPickerScope? {
+        guard let project, !project.isScratch, let conversation else { return nil }
+        let location = conversation.workingLocation
+        return BranchPickerScope(projectID: project.id, threadID: conversation.id, location: location,
+                                 directory: location.directory(in: project))
+    }
+
+    var branchChangeBlocked: String? {
+        if phase.isRunning { return "Stop the current turn to switch branches or worktrees." }
+        if operationsInProgress { return "Wait for the active operation to finish." }
+        guard let conversation, !conversation.archived else { return "Restore the thread to change its branch." }
+        if conversation.worktreeLaunch != nil { return "Finish or cancel worktree setup before changing branches." }
+        if conversation.composerSubmission != nil { return "Wait for the current message to finish saving." }
+        return nil
+    }
+
+    enum BranchChoice {
+        case existing(String)
+        case create(name: String, base: String)
+    }
+
+    func changeThreadBranch(_ choice: BranchChoice, in scope: BranchPickerScope) async throws {
+        guard branchPickerScope == scope, let project else {
+            throw WorkspaceError("The selected thread or checkout changed. Open the branch picker again.")
+        }
+        if let reason = branchChangeBlocked { throw WorkspaceError(reason) }
+
+        let pending = Set(workspace.projects.flatMap(\.conversations).flatMap { thread -> [String] in
+            guard let launch = thread.worktreeLaunch else { return [] }
+            if let checkout = launch.checkout { return [checkout.path] }
+            if case let .worktree(path, _) = thread.workingLocation { return [path] }
+            return []
+        }.map(GitWorkspace.canonicalCheckoutPath))
+        let git = GitWorkspace(path: scope.directory)
+        try await performGitMutation {
+            switch choice {
+            case let .existing(refID):
+                if case let .newWorktree(branch, _) = scope.location {
+                    guard try await git.branchRefs().contains(where: { $0.id.utf8.elementsEqual(refID.utf8) }) else {
+                        throw WorkspaceError("The selected base branch is no longer available.")
+                    }
+                    try saveThread(scope.threadID) { $0.location = .newWorktree(branch: branch, base: refID) }
+                } else if let destination = try await git.switchBranch(to: refID, protecting: pending,
+                                                                       beforeSwitch: fileSaves.flushBeforeSwitchingBranch) {
+                    guard queueEdit == nil else {
+                        throw WorkspaceError("Finish editing the queued message before moving this thread.")
+                    }
+                    let location: ThreadLocation = destination == GitWorkspace.canonicalCheckoutPath(project.path)
+                        ? .project : .worktree(path: destination, base: nil)
+                    try saveThread(scope.threadID) { $0.location = location }
+                    if let thread = conversation, let files = WorkspaceFilesLocation(thread: thread, project: project) {
+                        fileSaves.recoverMovedDrafts(in: files)
+                    }
+                    connect()
+                }
+            case let .create(name, base):
+                guard !scope.location.needsWorktree else {
+                    throw WorkspaceError("Use Thread workspace to name the branch that will be created on first send.")
+                }
+                try await git.createBranch(name, from: base, protecting: pending,
+                                           beforeSwitch: fileSaves.flushBeforeSwitchingBranch)
+            }
+        }
+    }
+
     private func saveThread(_ conversationID: UUID, _ edit: (inout Conversation) -> Void) throws {
         guard let index = selectedProjectIndex,
               let thread = workspace.projects[index].conversations.firstIndex(where: { $0.id == conversationID }),

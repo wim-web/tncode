@@ -3,6 +3,8 @@ import SwiftUI
 struct SourceControlView: View {
     let directory: String
     @ObservedObject var model: WorkspaceModel
+    let openBranch: () -> Void
+    let copyBranch: (String) -> Void
     let openFile: (String) -> Void
     @State private var state: GitRepositoryState?
     @State private var selected: GitFileChange?
@@ -41,7 +43,8 @@ struct SourceControlView: View {
                 Text("Changes").font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if let state {
-                    branchMenu(state)
+                    ThreadBranchButton(branch: state.branch, open: openBranch, copy: copyBranch)
+                        .font(.caption)
                 }
                 Button { refresh += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain)
@@ -77,25 +80,6 @@ struct SourceControlView: View {
         .frame(minWidth: 290, idealWidth: 360, maxHeight: .infinity)
         .task(id: request) { await loadState() }
         .task(id: DiffRequest(key: request, file: selected, staged: staged)) { await loadPatch() }
-    }
-
-    private func branchMenu(_ state: GitRepositoryState) -> some View {
-        Menu {
-            ForEach(state.branches, id: \.self) { branch in
-                Button(branch) {
-                    mutate { try await $0.switchBranch(branch) }
-                }
-                .disabled(branch == state.branch)
-            }
-        } label: {
-            Label(state.branch ?? "Detached HEAD", systemImage: "arrow.triangle.branch")
-                .lineLimit(1)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .font(.caption)
-        .disabled(busy)
-        .accessibilityIdentifier("git-branch")
     }
 
     private func files(_ state: GitRepositoryState) -> some View {

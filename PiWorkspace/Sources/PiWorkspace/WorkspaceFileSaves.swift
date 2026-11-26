@@ -56,6 +56,17 @@ final class WorkspaceFileSaves {
 
     func hasDraft(for target: WorkspaceFileTarget) -> Bool { sessions[target]?.draft != nil }
 
+    func flushBeforeSwitchingBranch(in checkout: String) throws {
+        let prefix = checkout.hasSuffix("/") ? checkout : checkout + "/"
+        for session in Array(sessions.values) where session.draft != nil {
+            let directory = GitWorkspace.canonicalCheckoutPath(session.target.location.directory)
+            guard directory == checkout || directory.hasPrefix(prefix) else { continue }
+            if let error = session.flush() {
+                throw WorkspaceError("Couldn’t save \(session.target.path) before switching branches. \(error.localizedDescription)")
+            }
+        }
+    }
+
     func flushAll() -> String? {
         var firstFailure: String?
         for session in Array(sessions.values) {

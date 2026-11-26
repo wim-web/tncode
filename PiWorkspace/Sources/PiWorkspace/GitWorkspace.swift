@@ -20,6 +20,28 @@ struct GitCheckout: Sendable {
     let lockReason: String?
 }
 
+struct GitBranchRef: Identifiable, Sendable {
+    let id: String
+    let upstream: String
+    let isDefault: Bool
+
+    var isRemote: Bool { id.hasPrefix("refs/remotes/") }
+    var name: String { Self.displayName(id) }
+
+    static func displayName(_ ref: String) -> String {
+        for prefix in ["refs/heads/", "refs/remotes/"] where ref.hasPrefix(prefix) {
+            return String(ref.dropFirst(prefix.count))
+        }
+        return ref
+    }
+}
+
+struct GitBranchChoices: Sendable {
+    let current: String?
+    let refs: [GitBranchRef]
+    let linkedBranches: Set<String>
+}
+
 struct GitFileChange: Identifiable, Hashable, Sendable {
     let path: String
     let indexStatus: Character
@@ -295,7 +317,7 @@ struct GitWorkspace: Sendable {
         for field in listing.output.bytes.split(separator: 0, omittingEmptySubsequences: false) {
             if field.isEmpty {
                 if let checkoutPath {
-                    let path = URL(fileURLWithPath: checkoutPath).resolvingSymlinksInPath().standardizedFileURL.path
+                    let path = Self.canonicalCheckoutPath(checkoutPath)
                     checkouts.append(GitCheckout(path: path, branch: checkoutBranch, head: head, lockReason: lockReason))
                 }
                 checkoutPath = nil
@@ -314,6 +336,31 @@ struct GitWorkspace: Sendable {
         }
 
         return checkouts
+    }
+
+    func branchChoices() async throws -> GitBranchChoices {
+        let root = try await Self.canonicalCheckoutPath(repositoryRoot())
+        let current = try await currentBranch()
+        let linked = try await worktrees().filter { $0.path != root }.compactMap(\.branch)
+        let refs = try await branchRefs()
+        return GitBranchChoices(current: current, refs: refs, linkedBranches: Set(linked))
+    }
+
+    func branchRefs() async throws -> [GitBranchRef] {
+        let format = "%(refname)%00%(symref)%00%(upstream)"
+        let result = try await run(["for-each-ref", "--format=" + format, "refs/heads/", "refs/remotes/"])
+        let output = try Self.decode(result.output.bytes, command: "for-each-ref")
+        let rows = output.split(separator: "\n").map { $0.split(separator: "\0", omittingEmptySubsequences: false) }
+        guard rows.allSatisfy({ $0.count == 3 }) else { throw WorkspaceError.invalidOutput(command: "for-each-ref") }
+        let defaults = Set(rows.compactMap { row -> Substring? in
+            guard row[0].hasPrefix("refs/remotes/"), row[0].hasSuffix("/HEAD"), !row[1].isEmpty else { return nil }
+            return row[1]
+        })
+        return rows.compactMap { row in
+            guard row[1].isEmpty || row[0].hasPrefix("refs/heads/") else { return nil }
+            return GitBranchRef(id: String(row[0]), upstream: String(row[2]),
+                                isDefault: defaults.contains(row[0]) || defaults.contains(row[2]))
+        }
     }
 
     func patch(for file: GitFileChange?, staged: Bool) async throws -> String {
@@ -428,7 +475,11 @@ struct GitWorkspace: Sendable {
     }
 
     private static func isCanonicalWorktree(_ target: String) -> Bool {
-        target.hasPrefix("/") && URL(fileURLWithPath: target).resolvingSymlinksInPath().standardizedFileURL.path == target
+        target.hasPrefix("/") && canonicalCheckoutPath(target) == target
+    }
+
+    static func canonicalCheckoutPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     private func branchExists(_ checkout: PendingCheckout) async throws -> Bool {
@@ -455,8 +506,79 @@ struct GitWorkspace: Sendable {
         return URL(fileURLWithPath: admin).appendingPathComponent("pi-workspace-owner")
     }
 
-    func switchBranch(_ branch: String) async throws {
-        _ = try await run(["switch", "--no-guess", "--", branch])
+    private static let safeSwitch = ["switch", "--no-guess", "--no-overwrite-ignore", "--no-recurse-submodules"]
+
+    /// Return a verified destination only when Git already has the target checked out elsewhere.
+    func switchBranch(to refID: String, protecting protectedCheckouts: Set<String>,
+                      beforeSwitch: @MainActor (String) throws -> Void) async throws -> String? {
+        let refs = try await branchRefs()
+        guard let ref = refs.first(where: { $0.id.utf8.elementsEqual(refID.utf8) }) else {
+            throw WorkspaceError.refUnavailable(refID)
+        }
+        let local: GitBranchRef?
+        if ref.isRemote {
+            let trackers = refs.filter { !$0.isRemote && $0.upstream.utf8.elementsEqual(ref.id.utf8) }
+            // Prefer the conventional name if multiple local branches track the same ref.
+            let conventional = ref.name.split(separator: "/", maxSplits: 1).dropFirst().first.map(String.init)
+            local = trackers.first { $0.name == conventional } ?? (trackers.count == 1 ? trackers.first : nil)
+            if local == nil, !trackers.isEmpty {
+                throw WorkspaceError.ambiguousTrackingBranch(ref.name)
+            }
+        } else {
+            local = ref
+        }
+
+        let root = try await Self.canonicalCheckoutPath(repositoryRoot())
+        guard !protectedCheckouts.contains(root) else { throw WorkspaceError.pendingWorktree }
+        if let local {
+            if try await currentBranch()?.utf8.elementsEqual(local.name.utf8) == true { return nil }
+            let other = try await worktrees().filter {
+                $0.path != root && $0.branch?.utf8.elementsEqual(local.name.utf8) == true
+            }
+            if let checkout = other.first {
+                guard other.count == 1 else { throw WorkspaceError.branchCheckoutChanged }
+                guard !protectedCheckouts.contains(checkout.path),
+                      checkout.lockReason?.hasPrefix("Pi Workspace preparing ") != true else {
+                    throw WorkspaceError.pendingWorktree
+                }
+                let commonDir = try await commonDirectory(in: root)
+                let target = GitWorkspace(path: checkout.path)
+                guard try await Self.canonicalCheckoutPath(target.repositoryRoot()) == checkout.path,
+                      try await commonDirectory(in: checkout.path) == commonDir,
+                      try await target.currentBranch()?.utf8.elementsEqual(local.name.utf8) == true else {
+                    throw WorkspaceError.branchCheckoutChanged
+                }
+                return checkout.path
+            }
+            try await beforeSwitch(root)
+            _ = try await run(Self.safeSwitch + ["--", local.name])
+        } else {
+            try await beforeSwitch(root)
+            _ = try await run(Self.safeSwitch + ["--track", "--", ref.id])
+        }
+        return nil
+    }
+
+    func createBranch(_ name: String, from base: String, protecting protectedCheckouts: Set<String>,
+                      beforeSwitch: @MainActor (String) throws -> Void) async throws {
+        let root = try await Self.canonicalCheckoutPath(repositoryRoot())
+        guard !protectedCheckouts.contains(root) else { throw WorkspaceError.pendingWorktree }
+        let checked = try await run(["check-ref-format", "--branch", name])
+        guard checked.output.bytes == Data((name + "\n").utf8) else { throw WorkspaceError.invalidBranch }
+        if base != "HEAD" {
+            let refs = try await branchRefs()
+            guard refs.contains(where: { $0.id.utf8.elementsEqual(base.utf8) }) else {
+                throw WorkspaceError.refUnavailable(base)
+            }
+        }
+        let commit = try await revParse(["--verify", "--end-of-options", base + "^{commit}"], in: nil)
+        try await beforeSwitch(root)
+        _ = try await run(Self.safeSwitch + ["--no-track", "-c", name, "--", commit])
+    }
+
+    private func commonDirectory(in directory: String) async throws -> String {
+        let path = try await revParse(["--path-format=absolute", "--git-common-dir"], in: directory)
+        return Self.canonicalCheckoutPath(path)
     }
 
     func stage(_ file: GitFileChange) async throws {
@@ -785,6 +907,10 @@ extension GitWorkspace {
         case invalidBranch
         case branchExists(String)
         case worktreeChanged
+        case branchCheckoutChanged
+        case refUnavailable(String)
+        case ambiguousTrackingBranch(String)
+        case pendingWorktree
         case emptyRepositoryPath
         case emptySelection
         case staleSelection
@@ -807,6 +933,10 @@ extension GitWorkspace {
             case .invalidBranch: return "Enter a local branch name."
             case .branchExists(let branch): return "A branch named '\(branch)' already exists."
             case .worktreeChanged: return "The prepared worktree no longer matches the selected base. Choose an existing worktree to use it."
+            case .branchCheckoutChanged: return "Git could not confirm a single checkout for this branch. Refresh the picker and try again."
+            case .refUnavailable(let ref): return "The branch '\(GitBranchRef.displayName(ref))' is no longer available."
+            case .ambiguousTrackingBranch(let branch): return "Multiple local branches track '\(branch)'. Choose the local branch you want to use."
+            case .pendingWorktree: return "Finish or cancel the other thread’s worktree launch first."
             case .emptyRepositoryPath:
                 return "The Git repository path is empty."
             case .emptySelection:

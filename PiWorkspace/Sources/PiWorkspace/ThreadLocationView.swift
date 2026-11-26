@@ -4,7 +4,7 @@ struct ThreadLocationView: View {
     let project: Project
     @ObservedObject var model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
-    @State private var repository: GitRepositoryState?
+    @State private var refs: [GitBranchRef]?
     @State private var checkouts: [GitCheckout] = []
     @State private var base = ""
     @State private var branch = ""
@@ -24,11 +24,14 @@ struct ThreadLocationView: View {
 
             if loading {
                 ProgressView().controlSize(.small)
-            } else if let repository {
+            } else if let refs {
                 Divider()
                 Text("New worktree").font(.callout.weight(.semibold))
                 Picker("Base branch", selection: $base) {
-                    ForEach(repository.branches, id: \.self) { name in Text(name).tag(name) }
+                    if !refs.contains(where: { $0.id == base }) {
+                        Text(GitBranchRef.displayName(base)).tag(base)
+                    }
+                    ForEach(refs) { ref in Text(ref.name).tag(ref.id) }
                 }
                 .accessibilityIdentifier("worktree-base")
                 TextField("New branch name", text: $branch)
@@ -88,22 +91,25 @@ struct ThreadLocationView: View {
         .task {
             let git = GitWorkspace(path: project.path)
             do {
-                let state = try await git.state()
+                let branches = try await git.branchRefs()
+                let current = try await git.currentBranch()
                 checkouts = try await git.worktrees()
-                repository = state
-                base = state.branch ?? state.branches.first ?? ""
+                refs = branches
+                base = current.flatMap { name in branches.first { !$0.isRemote && $0.name == name }?.id }
+                    ?? branches.first?.id ?? ""
                 branch = "thread-" + (model.conversation?.id.uuidString.prefix(8).lowercased() ?? "work")
                 if case let .newWorktree(savedBranch, savedBase) = model.conversation?.workingLocation {
                     branch = savedBranch
-                    if state.branches.contains(savedBase) { base = savedBase }
+                    base = branches.first { $0.id == savedBase }?.id
+                        ?? branches.first { $0.name == savedBase }?.id ?? savedBase
                 }
             } catch {
-                repository = nil
+                refs = nil
             }
             loading = false
         }
         .onChange(of: loading) { _, loading in
-            if !loading && repository != nil { branchFocused = true }
+            if !loading && refs != nil { branchFocused = true }
         }
     }
 

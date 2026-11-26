@@ -40,6 +40,9 @@ struct WorkspaceView: View {
     @State private var showingFiles: Set<UUID> = []
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
     @State private var choosingWorkspace = false
+    @State private var choosingBranch: WorkspaceModel.BranchPickerScope?
+    @State private var loadedBranch: (scope: WorkspaceModel.BranchPickerScope, branch: String?)?
+    @State private var restoreBranchComposerFocus = false
     @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
     @State private var paletteAction: CommandPaletteAction?
@@ -76,6 +79,11 @@ struct WorkspaceView: View {
     private struct MessageSearchKey: Equatable {
         let search: SidebarMessageSearch
         let latestMessageID: String?
+    }
+
+    private struct BranchReadRequest: Equatable {
+        let scope: WorkspaceModel.BranchPickerScope?
+        let revision: Int
     }
 
     private struct SearchRow: Identifiable {
@@ -141,10 +149,16 @@ struct WorkspaceView: View {
                     return openCommandPalette(in: window)
                 }
                 guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift],
-                      event.charactersIgnoringModifiers?.lowercased() == "x",
-                      acceptsWorkspaceCommands(in: window), model.canChangeWorkspace else { return false }
-                chooseWorkspace()
-                return true
+                      acceptsWorkspaceCommands(in: window) else { return false }
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "x" where model.canChangeWorkspace:
+                    chooseWorkspace()
+                    return true
+                case "g" where branchDisplay != nil:
+                    return openBranchPicker()
+                default:
+                    return false
+                }
             }
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
@@ -211,6 +225,21 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
+        }
+        .sheet(item: $choosingBranch, onDismiss: {
+            if restoreBranchComposerFocus { focusCurrentComposer() }
+            restoreBranchComposerFocus = false
+        }) { scope in
+            BranchPickerView(scope: scope, model: model, pasteboard: workspacePasteboard) { choosingBranch = nil }
+        }
+        .task(id: BranchReadRequest(scope: model.branchPickerScope, revision: model.repositoryRevision)) {
+            guard let scope = model.branchPickerScope else { return }
+            do {
+                let branch = try await GitWorkspace(path: scope.directory).currentBranch()
+                if !Task.isCancelled { loadedBranch = (scope, branch) }
+            } catch {
+                if !Task.isCancelled { loadedBranch = nil }
+            }
         }
         .confirmationDialog("Close this thread’s terminals?", isPresented: Binding(
             get: { terminalWorkspaceChange != nil },
@@ -769,7 +798,7 @@ struct WorkspaceView: View {
     private func draftBranch(in location: ThreadLocation) -> String? {
         switch location {
         case .project: nil
-        case let .newWorktree(_, base): base
+        case let .newWorktree(_, base): GitBranchRef.displayName(base)
         case let .worktree(path, _): draftCheckoutBranches[path]
         }
     }
@@ -905,7 +934,9 @@ struct WorkspaceView: View {
                                 } else if browserIsVisible {
                                     BrowserPreviewView(preview: browser)
                                 } else if let changesDirectory {
-                                    SourceControlView(directory: changesDirectory, model: model) { path in
+                                    SourceControlView(directory: changesDirectory, model: model, openBranch: {
+                                        openBranchPicker()
+                                    }, copyBranch: copyBranch) { path in
                                         guard let location = selectedFilesLocation,
                                               location.threadID == thread.id, location.directory == changesDirectory
                                         else { return }
@@ -1403,6 +1434,10 @@ struct WorkspaceView: View {
                 } else {
                     Label(thread.workingLocation.label, systemImage: "desktopcomputer")
                 }
+                if let display = branchDisplay {
+                    ThreadBranchButton(branch: display.branch, fallback: display.fallback,
+                                       identifier: "composer-branch", open: { openBranchPicker() }, copy: copyBranch)
+                }
                 Spacer()
                 if model.preparingWorktree && thread.worktreeLaunch?.interruption != nil {
                     Text("Cancelling setup…")
@@ -1605,15 +1640,16 @@ struct WorkspaceView: View {
     }
 
     private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
-        model.canOpenCommandPalette && !model.showingCommandPalette && window === NSApp.mainWindow &&
+        !model.showingWelcome && !model.showingCommandPalette && window === NSApp.mainWindow &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
-            !choosingWorkspace && !choosingThreadProject && terminalWorkspaceChange == nil &&
+            !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
             rename == nil && removingProject == nil
     }
 
     @discardableResult
     private func openCommandPalette(in eventWindow: NSWindow? = nil) -> Bool {
-        guard let window = eventWindow ?? NSApp.keyWindow, acceptsWorkspaceCommands(in: window) else { return false }
+        guard model.canOpenCommandPalette, let window = eventWindow ?? NSApp.keyWindow,
+              acceptsWorkspaceCommands(in: window) else { return false }
         paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         model.showingCommandPalette = true
         return true
@@ -1685,6 +1721,32 @@ struct WorkspaceView: View {
             terminalWorkspaceChange = thread.id
         } else {
             choosingWorkspace = true
+        }
+    }
+
+    private var branchDisplay: (branch: String?, fallback: String)? {
+        guard let scope = model.branchPickerScope else { return nil }
+        if case let .newWorktree(_, base) = scope.location {
+            return (GitBranchRef.displayName(base), "Choose base branch")
+        }
+        guard let loadedBranch, loadedBranch.scope == scope else { return nil }
+        return (loadedBranch.branch, "Detached HEAD")
+    }
+
+    @discardableResult
+    private func openBranchPicker() -> Bool {
+        guard let scope = model.branchPickerScope, !model.showingWelcome, !model.showingSettings,
+              !model.showingCommandPalette, model.projectPicker == nil, choosingBranch == nil,
+              !choosingWorkspace, !choosingThreadProject, terminalWorkspaceChange == nil,
+              rename == nil, removingProject == nil, !model.showingQuitSaveFailure else { return false }
+        restoreBranchComposerFocus = focusedComposer == scope.threadID
+        choosingBranch = scope
+        return true
+    }
+
+    private func copyBranch(_ branch: String) {
+        if !BranchPickerView.copyBranch(branch, to: workspacePasteboard) {
+            model.error = "Could not copy the branch name."
         }
     }
 
