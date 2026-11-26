@@ -1183,6 +1183,13 @@ struct WorkspaceView: View {
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
                                 .accessibilityAddTraits(isMatch ? .isSelected : [])
+                            if let incomplete = message.incompleteReply {
+                                Text(incomplete == .interrupted
+                                     ? "Pi skips this interrupted reply in future model requests."
+                                     : "This reply reached a token limit. Pi may skip it when continuing.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                             if message.canFork == true && !thread.archived {
                                 Button { model.forkResponse(message.id) } label: {
                                     Image(systemName: "arrow.triangle.branch")

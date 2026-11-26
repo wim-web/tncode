@@ -120,6 +120,20 @@ final class ConversationForkTests: XCTestCase {
         XCTAssertEqual(fixture.worker.openCommand?.forkMessageID, fixture.history[3].id)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.historyFile(published).path))
         XCTAssertTrue(fixture.worker.prompts.isEmpty)
+
+        var inherited = Array(fixture.history.prefix(4))
+        inherited[3].canFork = false
+        inherited[3].incompleteReply = .interrupted
+        fixture.worker.onEvent?(.ready(inherited))
+        let origin = try XCTUnwrap(reopened.conversation?.forkOrigin)
+        XCTAssertEqual(origin.messageID, inherited[3].id)
+        reopened.forkResponse(origin.messageID)
+        XCTAssertTrue(fixture.worker.forks.isEmpty)
+        reopened.openForkLink(origin.threadID)
+        fixture.worker.onEvent?(.ready(inherited + fixture.history.suffix(2)))
+        XCTAssertEqual(reopened.conversation?.id, fixture.parentID)
+        reopened.openForkLink(published)
+        XCTAssertEqual(fixture.worker.openCommand?.forkMessageID, origin.messageID)
     }
 }
 

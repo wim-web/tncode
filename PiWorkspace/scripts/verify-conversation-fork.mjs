@@ -21,6 +21,7 @@ const receipt = randomUUID();
 const key = randomUUID();
 const model = "fork-fixture";
 const requests = [];
+let replyMode = "stop";
 let heldReply;
 let fixtureFailure;
 let child;
@@ -35,8 +36,8 @@ const server = createServer(async (request, response) => {
     requests.push(body.messages);
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     writeChunk(response, { role: "assistant", content: `Reply ${requests.length}` });
-    if (requests.length === 3) heldReply = response;
-    else finishReply(response);
+    if (replyMode === "hold") heldReply = response;
+    else finishReply(response, replyMode);
   } catch (error) {
     fixtureFailure = error;
     response.destroy();
@@ -50,8 +51,8 @@ function writeChunk(response, delta, reason = null) {
   })}\n\n`);
 }
 
-function finishReply(response) {
-  writeChunk(response, {}, "stop");
+function finishReply(response, reason = "stop") {
+  writeChunk(response, {}, reason);
   response.end("data: [DONE]\n\n");
 }
 
@@ -136,6 +137,71 @@ function reserve(threadID = randomUUID()) {
   return { threadID, file: join(directory, threadID + ".jsonl") };
 }
 
+function spokenContext(messages) {
+  return messages.filter(({ role }) => role === "user" || role === "assistant").map(({ role, content }) => ({
+    role, text: typeof content === "string" ? content : content.map(({ text }) => text).join(""),
+  }));
+}
+
+async function verifyInterruptedForks() {
+  const sourceID = randomUUID();
+  const sourceDir = join(sessions, sourceID);
+  open(sourceID);
+  await receive("ready");
+  await completed(prompt("Completed before interruption"));
+
+  for (const [reason, mode] of [["aborted", "hold"], ["error", "network_error"], ["length", "length"]]) {
+    replyMode = mode;
+    const turnID = prompt(`Question before ${reason}`);
+    const partial = await receive("partial");
+    if (reason === "aborted") send({ type: "cancel", turnID });
+    const finished = await receive("finished");
+    assert.equal(finished.turnID, turnID);
+    if (reason === "error") assert(finished.error);
+    const origin = finished.messages.at(-1);
+    assert.equal(origin.role, "assistant");
+    assert(origin.text && origin.text === partial.text);
+    assert.equal(origin.incompleteReply, reason === "length" ? "truncated" : "interrupted");
+    assert.equal(origin.canFork, false);
+
+    const legacy = reserve();
+    assert.match((await fork(legacy.threadID, origin.id)).error, /completed text response/);
+    assert(!existsSync(legacy.file));
+    await close();
+
+    // Recreate the previous version's child file from actual persisted Pi entries.
+    const sourceFile = join(sourceDir, readdirSync(sourceDir)[0]);
+    const source = readFileSync(sourceFile, "utf8");
+    const manager = SessionManager.open(sourceFile, sourceDir, cwd);
+    const entries = manager.getBranch(origin.id);
+    assert.equal(entries.at(-1).message.stopReason, reason);
+    const header = { ...manager.getHeader(), id: legacy.threadID, parentSession: sourceFile };
+    const inherited = [header, ...entries].map(entry => JSON.stringify(entry) + "\n").join("");
+    writeFileSync(legacy.file, inherited);
+    open(legacy.threadID, origin.id);
+    assert.deepEqual((await receive("ready")).messages, finished.messages);
+    assert.equal(readFileSync(legacy.file, "utf8"), inherited);
+    replyMode = "stop";
+    const continuation = "Continue legacy " + reason;
+    const continued = await completed(prompt(continuation));
+    assert.deepEqual(continued.slice(0, -2), finished.messages);
+    assert.equal(continued.at(-1).canFork, true);
+    assert.deepEqual(spokenContext(requests.at(-1)), [
+      ...finished.messages.filter(m => !m.incompleteReply).map(({ role, text }) => ({ role, text })),
+      { role: "user", text: continuation },
+    ]);
+    assert(readFileSync(legacy.file, "utf8").startsWith(inherited));
+    await close();
+    open(legacy.threadID, origin.id);
+    assert.deepEqual((await receive("ready")).messages, continued);
+    await close();
+    open(sourceID);
+    assert.deepEqual((await receive("ready")).messages, finished.messages);
+    assert.equal(readFileSync(sourceFile, "utf8"), source);
+  }
+  await close();
+}
+
 try {
   mkdirSync(cwd);
   mkdirSync(sessions);
@@ -148,14 +214,17 @@ try {
   assert.equal(prefix[2].queuedID, receipt);
   const firstReply = prefix[1];
   const cutoff = prefix[3];
+  assert.equal(firstReply.canFork, true);
   assert.equal(cutoff.canFork, true);
 
+  replyMode = "hold";
   const third = prompt("Question 3");
   await receive("partial");
   const destination = reserve(childID);
   assert.match((await fork(childID, cutoff.id)).error, /current turn/);
   assert(!existsSync(destination.file));
   finishReply(heldReply);
+  replyMode = "stop";
   const parent = await completed(third);
   assert.deepEqual(parent.map(({ text }) => text), [
     "Question 1", "Reply 1", "Question 2 [API key removed]", "Reply 2", "Question 3", "Reply 3",
@@ -210,10 +279,9 @@ try {
   assert.deepEqual(continued.slice(0, 4), inherited);
   assert.deepEqual(continued.slice(4).map(({ text }) => text), ["Child continuation", "Reply 4"]);
   assert.equal(requests.length, 4);
-  const context = requests[3].filter(({ role }) => role === "user" || role === "assistant");
-  assert.deepEqual(context.map(({ role, content }) => ({
-    role, text: typeof content === "string" ? content : content.map(({ text }) => text).join(""),
-  })), [...inherited.map(({ role, text }) => ({ role, text })), { role: "user", text: "Child continuation" }]);
+  assert.deepEqual(spokenContext(requests[3]), [
+    ...inherited.map(({ role, text }) => ({ role, text })), { role: "user", text: "Child continuation" },
+  ]);
   await close();
 
   open(parentID);
@@ -230,7 +298,8 @@ try {
   assert.match((await receive("fatal")).error, /fork history is missing/);
   await close(1);
   assert(!existsSync(missing.file));
-  console.log("PASS selected Pi prefix, active-branch checks, separate durable histories, and one child continuation");
+  await verifyInterruptedForks();
+  console.log("PASS replayable cutoffs, active-branch checks, and durable legacy forks after abort and provider error");
 } finally {
   if (child) {
     child.kill();

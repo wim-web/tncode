@@ -82,10 +82,19 @@ function messageText(message) {
   return message.content?.filter((block) => block.type === "text").map((block) => block.text).join("") ?? "";
 }
 
-function isForkableReply(entry) {
-  return entry?.type === "message" && entry.message.role === "assistant" &&
-    ["stop", "length", "error", "aborted"].includes(entry.message.stopReason) &&
-    Boolean(messageText(entry.message));
+function forkReplyStatus(entry) {
+  if (entry?.type !== "message" || entry.message.role !== "assistant") return;
+  const text = messageText(entry.message);
+  if (!text) return;
+  switch (entry.message.stopReason) {
+    case "stop":
+      return text.trim() ? "replayable" : "blank";
+    case "length":
+      return "truncated";
+    case "error":
+    case "aborted":
+      return "interrupted";
+  }
 }
 
 function history() {
@@ -95,9 +104,11 @@ function history() {
     if (role !== "user" && role !== "assistant") return [];
     const { workspaceInput, workspaceQueuedID, workspaceSubmissionID } = entry.message;
     const text = redact(workspaceInput?.text ?? messageText(entry.message));
+    const forkStatus = forkReplyStatus(entry);
     return text || workspaceInput?.attachments.length ? [{
       id: entry.id, role, text, queuedID: workspaceQueuedID, submissionID: workspaceSubmissionID,
-      attachments: workspaceInput?.attachments, canFork: isForkableReply(entry),
+      attachments: workspaceInput?.attachments, canFork: forkStatus === "replayable",
+      incompleteReply: ["interrupted", "truncated"].includes(forkStatus) ? forkStatus : undefined,
     }] : [];
   });
 }
@@ -109,7 +120,7 @@ function forkConversation({ threadID, messageID }) {
   if (threadID === manager.getSessionId()) return finish("Choose a new conversation for the fork.");
   const branch = manager.getBranch();
   const cutoff = branch.findIndex((entry) => entry.id === messageID);
-  if (!isForkableReply(branch[cutoff])) return finish("This response is no longer available on the active conversation branch.");
+  if (forkReplyStatus(branch[cutoff]) !== "replayable") return finish("Choose a completed text response on the active conversation branch.");
 
   const sourceFile = manager.getSessionFile();
   let prefix;
@@ -124,7 +135,7 @@ function forkConversation({ threadID, messageID }) {
       const { workspaceQueuedID, workspaceSubmissionID, ...message } = entry.message;
       return { ...entry, message };
     });
-    if (!isForkableReply(prefix.at(-1))) throw new Error();
+    if (forkReplyStatus(prefix.at(-1)) !== "replayable") throw new Error();
   } catch {
     return finish("The source history is missing or incomplete. Reconnect before trying again.");
   }
@@ -283,7 +294,8 @@ async function open(command) {
     ? SessionManager.open(historyFile, sessionDir, cwd)
     : SessionManager.create(cwd, sessionDir, { id: threadID });
   if (manager.getSessionId() !== threadID) throw new Error("Conversation history does not match its ID.");
-  if (forkMessageID && !manager.getBranch().some((entry) => entry.id === forkMessageID && isForkableReply(entry))) {
+  // Earlier versions also allowed incomplete and whitespace-only replies as fork origins.
+  if (forkMessageID && !manager.getBranch().some((entry) => entry.id === forkMessageID && forkReplyStatus(entry))) {
     throw new Error("The fork history is incomplete.");
   }
   const appendMessage = manager.appendMessage.bind(manager);

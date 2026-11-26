@@ -3,11 +3,13 @@ import Darwin
 
 struct ChatMessage: Decodable, Identifiable {
     enum Role: String, Decodable { case user, assistant }
+    enum IncompleteReply: String, Decodable { case interrupted, truncated }
     let id: String
     let role: Role
     let text: String
     var queuedID: UUID? = nil
     var canFork: Bool? = nil
+    var incompleteReply: IncompleteReply? = nil
     var submissionID: UUID? = nil
     var attachments: [SentAttachment]? = nil
 }
