@@ -4,7 +4,7 @@ import Foundation
 
 @MainActor
 final class WorkspaceModel: ObservableObject {
-    enum SidebarCommand { case newThread, search, commandPalette }
+    enum SidebarCommand { case newThread, newScratchThread, search, commandPalette }
     let sidebarCommand = PassthroughSubject<SidebarCommand, Never>()
 
     enum NavigationDirection: Hashable {
@@ -697,11 +697,17 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func persist(_ updated: Workspace, navigation: NavigationChange = .visit) throws {
+    private func persist(_ state: Workspace, navigation: NavigationChange = .visit) throws {
+        var updated = state
         guard let store else { throw WorkspaceError("Could not open the workspace.") }
         if queueEdit != nil, updated.selectedProject != workspace.selectedProject ||
             updated.activeProject?.selectedConversation != conversation?.id {
             throw WorkspaceError("Update or cancel the queued message edit before switching threads.")
+        }
+        if let project = updated.activeProject, !project.isScratch {
+            updated.lastUsedProject = project.id
+        } else if let project = workspace.activeProject, !project.isScratch {
+            updated.lastUsedProject = project.id
         }
         try store.save(updated)
         composerSave?.cancel()

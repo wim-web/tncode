@@ -87,11 +87,18 @@ struct CommandPaletteContents {
     let canStartScratchThread: Bool
     var findThread: SidebarMessageSearch.Thread? = nil
     var settingsProject: Project? = nil
+    var defaultProject: UUID? = nil
+
+    var localThreadProject: Project? {
+        availableProjects.first { $0.id == preferredProject }
+            ?? availableProjects.first { $0.id == defaultProject }
+            ?? availableProjects.first
+    }
 
     var commands: [CommandPaletteRow] {
         var rows: [CommandPaletteRow] = []
-        if let preferred = availableProjects.first(where: { $0.id == preferredProject }) ?? availableProjects.first {
-            rows.append(.init(action: .newThread(preferred.id), title: "New thread in \(preferred.title)",
+        if let project = localThreadProject {
+            rows.append(.init(action: .newThread(project.id), title: "New thread in \(project.title)",
                               icon: "square.and.pencil", searchTerms: "chat create draft"))
             rows.append(.init(action: .chooseProject, title: "New thread in...", icon: "square.and.pencil",
                               searchTerms: "new thread project pick choose select"))
@@ -121,8 +128,8 @@ struct CommandPaletteContents {
     }
 
     var projectChoices: [CommandPaletteRow] {
-        let preferred = availableProjects.first { $0.id == preferredProject }
-        let projects = (preferred.map { [$0] } ?? []) + availableProjects.filter { $0.id != preferredProject }
+        let preferred = localThreadProject
+        let projects = (preferred.map { [$0] } ?? []) + availableProjects.filter { $0.id != preferred?.id }
         var rows = projects.map {
             CommandPaletteRow(action: .newThread($0.id), title: $0.title, icon: "folder", detail: $0.path)
         }
@@ -131,7 +138,7 @@ struct CommandPaletteContents {
             rows.insert(.init(action: .newScratchThread, title: "No project", icon: "bubble.left",
                               searchTerms: "without project none scratch"), at: index)
         }
-        return rows
+        return rows.isEmpty ? [.init(action: .addProject, title: "Add project", icon: "folder.badge.plus")] : rows
     }
 
     private func threadRow(_ thread: SidebarThread) -> CommandPaletteRow {
@@ -239,6 +246,11 @@ struct CommandPaletteSession {
     private var highlight: CommandPaletteAction?
     private var queryRevision = UUID()
     private var searchResult: (search: Search, matches: [UUID: SidebarMessageSearch.Match])?
+
+    init(choosingProject: Bool = false) {
+        parentQuery = choosingProject ? "" : nil
+    }
+
     var choosingProject: Bool { parentQuery != nil }
     var query = "" {
         didSet {

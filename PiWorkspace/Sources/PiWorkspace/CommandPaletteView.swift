@@ -6,8 +6,18 @@ struct CommandPaletteView: View {
     let searchMessages: (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match]
     let finish: (CommandPaletteAction?) -> Void
 
-    @State private var session = CommandPaletteSession()
+    @State private var session: CommandPaletteSession
     @FocusState private var searchFocused: Bool
+
+    init(contents: CommandPaletteContents, latestMessageID: String?, choosingProject: Bool = false,
+         searchMessages: @escaping (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match],
+         finish: @escaping (CommandPaletteAction?) -> Void) {
+        self.contents = contents
+        self.latestMessageID = latestMessageID
+        self.searchMessages = searchMessages
+        self.finish = finish
+        _session = State(initialValue: CommandPaletteSession(choosingProject: choosingProject))
+    }
 
     private var search: CommandPaletteSession.Search? {
         session.messageSearch(in: contents, latestMessageID: latestMessageID)
@@ -119,7 +129,16 @@ struct CommandPaletteView: View {
     }
 
     private func resultRow(_ row: CommandPaletteRow, selected: Bool) -> some View {
-        Button {
+        let identifier = if session.choosingProject {
+            row.action.identifier
+        } else {
+            switch row.action {
+            case .newThread(let id): "new-thread-in-context-\(id)"
+            case .newScratchThread: "new-thread-without-project"
+            default: row.action.identifier
+            }
+        }
+        return Button {
             guard groups(for: search).contains(where: { $0.rows.contains { $0.id == row.id } }) else { return }
             _ = handle(session.select(row.action))
         } label: {
@@ -157,7 +176,7 @@ struct CommandPaletteView: View {
         .accessibilityLabel(row.title)
         .accessibilityHint(row.detail ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("command-palette-\(row.id.identifier)")
+        .accessibilityIdentifier("command-palette-\(identifier)")
     }
 
     private func back() {

@@ -371,6 +371,7 @@ struct Workspace: Codable {
 
     var projects: [Project] = []
     var selectedProject: UUID?
+    var lastUsedProject: UUID?
     var model = ModelSettings()
     var welcomeCompleted: Bool?
     var addProjectBaseDirectory: String?

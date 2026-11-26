@@ -48,6 +48,7 @@ struct WorkspaceView: View {
     @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
     @State private var draftProjectPicker: DraftProjectPickerPresentation?
+    @State private var paletteChoosingProject = false
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
     @State private var openTerminals: [ThreadTerminalDrawerState] = []
@@ -211,6 +212,7 @@ struct WorkspaceView: View {
                 if case .toggle? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window)
                 }
+                if handleNewThreadKey(event, in: window) { return true }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
                 if modifiers == .command {
                     switch event.charactersIgnoringModifiers {
@@ -253,10 +255,18 @@ struct WorkspaceView: View {
             guard imageIndex == nil else { return }
             switch command {
             case .commandPalette: openCommandPalette()
-            case .newThread, .search:
+            case .newThread, .newScratchThread:
+                guard let window = NSApp.mainWindow, acceptsWorkspaceKeys(in: window),
+                      !model.operationsInProgress else { return }
+                if command == .newThread {
+                    openNewThread(in: window)
+                } else {
+                    startScratchThread()
+                }
+            case .search:
                 guard !model.showingWelcome, !model.showingCommandPalette,
                       NSApp.mainWindow?.attachedSheet == nil else { return }
-                if command == .newThread { newThread() } else { searchFocused = true }
+                searchFocused = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -301,6 +311,7 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
+                               choosingProject: paletteChoosingProject,
                                searchMessages: model.searchMessages) { action in
                 guard model.showingCommandPalette else { return }
                 paletteAction = action
@@ -1337,6 +1348,19 @@ struct WorkspaceView: View {
                         filesAreVisible: Bool, detailsFitInline: Bool) -> some View {
         return HStack(spacing: 8) {
             let canSwitchProject = canChooseDraftProject(thread.id)
+            if !project.isScratch {
+                Button { startThread(in: project.id) } label: {
+                    Label(project.title, systemImage: "folder")
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("New thread in \(project.title)")
+                .accessibilityLabel("New thread in \(project.title)")
+                .accessibilityIdentifier("thread-project-new-thread")
+                .disabled(model.operationsInProgress)
+            }
             if canSwitchProject || !project.isScratch {
                 Menu {
                     if canSwitchProject {
@@ -1347,14 +1371,21 @@ struct WorkspaceView: View {
                         projectActions(project)
                     }
                 } label: {
-                    Label(project.title, systemImage: project.isScratch ? "doc" : "folder")
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
+                    if project.isScratch {
+                        Label(project.title, systemImage: "doc")
+                            .lineLimit(1)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .tint(.primary)
                 .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("Project actions for \(project.title)")
                 .accessibilityIdentifier("thread-project")
             } else {
                 Label(project.title, systemImage: "doc")
@@ -2115,13 +2146,40 @@ struct WorkspaceView: View {
     }
 
     private var paletteContents: CommandPaletteContents {
-        let projects = filteredProjects
-        return CommandPaletteContents(
-            projects: projects, availableProjects: projects.filter(\.folderIsAvailable),
+        CommandPaletteContents(
+            projects: filteredProjects, availableProjects: orderedProjects.filter(\.folderIsAvailable),
             preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
             canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope,
-            settingsProject: model.project.flatMap { $0.isScratch ? nil : $0 }
+            settingsProject: model.project.flatMap { $0.isScratch ? nil : $0 },
+            defaultProject: model.workspace.lastUsedProject
         )
+    }
+
+    private func handleNewThreadKey(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard acceptsWorkspaceKeys(in: window), !model.operationsInProgress,
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        switch (event.charactersIgnoringModifiers?.lowercased(), modifiers) {
+        case ("n", .command), ("o", [.command, .shift]):
+            return openNewThread(in: window)
+        case ("n", [.command, .shift]):
+            return openNewThread(in: window, local: true)
+        case ("n", [.command, .option]) where model.canStartScratchThread:
+            startScratchThread()
+            return true
+        default:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func openNewThread(in window: NSWindow, local: Bool = false) -> Bool {
+        let contents = paletteContents
+        if (local || contents.availableProjects.count == 1), let project = contents.localThreadProject {
+            startThread(in: project.id)
+            return true
+        }
+        return openCommandPalette(in: window, choosingProject: true)
     }
 
     private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
@@ -2226,14 +2284,16 @@ struct WorkspaceView: View {
     }
 
     @discardableResult
-    private func openCommandPalette(in eventWindow: NSWindow? = nil) -> Bool {
+    private func openCommandPalette(in eventWindow: NSWindow? = nil, choosingProject: Bool = false) -> Bool {
         guard model.canOpenCommandPalette, let window = eventWindow ?? NSApp.keyWindow,
-              acceptsWorkspaceCommands(in: window) else { return false }
+              eventWindow != nil || window === NSApp.mainWindow,
+              acceptsWorkspaceKeys(in: window) else { return false }
         if findFocused {
             paletteReturnFocus = .threadFind
         } else {
             paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         }
+        paletteChoosingProject = choosingProject
         model.showingCommandPalette = true
         return true
     }
@@ -2257,7 +2317,7 @@ struct WorkspaceView: View {
         case .chooseProject:
             break
         case .newThread(let id):
-            guard let project = filteredProjects.first(where: { $0.id == id }) else { return }
+            guard let project = model.projects.first(where: { $0.id == id }) else { return }
             guard project.folderIsAvailable else {
                 model.error = "The project folder is no longer available."
                 return
@@ -2343,7 +2403,7 @@ struct WorkspaceView: View {
     private func startThread(in projectID: UUID) {
         guard !model.operationsInProgress, model.projects.contains(where: { $0.id == projectID }) else { return }
         model.addConversation(in: projectID)
-        guard model.project?.id == projectID else { return }
+        guard model.project?.id == projectID, model.editingQueuedMessageID == nil else { return }
         revealOpenedProject()
         searchFocused = false
         clearSearch()
@@ -2382,9 +2442,11 @@ struct WorkspaceView: View {
     }
 
     private func startScratchThread() {
+        let before = model.conversation?.id
         model.startScratchThread()
+        guard model.project?.isScratch == true, model.conversation?.id != before else { return }
         model.updateSidebarScope { $0.clear() }
-        query = ""
+        clearSearch()
     }
 
     private func canChooseDraftProject(_ threadID: UUID) -> Bool {

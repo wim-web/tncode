@@ -68,6 +68,12 @@ struct ProjectFolderView: View {
                         .disabled(submitting)
                 }
                 if page != .cloneURL { pathInput.disabled(submitting) }
+                if page == .newProject {
+                    Button("Add existing project") { show(.sources) }
+                        .help("Open a folder or clone a repository")
+                        .disabled(submitting)
+                        .accessibilityIdentifier("project-source-existing")
+                }
                 if let suggestions {
                     let rows = suggestions.rows(in: listing)
                     if !rows.isEmpty { folderSuggestions(rows, for: suggestions).disabled(submitting) }

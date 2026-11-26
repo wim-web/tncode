@@ -204,6 +204,7 @@ private struct WorkspaceSidebarCommands: Commands {
 
     private var workspaceOpen: Bool {
         model.startupFailure == nil && !model.showingWelcome && !model.showingCommandPalette && !model.showingSettings
+            && model.projectPicker == nil && !model.showingQuitSaveFailure
     }
 
     var body: some Commands {
@@ -214,11 +215,11 @@ private struct WorkspaceSidebarCommands: Commands {
                 .disabled(model.startupFailure != nil || model.operationsInProgress || model.showingCommandPalette
                           || model.showingSettings || model.projectPicker != nil)
             Button("New Thread") { model.sidebarCommand.send(.newThread) }
-                .keyboardShortcut("n")
+                .accessibilityIdentifier("new-thread-menu")
                 .disabled(!workspaceOpen || model.operationsInProgress)
             if model.canStartScratchThread {
-                Button("New Thread Without a Project", action: model.startScratchThread)
-                    .keyboardShortcut("n", modifiers: [.command, .option])
+                Button("New Thread Without a Project") { model.sidebarCommand.send(.newScratchThread) }
+                    .accessibilityIdentifier("new-thread-without-project-menu")
                     .disabled(!workspaceOpen || model.operationsInProgress)
             }
         }
