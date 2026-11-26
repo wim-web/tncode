@@ -405,7 +405,7 @@ final class WorkspaceFilesTests: XCTestCase {
         let worktreeFiles = WorkspaceFiles(directory: worktreeTarget.location.directory)
         let otherThread = Conversation(id: UUID(), title: "Same Checkout")
         let otherTarget = try target("notes.txt", thread: otherThread, project: project)
-        XCTAssertEqual(saves.paths(in: projectTarget.location), ["notes.txt"])
+        XCTAssertEqual(saves.pendingFiles(for: threadID).map(\.target), [projectTarget])
         XCTAssertFalse(saves.hasDraft(for: worktreeTarget))
         XCTAssertFalse(saves.hasDraft(for: otherTarget))
 
@@ -533,7 +533,7 @@ final class WorkspaceFilesTests: XCTestCase {
         XCTAssertEqual(session.draft?.text, "unsaved")
         XCTAssertEqual(try Data(contentsOf: file), Data("base".utf8))
         saves.release(session)
-        XCTAssertEqual(saves.paths(in: session.target.location), ["note"])
+        XCTAssertEqual(saves.pendingFiles(for: session.target.location.threadID).map(\.target), [session.target])
 
         let reopened = saves.acquire(session.target)
         await reopened.refresh()
@@ -603,6 +603,98 @@ final class WorkspaceFilesTests: XCTestCase {
         XCTAssertTrue(model.terminate())
         XCTAssertNil(model.quitFileSaveError)
         XCTAssertEqual(try Data(contentsOf: blocked), Data("keep this draft".utf8))
+    }
+
+    @MainActor
+    private func moveCheckoutWithBlockedDraft(in root: URL) async throws
+        -> (WorkspaceModel, WorkspaceFileSaveSession, URL, URL) {
+        let projectRoot = try folder("project", in: root)
+        let old = root.appendingPathComponent("old", isDirectory: true)
+        let moved = root.appendingPathComponent("moved", isDirectory: true)
+        try write("base", "notes.txt", in: projectRoot)
+        _ = try git(projectRoot, ["init", "-q"])
+        _ = try git(projectRoot, ["add", "notes.txt"])
+        _ = try git(projectRoot, ["commit", "-qm", "Original file"])
+        _ = try git(projectRoot, ["worktree", "add", "--detach", "--", old.path, "HEAD"])
+        let thread = Conversation(id: UUID(), title: "Draft", location: .worktree(path: old.path, base: nil), isDraft: true)
+        let project = Project(id: UUID(), path: projectRoot.path, title: "Project",
+                              conversations: [thread], selectedConversation: thread.id)
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        try WorkspaceStore(root: state).save(Workspace(projects: [project], selectedProject: project.id))
+        let model = WorkspaceModel(root: state, keychainService: UUID().uuidString, readCredential: { _ in nil },
+                                   makeProcess: { _, _ in throw WorkspaceError("Worker disabled in Files fixture.") })
+        let session = model.fileSaves.acquire(try target("notes.txt", thread: thread, project: project))
+        await session.refresh()
+        session.edit("pending revision", from: try XCTUnwrap(session.editorSource))
+        XCTAssertEqual(chmod(old.appendingPathComponent("notes.txt").path, 0o444), 0)
+        XCTAssertFalse(model.savePendingEditsForQuit())
+        _ = try git(projectRoot, ["worktree", "move", "--", old.path, moved.path])
+        return (model, session, projectRoot, moved)
+    }
+
+    @MainActor
+    func testBlockedDraftFollowsMovedCheckoutAndResumesAutosave() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (model, previous, project, moved) = try await moveCheckoutWithBlockedDraft(in: root)
+        let saves = model.fileSaves
+        let oldTarget = previous.target
+        saves.release(previous)
+        let movedFile = moved.appendingPathComponent("notes.txt")
+
+        // Even a hard link to the original file must not authorize a write in a different checkout.
+        let old = URL(fileURLWithPath: oldTarget.location.directory)
+        _ = try git(project, ["worktree", "add", "--detach", "--", old.path, "HEAD"])
+        let otherFile = old.appendingPathComponent("notes.txt")
+        try FileManager.default.removeItem(at: otherFile)
+        try FileManager.default.linkItem(at: movedFile, to: otherFile)
+        XCTAssertEqual(chmod(movedFile.path, 0o644), 0)
+        try await model.changeThreadLocation(.project)
+        XCTAssertFalse(model.savePendingEditsForQuit())
+        XCTAssertEqual(saves.pendingFiles(for: oldTarget.location.threadID).map(\.target), [oldTarget])
+        XCTAssertTrue(saves.pendingFiles(for: UUID()).isEmpty)
+        XCTAssertEqual(try String(contentsOf: otherFile, encoding: .utf8), "base")
+
+        XCTAssertEqual(chmod(movedFile.path, 0o444), 0)
+        try await model.changeThreadLocation(.existing(path: moved.path))
+        let current = try target("notes.txt", thread: XCTUnwrap(model.conversation), project: XCTUnwrap(model.project))
+        XCTAssertEqual(saves.pendingFiles(for: current.location.threadID).map(\.target), [current])
+        XCTAssertFalse(saves.hasDraft(for: oldTarget))
+        let reopened = saves.acquire(current)
+        await reopened.refresh()
+        XCTAssertEqual(reopened.draft?.text, "pending revision")
+        saves.release(reopened)
+        XCTAssertFalse(model.savePendingEditsForQuit())
+        XCTAssertEqual(chmod(movedFile.path, 0o644), 0)
+        try await waitFor { saves.pendingFiles(for: current.location.threadID).isEmpty }
+        XCTAssertEqual(try String(contentsOf: movedFile, encoding: .utf8), "pending revision")
+        XCTAssertEqual(try String(contentsOf: otherFile, encoding: .utf8), "base")
+        XCTAssertTrue(model.savePendingEditsForQuit())
+    }
+
+    @MainActor
+    func testReplacementInMovedCheckoutRetainsDraftUntilExplicitDiscard() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (model, previous, _, moved) = try await moveCheckoutWithBlockedDraft(in: root)
+        let replacement = moved.appendingPathComponent("notes.txt")
+        try Data("base".utf8).write(to: replacement, options: .atomic)
+        XCTAssertEqual(chmod(replacement.path, 0o644), 0)
+        try await model.changeThreadLocation(.existing(path: moved.path))
+        model.fileSaves.release(previous)
+        let current = try target("notes.txt", thread: XCTUnwrap(model.conversation), project: XCTUnwrap(model.project))
+        let editor = model.fileSaves.acquire(current)
+        defer { model.fileSaves.release(editor) }
+        await editor.refresh()
+        XCTAssertFalse(model.savePendingEditsForQuit())
+        XCTAssertTrue(editor.changedOnDisk)
+        XCTAssertFalse(editor.isEditable)
+        XCTAssertEqual(editor.draft?.text, "pending revision")
+        editor.discard()
+        await editor.refresh()
+        XCTAssertEqual(editor.editorSource?.text, "base")
+        XCTAssertTrue(model.savePendingEditsForQuit())
+        XCTAssertEqual(try String(contentsOf: replacement, encoding: .utf8), "base")
     }
 
     @MainActor

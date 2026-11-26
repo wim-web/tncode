@@ -15,6 +15,8 @@ struct WorkspaceFilesLocation: Hashable, Sendable {
 struct WorkspaceFileTarget: Hashable, Sendable {
     let location: WorkspaceFilesLocation
     let path: String
+
+    var fullPath: String { URL(fileURLWithPath: location.directory).appendingPathComponent(path).path }
 }
 
 enum WorkspaceFileError: LocalizedError, Equatable {
@@ -59,10 +61,13 @@ struct WorkspaceFileTree: Sendable {
 struct WorkspaceFileText: Sendable {
     let text: String
     let writable: Bool
+    let checkout: WorkspaceFileIdentity
     fileprivate let revision: FileRevision
     fileprivate let bytes: Data
 
-    func matches(_ other: Self) -> Bool { revision == other.revision && bytes == other.bytes }
+    func matches(_ other: Self) -> Bool {
+        checkout == other.checkout && revision == other.revision && bytes == other.bytes
+    }
 }
 
 enum WorkspaceFilePreview: Sendable {
@@ -149,8 +154,15 @@ struct WorkspaceFiles: Sendable {
         return WorkspaceFileTree(entries: entries, truncated: truncated)
     }
 
+    func directoryIdentity() throws -> WorkspaceFileIdentity {
+        let directory = try openRoot()
+        defer { close(directory) }
+        return WorkspaceFileIdentity(try status(directory))
+    }
+
     func preview(_ path: String) throws -> WorkspaceFilePreview {
-        try withParent(of: path) { folder, name in
+        let checkout = try directoryIdentity()
+        return try withParent(of: path, checkout: checkout) { folder, name in
             let file = try openFile(in: folder, name: name)
             defer { close(file) }
             let metadata = try status(file)
@@ -169,7 +181,7 @@ struct WorkspaceFiles: Sendable {
                 let revision = FileRevision(metadata)
                 if large { return .largeText(WorkspaceLargeTextFile(files: self, path: path, revision: revision)) }
                 return .text(WorkspaceFileText(text: text, writable: canWrite(in: folder, name: name),
-                                               revision: revision, bytes: data))
+                                               checkout: checkout, revision: revision, bytes: data))
             }
             return .binary(prefix: Data(data.prefix(4096)), size: metadata.st_size)
         }
@@ -265,7 +277,7 @@ struct WorkspaceFiles: Sendable {
         bytes.append(contentsOf: draft.text.utf8)
         guard bytes.count <= Self.textLimit else { throw WorkspaceFileError.tooLarge }
 
-        return try withParent(of: draft.target.path) { folder, name in
+        return try withParent(of: draft.target.path, checkout: draft.original.checkout) { folder, name in
             let file = try openFile(in: folder, name: name)
             defer { close(file) }
             guard canWrite(in: folder, name: name) else { throw WorkspaceFileError.readOnly }
@@ -287,8 +299,8 @@ struct WorkspaceFiles: Sendable {
             let updated = FileRevision(try status(temporary))
 
             // Reopen the path before replacement to catch directory moves as well as file edits.
-            try withParent(of: draft.target.path) { currentFolder, currentName in
-                guard FileRevision(try status(folder)).sameFile(as: FileRevision(try status(currentFolder))) else {
+            try withParent(of: draft.target.path, checkout: draft.original.checkout) { currentFolder, currentName in
+                guard WorkspaceFileIdentity(try status(folder)) == WorkspaceFileIdentity(try status(currentFolder)) else {
                     throw WorkspaceFileError.changed
                 }
                 let current = try openFile(in: currentFolder, name: currentName)
@@ -297,7 +309,8 @@ struct WorkspaceFiles: Sendable {
                 guard canWrite(in: currentFolder, name: currentName) else { throw WorkspaceFileError.readOnly }
                 guard renameat(folder, temporaryName, currentFolder, currentName) == 0 else { throw fileError() }
             }
-            return WorkspaceFileText(text: draft.text, writable: true, revision: updated, bytes: bytes)
+            return WorkspaceFileText(text: draft.text, writable: true, checkout: draft.original.checkout,
+                                     revision: updated, bytes: bytes)
         }
     }
 
@@ -378,13 +391,17 @@ struct WorkspaceFiles: Sendable {
         return directory
     }
 
-    private func withParent<T>(of path: String, _ use: (Int32, String) throws -> T) throws -> T {
+    private func withParent<T>(of path: String, checkout: WorkspaceFileIdentity? = nil,
+                               _ use: (Int32, String) throws -> T) throws -> T {
         let parts = path.components(separatedBy: "/")
         guard let name = parts.last, parts.allSatisfy(Self.allowsComponent) else {
             throw WorkspaceFileError.unsupportedPath
         }
         var directory = try openRoot()
         defer { close(directory) }
+        if let checkout, try WorkspaceFileIdentity(status(directory)) != checkout {
+            throw WorkspaceFileError.changed
+        }
         for part in parts.dropLast() {
             let child = openat(directory, part, Self.directoryFlags)
             guard child >= 0 else { throw fileError() }
@@ -474,20 +491,26 @@ struct WorkspaceFiles: Sendable {
     }
 }
 
+struct WorkspaceFileIdentity: Equatable, Sendable {
+    private let device: dev_t
+    private let inode: ino_t
+
+    fileprivate init(_ metadata: stat) {
+        device = metadata.st_dev
+        inode = metadata.st_ino
+    }
+}
+
 private struct FileRevision: Equatable, Sendable {
-    let device: dev_t
-    let inode: ino_t
+    let identity: WorkspaceFileIdentity
     let size: off_t
     let modifiedSeconds: Int
     let modifiedNanoseconds: Int
 
     init(_ metadata: stat) {
-        device = metadata.st_dev
-        inode = metadata.st_ino
+        identity = WorkspaceFileIdentity(metadata)
         size = metadata.st_size
         modifiedSeconds = metadata.st_mtimespec.tv_sec
         modifiedNanoseconds = metadata.st_mtimespec.tv_nsec
     }
-
-    func sameFile(as other: Self) -> Bool { device == other.device && inode == other.inode }
 }

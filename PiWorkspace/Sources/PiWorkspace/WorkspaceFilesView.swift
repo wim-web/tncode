@@ -16,6 +16,7 @@ struct WorkspaceFilesView: View {
     @State private var query = ""
     @State private var refreshing = 0
     @State private var showingExplorer = true
+    @State private var recovery: WorkspaceFileSaveSession?
 
     private var target: WorkspaceFileTarget? {
         selection.map { WorkspaceFileTarget(location: location, path: $0) }
@@ -70,7 +71,23 @@ struct WorkspaceFilesView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("files-panel")
+        .alert("Recover unsaved edits?", isPresented: Binding(
+            get: { recovery != nil }, set: { if !$0 { recovery = nil } }
+        ), presenting: recovery) { session in
+            Button("Copy Contents") {
+                guard let text = session.draft?.text else { return }
+                pasteboard.clearContents()
+                pasteboard.setString(text, forType: .string)
+            }
+            .accessibilityIdentifier("files-recovery-copy")
+            Button("Discard Edits", role: .destructive) { session.discard() }
+                .accessibilityIdentifier("files-recovery-discard")
+            Button("Cancel", role: .cancel) {}
+        } message: { session in
+            Text("The unsaved edits belong to \(session.target.fullPath). Discarding them removes the draft.")
+        }
         .task(id: refreshing) {
+            saves.recoverMovedDrafts(in: location)
             let directory = location.directory
             do {
                 let result = try await loadWorkspaceFiles { try WorkspaceFiles(directory: directory).tree() }
@@ -98,12 +115,17 @@ struct WorkspaceFilesView: View {
                     .accessibilityIdentifier("files-expand-all")
                     Button("Collapse All Folders") { expanded.removeAll() }
                         .accessibilityIdentifier("files-collapse-all")
-                    let unsaved = saves.paths(in: location)
+                    let unsaved = saves.pendingFiles(for: location.threadID)
                     if !unsaved.isEmpty {
                         Menu("Unsaved Files") {
-                            ForEach(unsaved, id: \.self) { path in
-                                Button(path) { openFile(path) }
-                                    .accessibilityIdentifier("files-unsaved-row-" + path)
+                            ForEach(unsaved, id: \.target) { session in
+                                if session.target.location == location {
+                                    Button(session.target.path) { openFile(session.target.path) }
+                                        .accessibilityIdentifier("files-unsaved-row-" + session.target.path)
+                                } else {
+                                    Button(session.target.fullPath) { recovery = session }
+                                        .accessibilityIdentifier("files-unsaved-row-" + session.target.fullPath)
+                                }
                             }
                         }
                         .accessibilityIdentifier("files-unsaved-files")

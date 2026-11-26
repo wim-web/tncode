@@ -36,10 +36,22 @@ final class WorkspaceFileSaves {
         removeIfIdle(session)
     }
 
-    func paths(in location: WorkspaceFilesLocation) -> [String] {
-        sessions.values.compactMap { session in
-            session.target.location == location && session.draft != nil ? session.target.path : nil
-        }.sorted()
+    func pendingFiles(for threadID: UUID) -> [WorkspaceFileSaveSession] {
+        sessions.values.filter { $0.target.location.threadID == threadID && $0.draft != nil }
+            .sorted { ($0.target.location.directory, $0.target.path) < ($1.target.location.directory, $1.target.path) }
+    }
+
+    func recoverMovedDrafts(in location: WorkspaceFilesLocation) {
+        let candidates = pendingFiles(for: location.threadID).filter { $0.target.location != location }
+        guard !candidates.isEmpty,
+              let checkout = try? WorkspaceFiles(directory: location.directory).directoryIdentity() else { return }
+        for session in candidates {
+            let target = WorkspaceFileTarget(location: location, path: session.target.path)
+            guard let draft = session.draft, draft.original.checkout == checkout, sessions[target] == nil else { continue }
+            sessions[session.target] = nil
+            sessions[target] = session
+            session.move(draft, to: target)
+        }
     }
 
     func hasDraft(for target: WorkspaceFileTarget) -> Bool { sessions[target]?.draft != nil }
@@ -49,14 +61,17 @@ final class WorkspaceFileSaves {
         for session in Array(sessions.values) {
             if let error = session.flush(), firstFailure == nil {
                 let target = session.target
-                firstFailure = "Couldn’t save \(target.path) in \(target.location.directory). \(error.localizedDescription)"
+                firstFailure = "Couldn’t save \(target.path) in \(target.location.directory). \(error.localizedDescription) " +
+                    "To recover the edits, open Files in that thread and choose Folder Actions > Unsaved Files."
             }
         }
         return firstFailure
     }
 
     private func removeIfIdle(_ session: WorkspaceFileSaveSession) {
-        if session.leases == 0, session.draft == nil { sessions[session.target] = nil }
+        if session.leases == 0, session.draft == nil, sessions[session.target] === session {
+            sessions[session.target] = nil
+        }
     }
 }
 
@@ -69,7 +84,7 @@ final class WorkspaceFileSaveSession {
         var text: String { original.text }
     }
 
-    let target: WorkspaceFileTarget
+    private(set) var target: WorkspaceFileTarget
     private(set) var preview: Result<WorkspaceFilePreview, Error>?
     private(set) var draft: WorkspaceFileDraft?
     private(set) var saveError: Error?
@@ -77,11 +92,11 @@ final class WorkspaceFileSaveSession {
     @ObservationIgnored fileprivate var leases = 0
     @ObservationIgnored private var readRequest: UUID?
     @ObservationIgnored private var pending: Task<Void, Never>?
-    private let didSave: (WorkspaceFileSaveSession) -> Void
+    private let draftCleared: (WorkspaceFileSaveSession) -> Void
 
-    fileprivate init(target: WorkspaceFileTarget, didSave: @escaping (WorkspaceFileSaveSession) -> Void) {
+    fileprivate init(target: WorkspaceFileTarget, draftCleared: @escaping (WorkspaceFileSaveSession) -> Void) {
         self.target = target
-        self.didSave = didSave
+        self.draftCleared = draftCleared
     }
 
     var diskText: WorkspaceFileText? {
@@ -143,10 +158,18 @@ final class WorkspaceFileSaveSession {
         }
     }
 
+    fileprivate func move(_ draft: WorkspaceFileDraft, to destination: WorkspaceFileTarget) {
+        readRequest = nil
+        target = destination
+        self.draft = WorkspaceFileDraft(target: destination, original: draft.original, text: draft.text)
+        flush()
+    }
+
     func discard() {
         clearDraft()
         preview = nil
         readRequest = nil
+        draftCleared(self)
     }
 
     @discardableResult
@@ -159,7 +182,7 @@ final class WorkspaceFileSaveSession {
             readRequest = nil
             preview = .success(.text(saved))
             clearDraft()
-            didSave(self)
+            draftCleared(self)
             return nil
         } catch {
             saveError = error

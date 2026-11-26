@@ -996,6 +996,10 @@ final class WorkspaceModel: ObservableObject {
             }
             thread.location = location
         }
+        if let thread = self.project?.conversations.first(where: { $0.id == conversation.id }),
+           let files = WorkspaceFilesLocation(thread: thread, project: project) {
+            fileSaves.recoverMovedDrafts(in: files)
+        }
         connect()
     }
 
