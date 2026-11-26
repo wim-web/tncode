@@ -47,6 +47,7 @@ final class WorkspaceModel: ObservableObject {
     let fileSaves = WorkspaceFileSaves()
     private var composerDirty = false
     private var worktreeTask: Task<Void, Never>?
+    private var projectCloneTask: Task<Void, Error>?
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
     private var pullRequestSelectionRevision = 0
@@ -401,6 +402,11 @@ final class WorkspaceModel: ObservableObject {
         return true
     }
 
+    func cancelProjectCloneForQuit() -> Task<Void, Error>? {
+        projectCloneTask?.cancel()
+        return projectCloneTask
+    }
+
     @discardableResult
     private func save(_ edit: (inout Workspace) -> Void) -> Bool {
         var updated = workspace
@@ -436,22 +442,65 @@ final class WorkspaceModel: ObservableObject {
 
     func openProject(_ source: ProjectSource, request: ProjectPickerRequest) async throws {
         switch source {
-        case .localFolder(let folder):
-            try openProject(folder, request: request)
+        case .localFolder(let url):
+            try openProject(url, request: request)
         case .newProject(let name, let parent):
             try checkCanOpenProject()
             let parent = try ProjectFolder.existing(at: parent)
             let folder = try await runGitMutation {
                 try await GitWorkspace.createRepository(named: name, in: parent)
             }
-            do {
-                try openProject(folder, request: request)
-            } catch {
-                throw WorkspaceError("""
-                    The repository was created at \(folder.path). \(error.localizedDescription)
-                    After resolving the error, add the repository with Local folder.
-                    """)
+            try registerCreatedRepository(folder, request: request)
+        case .clone(let remote, let destination):
+            try checkCanOpenProject()
+            guard request.relinking == nil else {
+                throw WorkspaceError("Choose a local folder to relink this project.")
             }
+            guard destination.isFileURL else {
+                throw WorkspaceError("Choose a local destination folder.")
+            }
+            let destination = destination.standardizedFileURL
+            let enclosingFolder = destination.deletingLastPathComponent()
+            guard destination.path != enclosingFolder.path else {
+                throw WorkspaceError("Enter a destination for the cloned repository.")
+            }
+            let parent = try ProjectFolder.existing(at: enclosingFolder)
+            let target = parent.appendingPathComponent(destination.lastPathComponent, isDirectory: true)
+            let ignoresCase = (try? parent.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey])
+                .volumeSupportsCaseSensitiveNames) == false
+            guard !workspace.projects.contains(where: {
+                $0.path == target.path || (ignoresCase && $0.path.caseInsensitiveCompare(target.path) == .orderedSame)
+            }) else {
+                throw WorkspaceError("The destination already belongs to a project. Choose another destination.")
+            }
+            try await runGitMutation {
+                let clone = Task {
+                    let folder = try await GitWorkspace.cloneRepository(remote, to: target)
+                    try registerCreatedRepository(folder, request: request)
+                }
+                projectCloneTask = clone
+                defer { projectCloneTask = nil }
+                try await withTaskCancellationHandler {
+                    try await clone.value
+                } onCancel: {
+                    clone.cancel()
+                }
+            }
+        }
+    }
+
+    private func registerCreatedRepository(_ folder: URL, request: ProjectPickerRequest) throws {
+        do {
+            let existing = try ProjectFolder.existing(at: folder)
+            guard existing.path == folder.path else {
+                throw WorkspaceError("The destination changed before it could be added.")
+            }
+            try registerProject(existing, relinking: request.relinking, startThread: request.startThread)
+        } catch {
+            throw WorkspaceError("""
+                The repository is ready at \(folder.path). \(error.localizedDescription)
+                After resolving the error, add the repository with Local folder.
+                """)
         }
     }
 

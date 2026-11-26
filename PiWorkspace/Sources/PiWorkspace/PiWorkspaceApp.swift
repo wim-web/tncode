@@ -143,9 +143,17 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var model: WorkspaceModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, !model.savePendingEditsForQuit() else { return .terminateNow }
-        model.showingQuitSaveFailure = true
-        return .terminateCancel
+        guard let model else { return .terminateNow }
+        guard model.savePendingEditsForQuit() else {
+            model.showingQuitSaveFailure = true
+            return .terminateCancel
+        }
+        guard let clone = model.cancelProjectCloneForQuit() else { return .terminateNow }
+        Task {
+            _ = await clone.result
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {

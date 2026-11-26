@@ -7,20 +7,22 @@ struct ProjectFolderView: View {
     let open: (ProjectSource) async throws -> Void
 
     private enum Page {
-        case sources, localFolder, newProject
+        case sources, localFolder, newProject, cloneURL, cloneDestination
     }
 
     private enum Field: Hashable {
-        case path, name
+        case path, name, remote
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var page: Page
     @State private var path: String
     @State private var name = ""
+    @State private var remoteInput = ""
     @State private var browsing = false
     @State private var browsedFolder: URL?
-    @State private var submitting = false
+    @State private var submission: Task<Void, Never>?
+    @State private var cancelling = false
     @State private var error: String?
     @State private var listing: ProjectPathSuggestions.Listing?
     @State private var highlightedFolder: ProjectPathSuggestions.Row?
@@ -38,8 +40,11 @@ struct ProjectFolderView: View {
         case .sources: "Add project"
         case .localFolder: request.relinking == nil ? "Local folder" : "Relink project"
         case .newProject: "New project"
+        case .cloneURL, .cloneDestination: "Git URL"
         }
     }
+
+    private var submitting: Bool { submission != nil }
 
     var body: some View {
         let suggestions = pathSuggestions
@@ -48,17 +53,24 @@ struct ProjectFolderView: View {
             if page == .sources {
                 sourceButtons
             } else {
-                if page == .newProject {
+                if page == .cloneURL {
+                    Text("Repository URL").font(.callout.weight(.medium))
+                    TextField("Enter a Git clone URL", text: $remoteInput)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .remote)
+                        .accessibilityIdentifier("project-clone-url")
+                } else if page == .newProject {
                     Text("Project name").font(.callout.weight(.medium))
                     TextField("Enter a project name", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .name)
                         .accessibilityIdentifier("project-name")
+                        .disabled(submitting)
                 }
-                pathInput
+                if page != .cloneURL { pathInput.disabled(submitting) }
                 if let suggestions {
                     let rows = suggestions.rows(in: listing)
-                    if !rows.isEmpty { folderSuggestions(rows, for: suggestions) }
+                    if !rows.isEmpty { folderSuggestions(rows, for: suggestions).disabled(submitting) }
                 }
                 if let error {
                     Text(error)
@@ -66,20 +78,27 @@ struct ProjectFolderView: View {
                         .foregroundStyle(.red)
                         .accessibilityIdentifier("project-path-error")
                 }
+                if page == .cloneDestination && submitting {
+                    ProgressView(cancelling ? "Cancelling clone…" : "Cloning repository…")
+                        .controlSize(.small)
+                        .accessibilityIdentifier("project-clone-progress")
+                }
             }
             HStack {
                 if page != .sources && request.relinking == nil {
-                    Button("Back") { show(.sources) }
+                    Button("Back") { show(page == .cloneDestination ? .cloneURL : .sources) }
+                        .disabled(submitting)
                         .accessibilityIdentifier("back-project-source")
                 }
                 Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel, action: cancel)
                     .keyboardShortcut(.cancelAction)
+                    .disabled(cancelling || (submitting && page != .cloneDestination))
                     .accessibilityIdentifier("cancel-project")
                 if page != .sources {
                     Button(confirmTitle, action: submit)
                         .keyboardShortcut(.defaultAction)
-                        .disabled(!canSubmit)
+                        .disabled(!canSubmit || submitting)
                         .accessibilityIdentifier("confirm-project")
                 }
             }
@@ -87,13 +106,14 @@ struct ProjectFolderView: View {
         }
         .padding(22)
         .frame(width: 485)
-        .disabled(submitting)
         .interactiveDismissDisabled(submitting)
         .task(id: page) {
             switch page {
             case .sources: focusedField = nil
             case .localFolder: focusedField = .path
             case .newProject: focusedField = .name
+            case .cloneURL: focusedField = .remote
+            case .cloneDestination: focusedField = .path
             }
         }
         .onChange(of: path) { _, _ in
@@ -101,8 +121,12 @@ struct ProjectFolderView: View {
             highlightedFolder = nil
         }
         .onChange(of: name) { _, _ in error = nil }
+        .onChange(of: remoteInput) { _, _ in error = nil }
         .onChange(of: browsing) { _, browsing in
-            if !browsing, page == .localFolder { focusedField = .path }
+            if !browsing, page == .localFolder || page == .cloneDestination { focusedField = .path }
+        }
+        .onDisappear {
+            if page == .cloneDestination { submission?.cancel() }
         }
         .task(id: suggestions?.directory) {
             listing = nil
@@ -114,8 +138,14 @@ struct ProjectFolderView: View {
         .fileImporter(isPresented: $browsing, allowedContentTypes: [.folder]) { result in
             switch result {
             case .success(let url):
-                browsedFolder = url
-                path = url.path
+                if page == .cloneDestination {
+                    let name = (try? enteredFolder().lastPathComponent)
+                        ?? (try? enteredRemote().suggestedName) ?? ""
+                    path = name.isEmpty ? url.path : url.appendingPathComponent(name, isDirectory: true).path
+                } else {
+                    browsedFolder = url
+                    path = url.path
+                }
                 error = nil
             case .failure(let failure):
                 if (failure as? CocoaError)?.code != .userCancelled { error = failure.localizedDescription }
@@ -131,6 +161,11 @@ struct ProjectFolderView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityIdentifier("project-source-local")
+            Button { show(.cloneURL) } label: {
+                Label("Git URL", systemImage: "link")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityIdentifier("project-source-clone")
             Button { show(.newProject) } label: {
                 Label("New project", systemImage: "folder.badge.plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -142,8 +177,7 @@ struct ProjectFolderView: View {
 
     private var pathInput: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(page == .newProject ? "Parent folder" : "Project folder")
-                .font(.callout.weight(.medium))
+            Text(pathLabel).font(.callout.weight(.medium))
             HStack(spacing: 8) {
                 pathField
                 Button("Browse…") { browsing = true }
@@ -152,11 +186,27 @@ struct ProjectFolderView: View {
         }
     }
 
+    private var pathLabel: String {
+        switch page {
+        case .newProject: "Parent folder"
+        case .cloneDestination: "Destination folder"
+        default: "Project folder"
+        }
+    }
+
+    private var pathIdentifier: String {
+        switch page {
+        case .newProject: "project-parent-path"
+        case .cloneDestination: "project-clone-destination"
+        default: "project-path"
+        }
+    }
+
     private var pathField: some View {
         TextField("Enter a folder path", text: $path)
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .path)
-            .accessibilityIdentifier(page == .newProject ? "project-parent-path" : "project-path")
+            .accessibilityIdentifier(pathIdentifier)
             .background {
                 if page == .localFolder {
                     ProjectPathKeyboard(isPathFocused: { focusedField == .path }, handle: handlePathKey)
@@ -276,17 +326,23 @@ struct ProjectFolderView: View {
     }
 
     private var confirmTitle: String {
-        if page == .newProject { return "Create Project" }
-        return request.relinking == nil ? "Add Project" : "Relink"
+        switch page {
+        case .newProject: "Create Project"
+        case .cloneURL: "Continue"
+        case .cloneDestination: "Clone"
+        default: request.relinking == nil ? "Add Project" : "Relink"
+        }
     }
 
     private var canSubmit: Bool {
-        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        if page == .cloneURL { return !remoteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             (page != .newProject || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var browseDirectory: URL? {
         if let folder = try? enteredFolder() {
+            if page == .cloneDestination { return folder.deletingLastPathComponent() }
             if (try? ProjectFolder.existing(at: folder)) != nil { return folder }
             return folder.deletingLastPathComponent()
         }
@@ -299,6 +355,7 @@ struct ProjectFolderView: View {
             ? request.basePath ?? FileManager.default.homeDirectoryForCurrentUser.path
             : request.initialPath
         name = ""
+        if page == .sources { remoteInput = "" }
         browsedFolder = nil
         highlightedFolder = nil
         error = nil
@@ -309,17 +366,48 @@ struct ProjectFolderView: View {
         return try ProjectFolder.resolve(path, relativeTo: request.basePath)
     }
 
+    private func enteredRemote() throws -> ProjectCloneRemote {
+        try ProjectCloneRemote(remoteInput, relativeTo: request.basePath)
+    }
+
+    private func cancel() {
+        if page == .cloneDestination, let submission {
+            cancelling = true
+            submission.cancel()
+        } else {
+            dismiss()
+        }
+    }
+
     private func submit() {
         guard canSubmit, !submitting else { return }
         do {
+            if page == .cloneURL {
+                let remote = try enteredRemote()
+                show(.cloneDestination)
+                if !remote.suggestedName.isEmpty {
+                    path = FileManager.default.homeDirectoryForCurrentUser
+                        .appendingPathComponent(remote.suggestedName, isDirectory: true).path
+                }
+                return
+            }
             let folder = try enteredFolder()
-            let source: ProjectSource = page == .newProject ? .newProject(name: name, parent: folder) : .localFolder(folder)
-            submitting = true
+            let source: ProjectSource
+            switch page {
+            case .newProject: source = .newProject(name: name, parent: folder)
+            case .cloneDestination: source = .clone(try enteredRemote(), destination: folder)
+            default: source = .localFolder(folder)
+            }
             error = nil
-            Task {
-                defer { submitting = false }
+            submission = Task {
+                defer {
+                    submission = nil
+                    cancelling = false
+                }
                 do {
                     try await open(source)
+                    dismiss()
+                } catch is CancellationError {
                     dismiss()
                 } catch let failure {
                     error = failure.localizedDescription

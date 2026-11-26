@@ -204,6 +204,48 @@ struct ProjectPickerRequest: Identifiable {
 enum ProjectSource {
     case localFolder(URL)
     case newProject(name: String, parent: URL)
+    case clone(ProjectCloneRemote, destination: URL)
+}
+
+struct ProjectCloneRemote: Sendable {
+    let argument: String
+    let suggestedName: String
+
+    init(_ input: String, relativeTo basePath: String?) throws {
+        let address = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let invalid = WorkspaceError("Enter a Git clone URL or a local repository path.")
+        guard !address.isEmpty,
+              !address.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw invalid }
+
+        let repositoryPath: String
+        if address.hasPrefix("/") || address.hasPrefix("~/") || address.hasPrefix("./") || address.hasPrefix("../") {
+            let folder = try ProjectFolder.resolve(address, relativeTo: basePath)
+            argument = folder.standardizedFileURL.path
+            repositoryPath = argument
+        } else if address.contains("://") {
+            guard let url = URLComponents(string: address), let scheme = url.scheme?.lowercased(),
+                  ["file", "git", "http", "https", "ssh"].contains(scheme),
+                  scheme == "file" ? url.path.hasPrefix("/") : url.host?.isEmpty == false else { throw invalid }
+            guard url.password == nil else {
+                throw WorkspaceError("Remove the password from the URL and use your Git credentials.")
+            }
+            argument = address
+            repositoryPath = url.path
+        } else {
+            // Git also accepts SSH addresses such as git@host:owner/repo.git.
+            guard let separator = address.firstIndex(of: ":"), separator != address.startIndex,
+                  address.index(after: separator) != address.endIndex else { throw invalid }
+            let host = address[..<separator]
+            let path = address[address.index(after: separator)...]
+            guard !host.contains("/"), !host.contains(where: \.isWhitespace), !path.hasPrefix(":") else { throw invalid }
+            argument = address
+            repositoryPath = String(path)
+        }
+
+        let leaf = repositoryPath.split(separator: "/").last.map(String.init) ?? ""
+        let name = leaf.hasSuffix(".git") ? String(leaf.dropLast(4)) : leaf
+        suggestedName = name == "." || name == ".." || name.utf8.contains(0) ? "" : name
+    }
 }
 
 enum ProjectFolder {

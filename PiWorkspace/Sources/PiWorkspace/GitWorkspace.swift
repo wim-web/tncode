@@ -77,17 +77,59 @@ struct GitWorkspace: Sendable {
             throw WorkspaceError.invalidProjectName
         }
         let folder = parent.appendingPathComponent(name, isDirectory: true)
-        let staging = parent.appendingPathComponent(".pi-workspace-\(UUID())", isDirectory: true)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false,
-                                                attributes: [.posixPermissions: 0o700])
-        var moved = false
-        defer {
-            if !moved { try? FileManager.default.removeItem(at: staging) }
+        return try await installNewRepository(at: folder) { staging in
+            _ = try await GitWorkspace(path: staging.path).run(["init", "--quiet", "--template="])
         }
-        _ = try await GitWorkspace(path: staging.path).run(["init", "--quiet", "--template="])
+    }
+
+    @MainActor
+    static func cloneRepository(_ remote: ProjectCloneRemote, to folder: URL) async throws -> URL {
+        try await installNewRepository(at: folder) { staging in
+            _ = try await GitWorkspace(path: staging.path).run(
+                ["clone", "--quiet", "--no-local", "--template=", "--", remote.argument, staging.path],
+                outputLimit: 0
+            )
+        }
+    }
+
+    @MainActor
+    private static func installNewRepository(
+        at folder: URL, initialize: (URL) async throws -> Void
+    ) async throws -> URL {
+        try Task.checkCancellation()
+        try folder.withUnsafeFileSystemRepresentation { destination in
+            guard let destination else { throw WorkspaceError.invalidArgument }
+            var info = stat()
+            if lstat(destination, &info) == 0 { throw WorkspaceError.projectFolderExists }
+            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            if code != .ENOENT { throw POSIXError(code) }
+        }
+        let staging = folder.deletingLastPathComponent()
+            .appendingPathComponent(".pi-workspace-\(UUID())", isDirectory: true)
+        let files = FileManager.default
+        try files.createDirectory(at: staging, withIntermediateDirectories: false,
+                                  attributes: [.posixPermissions: 0o700])
+        do {
+            try await initialize(staging)
+            try Task.checkCancellation()
+            try moveNewRepository(from: staging, to: folder)
+        } catch let failure {
+            do {
+                try files.removeItem(at: staging)
+            } catch let cleanup as CocoaError where cleanup.code == .fileNoSuchFile {
+                throw failure
+            } catch {
+                throw WorkspaceError.repositoryCleanupFailed(staging, failure: failure, cleanup: error)
+            }
+            throw failure
+        }
+        return folder
+    }
+
+    private static func moveNewRepository(from staging: URL, to folder: URL) throws {
         try staging.withUnsafeFileSystemRepresentation { source in
             try folder.withUnsafeFileSystemRepresentation { destination in
-                guard let source, let destination else { throw WorkspaceError.invalidProjectName }
+                guard let source, let destination else { throw WorkspaceError.invalidArgument }
                 guard renamex_np(source, destination, UInt32(RENAME_EXCL)) == 0 else {
                     let code = POSIXErrorCode(rawValue: errno) ?? .EIO
                     if code == .EEXIST || code == .ENOTEMPTY { throw WorkspaceError.projectFolderExists }
@@ -95,8 +137,6 @@ struct GitWorkspace: Sendable {
                 }
             }
         }
-        moved = true
-        return folder
     }
 
     func fetchRemotes() async throws -> [(name: String, url: String)] {
@@ -480,8 +520,9 @@ struct GitWorkspace: Sendable {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["--no-pager", "--literal-pathspecs", "-C", directory] + arguments
 
+        let cloning = arguments[0] == "clone"
         var environment = ProcessInfo.processInfo.environment
-        if arguments[0] == "init" {
+        if arguments[0] == "init" || cloning {
             environment = environment.filter { !$0.key.hasPrefix("GIT_") }
         } else {
             for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_PREFIX"] {
@@ -492,9 +533,13 @@ struct GitWorkspace: Sendable {
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_NO_LAZY_FETCH"] = "1"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
+        if cloning {
+            environment["GIT_ALLOW_PROTOCOL"] = "file:git:http:https:ssh"
+        }
         process.environment = environment
 
-        let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit)
+        let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit,
+                                                        cancelOnTaskCancellation: cloning)
         if !result.exitedNormally || !acceptedStatuses.contains(result.status) {
             throw WorkspaceError.commandFailed(command: arguments[0], status: result.status, message: result.errorMessage)
         }
@@ -520,7 +565,8 @@ enum WorkspaceCommand {
     }
 
     static func capture(
-        _ process: Process, outputLimit: Int?, timeout: DispatchTimeInterval? = nil
+        _ process: Process, outputLimit: Int?, timeout: DispatchTimeInterval? = nil,
+        cancelOnTaskCancellation: Bool = false
     ) async throws -> Capture {
         let output = Pipe()
         let errorOutput = Pipe()
@@ -528,16 +574,25 @@ enum WorkspaceCommand {
         process.standardOutput = output
         process.standardError = errorOutput
 
-        async let termination = launch(process, output: output, errorOutput: errorOutput, timeout: timeout)
-        async let stdout = read(output.fileHandleForReading, limit: outputLimit)
-        async let stderr = read(errorOutput.fileHandleForReading, limit: 16 * 1024)
-        let (exit, outputCapture, errorCapture) = try await (termination, stdout, stderr)
-        return Capture(status: exit.status, exitedNormally: exit.exitedNormally,
-                      output: outputCapture, error: errorCapture)
+        let cancellation = cancelOnTaskCancellation ? ProcessCancellation(process) : nil
+        return try await withTaskCancellationHandler {
+            defer { cancellation?.finish() }
+            async let termination = launch(process, output: output, errorOutput: errorOutput,
+                                           timeout: timeout, cancellation: cancellation)
+            async let stdout = read(output.fileHandleForReading, limit: outputLimit)
+            async let stderr = read(errorOutput.fileHandleForReading, limit: 16 * 1024)
+            let (exit, outputCapture, errorCapture) = try await (termination, stdout, stderr)
+            if cancellation != nil { try Task.checkCancellation() }
+            return Capture(status: exit.status, exitedNormally: exit.exitedNormally,
+                           output: outputCapture, error: errorCapture)
+        } onCancel: {
+            cancellation?.cancel()
+        }
     }
 
     private static func launch(
-        _ process: Process, output: Pipe, errorOutput: Pipe, timeout: DispatchTimeInterval?
+        _ process: Process, output: Pipe, errorOutput: Pipe, timeout: DispatchTimeInterval?,
+        cancellation: ProcessCancellation?
     ) async throws -> CommandExit {
         try await withCheckedThrowingContinuation { continuation in
             let stop = DispatchWorkItem { [weak process] in
@@ -551,7 +606,8 @@ enum WorkspaceCommand {
                 ))
             }
             do {
-                try process.run()
+                if let cancellation { try cancellation.start() }
+                else { try process.run() }
                 if let timeout {
                     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: stop)
                 }
@@ -561,6 +617,38 @@ enum WorkspaceCommand {
                 try? errorOutput.fileHandleForWriting.close()
                 continuation.resume(throwing: error)
             }
+        }
+    }
+
+    private final class ProcessCancellation: @unchecked Sendable {
+        private let process: Process
+        private let lock = NSLock()
+        private var cancelled = false
+        private var pid: pid_t?
+
+        init(_ process: Process) {
+            self.process = process
+        }
+
+        func start() throws {
+            try lock.withLock {
+                if cancelled { throw CancellationError() }
+                try process.run()
+                pid = process.processIdentifier
+            }
+        }
+
+        func cancel() {
+            lock.withLock {
+                cancelled = true
+                guard let pid else { return }
+                // On macOS, Process starts a process group. Git's transport also owns the pipes.
+                if kill(-pid, SIGKILL) == -1, process.isRunning { kill(pid, SIGKILL) }
+            }
+        }
+
+        func finish() {
+            lock.withLock { pid = nil }
         }
     }
 
@@ -602,6 +690,7 @@ extension GitWorkspace {
         case invalidArgument
         case invalidProjectName
         case projectFolderExists
+        case repositoryCleanupFailed(URL, failure: Error, cleanup: Error)
         case invalidOutput(command: String)
         case commandFailed(command: String, status: Int32, message: String)
 
@@ -628,6 +717,9 @@ extension GitWorkspace {
                 return "Enter a name that can be used for a new folder."
             case .projectFolderExists:
                 return "That name is already in use in the chosen folder."
+            case .repositoryCleanupFailed(let folder, let failure, let cleanup):
+                let reason = failure is CancellationError ? "The operation was cancelled." : failure.localizedDescription
+                return "\(reason) Could not remove the temporary repository at \(folder.path). \(cleanup.localizedDescription)"
             case .invalidOutput(let command):
                 return "Git returned unreadable output for \(command)."
             case .commandFailed(let command, let status, let message):
