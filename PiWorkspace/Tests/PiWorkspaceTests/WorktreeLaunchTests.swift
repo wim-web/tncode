@@ -400,7 +400,7 @@ final class WorktreeLaunchTests: XCTestCase {
             try fixture.mark("disconnect-on-prompt")
             try interrupt(.workLocally, launch: launch, in: model)
             let disconnected = expectation(description: "Pi disconnected after it received the prompt")
-            let observation = model.$error.compactMap { $0 }.first().sink { _ in disconnected.fulfill() }
+            let observation = model.$errorNotice.compactMap { $0?.message }.first().sink { _ in disconnected.fulfill() }
             await fulfillment(of: [disconnected], timeout: 10)
             observation.cancel()
             XCTAssertEqual(try fixture.savedThread().worktreeLaunch?.awaitingHistory, true)

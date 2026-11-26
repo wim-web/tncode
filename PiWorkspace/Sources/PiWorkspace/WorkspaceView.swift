@@ -1967,6 +1967,35 @@ struct WorkspaceView: View {
         }
     }
 
+    @ViewBuilder
+    private func composerError(for threadID: UUID) -> some View {
+        if let notice = model.errorNotice, notice.threadID == threadID {
+            let canReconnect = model.phase == .closed && !model.canRetryWorktree
+            if !notice.isDismissed || canReconnect {
+                HStack {
+                    if !notice.isDismissed {
+                        Text(notice.message).foregroundStyle(.red)
+                            .accessibilityIdentifier("composer-error")
+                    }
+                    Spacer()
+                    if canReconnect {
+                        Button("Reconnect", action: model.connect)
+                            .accessibilityIdentifier("reconnect-thread")
+                    }
+                    if !notice.isDismissed {
+                        Button("Dismiss error", systemImage: "xmark") { model.dismissError(notice) }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("Dismiss error")
+                            .accessibilityLabel("Dismiss error")
+                            .accessibilityIdentifier("dismiss-composer-error")
+                    }
+                }
+                .font(.callout)
+            }
+        }
+    }
+
     private func composer(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
         let canCompose = !thread.archived && (thread.worktreeLaunch == nil || model.phase.isRunning)
         let question = model.pendingAgentQuestion
@@ -1980,17 +2009,7 @@ struct WorkspaceView: View {
                 }
                 .font(.callout)
             }
-            if let error = model.error {
-                HStack {
-                    Text(error).foregroundStyle(.red)
-                        .accessibilityIdentifier("composer-error")
-                    Spacer()
-                    if model.phase == .closed && !model.canRetryWorktree {
-                        Button("Reconnect", action: model.connect)
-                    }
-                }
-                .font(.callout)
-            }
+            composerError(for: thread.id)
             if let launch = thread.worktreeLaunch, !model.phase.isRunning {
                 WorktreeLaunchView(threadID: thread.id, launch: launch, model: model)
             }

@@ -47,6 +47,13 @@ final class WorkspaceModel: ObservableObject {
         var isRunning: Bool { canStop || self == .stopping }
     }
 
+    struct ErrorNotice {
+        let id = UUID()
+        let threadID: UUID?
+        let message: String
+        var isDismissed = false
+    }
+
     private struct QueueEdit {
         let id: UUID
         let sessionID = UUID()
@@ -498,7 +505,7 @@ final class WorkspaceModel: ObservableObject {
         return try await search.matches(in: root)
     }
 
-    @Published var error: String?
+    @Published private(set) var errorNotice: ErrorNotice?
     @Published var threadLinkError: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published private(set) var failedStartupDraftProject: UUID?
@@ -508,6 +515,17 @@ final class WorkspaceModel: ObservableObject {
     @Published var projectPicker: ProjectPickerRequest?
     @Published var showingCommandPalette = false
     @Published var threadFind: ThreadFindSession?
+
+    var error: String? {
+        get { errorNotice?.message }
+        set { errorNotice = newValue.map { ErrorNotice(threadID: conversation?.id, message: $0) } }
+    }
+
+    func dismissError(_ notice: ErrorNotice) {
+        guard let threadID = notice.threadID, threadID == conversation?.id,
+              errorNotice?.id == notice.id, errorNotice?.isDismissed == false else { return }
+        errorNotice?.isDismissed = true
+    }
 
     let root: URL
     private var store: WorkspaceStore?

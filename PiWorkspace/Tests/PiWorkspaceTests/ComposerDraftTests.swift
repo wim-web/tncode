@@ -298,6 +298,46 @@ final class ComposerDraftTests: XCTestCase {
         }
     }
 
+    func testAnOlderDismissalCannotHideTheSameErrorAfterRetryOrSwitch() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        try model.openProject(fixture.project)
+        await wait(for: .ready, in: model)
+        try Data().write(to: fixture.reject)
+
+        model.draft = "Keep this failed send"
+        model.send()
+        await wait(for: .ready, in: model)
+        let first = try XCTUnwrap(model.errorNotice)
+        model.dismissError(first)
+        XCTAssertEqual(model.errorNotice?.isDismissed, true)
+        XCTAssertEqual(model.draft, "Keep this failed send")
+        XCTAssertTrue(model.canSend)
+
+        model.send()
+        await wait(for: .ready, in: model)
+        let retry = try XCTUnwrap(model.errorNotice)
+        XCTAssertEqual(retry.message, first.message)
+        XCTAssertEqual(retry.threadID, first.threadID)
+        model.dismissError(first)
+        XCTAssertEqual(model.errorNotice?.isDismissed, false)
+
+        model.addConversation()
+        await wait(for: .ready, in: model)
+        model.draft = "Another failed send"
+        model.send()
+        await wait(for: .ready, in: model)
+        let other = try XCTUnwrap(model.errorNotice)
+        XCTAssertEqual(other.message, first.message)
+        XCTAssertNotEqual(other.threadID, first.threadID)
+        model.dismissError(retry)
+        XCTAssertEqual(model.errorNotice?.isDismissed, false)
+        model.dismissError(other)
+        XCTAssertEqual(model.errorNotice?.isDismissed, true)
+        XCTAssertEqual(model.draft, "Another failed send")
+    }
+
     func testMissingKeyKeepsTheDraftWithoutDispatchingIt() async throws {
         let fixture = try Fixture()
         let model = fixture.open(key: nil)
