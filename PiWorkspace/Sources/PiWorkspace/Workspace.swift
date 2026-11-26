@@ -22,11 +22,25 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
 }
 
 struct ModelSettings: Codable, Equatable {
+    enum ThinkingLevel: String, Codable, CaseIterable, Identifiable {
+        case off, minimal, low, medium, high, xhigh, max
+
+        var id: Self { self }
+        var label: String {
+            switch self {
+            case .xhigh: "Extra high"
+            case .max: "Maximum"
+            default: rawValue.capitalized
+            }
+        }
+    }
+
     var provider: Provider = .openai
     var model = Provider.openai.defaultModel
     var endpoint = "http://127.0.0.1:11434/v1"
     var contextWindow = 8192
     var localTools: Bool?
+    var thinkingLevel: ThinkingLevel?
 
     var supportsTools: Bool { provider != .local || localTools == true }
 
@@ -37,6 +51,7 @@ struct ModelSettings: Codable, Equatable {
     func validated() throws -> Self {
         var settings = self
         settings.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if settings.thinkingLevel == .off { settings.thinkingLevel = nil }
         guard !settings.model.isEmpty else { throw WorkspaceError("Enter a model ID.") }
         guard provider == .local else { return settings }
 
@@ -51,11 +66,17 @@ struct ModelSettings: Codable, Equatable {
         }
         url.scheme = scheme
         url.host = host
-        if url.path.hasSuffix("/") { url.path.removeLast() }
+        while url.percentEncodedPath.hasSuffix("/") { url.percentEncodedPath.removeLast() }
         guard let endpoint = url.string else { throw WorkspaceError("The local URL is invalid.") }
         settings.endpoint = endpoint
+        settings.thinkingLevel = nil
         return settings
     }
+}
+
+enum ModelSettingsScope: Hashable {
+    case workspace
+    case project(UUID)
 }
 
 enum ThreadLocation: Codable, Equatable {
@@ -186,6 +207,7 @@ struct Project: Codable, Identifiable {
     var conversations: [Conversation] = []
     var selectedConversation: UUID?
     var createdAt: Date?
+    var modelOverride: ModelSettings?
 
     var lastActivity: Date {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
@@ -216,6 +238,11 @@ struct Project: Codable, Identifiable {
 }
 
 struct Workspace: Codable {
+    var activeProject: Project? {
+        projects.first { $0.id == selectedProject && $0.detached != true }
+    }
+    var effectiveModel: ModelSettings { activeProject?.modelOverride ?? model }
+
     var projects: [Project] = []
     var selectedProject: UUID?
     var model = ModelSettings()

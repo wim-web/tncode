@@ -675,9 +675,10 @@ struct WorkspaceView: View {
             .font(.callout)
             Divider()
             Text("Model").font(.callout.weight(.medium))
-            Text(model.workspace.model.model)
+            Text(model.effectiveModel.model)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("thread-model")
         }
         .padding(15)
         .frame(width: 260)
@@ -850,7 +851,7 @@ struct WorkspaceView: View {
                 .accessibilityIdentifier("composer")
                 .disabled(model.preparingWorktree)
             HStack(spacing: 13) {
-                if model.workspace.model.supportsTools {
+                if model.effectiveModel.supportsTools {
                     Menu {
                         ForEach(ToolPermission.allCases, id: \.self) { permission in
                             Button(permission.title) { model.setToolPermission(permission) }
@@ -868,9 +869,10 @@ struct WorkspaceView: View {
                 Button {
                     model.showingSettings = true
                 } label: {
-                    Label(model.workspace.model.model, systemImage: "cpu")
+                    Label(model.effectiveModel.model, systemImage: "cpu")
                         .lineLimit(1)
                 }
+                .accessibilityIdentifier("active-model")
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(model.phase.isRunning)

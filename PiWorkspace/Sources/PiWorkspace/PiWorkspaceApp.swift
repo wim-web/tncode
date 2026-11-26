@@ -27,7 +27,7 @@ struct PiWorkspaceApp: App {
         if args.contains("--set-api-key-from-stdin") || args.contains("--remove-api-key") {
             do {
                 let store = try WorkspaceStore(root: root)
-                let settings = try store.load().model.validated()
+                let settings = try store.load().effectiveModel.validated()
                 let vault = KeyVault(service: keychainService)
                 if args.contains("--remove-api-key") {
                     try vault.remove(settings.account)
@@ -119,6 +119,7 @@ private struct WorkspaceSidebarCommands: Commands {
 struct ModelSettingsView: View {
     @ObservedObject var model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
+    @State private var scope: ModelSettingsScope
     @State private var settings: ModelSettings
     @State private var key = ""
     @State private var removeKey = false
@@ -126,41 +127,71 @@ struct ModelSettingsView: View {
 
     init(model: WorkspaceModel) {
         self.model = model
-        _settings = State(initialValue: model.workspace.model)
+        _scope = State(initialValue: model.project.map { .project($0.id) } ?? .workspace)
+        _settings = State(initialValue: model.effectiveModel)
+    }
+
+    private var scopedProject: Project? {
+        guard case .project(let id) = scope else { return nil }
+        return model.projects.first { $0.id == id }
     }
 
     var body: some View {
+        let hasKey = model.hasKey(for: settings)
         VStack(alignment: .leading, spacing: 18) {
             Text("Model Settings").font(.title2.weight(.semibold))
             Form {
-                Picker("Provider", selection: $settings.provider) {
+                if let project = model.project {
+                    Picker("Scope", selection: Binding(get: { scope }, set: selectScope)) {
+                        Text("Workspace default").tag(ModelSettingsScope.workspace)
+                        Text("Project: \(project.title)").tag(ModelSettingsScope.project(project.id))
+                    }
+                    .accessibilityIdentifier("model-settings-scope")
+                }
+                if let project = scopedProject {
+                    Text(project.modelOverride == nil ? "Inherits Workspace default" : "Project override")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("model-settings-source")
+                }
+                Picker("Provider", selection: Binding(get: { settings.provider }, set: selectProvider)) {
                     ForEach(Provider.allCases) { provider in Text(provider.label).tag(provider) }
                 }
                 .accessibilityIdentifier("provider")
-                .onChange(of: settings.provider) { _, provider in
-                    settings.model = provider.defaultModel
-                    key = ""
-                    removeKey = false
-                }
                 TextField("Model ID", text: $settings.model)
                     .accessibilityIdentifier("model-id")
                 if settings.provider == .local {
-                    TextField("Base URL", text: $settings.endpoint)
+                    TextField("Base URL", text: Binding(get: { settings.endpoint }, set: setEndpoint))
                         .accessibilityIdentifier("endpoint")
                     TextField("Context window", value: $settings.contextWindow, format: .number)
+                        .accessibilityIdentifier("context-window")
                     Toggle("Model supports coding tools", isOn: Binding(
                         get: { settings.localTools == true }, set: { settings.localTools = $0 }
                     ))
+                    .accessibilityIdentifier("local-tools")
+                } else {
+                    Picker("Thinking level", selection: Binding(
+                        get: { settings.thinkingLevel ?? .off }, set: { settings.thinkingLevel = $0 }
+                    )) {
+                        ForEach(ModelSettings.ThinkingLevel.allCases) { level in Text(level.label).tag(level) }
+                    }
+                    .accessibilityIdentifier("thinking-level")
+                    .help("Pi adjusts the requested level to the model’s supported levels.")
                 }
-                SecureField(model.hasKey(for: settings) ? "Replace saved API key" : "API key", text: $key)
+                SecureField(hasKey ? "Replace saved API key" : "API key", text: $key)
                     .accessibilityIdentifier("key-input")
-                if model.hasKey(for: settings) {
+                    .help("Projects using this provider share its saved API key.")
+                if hasKey {
                     Toggle("Remove saved key", isOn: $removeKey)
                         .accessibilityIdentifier("remove-api-key")
+                        .help("Remove the key for every project using this provider account.")
                 }
             }
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
+                if let project = scopedProject, project.modelOverride != nil {
+                    Button("Reset to Workspace default") { reset(project.id) }
+                        .accessibilityIdentifier("reset-model-override")
+                }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                 Button("Save", action: save)
@@ -172,11 +203,48 @@ struct ModelSettingsView: View {
         .frame(width: 470)
     }
 
+    private func selectScope(_ selection: ModelSettingsScope) {
+        guard scope != selection else { return }
+        scope = selection
+        settings = scopedProject?.modelOverride ?? model.workspace.model
+        clearCredentialEdit()
+        error = nil
+    }
+
+    private func selectProvider(_ provider: Provider) {
+        guard settings.provider != provider else { return }
+        settings.provider = provider
+        settings.model = provider.defaultModel
+        clearCredentialEdit()
+    }
+
+    private func setEndpoint(_ endpoint: String) {
+        guard settings.endpoint != endpoint else { return }
+        settings.endpoint = endpoint
+        clearCredentialEdit()
+    }
+
+    private func clearCredentialEdit() {
+        key = ""
+        removeKey = false
+    }
+
     private func save() {
         do {
-            try model.applySettings(settings, newKey: key, removeKey: removeKey)
-            key = ""
+            try model.applySettings(settings, in: scope, newKey: key, removeKey: removeKey)
+            clearCredentialEdit()
             dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func reset(_ project: UUID) {
+        do {
+            try model.resetProjectModel(project)
+            settings = model.workspace.model
+            clearCredentialEdit()
+            error = nil
         } catch {
             self.error = error.localizedDescription
         }

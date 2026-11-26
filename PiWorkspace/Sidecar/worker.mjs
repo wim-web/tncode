@@ -154,7 +154,7 @@ async function open(command) {
     cwd,
     agentDir: process.env.PI_CODING_AGENT_DIR,
     model,
-    thinkingLevel: "off",
+    thinkingLevel: config.thinkingLevel ?? "off",
     modelRuntime: runtime,
     tools: config.provider === "local" && !config.localTools
       ? []

@@ -54,7 +54,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     var projects: [Project] { workspace.projects.filter { $0.detached != true } }
-    var project: Project? { projects.first { $0.id == workspace.selectedProject } }
+    var project: Project? { workspace.activeProject }
+    var effectiveModel: ModelSettings { workspace.effectiveModel }
     var conversation: Conversation? {
         guard let project else { return nil }
         return project.conversations.first { $0.id == project.selectedConversation }
@@ -309,22 +310,55 @@ final class WorkspaceModel: ObservableObject {
         return (try? vault.exists(settings.account)) ?? false
     }
 
-    func applySettings(_ settings: ModelSettings, newKey: String, removeKey: Bool) throws {
+    func applySettings(_ settings: ModelSettings, in scope: ModelSettingsScope,
+                       newKey: String, removeKey: Bool) throws {
         guard !operationsInProgress, let store else {
             throw WorkspaceError("Wait for the current operation to finish.")
         }
         let settings = try settings.validated()
-        let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if removeKey {
-            try vault.remove(settings.account)
-        } else if !key.isEmpty {
-            try vault.save(KeyVault.validatedKey(key), account: settings.account)
-        }
         var updated = workspace
-        updated.model = settings
+        switch scope {
+        case .workspace:
+            updated.model = settings
+        case .project(let id):
+            let index = try modelSettingsProjectIndex(id)
+            let inherited = try? workspace.model.validated()
+            if updated.projects[index].modelOverride != nil || settings != inherited {
+                updated.projects[index].modelOverride = settings
+            }
+        }
+
+        let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacement = !removeKey && !key.isEmpty ? try KeyVault.validatedKey(key) : nil
         try store.save(updated)
         workspace = updated
-        connect()
+        defer { connect() }
+        do {
+            if removeKey { try vault.remove(settings.account) }
+            else if let replacement { try vault.save(replacement, account: settings.account) }
+        } catch {
+            throw WorkspaceError("Model settings were saved. \(error.localizedDescription)")
+        }
+    }
+
+    func resetProjectModel(_ id: UUID) throws {
+        guard !operationsInProgress, let store else {
+            throw WorkspaceError("Wait for the current operation to finish.")
+        }
+        let index = try modelSettingsProjectIndex(id)
+        guard workspace.projects[index].modelOverride != nil else { return }
+        var updated = workspace
+        updated.projects[index].modelOverride = nil
+        try store.save(updated)
+        workspace = updated
+        if project?.id == id { connect() }
+    }
+
+    private func modelSettingsProjectIndex(_ id: UUID) throws -> Int {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true }) else {
+            throw WorkspaceError("That project is no longer open.")
+        }
+        return index
     }
 
     func changeThreadLocation(_ choice: ThreadLocationChoice) async throws {
@@ -418,7 +452,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func canUsePrompt(_ text: String, fromComposer: Bool = false) throws -> Bool {
-        guard let key = try vault.read(workspace.model.account) else {
+        let settings = try effectiveModel.validated()
+        guard let key = try vault.read(settings.account) else {
             showingSettings = true
             return false
         }
@@ -533,7 +568,7 @@ final class WorkspaceModel: ObservableObject {
         }
         phase = .connecting
         do {
-            let settings = try workspace.model.validated()
+            let settings = try effectiveModel.validated()
             let worker = try PiProcess(config: store.config, cwd: directory)
             process = worker
             worker.onEvent = { [weak self, weak worker] event in
