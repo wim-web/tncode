@@ -857,6 +857,30 @@ final class WorkspaceModel: ObservableObject {
         save { $0.projects[index].title = title }
     }
 
+    var sidebarProjectFilter: SidebarProjectFilter {
+        SidebarProjectFilter(selection: Set(projects.filter { $0.inSidebarScope == true }.map(\.id)))
+    }
+
+    func updateSidebarScope(_ edit: (inout SidebarProjectFilter) -> Void) {
+        var filter = sidebarProjectFilter
+        edit(&filter)
+        guard filter.selection.isSubset(of: projects.map(\.id)) else { return }
+        let stored = workspace.projects.filter { $0.inSidebarScope == true }.map(\.id)
+        guard Set(stored) != filter.selection else { return }
+        save { workspace in
+            for index in workspace.projects.indices {
+                let id = workspace.projects[index].id
+                workspace.projects[index].inSidebarScope = filter.selection.contains(id) ? true : nil
+            }
+        }
+    }
+
+    func setSidebarFolderCollapsed(_ collapsed: Bool, for id: UUID) {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && !$0.isScratch && $0.detached != true }),
+              (workspace.projects[index].sidebarFolderCollapsed == true) != collapsed else { return }
+        save { $0.projects[index].sidebarFolderCollapsed = collapsed ? true : nil }
+    }
+
     func setProjectPinned(_ id: UUID, pinned: Bool) {
         guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true }) else { return }
         save { $0.projects[index].pinned = pinned }

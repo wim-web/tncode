@@ -3,6 +3,8 @@ import Foundation
 struct SidebarProjectFilter {
     private(set) var selection: Set<UUID> = []
 
+    init(selection: Set<UUID> = []) { self.selection = selection }
+
     static func orderedProjects(_ projects: [Project]) -> [Project] {
         projects.sorted { $0.pinned == true && $1.pinned != true }
     }
@@ -23,10 +25,6 @@ struct SidebarProjectFilter {
 
     mutating func clear() {
         selection.removeAll()
-    }
-
-    mutating func retainProjects(_ ids: [UUID]) {
-        selection.formIntersection(ids)
     }
 }
 

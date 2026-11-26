@@ -19,57 +19,52 @@ final class SidebarFilterTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try WorkspaceStore(root: root).save(original)
 
-        var filter = SidebarProjectFilter()
-        func results(in projects: [Project], search: String = "", archived: Bool = false) -> [UUID] {
-            SidebarThread.matching(in: filter.projects(in: projects), search: search, archived: archived).map(\.id)
+        func results(in model: WorkspaceModel, search: String = "", archived: Bool = false) -> [UUID] {
+            SidebarThread.matching(in: model.sidebarProjectFilter.projects(in: model.projects), search: search, archived: archived).map(\.id)
         }
 
         do {
             let model = WorkspaceModel(root: root, keychainService: UUID().uuidString)
             try expect(model.projects.map(\.id) == [alpha.id, beta.id, gamma.id], "Load projects saved without pins.")
-            filter.setSelected(alpha.id, true)
-            try expect(results(in: model.projects) == [alphaThread.id, draft.id], "One checkbox restricts the list.")
-            filter.setSelected(beta.id, true)
-            try expect(results(in: model.projects, search: "BUILD") == [alphaThread.id, betaPinned.id, betaSettled.id],
+            model.updateSidebarScope { $0.setSelected(alpha.id, true) }
+            try expect(results(in: model) == [alphaThread.id, draft.id], "One checkbox restricts the list.")
+            model.updateSidebarScope { $0.setSelected(beta.id, true) }
+            try expect(results(in: model, search: "BUILD") == [alphaThread.id, betaPinned.id, betaSettled.id],
                        "Search returns the union of selected projects across shelves in activity order.")
-            try expect(results(in: model.projects, search: "ALPHA") == [alphaThread.id, draft.id],
+            try expect(results(in: model, search: "ALPHA") == [alphaThread.id, draft.id],
                        "A project name matches its threads regardless of their title.")
-            try expect(results(in: model.projects, search: "build", archived: true) == [betaArchived.id],
+            try expect(results(in: model, search: "build", archived: true) == [betaArchived.id],
                        "Archive search finds only archived threads, regardless of their previous shelf.")
-            try expect(results(in: model.projects).contains(draft.id), "Clearing the search restores the draft row.")
+            try expect(results(in: model).contains(draft.id), "Clearing the search restores the draft row.")
 
             model.setProjectPinned(gamma.id, pinned: true)
             let ordered = SidebarProjectFilter.orderedProjects(model.projects)
             try expect(ordered.map(\.id) == [gamma.id, alpha.id, beta.id], "Pinned projects lead the picker.")
-            try expect(filter.projects(in: ordered).map(\.id) == [alpha.id, beta.id],
+            try expect(model.sidebarProjectFilter.projects(in: ordered).map(\.id) == [alpha.id, beta.id],
                        "Pins outside the selection do not bypass the filter.")
             try expect(model.project?.id == gamma.id, "Filtering leaves the open project selected.")
 
-            filter.setSelected(alpha.id, false)
-            try expect(filter.projects(in: ordered).map(\.id) == [beta.id], "Unchecking one project keeps the others.")
-            filter.setSelected(beta.id, false)
-            try expect(filter.projects(in: ordered).map(\.id) == [gamma.id, alpha.id, beta.id],
+            model.updateSidebarScope { $0.setSelected(alpha.id, false) }
+            try expect(model.sidebarProjectFilter.projects(in: ordered).map(\.id) == [beta.id], "Unchecking one project keeps the others.")
+            model.updateSidebarScope { $0.setSelected(beta.id, false) }
+            try expect(model.sidebarProjectFilter.projects(in: ordered).map(\.id) == [gamma.id, alpha.id, beta.id],
                        "Unchecking the last project restores all projects.")
-            filter.selectOnly(alpha.id)
-            filter.setSelected(beta.id, true)
+            model.updateSidebarScope { $0.selectOnly(alpha.id) }
+            model.updateSidebarScope { $0.setSelected(beta.id, true) }
             model.removeProject(alpha.id)
-            filter.retainProjects(model.projects.map(\.id))
-            try expect(filter.projects(in: model.projects).map(\.id) == [beta.id],
+            try expect(model.sidebarProjectFilter.projects(in: model.projects).map(\.id) == [beta.id],
                        "Removing a selected project preserves the rest of the selection.")
-            try expect(filter.projects(in: [alpha] + model.projects).map(\.id) == [beta.id],
-                       "Reattaching the same project does not select it again.")
-            filter.clear()
-            try expect(results(in: model.projects) == [gammaThread.id, betaPinned.id, betaSettled.id],
+            model.updateSidebarScope { $0.clear() }
+            try expect(results(in: model) == [gammaThread.id, betaPinned.id, betaSettled.id],
                        "All Projects restores attached projects and their normal threads.")
         }
 
         let reopened = WorkspaceModel(root: root, keychainService: UUID().uuidString)
         try expect(SidebarProjectFilter.orderedProjects(reopened.projects).map(\.id) == [gamma.id, beta.id],
                    "The pin survives reopening the workspace.")
-        filter.selectOnly(beta.id)
+        reopened.updateSidebarScope { $0.selectOnly(beta.id) }
         reopened.removeProject(beta.id)
-        filter.retainProjects(reopened.projects.map(\.id))
-        try expect(results(in: reopened.projects) == [gammaThread.id],
+        try expect(results(in: reopened) == [gammaThread.id],
                    "Removing the last selected project restores the remaining projects.")
         reopened.setProjectPinned(gamma.id, pinned: false)
         try expect(reopened.project?.pinned == false, "Unpin updates the open project.")

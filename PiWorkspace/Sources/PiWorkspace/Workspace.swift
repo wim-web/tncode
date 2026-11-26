@@ -302,6 +302,8 @@ struct Project: Codable, Identifiable {
     var supervisedTools: Bool?
     var detached: Bool?
     var pinned: Bool?
+    var inSidebarScope: Bool?
+    var sidebarFolderCollapsed: Bool?
     var conversations: [Conversation] = []
     var selectedConversation: UUID?
     var createdAt: Date?
