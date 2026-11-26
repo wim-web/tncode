@@ -428,7 +428,7 @@ final class ComposerDraftTests: XCTestCase {
         let observation = reopened.$messages.filter { $0.contains { $0.role == .user } }.first().sink { _ in
             received.fulfill()
         }
-        reopened.retryWorktree()
+        reopened.retryWorktree(threadID: threadID, launchID: reopened.conversation?.worktreeLaunch?.id)
         await fulfillment(of: [received], timeout: 5)
         observation.cancel()
         await wait(for: .ready, in: reopened)

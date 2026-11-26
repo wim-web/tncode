@@ -2347,7 +2347,9 @@ struct WorkspaceView: View {
             }
             composerError(for: thread.id)
             if let launch = thread.worktreeLaunch, !model.phase.isRunning {
-                WorktreeLaunchView(threadID: thread.id, launch: launch, model: model)
+                WorktreeLaunchView(thread: thread, projectPath: project.path, checkedOutBranch: branchDisplay?.branch,
+                                   launch: launch, model: model)
+                    .id(launch.id ?? thread.id)
             }
             snoozeConversationStatus(thread, project: project)
             if thread.archived {
@@ -2415,11 +2417,7 @@ struct WorkspaceView: View {
             if compact { branchButton }
             Spacer(minLength: 0)
             Group {
-                if model.preparingWorktree && thread.worktreeLaunch?.interruption != nil {
-                    Text("Cancelling setup…")
-                } else if model.preparingWorktree && thread.workingLocation != .project {
-                    Text("Preparing worktree…")
-                } else if model.phase == .connecting {
+                if model.phase == .connecting && thread.worktreeLaunch == nil {
                     Text("Opening thread…")
                 }
                 if model.pendingToolApproval != nil {

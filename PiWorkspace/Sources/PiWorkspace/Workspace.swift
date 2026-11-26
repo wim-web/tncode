@@ -146,6 +146,7 @@ struct WorktreeLaunch: Codable {
     var originalDraft: String?
     var stage: Stage = .createCheckout
     var failure: String?
+    var targetPath: String?
     var checkout: GitWorkspace.PendingCheckout?
     var interruption: Interruption?
 

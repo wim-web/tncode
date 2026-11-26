@@ -2001,6 +2001,7 @@ final class WorkspaceModel: ObservableObject {
             if thread.workingLocation != location, var launch = thread.worktreeLaunch {
                 launch.stage = location.needsWorktree ? .createCheckout : .openThread
                 launch.failure = nil
+                launch.targetPath = nil
                 launch.checkout = nil
                 launch.id = UUID()
                 thread.worktreeLaunch = launch
@@ -2133,7 +2134,7 @@ final class WorkspaceModel: ObservableObject {
                     $0.composerText = nil
                     $0.worktreeLaunch = launch
                 }
-                startWorktreeLaunch(launch, in: conversation)
+                try startWorktreeLaunch(launch, in: conversation)
                 return
             }
             let submission = Conversation.ComposerSubmission(
@@ -2295,15 +2296,16 @@ final class WorkspaceModel: ObservableObject {
         startQueuedMessage(first)
     }
 
-    func retryWorktree() {
-        guard canRetryWorktree, let conversation, let launch = conversation.worktreeLaunch else { return }
+    func retryWorktree(threadID: UUID, launchID: UUID?) {
+        guard canRetryWorktree, let conversation, conversation.id == threadID,
+              let launch = conversation.worktreeLaunch, launch.id == launchID else { return }
         if launch.interruption != nil {
             finishWorktreeInterruption()
             return
         }
         do {
             guard try canUsePrompt(launch.prompt, attachments: conversation.composerAttachments) else { return }
-            startWorktreeLaunch(launch, in: conversation)
+            try startWorktreeLaunch(launch, in: conversation)
         } catch {
             self.error = error.localizedDescription
         }
@@ -2330,15 +2332,22 @@ final class WorkspaceModel: ObservableObject {
         return true
     }
 
-    private func startWorktreeLaunch(_ launch: WorktreeLaunch, in thread: Conversation) {
+    private func startWorktreeLaunch(_ launch: WorktreeLaunch, in thread: Conversation) throws {
         guard let store, let project else { return }
         // Older launches without an ID may already have created a checkout under the default root.
         let worktreesDirectory = launch.id == nil ? nil : workspace.worktreesDirectory
+        let stage: WorktreeLaunch.Stage = thread.workingLocation.needsWorktree ? .createCheckout : .openThread
+        if launch.stage != stage || launch.failure != nil || (launch.checkout == nil && launch.targetPath != nil) {
+            try saveThread(thread.id) {
+                $0.worktreeLaunch?.stage = stage
+                $0.worktreeLaunch?.failure = nil
+                $0.worktreeLaunch?.targetPath = launch.checkout?.path
+            }
+        }
         shutdown()
         preparingWorktree = true
         error = nil
         worktreeTask = Task {
-            let stage: WorktreeLaunch.Stage = thread.workingLocation.needsWorktree ? .createCheckout : .openThread
             var failure: Error?
             do {
                 try Task.checkCancellation()
@@ -2352,6 +2361,7 @@ final class WorkspaceModel: ObservableObject {
                         } else {
                             let target = try store.worktree(project: project.id, conversation: thread.id,
                                                             directory: worktreesDirectory)
+                            try saveThread(thread.id) { $0.worktreeLaunch?.targetPath = target.path }
                             checkout = try await git.pinWorktree(at: target.path, branch: branch, base: base,
                                                                 owner: launch.id ?? thread.id, legacy: launch.id == nil,
                                                                 startFromRemote: thread.worktreeStartsFromRemote == true)
@@ -2415,12 +2425,14 @@ final class WorkspaceModel: ObservableObject {
                     }
                 }
                 try Task.checkCancellation()
+                let localLaunchID = UUID()
                 try saveThread(conversation.id) { thread in
                     if interruption == .workLocally {
                         thread.location = .project
                         thread.worktreeStartsFromRemote = nil
-                        thread.worktreeLaunch?.id = UUID()
+                        thread.worktreeLaunch?.id = localLaunchID
                         thread.worktreeLaunch?.stage = .openThread
+                        thread.worktreeLaunch?.targetPath = nil
                         thread.worktreeLaunch?.checkout = nil
                         thread.worktreeLaunch?.interruption = nil
                         thread.worktreeLaunch?.failure = nil
@@ -2436,7 +2448,7 @@ final class WorkspaceModel: ObservableObject {
                 worktreeTask = nil
                 preparingWorktree = false
                 if interruption == .workLocally {
-                    retryWorktree()
+                    retryWorktree(threadID: conversation.id, launchID: localLaunchID)
                 } else {
                     connect()
                 }
