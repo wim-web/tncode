@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export async function verifyPreview({ press, visible, tree, setField, until }, baseURL) {
+export async function verifyPreview({ press, visible, tree, setField, until, closeWindow }, baseURL) {
+  const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), match => match[1]);
+  async function newTab(profile) {
+    const previous = new Set(tabIDs());
+    press("browser-new-tab");
+    const item = "browser-new-tab-" + profile;
+    await until(() => visible(item), "new tab profile: " + profile);
+    press(item);
+    return until(() => tabIDs().find(id => !previous.has(id)), "new tab in " + profile);
+  }
+  async function loadProfilePage(document, visit) {
+    await setField("browser-address", baseURL + "/preview/profile");
+    press("browser-go");
+    await until(() => tree().includes("Preview document " + document) && tree().includes("Profile visit " + visit),
+                "document and stored visit count in the selected profile");
+  }
   await setField("composer", "Keep this text while previewing.");
   press("toggle-browser");
   for (const name of ["one", "two"]) {
@@ -21,6 +36,35 @@ export async function verifyPreview({ press, visible, tree, setField, until }, b
   assert(tree().includes("Keep this text while previewing."));
   press("toggle-browser");
   await until(() => tree().includes("Local preview two") && tree().includes("110%"), "reopened thread preview");
+  const [first] = tabIDs();
+  assert(first);
+  await loadProfilePage(1, 1);
+  press("browser-undock");
+  await until(() => visible("browser-floating-window") && visible("browser-dock"), "floating tab");
+  press("browser-dock");
+  await until(() => visible("browser-undock") && tree().includes("Preview document 1") && tree().includes("110%"), "same live document after docking");
+
+  const alternate = await newTab("alternate");
+  await loadProfilePage(2, 1);
+  assert(tree().includes("100%"));
+  assert(visible("browser-back").includes("enabled=false"));
+  const third = await newTab("default");
+  await loadProfilePage(3, 2);
+  press("browser-close-tab-" + alternate);
+  await until(() => {
+    const remaining = tabIDs();
+    return remaining.length === 2 && remaining.includes(first) && remaining.includes(third);
+  }, "closing the middle tab preserves both neighbors");
+  press("browser-tab-" + first);
+  await until(() => tree().includes("Preview document 1") && tree().includes("110%"), "original tab and zoom");
+  assert(visible("browser-back").includes("enabled=true"));
+  press("browser-undock");
+  await until(() => visible("browser-floating-window"), "floating window before Close");
+  closeWindow("browser-floating-window");
+  await until(() => !tree().includes('id="browser-dock"'), "closed floating preview");
+  press("toggle-browser");
+  await until(() => tree().includes("Preview document 1") && tabIDs().includes(third), "closed floating tab retained in its thread");
+  assert(tree().includes("Keep this text while previewing."));
   press("toggle-browser");
   await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
 }

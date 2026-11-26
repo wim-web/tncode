@@ -10,6 +10,7 @@ Usage:
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax press PID IDENTIFIER
+  ax close-window PID WINDOW_IDENTIFIER
   ax confirm PID IDENTIFIER
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
@@ -58,6 +59,7 @@ private enum Operation {
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case press(String)
+    case closeWindow(String)
     case confirm(String)
     case set(String)
     case type(String, replace: Bool)
@@ -76,6 +78,8 @@ private enum Operation {
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
+        case ("close-window", let id?) where arguments.count == 1:
+            self = .closeWindow(id)
         case ("confirm", let id?) where arguments.count == 1:
             self = .confirm(id)
         case ("set", let id?) where arguments.count == 1:
@@ -282,6 +286,13 @@ private func run(_ arguments: [String]) throws {
     case .press(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")
+    case .closeWindow(let id):
+        let window = try element(withID: id, in: app)
+        guard attribute(kAXRoleAttribute, on: window) as? String == kAXWindowRole,
+              let raw = attribute(kAXCloseButtonAttribute, on: window), CFGetTypeID(raw) == AXUIElementGetTypeID() else {
+            throw Failure("The specified window has no close button.")
+        }
+        try requireSuccess(AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXPressAction as CFString), "Close window")
     case .confirm(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXConfirmAction as CFString), "AXConfirm")

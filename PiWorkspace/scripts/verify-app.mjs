@@ -62,7 +62,17 @@ function fixtureReply(index) {
   return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
 }
 
+let previewDocument = 0;
 const server = createServer(async (request, response) => {
+  if (request.method === "GET" && request.url === "/preview/profile") {
+    response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" }).end(
+      `<h1>Preview document ${++previewDocument}</h1><p id="visits"></p><script>
+      const visits = Number(localStorage.getItem("visits") || 0) + 1;
+      localStorage.setItem("visits", visits);
+      document.querySelector("#visits").textContent = "Profile visit " + visits;
+      </script>`);
+    return;
+  }
   if (request.method === "GET" && ["/preview/one", "/preview/two"].includes(request.url)) {
     const label = "Local preview " + request.url.split("/").at(-1);
     response.writeHead(200, { "Content-Type": "text/html" }).end("<title>" + label + "</title><h1>" + label + "</h1>");
@@ -155,7 +165,7 @@ async function until(check, label, timeout = 20_000) {
 const visible = (id) => drive("get", [id]);
 const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
-const panelDriver = { press, visible, tree, setField, until, closeSettings };
+const panelDriver = { press, visible, tree, setField, until, closeSettings, closeWindow: id => drive("close-window", [id]) };
 
 function replyVisible(target) {
   const plain = (text) => text.replace(/\\[nrt]/g, " ").replace(/[\p{P}\p{S}\s]+/gu, " ").trim();
@@ -623,8 +633,26 @@ try {
     record("Mock gh returned PR 42 and its checks from the selected checkout. Refresh displayed the new head and updated checks.");
   }
   if (fixtureModel) {
+    let previewShellPID;
+    const shellProof = worktreeTest ? join(checkout, "retained-shell.txt") : undefined;
+    if (worktreeTest) {
+      press("toggle-terminal");
+      await until(() => visible("thread-terminal"), "terminal alongside browser preview");
+      previewShellPID = await until(() => {
+        const id = Number(readFileSync(shellProof, "utf8"));
+        if (!(id > 0)) return false;
+        process.kill(id, 0);
+        return id;
+      }, "live terminal before undocking");
+    }
     await verifyPreview(panelDriver, new URL(endpoint).origin);
-    record("WebKit opened both loopback pages, went back and forward, zoomed and retained the unsent composer text.");
+    if (worktreeTest) {
+      assert.equal(Number(readFileSync(shellProof, "utf8")), previewShellPID);
+      process.kill(previewShellPID, 0);
+      assert(drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."));
+      press("close-terminal");
+    }
+    record("Browser tabs kept separate history and zoom. Docking and closing the floating window preserved the document and draft. Profile storage was isolated; tabs in the same profile shared it.");
     await setProjectModel(panelDriver, "fixture-project-model");
   }
 
