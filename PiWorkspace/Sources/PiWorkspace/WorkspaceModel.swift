@@ -480,6 +480,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var error: String?
     @Published var threadLinkError: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
+    @Published private(set) var failedStartupDraftProject: UUID?
     @Published var settingsRequest: SettingsRequest?
     @Published private(set) var showingWelcome = false
     @Published var showArchive = false
@@ -616,7 +617,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func start() {
-        guard !showingWelcome, process == nil else { return }
+        guard !showingWelcome, process == nil, failedStartupDraftProject == nil else { return }
         if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasDraftContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
             (conversation.isDraft == true && conversation.workingLocation != .project) ||
@@ -629,7 +630,21 @@ final class WorkspaceModel: ObservableObject {
             if lhs.lastActivity == rhs.lastActivity { return rhs.id == workspace.selectedProject && lhs.id != rhs.id }
             return lhs.lastActivity < rhs.lastActivity
         }
-        if let recent { addConversation(in: recent.id, navigation: .replace) }
+        if let recent { prepareStartupDraft(in: recent.id) }
+    }
+
+    func retryStartupDraft() {
+        if let target = failedStartupDraftProject { prepareStartupDraft(in: target) }
+    }
+
+    private func prepareStartupDraft(in projectID: UUID) {
+        guard !operationsInProgress,
+              let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }) else { return }
+        do {
+            try openProjectDraft(at: index, navigation: .replace)
+        } catch {
+            failedStartupDraftProject = projectID
+        }
     }
 
     var canOpenWelcome: Bool {
@@ -704,10 +719,12 @@ final class WorkspaceModel: ObservableObject {
             updated.activeProject?.selectedConversation != conversation?.id {
             throw WorkspaceError("Update or cancel the queued message edit before switching threads.")
         }
-        if let project = updated.activeProject, !project.isScratch {
-            updated.lastUsedProject = project.id
-        } else if let project = workspace.activeProject, !project.isScratch {
-            updated.lastUsedProject = project.id
+        if updated.selectedProject != workspace.selectedProject {
+            if let project = updated.activeProject, !project.isScratch {
+                updated.lastUsedProject = project.id
+            } else if let previous = workspace.activeProject, !previous.isScratch {
+                updated.lastUsedProject = previous.id
+            }
         }
         try store.save(updated)
         composerSave?.cancel()
@@ -718,6 +735,12 @@ final class WorkspaceModel: ObservableObject {
         let previousScope = pullRequestScope
         let previousDraft = draft
         recordNavigation(to: updated, change: navigation)
+        if let target = failedStartupDraftProject,
+           updated.selectedProject != workspace.selectedProject ||
+           updated.activeProject?.selectedConversation != project?.selectedConversation ||
+           !updated.projects.contains(where: { $0.id == target && $0.detached != true }) {
+            failedStartupDraftProject = nil
+        }
         workspace = updated
         if pullRequestScope != previousScope || !draft.utf8.elementsEqual(previousDraft.utf8) { composerRevision += 1 }
         if pullRequestScope != previousScope { threadSelectionRevision += 1 }
@@ -891,7 +914,8 @@ final class WorkspaceModel: ObservableObject {
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
         showingWelcome = false
         if draftOrigin == nil && (previous?.id != project?.id || previous?.path != project?.path ||
-            previous?.selectedConversation != project?.selectedConversation || process == nil) {
+            previous?.selectedConversation != project?.selectedConversation || process == nil || failedStartupDraftProject != nil) {
+            failedStartupDraftProject = nil
             showArchive = conversation?.archived == true
             connect()
         }
@@ -904,8 +928,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func selectProject(_ id: UUID) {
-        guard !operationsInProgress, workspace.selectedProject != id, projects.contains(where: { $0.id == id }) else { return }
+        guard !operationsInProgress, workspace.selectedProject != id || failedStartupDraftProject != nil,
+              projects.contains(where: { $0.id == id }) else { return }
         guard save({ $0.selectedProject = id }) else { return }
+        failedStartupDraftProject = nil
         connect()
     }
 
@@ -924,8 +950,9 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func showHome() {
-        guard !operationsInProgress, workspace.selectedProject != nil,
+        guard !operationsInProgress, workspace.selectedProject != nil || failedStartupDraftProject != nil,
               save({ $0.selectedProject = nil }) else { return }
+        failedStartupDraftProject = nil
         error = nil
         showArchive = false
         connect()
@@ -993,11 +1020,12 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress,
               let index = workspace.projects.firstIndex(where: { $0.id == id && !$0.isScratch }) else { return }
         let selected = workspace.selectedProject == id
+        let wasStartupTarget = failedStartupDraftProject == id
         guard save({
             $0.projects[index].detached = true
             if selected { $0.selectedProject = $0.projects.first { $0.detached != true && !$0.isScratch }?.id }
         }) else { return }
-        if selected {
+        if selected || wasStartupTarget {
             connect()
         }
     }
@@ -1062,10 +1090,17 @@ final class WorkspaceModel: ObservableObject {
             openFolder(startThread: true)
             return
         }
-        guard save(navigation: navigation, {
-            $0.selectedProject = $0.projects[index].id
-            $0.projects[index].selectDraft()
-        }) else { return }
+        do {
+            try openProjectDraft(at: index, navigation: navigation)
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func openProjectDraft(at index: Int, navigation: NavigationChange) throws {
+        var updated = workspace
+        updated.selectedProject = updated.projects[index].id
+        updated.projects[index].selectDraft()
+        try persist(updated, navigation: navigation)
+        failedStartupDraftProject = nil
         showArchive = false
         connect()
     }
@@ -1172,7 +1207,7 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress,
               let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
               workspace.projects[index].conversations.contains(where: { $0.id == id }),
-              project?.id != projectID || conversation?.id != id else { return }
+              project?.id != projectID || conversation?.id != id || failedStartupDraftProject != nil else { return }
         do {
             try persistSelection(id, at: index)
             connect()
@@ -1188,6 +1223,7 @@ final class WorkspaceModel: ObservableObject {
             updated.projects[projectIndex].conversations[index].snoozedUntil = nil
         }
         try persist(updated, navigation: navigation)
+        failedStartupDraftProject = nil
     }
 
     func copyThreadReference(_ id: UUID, in projectID: UUID, to pasteboard: NSPasteboard) throws {
@@ -1278,6 +1314,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func finishOpeningThreadLink() {
+        failedStartupDraftProject = nil
         threadLinkError = nil
         showingWelcome = false
         showArchive = false

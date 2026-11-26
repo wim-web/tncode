@@ -1175,7 +1175,18 @@ struct WorkspaceView: View {
                                           reserved: WorkspaceLayout.headerHeight + terminalDrawerReservedHeight)
         return VStack(spacing: 0) {
             GeometryReader { workspace in
-                if let project = model.project, let thread = model.conversation {
+                if model.failedStartupDraftProject != nil {
+                    VStack(spacing: 12) {
+                        Text("Couldn’t start a new thread")
+                            .font(.title2.weight(.semibold))
+                            .accessibilityIdentifier("startup-draft-error")
+                        Text("The project is still available. Try opening the draft again.")
+                            .foregroundStyle(.secondary)
+                        Button("Try again", action: model.retryStartupDraft)
+                            .accessibilityIdentifier("startup-draft-retry")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let project = model.project, let thread = model.conversation {
                     threadWorkspace(project, thread, viewportWidth: viewport.width, size: workspace.size)
                 } else {
                     readyScreen
