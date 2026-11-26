@@ -23,7 +23,7 @@ struct WorkspaceImageView: View {
                 Divider()
                 ScrollView([.vertical, .horizontal]) {
                     Button { expanded = true } label: {
-                        WorkspaceImageContent(file: file)
+                        WorkspaceImageContent(file: file, name: name)
                             .frame(width: file.size.width * scale, height: file.size.height * scale)
                             .accessibilityHidden(true)
                     }
@@ -47,9 +47,8 @@ struct WorkspaceImageView: View {
                     fileButton("Close image preview", "xmark", id: "files-image-close-expanded") { expanded = false }
                         .keyboardShortcut(.cancelAction)
                 }
-                WorkspaceImageContent(file: file)
+                WorkspaceImageContent(file: file, name: name)
                     .aspectRatio(file.size, contentMode: .fit)
-                    .accessibilityLabel(name)
                     .accessibilityIdentifier("files-image-expanded")
             }
             .padding(16)
@@ -81,12 +80,14 @@ struct WorkspaceImageView: View {
 
 private struct WorkspaceImageContent: View {
     let file: WorkspaceImageFile
+    let name: String
 
     var body: some View {
         if let data = file.animation {
             AnimatedWorkspaceImage(data: data)
+                .accessibilityLabel(name)
         } else {
-            Image(decorative: file.bitmap, scale: 1).resizable()
+            Image(file.bitmap, scale: 1, label: Text(verbatim: name)).resizable()
         }
     }
 }

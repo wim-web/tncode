@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { verifyMediaFiles } from "./verify-media-files.mjs";
 
 export async function verifyFiles(driver, checkout, project, git) {
   const { press, visible, value, until, setField, checkCopy } = driver;
@@ -41,6 +42,7 @@ export async function verifyFiles(driver, checkout, project, git) {
   assert(!has(row(fresh)));
   writeFileSync(join(checkout, fresh), "Fresh\n");
   await transition("files-refresh", () => visible(row(fresh)), "file created outside the app");
+  await verifyMediaFiles(driver, checkout);
 
   press(row("sample.bin"));
   await until(() => visible("files-binary-preview") && value("files-contents").includes("00 41 FF 10"), "binary prefix in hex");
