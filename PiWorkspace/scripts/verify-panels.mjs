@@ -95,10 +95,37 @@ export async function verifyPreview(driver, baseURL, network) {
   assert(tree().includes("Keep this text while previewing."));
   const testing = await newTab("default");
   await verifyPageControls(driver, baseURL, network);
+  await verifyAddressSearch(driver, baseURL, network);
   press("browser-close-tab-" + testing);
   await until(() => !tabIDs().includes(testing), "closed navigation test tab");
   press("toggle-browser");
   await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
+}
+
+async function verifyAddressSearch({ press, visible, tree, until, setField, menuItem, key }, baseURL, network) {
+  menuItem("Browser Settings…");
+  await until(() => visible("browser-search-engine"), "browser settings");
+  press("browser-search-engine");
+  menuItem("Custom");
+  await until(() => visible("browser-custom-search-url"), "custom search URL");
+  await setField("browser-custom-search-url", baseURL + "/preview/search");
+  assert(visible("browser-settings-save").includes("enabled=false"));
+  assert(visible("browser-search-url-validation"));
+  await setField("browser-custom-search-url", baseURL + "/preview/search?q=%s");
+  press("browser-settings-save");
+  await until(() => !tree().includes('id="browser-settings-save"'), "saved search settings");
+  await setField("browser-address", new URL(baseURL).host + "/preview/one");
+  key(36);
+  await until(() => tree().includes("Local preview one"), "Enter navigates a bare loopback host");
+  const query = "fixture café & #/?+%";
+  await setField("browser-address", query);
+  assert.equal(network.queries.length, 0);
+  key(36);
+  await until(() => tree().includes("Search arrived"), "search using the custom engine");
+  assert.deepEqual(network.queries, [query]);
+  await setField("browser-address", "file:///fixture");
+  press("browser-go");
+  await until(() => visible("browser-error") && tree().includes("Search arrived"), "invalid scheme keeps the current page");
 }
 
 async function verifyPageControls({ press, visible, tree, until, setField, webFrame }, baseURL, network) {

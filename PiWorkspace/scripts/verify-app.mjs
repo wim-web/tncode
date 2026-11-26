@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
@@ -21,6 +21,7 @@ const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
 const forgeState = join(directory, "forge-state");
 const forgeLog = join(directory, "forge-calls.log");
+const pasteboard = "dev.piworkspace.verification." + randomBytes(16).toString("hex");
 const logs = join(directory, "logs");
 const report = join(logs, "report.txt");
 for (const path of [project, workspace, logs]) mkdirSync(path, { mode: 0o700 });
@@ -63,8 +64,13 @@ function fixtureReply(index) {
 }
 
 let previewDocument = 0;
-const previewNetwork = { revision: 0, delayedRequests: 0, cancelledRequests: 0, releaseDelayed: false, recovered: false };
+const previewNetwork = { revision: 0, delayedRequests: 0, cancelledRequests: 0, releaseDelayed: false, recovered: false, queries: [] };
 const server = createServer(async (request, response) => {
+  if (request.method === "GET" && request.url.startsWith("/preview/search?")) {
+    previewNetwork.queries.push(new URL(request.url, "http://localhost").searchParams.get("q"));
+    response.writeHead(200, { "Content-Type": "text/html" }).end("<h1>Search arrived</h1>");
+    return;
+  }
   if (request.method === "GET" && request.url === "/preview/revision") {
     response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" }).end(
       '<h1>Page revision ' + ++previewNetwork.revision + '</h1><button id="zoom-marker" style="width:100px;height:32px">Zoom marker</button>');
@@ -186,6 +192,8 @@ const panelDriver = {
   press, visible, tree, setField, until, closeSettings,
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
+  menuItem: name => drive("menu-item", [name]),
+  key: code => drive("key-focused", ["browser-address", String(code)]),
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
   webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
   drag: (id, x, y, dx, dy) => drive("drag", [id, ...[x, y, dx, dy].map(String)]),
@@ -206,6 +214,7 @@ async function launch(expectedControl = "model-settings") {
     "--env", "PATH=" + resolve(import.meta.dirname, "fixtures/github-read") + ":/usr/bin:/bin",
     "--env", "PI_GH_FIXTURE_STATE=" + forgeState, "--env", "GH_CONFIG_DIR=" + join(directory, "gh"),
     "--env", "PI_GH_FIXTURE_LOG=" + forgeLog,
+    "--env", "PI_WORKSPACE_TEST_PASTEBOARD=" + pasteboard,
     "--args", "--workspace", workspace,
     "-ApplePersistenceIgnoreState", "YES",
   ]);
@@ -271,6 +280,32 @@ async function chooseLocalFolder(entry = "open-project") {
   await until(() => visible("project-source-local"), "project sources");
   press("project-source-local");
   await until(() => visible("project-path"), "Local folder");
+}
+
+async function verifyPathCompletion(projectID, threadID) {
+  const palette = join(directory, "Palette fixture");
+  for (const name of ["Palette Alpha", "Palette Alpine", "Palette Beta"]) mkdirSync(join(palette, name), { recursive: true });
+  symlinkSync(project, join(palette, "Palette Alpha", "Leaf One"));
+  const pathIs = path => drive("get", ["project-path", "--values"]).includes("value=" + JSON.stringify(path));
+  await chooseLocalFolder();
+  await setField("project-path", palette + "/pal");
+  await until(() => visible("project-path-suggestion-Palette Alpha"), "folder matches");
+  const key = code => drive("key-focused", ["project-path", String(code)]);
+  key(48);
+  await until(() => pathIs(palette + "/Palette "), "Tab completes common prefix including space");
+  key(125);
+  key(125);
+  key(48);
+  await until(() => pathIs(palette + "/Palette Alpha/") && visible("project-path-suggestion-Leaf One"), "enter the highlighted folder");
+  key(48);
+  await until(() => pathIs(palette + "/Palette Alpha/Leaf One/"), "Tab enters the only child");
+  key(36);
+  await until(() => !tree().includes('id="project-path"') && visible("composer").includes("focused=true"), "Return registers the completed folder");
+  const index = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  assert.equal(index.selectedProject, projectID);
+  assert.equal(index.projects.find(p => p.id === projectID).selectedConversation, threadID);
+  assert.equal(index.projects.length, 2);
+  record("Tab completed a shared folder prefix, arrows selected a directory, and Tab entered its sole child. Return on its symlink opened the existing project and draft.");
 }
 
 async function openProject() {
@@ -345,6 +380,7 @@ async function openProject() {
   await until(() => index().selectedProject === added.id && visible("composer").includes("focused=true"), "relative folder reopens first project");
   assert.equal(index().projects.length, 2);
   assert.equal(index().projects[0].selectedConversation, added.selectedConversation);
+  await verifyPathCompletion(added.id, added.selectedConversation);
   record("New project rejected an occupied destination and created a fresh Git repository. A relative folder path reopened the original draft.");
 }
 
@@ -397,6 +433,29 @@ async function chooseNewWorktree(branch) {
   assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 1);
   try { press("toggle-changes"); } catch { /* the button is disabled for a pending checkout */ }
   assert(!tree().includes('id="git-refresh"'));
+}
+
+async function verifyDraftCopy(id, expected) {
+  await openDraftActions();
+  press("draft-copy");
+  await until(() => visible(id), "draft copy action " + id);
+  press(id);
+  await until(() => {
+    execFileSync(ax, ["check-copy", pasteboard], { input: expected, stdio: ["pipe", "pipe", "pipe"] });
+    return true;
+  }, "expected working path or branch in the isolated macOS pasteboard");
+}
+
+async function openDraftActions() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    press("conversation-title");
+    try {
+      await until(() => visible("draft-copy"), "draft actions", 1500);
+      return;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
 }
 
 async function verifyCheckout(checkout) {
@@ -502,6 +561,15 @@ async function verifySidebar(savedID) {
     await typePrompt("Draft for " + folder.split("/").at(-1));
   }
   const [first, second, last] = index().projects;
+  const requestCount = targets.length;
+  await quit();
+  await launch();
+  const composerHas = text => drive("get", ["composer", "--values"]).includes("value=" + JSON.stringify(text));
+  await until(() => index().selectedProject === last.id && composerHas("Draft for Third Project"), "restore selected unfinished draft on launch");
+  press("thread-row-" + second.selectedConversation);
+  await until(() => composerHas("Draft for Second Project"), "restore the other unfinished draft");
+  assert.equal(targets.length, requestCount);
+  record("Two distinct unsent messages and their thread IDs survived quit, relaunch and switching, with no additional model request.");
   const row = (id) => 'id="thread-row-' + id + '"';
   press("thread-filters");
   await until(() => visible("project-filter-" + first.id), "project scope checkboxes");
@@ -531,6 +599,15 @@ async function verifySidebar(savedID) {
   await until(() => index().selectedProject === first.id && index().projects[0].selectedConversation === savedID, "return to saved conversation");
   record("Invoking the menu command registered for Command-F focused search. AXConfirm reopened the matching draft with its text.");
   record("Searching an older assistant reply opened its stored message ID in the original thread.");
+  press("thread-row-" + last.selectedConversation);
+  await until(() => composerHas("Draft for Third Project"), "third draft before Discard");
+  await openDraftActions();
+  press("discard-draft");
+  await until(() => !index().projects.find(p => p.id === last.id).conversations.some(t => t.id === last.selectedConversation), "discard selected draft");
+  assert.equal(index().projects.find(p => p.id === second.id).conversations.find(t => t.id === second.selectedConversation).composerText, "Draft for Second Project");
+  press("thread-row-" + savedID);
+  await until(() => index().selectedProject === first.id, "submitted thread after discard");
+  record("Discard removed only the selected draft. Its project and the second project's unsent text remained.");
 }
 
 async function verifyScratch(originalThread) {
@@ -612,8 +689,18 @@ try {
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const draftID = index().projects[0].selectedConversation;
   if (worktreeTest) {
+    press("choose-workspace");
+    await until(() => visible("use-project-workspace"), "local folder workspace");
+    press("use-project-workspace");
+    await until(() => !tree().includes('id="use-project-workspace"') && visible("choose-workspace").includes("Local"), "selected local draft");
+  }
+  await verifyDraftCopy("draft-copy-path", project);
+  if (worktreeTest) {
     await chooseNewWorktree("main");
     assert.equal(index().projects[0].conversations.find(t => t.id === draftID).location.newWorktree.base, "main");
+    await verifyDraftCopy("draft-copy-path", project);
+    await verifyDraftCopy("draft-copy-branch", "main");
+    record("Copy wrote the project path for a local and a planned worktree draft, and the selected base branch, to an isolated native pasteboard.");
     await typePrompt(firstPrompt);
     await until(() => !tree().includes("Opening thread…"), "draft helper ready");
     press("send-message");
@@ -682,19 +769,24 @@ try {
     }
     record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
     record("Zoom changed the rendered width of a 100 CSS-pixel button. Refresh fetched a new revision, Stop cancelled an outstanding GET, and the error view showed details and reloaded the repaired local server.");
+    record("Browser Settings rejected a custom URL missing %s. Enter navigated a bare loopback host and sent the exact search term to the chosen local engine. An unsupported address kept the page.");
     await setProjectModel(panelDriver, "fixture-project-model");
   }
 
   await quit();
   const secondPID = await launch();
   assert.notEqual(firstPID, secondPID);
-  await until(() => visible("composer").includes("focused=true"), "focused draft after relaunch");
+  await until(() => visible("composer"), "composer after relaunch");
   const landing = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   assert.equal(landing.selectedProject, previous.selectedProject);
-  assert.notEqual(landing.projects[0].selectedConversation, threadID);
-  assert.equal(landing.projects[0].conversations.filter(thread => thread.isDraft).length, 1);
-  assert(!replyVisible(targets[0]));
-  press("thread-row-" + threadID);
+  if (fixtureModel) {
+    assert.equal(landing.projects[0].selectedConversation, threadID);
+    await until(() => drive("get", ["composer", "--values"]).includes("Keep this text while previewing."), "unsent text in the selected conversation after relaunch");
+  } else {
+    assert.notEqual(landing.projects[0].selectedConversation, threadID);
+    assert.equal(landing.projects[0].conversations.filter(thread => thread.isDraft).length, 1);
+    press("thread-row-" + threadID);
+  }
   await until(() => replyVisible(targets[0]), "previous reply in the reopened window");
   await send(secondPrompt);
   await until(() => targets[1]?.completed && replyVisible(targets[1]), "second reply on screen", 50_000);
@@ -799,4 +891,10 @@ try {
   releaseFirst();
   server.closeAllConnections();
   server.close();
+  execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
+  if (fixtureModel) {
+    const domain = "dev.piworkspace.browser." + createHash("sha256").update(workspace).digest("hex");
+    const result = spawnSync("/usr/bin/defaults", ["read", domain, "browserSearchSettings"], { stdio: "ignore" });
+    if (result.status === 0) execFileSync("/usr/bin/defaults", ["delete", domain], { stdio: "ignore" });
+  }
 }

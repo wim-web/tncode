@@ -2,14 +2,20 @@ import SwiftUI
 
 struct BrowserSettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = BrowserSearchSettings.load()
+    @State private var draft: BrowserSearchSettings
+    let defaults: UserDefaults
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+        _draft = State(initialValue: BrowserSearchSettings.load(from: defaults))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browser Settings").font(.title2.weight(.semibold))
             Picker("Search engine", selection: $draft.engine) {
                 ForEach(BrowserSearchSettings.Engine.allCases, id: \.self) { engine in
-                    Text(engine.rawValue).tag(engine)
+                    Text(engine.rawValue).tag(engine).accessibilityIdentifier("browser-engine-\(engine.rawValue)")
                 }
             }
             .pickerStyle(.menu)
@@ -34,7 +40,7 @@ struct BrowserSettingsView: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("browser-settings-cancel")
                 Button("Save") {
-                    if draft.save() { dismiss() }
+                    if draft.save(to: defaults) { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("browser-settings-save")

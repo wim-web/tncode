@@ -6,8 +6,11 @@ import Foundation
 private let usage = """
 Usage:
   ax trust
+  ax check-copy TEST_PASTEBOARD < expected.txt
+  ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
   ax menu-command PID CHARACTER
+  ax menu-item PID TITLE
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax frame PID IDENTIFIER
@@ -20,6 +23,7 @@ Usage:
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
   ax key PID KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
+  ax key-focused PID IDENTIFIER KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
 
 dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
@@ -62,6 +66,7 @@ private struct DisplayOptions {
 private enum Operation {
     case activate
     case menuCommand(String)
+    case menuItem(String)
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case frame(String)
@@ -74,6 +79,7 @@ private enum Operation {
     case set(String)
     case type(String, replace: Bool)
     case key(CGKeyCode, CGEventFlags)
+    case keyFocused(String, CGKeyCode, CGEventFlags)
 
     init(_ name: String, _ arguments: ArraySlice<String>) throws {
         let identifier = arguments.first
@@ -82,6 +88,8 @@ private enum Operation {
             self = .activate
         case ("menu-command", let key?) where arguments.count == 1 && key.count == 1:
             self = .menuCommand(key)
+        case ("menu-item", let title?) where arguments.count == 1:
+            self = .menuItem(title)
         case ("dump", _):
             self = try .dump(DisplayOptions(arguments, allowDepth: true))
         case ("get", let id?):
@@ -131,6 +139,11 @@ private enum Operation {
                 flags.insert(modifier)
             }
             self = .key(code, flags)
+        case ("key-focused", let id?):
+            guard case let .key(code, flags) = try Operation("key", arguments.dropFirst()) else {
+                throw Failure("key-focused needs a focused element and a key.")
+            }
+            self = .keyFocused(id, code, flags)
         default:
             throw Failure("Invalid command or arguments. See ax --help.")
         }
@@ -294,7 +307,7 @@ private func requireKeyboardAccess() throws {
 }
 
 private func postKey(
-    _ code: CGKeyCode, to pid: pid_t, flags: CGEventFlags = [], units: [UInt16] = []
+    _ code: CGKeyCode, to pid: pid_t, flags: CGEventFlags = [], units: [UInt16] = [], frontmost: Bool = false
 ) throws {
     guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
           let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else {
@@ -308,7 +321,12 @@ private func postKey(
                 event.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
             }
         }
+        if frontmost && NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            up.postToPid(pid)
+            throw Failure("The selected application lost focus.")
+        }
         event.postToPid(pid)
+        if frontmost && event.type == .keyDown { Thread.sleep(forTimeInterval: 0.035) }
     }
 }
 
@@ -319,6 +337,16 @@ private func run(_ arguments: [String]) throws {
     }
     if arguments == ["trust"] {
         print("accessibility=\(AXIsProcessTrusted()) keyboard=\(CGPreflightPostEventAccess())")
+        return
+    }
+    if arguments.count == 2, ["check-copy", "release-test-pasteboard"].contains(arguments[0]) {
+        guard arguments[1].hasPrefix("dev.piworkspace.verification.") else { throw Failure("A verification pasteboard is required.") }
+        let board = NSPasteboard(name: .init(arguments[1]))
+        if arguments[0] == "release-test-pasteboard" {
+            board.releaseGlobally()
+        } else if try board.string(forType: .string) != inputText() {
+            throw Failure("The verification pasteboard did not contain the expected string.")
+        }
         return
     }
     guard arguments.count >= 2, let pid = pid_t(arguments[1]), pid > 0 else {
@@ -357,6 +385,14 @@ private func run(_ arguments: [String]) throws {
             throw Failure("Expected one enabled menu command for Command-\(key), found \(matches.count).")
         }
         try requireSuccess(AXUIElementPerformAction(command, kAXPressAction as CFString), "Invoke menu command")
+    case .menuItem(let title):
+        let matches = Tree(root: app).map(\.element).filter {
+            attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
+            attribute(kAXTitleAttribute, on: $0) as? String == title &&
+            attribute(kAXEnabledAttribute, on: $0) as? Bool == true
+        }
+        guard matches.count == 1, let item = matches.first else { throw Failure("Expected exactly one enabled menu item matching the title.") }
+        try requireSuccess(AXUIElementPerformAction(item, kAXPressAction as CFString), "Select menu item")
     case .dump(let options):
         for (node, depth) in Tree(root: app, maxDepth: options.maxDepth) {
             print(String(repeating: "  ", count: depth) + line(for: node, options: options))
@@ -366,6 +402,13 @@ private func run(_ arguments: [String]) throws {
     case .frame(let id):
         let rect = try frame(of: element(withID: id, in: app))
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
+    case .keyFocused(let id, let code, let flags):
+        try requireKeyboardAccess()
+        let field = try element(withID: id, in: app)
+        guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
+        let characters: [CGKeyCode: UInt16] = [3: 0x66, 36: 0x0D, 48: 0x09, 51: 0x7F, 53: 0x1B,
+                                                123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
+        try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: true)
     case .webFrame(let id):
         let matches = Tree(root: app).map(\.element).filter { attribute("AXDOMIdentifier", on: $0) as? String == id }
         guard matches.count == 1, let node = matches.first else { throw Failure("Expected one DOM element with this identifier.") }

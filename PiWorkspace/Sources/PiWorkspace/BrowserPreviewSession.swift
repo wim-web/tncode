@@ -52,7 +52,12 @@ struct ThreadBrowserPreview {
         }
     }
     private var dataStores: [BrowserProfile: WKWebsiteDataStore] = [:]
+    private let searchDefaults: UserDefaults
     var isVisible = false
+
+    init(searchDefaults: UserDefaults = .standard) {
+        self.searchDefaults = searchDefaults
+    }
 
     var selectedTab: BrowserPreviewSession? { tabs.first { $0.id == selectedTabID } }
     var floatingTab: BrowserPreviewSession? {
@@ -77,7 +82,7 @@ struct ThreadBrowserPreview {
     mutating func addTab(profile: BrowserProfile) {
         let dataStore = dataStores[profile] ?? WKWebsiteDataStore.nonPersistent()
         dataStores[profile] = dataStore
-        let tab = BrowserPreviewSession(profile: profile, dataStore: dataStore)
+        let tab = BrowserPreviewSession(profile: profile, dataStore: dataStore, searchDefaults: searchDefaults)
         tabs.append(tab)
         selectTab(tab.id)
         isVisible = true

@@ -17,6 +17,8 @@ struct DroppedProjectFolder: Transferable {
 
 struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
+    var browserDefaults: UserDefaults = .standard
+    var draftPasteboard: NSPasteboard = .general
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("groupThreadsByProject") private var grouped = false
     @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
@@ -699,8 +701,8 @@ struct WorkspaceView: View {
     }
 
     private func copyToPasteboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        draftPasteboard.clearContents()
+        draftPasteboard.setString(text, forType: .string)
     }
 
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
@@ -756,7 +758,7 @@ struct WorkspaceView: View {
 
     private func threadWorkspace(_ project: Project, _ thread: Conversation, viewportWidth: CGFloat, size: CGSize) -> some View {
         let browser = Binding(
-            get: { browserPanels[thread.id] ?? ThreadBrowserPreview() },
+            get: { browserPanels[thread.id] ?? ThreadBrowserPreview(searchDefaults: browserDefaults) },
             set: { browserPanels[thread.id] = $0 }
         )
         let browserIsVisible = browser.wrappedValue.isVisible
@@ -947,7 +949,7 @@ struct WorkspaceView: View {
             .disabled(thread.workingLocation.needsWorktree)
 
             Button {
-                browserPanels[thread.id, default: ThreadBrowserPreview()].togglePanel()
+                browserPanels[thread.id, default: ThreadBrowserPreview(searchDefaults: browserDefaults)].togglePanel()
             } label: {
                 Image(systemName: "globe")
                     .foregroundStyle(browserIsVisible ? Color.accentColor : Color.primary)

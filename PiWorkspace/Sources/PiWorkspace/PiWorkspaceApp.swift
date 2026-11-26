@@ -10,6 +10,8 @@ struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @State private var launched = false
     @State private var showingBrowserSettings = false
+    private let browserDefaults: UserDefaults
+    private let draftPasteboard: NSPasteboard
     private let launchProject: URL?
     private let termination: AnyCancellable
 
@@ -27,6 +29,13 @@ struct PiWorkspaceApp: App {
         let service = "dev.piworkspace.model-key"
         let scope = SHA256.hash(data: Data(root.path.utf8)).map { String(format: "%02x", $0) }.joined()
         let keychainService = override == nil ? service : "\(service).\(scope)"
+        browserDefaults = override.flatMap { _ in UserDefaults(suiteName: "dev.piworkspace.browser.\(scope)") } ?? .standard
+        if override != nil, let name = ProcessInfo.processInfo.environment["PI_WORKSPACE_TEST_PASTEBOARD"],
+           name.hasPrefix("dev.piworkspace.verification.") {
+            draftPasteboard = NSPasteboard(name: .init(name))
+        } else {
+            draftPasteboard = .general
+        }
         if args.contains("--set-api-key-from-stdin") || args.contains("--remove-api-key") {
             do {
                 let store = try WorkspaceStore(root: root)
@@ -57,11 +66,11 @@ struct PiWorkspaceApp: App {
                 if let failure = model.startupFailure {
                     WorkspaceStartupRecoveryView(model: model, failure: failure)
                 } else {
-                    WorkspaceView(model: model)
+                    WorkspaceView(model: model, browserDefaults: browserDefaults, draftPasteboard: draftPasteboard)
                         .onAppear(perform: launchWorkspace)
                 }
             }
-                .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView() }
+                .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView(defaults: browserDefaults) }
                 .frame(minWidth: 800, minHeight: 540)
         }
         .defaultSize(width: 1080, height: 720)
