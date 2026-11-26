@@ -9,16 +9,17 @@ final class ThreadFindTests: XCTestCase {
     func testFindRejectsReplacedQueriesRetriesAndThreadRequests() throws {
         let projectID = UUID()
         let thread = SidebarMessageSearch.Thread(projectID: projectID, threadID: UUID())
-        var find = ThreadFindSession(thread: thread, term: .words(["orbital", "lantern"]), messageID: "later")
+        let matches = ["older", "later"].map { TranscriptOccurrence(messageID: $0, range: NSRange(location: 7, length: 7)) }
+        var find = ThreadFindSession(thread: thread, term: .words(["orbital", "lantern"]), occurrence: matches[1])
         let initial = try XCTUnwrap(find.request)
-        find.receive(["older", "later"], for: initial)
+        find.receive(matches, for: initial)
         XCTAssertEqual(find.status.label, "2 of 2")
         XCTAssertEqual(find.selection?.messageID, "later")
 
         find.editQuery("somewhere else")
         find.editQuery("orbital lantern")
         let edited = try XCTUnwrap(find.request)
-        find.receive(["older", "later"], for: initial)
+        find.receive(matches, for: initial)
         XCTAssertEqual(find.status, .searching)
         XCTAssertEqual(edited.term, .literal("orbital lantern"))
 
@@ -27,12 +28,12 @@ final class ThreadFindTests: XCTestCase {
         let retry = try XCTUnwrap(find.request)
         find.fail(edited)
         XCTAssertEqual(find.status, .searching)
-        find.receive(["older", "later"], for: retry)
+        find.receive(matches, for: retry)
         XCTAssertEqual(find.status.label, "1 of 2")
         XCTAssertEqual(find.selection?.messageID, "older")
 
         find = ThreadFindSession(thread: .init(projectID: projectID, threadID: UUID()), term: edited.term)
-        find.receive(["older", "later"], for: retry)
+        find.receive(matches, for: retry)
         XCTAssertEqual(find.status, .searching)
         XCTAssertNil(find.selection)
     }
@@ -160,6 +161,104 @@ final class ThreadFindTests: XCTestCase {
         XCTAssertNil(reloaded.activeThreadFind)
         XCTAssertEqual(reloaded.draft, unicode)
         XCTAssertNotEqual(try XCTUnwrap(reopened.window.firstResponder as? ComposerTextField.Editor).selectedRange(), selection)
+    }
+
+    func testSelectedTextRangeAndHighlightFollowTheOccurrence() throws {
+        _ = NSApplication.shared
+        let text = TranscriptText.rendered("**double**mark DOUBLEMARK", role: .assistant)
+        let matches = TranscriptSearchTerm.literal("doublemark").ranges(in: String(text.characters))
+        guard matches == [NSRange(location: 0, length: 10), NSRange(location: 11, length: 10)] else {
+            return XCTFail("Expected two exact ranges in the rendered reply, got \(matches)")
+        }
+        func row(_ range: NSRange) -> FoundTranscriptText {
+            FoundTranscriptText(rendered: text, selection: .init(occurrence: .init(messageID: "reply", range: range)))
+        }
+        let host = NSHostingView(rootView: row(matches[0]))
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: 50)
+        host.layoutSubtreeIfNeeded()
+        func textView(in view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            return view.subviews.lazy.compactMap { textView(in: $0) }.first
+        }
+        let view = try XCTUnwrap(textView(in: host))
+        let layout = try XCTUnwrap(view.layoutManager)
+        for index in matches.indices {
+            host.rootView = row(matches[index])
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(view.accessibilitySelectedTextRange(), matches[index])
+            XCTAssertEqual(view.accessibilitySelectedText(), index == 0 ? "doublemark" : "DOUBLEMARK")
+            var painted = NSRange()
+            XCTAssertNotNil(layout.temporaryAttribute(.backgroundColor, atCharacterIndex: matches[index].location,
+                                                     effectiveRange: &painted))
+            XCTAssertEqual(painted, matches[index])
+            XCTAssertNil(layout.temporaryAttribute(.backgroundColor, atCharacterIndex: matches[1 - index].location,
+                                                  effectiveRange: nil))
+        }
+    }
+
+    func testVisibleOccurrencesInPiHistory() async throws {
+        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let sidecar = ProcessInfo.processInfo.environment["PI_PALETTE_SIDECAR"] ?? package.appendingPathComponent("Sidecar").path
+        let node = ProcessInfo.processInfo.environment["PI_PALETTE_NODE"] ?? "/opt/homebrew/bin/node"
+        guard FileManager.default.fileExists(atPath: sidecar + "/node_modules/@earendil-works/pi-coding-agent") else {
+            throw XCTSkip("Set PI_PALETTE_SIDECAR to the Sidecar with the installed Pi SDK.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let thread = Conversation(id: UUID(), title: "Find", isDraft: false)
+        let project = Project(id: UUID(), path: root.path, title: "Project", conversations: [thread])
+        let scope = SidebarMessageSearch.Thread(projectID: project.id, threadID: thread.id)
+        let seed = try seedHistory(node: node, sidecar: sidecar, package: package, workspace: root,
+                                   project: project, thread: thread, query: "earlier", laterQuery: "", findOccurrences: true)
+        let hidden = try await SidebarMessageSearch(query: "buriedattachment", threads: [scope]).matches(in: root)
+        XCTAssertNil(hidden[thread.id])
+        let hiddenFind = try await SidebarMessageSearch.occurrences(in: root, thread: scope, term: .literal("buriedattachment"))
+        XCTAssertTrue(hiddenFind.isEmpty)
+        let caption = try await SidebarMessageSearch(query: "caption", threads: [scope]).matches(in: root)
+        XCTAssertEqual(caption[thread.id]?.excerpt, "Visible caption.")
+        XCTAssertEqual(caption[thread.id]?.occurrence, TranscriptOccurrence(messageID: seed.captionID,
+                                                                           range: NSRange(location: 8, length: 7)))
+        // Expected UTF-16 offsets from pinned T3 0.1.12 findThreadSearchOccurrences on the rendered reply.
+        let cases: [(String, [Int])] = [
+            ("doublemark", [37, 48]), ("İSTANBUL", [62]), ("ς", [72, 75, 78]), ("DON'T", [80, 86]),
+            ("aa", [92, 94]), ("aaa", [92]), ("cafe", [102]), ("café", [97]),
+            ("e\u{301}", [105]), ("\u{301}", [106]), ("📍", [59]), ("**", [])
+        ]
+        for (query, offsets) in cases {
+            let result = try await SidebarMessageSearch.occurrences(in: root, thread: scope, term: .literal(query))
+            let expected = offsets.map { TranscriptOccurrence(messageID: seed.latestID,
+                                                              range: NSRange(location: $0, length: query.utf16.count)) }
+            XCTAssertEqual(result, expected, query)
+            let sidebar = try await SidebarMessageSearch(query: query, threads: [scope]).matches(in: root)
+            XCTAssertEqual(sidebar[thread.id]?.occurrence, expected.first, query)
+        }
+
+        let term = TranscriptSearchTerm.words(["doublemark", "fixture"])
+        let matches = try await SidebarMessageSearch.occurrences(in: root, thread: scope, term: term)
+        let result = try await SidebarMessageSearch(term: term, threads: [scope]).matches(in: root)
+        let initial = try XCTUnwrap(result[thread.id]?.occurrence)
+        var find = ThreadFindSession(thread: scope, term: term, occurrence: initial)
+        find.receive(matches, for: try XCTUnwrap(find.request))
+        XCTAssertEqual(find.status.label, "1 of 2")
+        XCTAssertEqual(find.selection?.occurrence, initial)
+        find.step(backward: false)
+        let second = TranscriptOccurrence(messageID: seed.latestID, range: NSRange(location: 48, length: 10))
+        XCTAssertEqual(find.selection?.occurrence, second)
+        find.refresh()
+        find.receive(matches, for: try XCTUnwrap(find.request))
+        XCTAssertEqual(find.status.label, "2 of 2")
+        XCTAssertEqual(find.selection?.occurrence, second)
+        find.step(backward: false)
+        XCTAssertEqual(find.selection?.occurrence, initial)
+        find.step(backward: true)
+        XCTAssertEqual(find.selection?.occurrence, second)
+
+        find.editQuery("café")
+        let composed = try XCTUnwrap(find.request)
+        find.editQuery("cafe\u{301}")
+        XCTAssertNotEqual(find.request, composed)
+        XCTAssertNotEqual(find.request?.term, composed.term)
     }
 
     func testFindKeysAndRetryWithFreshPiHistories() async throws {
@@ -328,16 +427,18 @@ final class ThreadFindTests: XCTestCase {
         let messageID: String
         let latestID: String
         let abandonedID: String
+        let captionID: String
         let historyPath: String
     }
 
     private func seedHistory(node: String, sidecar: String, package: URL, workspace: URL,
-                             project: Project, thread: Conversation, query: String, laterQuery: String) throws -> Seed {
+                             project: Project, thread: Conversation, query: String, laterQuery: String, findOccurrences: Bool = false) throws -> Seed {
         let writer = Process()
         let output = Pipe()
         writer.executableURL = URL(fileURLWithPath: node)
         writer.arguments = [package.appendingPathComponent("scripts/fixtures/palette-message-history.mjs").path,
-                            sidecar, workspace.path, project.id.uuidString, thread.id.uuidString, project.path, query, laterQuery]
+                            sidecar, workspace.path, project.id.uuidString, thread.id.uuidString, project.path, query, laterQuery] +
+                           (findOccurrences ? ["--find-occurrences"] : [])
         writer.standardOutput = output
         writer.environment = ["PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_CODING_AGENT_DIR": workspace.path]
         try writer.run()

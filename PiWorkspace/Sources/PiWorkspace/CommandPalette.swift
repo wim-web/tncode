@@ -12,7 +12,7 @@ enum CommandPaletteAction: Hashable {
     case findInCurrentThread(SidebarMessageSearch.Thread)
     case openProject(UUID)
     case openThread(UUID, project: UUID)
-    case openMessage(UUID, project: UUID, messageID: String, term: TranscriptSearchTerm)
+    case openMessage(UUID, project: UUID, occurrence: TranscriptOccurrence, term: TranscriptSearchTerm)
 
     var identifier: String {
         switch self {
@@ -26,7 +26,7 @@ enum CommandPaletteAction: Hashable {
         case .findInCurrentThread: "find-current-thread"
         case .openProject(let id): "project-\(id)"
         case .openThread(let id, _): "thread-\(id)"
-        case .openMessage(let id, _, let messageID, _): "message-\(id)-\(messageID)"
+        case .openMessage(let id, _, let match, _): "message-\(id)-\(match.messageID)"
         }
     }
 }
@@ -181,7 +181,7 @@ struct CommandPaletteContents {
                 guard let thread = threadByID[target.threadID], thread.project.id == target.projectID,
                       let match = matches[target.threadID] else { return nil }
                 return CommandPaletteRow(
-                    action: .openMessage(thread.id, project: thread.project.id, messageID: match.messageID, term: search.term),
+                    action: .openMessage(thread.id, project: thread.project.id, occurrence: match.occurrence, term: search.term),
                     title: thread.thread.title, icon: "text.bubble", detail: match.excerpt
                 )
             }

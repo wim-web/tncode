@@ -47,11 +47,41 @@ export async function verifyConversationControls(driver, { root, app, credential
         ] }], model: { provider: "local", model: "question-fixture", endpoint, contextWindow: 8192, localTools: true },
     }), { mode: 0o600 });
     const history = await seedPaletteMessageHistory({ sidecar: join(app, "Contents/Resources/Sidecar"), workspace: root,
-      projectID, threadID: findThread, cwd: project, keyword: "orbital lantern", laterKeyword: "orbital lantern", paddingTurns: 30 });
+      projectID, threadID: findThread, cwd: project, keyword: "orbital lantern", laterKeyword: "orbital lantern", paddingTurns: 30, findOccurrences: true });
     credential("--set-api-key-from-stdin", key, root);
     installedAccount = "local:" + endpoint;
     await launch("model-settings", root);
     await until(() => visible("transcript-message-" + history.latestID) && is("composer", draft), "selected Pi history and unfinished text");
+    const selected = () => driver.selectedText("thread-find-selected-text");
+    focus("composer");
+    keyFor("composer", 3, "cmd", "shift");
+    await until(() => focusIs("thread-search"), "sidebar search focused");
+    await setField("thread-search", "buriedattachment");
+    await until(() => tree().includes("No matching threads"), "hidden attachment excluded from sidebar results");
+    await setField("thread-search", "caption");
+    const captionResult = "message-search-result-" + findThread + "-" + history.captionID;
+    await until(() => visible(captionResult), "visible Pi attachment caption");
+    press(captionResult);
+    await until(() => is("thread-find-match-count", "1 of 1") && selected() === "caption", "sidebar opened at the caption range");
+    press("thread-find-close");
+    press("thread-row-" + questionThread);
+    await until(() => is("composer", "Question fixture draft."), "open another thread before searching from the palette");
+    focus("composer");
+    keyFor("composer", 40, "cmd");
+    await until(() => focusIs("command-palette-search"), "palette search focused");
+    await setField("command-palette-search", "doublemark");
+    const paletteResult = "command-palette-message-" + findThread + "-" + history.latestID;
+    await until(() => visible(paletteResult), "palette found repeated text in the original Pi reply");
+    press(paletteResult);
+    await until(() => is("thread-find-match-count", "1 of 2") && selected() === "doublemark", "palette opened at first occurrence");
+    keyFor("thread-find-query", 36);
+    await until(() => is("thread-find-match-count", "2 of 2") && selected() === "DOUBLEMARK", "Return selected the second exact range");
+    keyFor("thread-find-query", 36, "shift");
+    await until(() => is("thread-find-match-count", "1 of 2") && selected() === "doublemark", "Shift-Return selected the first range again");
+    press("thread-find-close");
+    await until(() => is("composer", draft), "returned to the original Find thread");
+    record("The sidebar excluded buriedattachment and opened on caption. From another thread the palette opened at doublemark, 1 of 2. Return selected DOUBLEMARK, 2 of 2, and Shift-Return selected doublemark again.");
+
     focus("composer");
     assert.deepEqual(selection("composer", 4, 0), [4, 0]);
     keyFor("composer", 3, "cmd");

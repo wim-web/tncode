@@ -23,7 +23,8 @@ final class CommandPaletteTests: XCTestCase {
         var session = CommandPaletteSession()
         session.query = "orbital lantern"
         let obsolete = try XCTUnwrap(session.messageSearch(in: contents, latestMessageID: nil))
-        let matches = [threadID: SidebarMessageSearch.Match(messageID: "old", excerpt: "orbital lantern")]
+        let occurrence = TranscriptOccurrence(messageID: "old", range: NSRange(location: 0, length: 14))
+        let matches = [threadID: SidebarMessageSearch.Match(occurrence: occurrence, excerpt: "orbital lantern")]
         session.receive(matches, for: obsolete)
         XCTAssertEqual(session.messageMatches(for: obsolete)?.count, 1)
         let changedTranscript = session.messageSearch(in: contents, latestMessageID: "new")
@@ -134,11 +135,12 @@ final class CommandPaletteTests: XCTestCase {
             let rows = groups.flatMap(\.rows)
             XCTAssertEqual(rows.first?.action, .openThread(titled.id, project: alpha.id))
             _ = session.handle(.down, rows: rows, repeated: false, composing: false)
-            guard case .run(.openMessage(let thread, let project, let messageID, let term)) =
+            guard case .run(.openMessage(let thread, let project, let occurrence, let term)) =
                     session.handle(.select, rows: rows, repeated: false, composing: false) else {
                 return XCTFail("Return should select the highlighted message result")
             }
-            XCTAssertEqual(messageID, history.messageID)
+            XCTAssertEqual(occurrence.messageID, history.messageID)
+            XCTAssertEqual(occurrence.range, NSRange(location: 26, length: 15))
             XCTAssertEqual(term.text, "orbital lantern")
 
             let ready = expectation(description: "Real Pi reopened the selected history")
@@ -146,8 +148,8 @@ final class CommandPaletteTests: XCTestCase {
             model.selectConversation(thread, in: project)
             await fulfillment(of: [ready], timeout: 10)
             observation.cancel()
-            XCTAssertEqual(model.messages.first?.id, messageID)
-            XCTAssertNotEqual(model.messages.last?.id, messageID)
+            XCTAssertEqual(model.messages.first?.id, occurrence.messageID)
+            XCTAssertNotEqual(model.messages.last?.id, occurrence.messageID)
             XCTAssertFalse(model.messages.contains { $0.id == history.abandonedID })
             let abandoned = try XCTUnwrap(alphaContents.messageSearch(for: "palette-abandoned-branch-marker", choosingProject: false))
             let abandonedMatches = try await model.searchMessages(abandoned)

@@ -1,58 +1,6 @@
 import Darwin
 import Foundation
 
-enum TranscriptSearchTerm: Hashable, Sendable {
-    case literal(String)
-    case words([String])
-    case phrase([String])
-
-    var text: String {
-        switch self {
-        case .literal(let text): text
-        case .words(let words), .phrase(let words): words.joined(separator: " ")
-        }
-    }
-
-    static func quotedPhrase(in query: String) -> String? {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2, trimmed.first == "\"", trimmed.last == "\"" else { return nil }
-        return String(trimmed.dropFirst().dropLast())
-    }
-
-    init?(paletteQuery query: String) {
-        let phrase = Self.quotedPhrase(in: query)
-        let words = (phrase ?? query).split(whereSeparator: \.isWhitespace).map(String.init)
-        guard words.contains(where: { word in
-            word.count >= 3 || (word.count == 2 && word.range(
-                of: #"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]"#, options: .regularExpression
-            ) != nil)
-        }) else { return nil }
-        self = phrase == nil ? .words(words) : .phrase(words)
-    }
-
-    func range(in message: String) -> Range<String.Index>? {
-        switch self {
-        case .literal(let text):
-            return message.range(of: text, options: .caseInsensitive, locale: .current)
-        case .phrase(let words):
-            let pattern = words.map(NSRegularExpression.escapedPattern).joined(separator: #"\s{1,16}"#)
-            return message.range(of: pattern, options: [.regularExpression, .caseInsensitive])
-        case .words(let words):
-            if let phrase = message.range(of: text, options: .caseInsensitive, locale: .current) { return phrase }
-            var anchor: Range<String.Index>?
-            var longest = 0
-            for word in words {
-                guard let range = message.range(of: word, options: .caseInsensitive, locale: .current) else { return nil }
-                if word.count > longest {
-                    anchor = range
-                    longest = word.count
-                }
-            }
-            return anchor
-        }
-    }
-}
-
 struct SidebarMessageSearch: Equatable, Sendable {
     struct Thread: Hashable, Sendable {
         let projectID: UUID
@@ -60,7 +8,8 @@ struct SidebarMessageSearch: Equatable, Sendable {
     }
 
     struct Match: Sendable {
-        let messageID: String
+        let occurrence: TranscriptOccurrence
+        var messageID: String { occurrence.messageID }
         let excerpt: String
     }
 
@@ -82,7 +31,7 @@ struct SidebarMessageSearch: Equatable, Sendable {
         return try await Self.readOffMain { try scan(root) }
     }
 
-    static func matchingMessageIDs(in root: URL, thread: Thread, term: TranscriptSearchTerm) async throws -> [String] {
+    static func occurrences(in root: URL, thread: Thread, term: TranscriptSearchTerm) async throws -> [TranscriptOccurrence] {
         try await readOffMain {
             let rootFD = open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
             guard rootFD >= 0 else { throw WorkspaceHistory.accessError(errno) }
@@ -90,9 +39,11 @@ struct SidebarMessageSearch: Equatable, Sendable {
             guard let file = try WorkspaceHistory.open(in: rootFD, projectID: thread.projectID,
                                                        threadID: thread.threadID) else { return [] }
             defer { try? file.close() }
-            var matches: [String] = []
+            var matches: [TranscriptOccurrence] = []
             let valid = try visitBranch(in: file, threadID: thread.threadID) { id, message in
-                if term.range(in: message.workspaceText ?? message.text) != nil { matches.append(id) }
+                for range in term.ranges(in: message.visibleText).reversed() {
+                    matches.append(TranscriptOccurrence(messageID: id, range: range))
+                }
             }
             guard valid else { throw WorkspaceError("The thread history is incomplete.") }
             return Array(matches.reversed())
@@ -135,12 +86,15 @@ struct SidebarMessageSearch: Equatable, Sendable {
     private func match(in file: FileHandle, threadID: UUID) throws -> Match? {
         var match: Match?
         let valid = try Self.visitBranch(in: file, threadID: threadID) { id, message in
-            let text = message.text
-            guard match == nil, let range = term.range(in: text) else { return }
+            guard match == nil else { return }
+            let text = message.visibleText
+            guard let hit = term.ranges(in: text, firstOnly: true).first,
+                  let range = Range((text as NSString).rangeOfComposedCharacterSequences(for: hit), in: text)
+            else { return }
             let start = text.index(range.lowerBound, offsetBy: -24, limitedBy: text.startIndex) ?? text.startIndex
             let end = text.index(range.upperBound, offsetBy: 48, limitedBy: text.endIndex) ?? text.endIndex
             let excerpt = text[start..<end].split(whereSeparator: \.isWhitespace).joined(separator: " ")
-            match = Match(messageID: id, excerpt: (start == text.startIndex ? "" : "…") +
+            match = Match(occurrence: TranscriptOccurrence(messageID: id, range: hit), excerpt: (start == text.startIndex ? "" : "…") +
                           excerpt + (end == text.endIndex ? "" : "…"))
         }
         return valid ? match : nil
@@ -201,7 +155,9 @@ struct SidebarMessageSearch: Equatable, Sendable {
 
     private struct Message: Decodable {
         let text: String
-        let workspaceText: String?
+        let role: ChatMessage.Role
+
+        var visibleText: String { String(TranscriptText.rendered(text, role: role).characters) }
 
         private enum Field: String, CodingKey { case role, content, workspaceInput }
         private struct WorkspaceInput: Decodable { let text: String }
@@ -219,9 +175,10 @@ struct SidebarMessageSearch: Equatable, Sendable {
 
         init(from decoder: Decoder) throws {
             let fields = try decoder.container(keyedBy: Field.self)
-            _ = try fields.decode(ChatMessage.Role.self, forKey: .role)
-            workspaceText = (try? fields.decode(WorkspaceInput.self, forKey: .workspaceInput))?.text
-            if let plain = try? fields.decode(String.self, forKey: .content) {
+            role = try fields.decode(ChatMessage.Role.self, forKey: .role)
+            if let input = try? fields.decode(WorkspaceInput.self, forKey: .workspaceInput) {
+                text = input.text
+            } else if let plain = try? fields.decode(String.self, forKey: .content) {
                 text = plain
             } else {
                 text = try fields.decode([Block].self, forKey: .content).compactMap(\.text).joined()

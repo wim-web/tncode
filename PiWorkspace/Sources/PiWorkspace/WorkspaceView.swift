@@ -1302,9 +1302,8 @@ struct WorkspaceView: View {
                     ForEach(model.messages) { message in
                         let isMatch = message.id == target?.messageID
                         VStack(alignment: .leading, spacing: 8) {
-                            messageRow(message.text, role: message.role, attachments: message.attachments ?? [])
-                                .background(isMatch ? accent.opacity(0.18) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 11))
+                            messageRow(message.text, role: message.role, attachments: message.attachments ?? [],
+                                       selection: isMatch ? target : nil)
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
                                 .accessibilityAddTraits(isMatch ? .isSelected : [])
@@ -1350,8 +1349,8 @@ struct WorkspaceView: View {
                 .frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("transcript")
-            .onChange(of: target, initial: true) { _, target in
-                if let id = target?.messageID { reader.scrollTo(TranscriptAnchor.message(id), anchor: .center) }
+            .onChange(of: target?.messageID, initial: true) { _, id in
+                if let id { reader.scrollTo(TranscriptAnchor.message(id), anchor: .center) }
             }
             .onChange(of: model.messages.count) { _, _ in
                 if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
@@ -1419,17 +1418,21 @@ struct WorkspaceView: View {
         .disabled(!model.canOpenForkLink(threadID))
     }
 
-    private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = []) -> some View {
-        let rendered = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
+    private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = [],
+                            selection: ThreadFindSession.Selection? = nil) -> some View {
+        let rendered = TranscriptText.rendered(text, role: role)
         return HStack {
             if role == .user { Spacer(minLength: 35) }
             VStack(alignment: .leading, spacing: 6) {
                 if !text.isEmpty {
-                    Text(role == .assistant ? rendered : AttributedString(text))
-                        .font(.system(size: 14))
-                        .lineSpacing(4)
-                        .textSelection(.enabled)
+                    if let selection {
+                        FoundTranscriptText(rendered: rendered, selection: selection)
+                    } else {
+                        Text(rendered)
+                            .font(.system(size: 14))
+                            .lineSpacing(4)
+                            .textSelection(.enabled)
+                    }
                 }
                 ForEach(attachments) { attachment in
                     Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
@@ -1768,10 +1771,10 @@ struct WorkspaceView: View {
     private func loadFindMatches(_ request: ThreadFindSession.Request) async {
         do {
             try await Task.sleep(for: .milliseconds(120))
-            let ids = try await SidebarMessageSearch.matchingMessageIDs(in: model.root, thread: request.thread,
-                                                                        term: request.term)
+            let matches = try await SidebarMessageSearch.occurrences(in: model.root, thread: request.thread,
+                                                                     term: request.term)
             guard !Task.isCancelled, model.activeThreadFind?.request == request else { return }
-            model.threadFind?.receive(ids, for: request)
+            model.threadFind?.receive(matches, for: request)
         } catch {
             guard !Task.isCancelled, model.activeThreadFind?.request == request else { return }
             model.threadFind?.fail(request)
@@ -1779,14 +1782,14 @@ struct WorkspaceView: View {
     }
 
     private func openFind(in scope: SidebarMessageSearch.Thread, term: TranscriptSearchTerm? = nil,
-                          messageID: String? = nil, window: NSWindow? = nil) {
+                          occurrence: TranscriptOccurrence? = nil, window: NSWindow? = nil) {
         guard model.threadFindScope == scope else { return }
         let selection = ComposerTextField.FindSelection(window: window ?? NSApp.keyWindow, model: model)
         if model.activeThreadFind == nil || selection != nil { findSelection = selection }
         if model.threadFind?.thread == scope, term == nil {
             model.threadFind?.refocus()
         } else {
-            model.threadFind = ThreadFindSession(thread: scope, term: term, messageID: messageID)
+            model.threadFind = ThreadFindSession(thread: scope, term: term, occurrence: occurrence)
         }
     }
 
@@ -1865,9 +1868,9 @@ struct WorkspaceView: View {
             guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
             openThread(target)
             if model.conversation?.id == id { focusCurrentComposer() }
-        case .openMessage(let id, let project, let messageID, let term):
+        case .openMessage(let id, let project, let occurrence, let term):
             guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
-            openThread(target, messageID: messageID, term: term)
+            openThread(target, occurrence: occurrence, term: term)
         }
     }
 
@@ -1943,13 +1946,13 @@ struct WorkspaceView: View {
     }
 
     private func openThread(_ item: SidebarThread, messageMatch: SidebarMessageSearch.Match? = nil) {
-        openThread(item, messageID: messageMatch?.messageID, term: messageMatch.map { _ in .literal(searchTerm) })
+        openThread(item, occurrence: messageMatch?.occurrence, term: messageMatch.map { _ in .literal(searchTerm) })
     }
 
-    private func openThread(_ item: SidebarThread, messageID: String?, term: TranscriptSearchTerm?) {
+    private func openThread(_ item: SidebarThread, occurrence: TranscriptOccurrence?, term: TranscriptSearchTerm?) {
         model.selectConversation(item.id, in: item.project.id)
         guard model.project?.id == item.project.id, model.conversation?.id == item.id else { return }
-        if let term { openFind(in: .init(projectID: item.project.id, threadID: item.id), term: term, messageID: messageID) }
+        if let term { openFind(in: .init(projectID: item.project.id, threadID: item.id), term: term, occurrence: occurrence) }
         collapsed.remove(item.project.id)
         if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
         guard !searchTerm.isEmpty else { return }
