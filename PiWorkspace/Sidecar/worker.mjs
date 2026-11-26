@@ -320,6 +320,12 @@ async function open(command) {
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
+  emit({
+    type: "modelCatalog",
+    models: Object.fromEntries(["openai", "anthropic"].map((provider) => [
+      provider, Object.fromEntries(runtime.getModels(provider).map(({ id, name }) => [id, name])),
+    ])),
+  });
   if (config.provider === "local") localModel(runtime, config);
   guardModelStream(runtime);
   const model = runtime.getModel(config.provider, config.model);

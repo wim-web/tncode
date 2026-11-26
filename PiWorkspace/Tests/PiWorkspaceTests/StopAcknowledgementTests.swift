@@ -30,7 +30,9 @@ final class StopAcknowledgementTests: XCTestCase {
         try await waitUntil { model.partial == "Still streaming" }
         XCTAssertEqual(model.phase, .stopping)
         XCTAssertFalse(model.phase.canStop)
+        XCTAssertFalse(model.canChooseComposerModel)
         try await waitUntil(timeout: .seconds(13)) { model.phase.canStop }
+        XCTAssertFalse(model.canChooseComposerModel)
         XCTAssertGreaterThanOrEqual(start.duration(to: .now), .seconds(10))
         try await waitUntil { model.partial == "Still streaming after timeout" }
         XCTAssertTrue(model.queuePaused)

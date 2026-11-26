@@ -492,7 +492,7 @@ final class WorkspaceModel: ObservableObject {
         let original = target.queueEditID == nil ? thread.composerAttachments ?? [] : queueEdit?.attachments ?? []
         var attachments = original
         error = nil
-        do { try edit(&attachments, project.modelOverride ?? workspace.model) }
+        do { try edit(&attachments, workspace.modelSettings(for: thread, in: project)) }
         catch { self.error = error.localizedDescription }
         guard attachments != original else { return false }
         let updated = attachments.isEmpty ? nil : attachments
@@ -564,15 +564,19 @@ final class WorkspaceModel: ObservableObject {
     private var store: WorkspaceStore?
     private let vault: KeyVault
     private let readCredential: (String) throws -> String?
+    private let credentialExists: (String) throws -> Bool
     private let makeProcess: (URL, String) throws -> any PiConnection
     private let makeGitHubReader: (String) -> GitHubReader
     private var process: (any PiConnection)?
+    private var connectedModel: ModelSettings?
+    private var modelCatalog: [Provider: [String: String]] = [:]
     private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Never>)?
     private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
     private var stopTimeout: Task<Void, Never>?
 
     init(root: URL, keychainService: String, now: @escaping () -> Date = Date.init,
+         credentialExists: ((String) throws -> Bool)? = nil,
          readCredential: ((String) throws -> String?)? = nil,
          makeProcess: ((URL, String) throws -> any PiConnection)? = nil,
          makeGitHubReader: @escaping (String) -> GitHubReader = { GitHubReader(directory: $0) }) {
@@ -582,6 +586,7 @@ final class WorkspaceModel: ObservableObject {
         let vault = KeyVault(service: keychainService)
         self.vault = vault
         self.readCredential = readCredential ?? vault.read
+        self.credentialExists = credentialExists ?? vault.exists
         self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1) }
         self.makeGitHubReader = makeGitHubReader
         openWorkspace()
@@ -734,12 +739,13 @@ final class WorkspaceModel: ObservableObject {
         showingWelcome = false
     }
 
-    func shutdown() {
+    func shutdown(keepingQueue: Bool = false) {
         stopTimeout?.cancel()
         stopTimeout = nil
         rejectPendingThreadLink()
         process?.close()
         process = nil
+        connectedModel = nil
         let requests = sentImageRequests
         sentImageRequests.removeAll()
         for continuation in requests.values { continuation.resume(returning: nil) }
@@ -750,8 +756,8 @@ final class WorkspaceModel: ObservableObject {
         activeTurnID = nil
         pendingToolApproval = nil
         pendingAgentQuestion = nil
-        queueDelivery = QueueDelivery()
-        queueEdit = nil
+        queueDelivery = QueueDelivery(paused: !keepingQueue || queueDelivery.paused)
+        if !keepingQueue { queueEdit = nil }
         supportsImageInput = false
         phase = .closed
     }
@@ -1405,6 +1411,8 @@ final class WorkspaceModel: ObservableObject {
             switch event {
             case let .credential(id, read):
                 try replyToCredential(id, read: read, account: command.config.account, worker: worker)
+            case let .modelCatalog(catalog):
+                modelCatalog = catalog
             case .ready:
                 let (index, thread) = try linkedThread(link)
                 guard try linkedOpenCommand(project: workspace.projects[index], thread: thread, store: store) == command else {
@@ -1414,7 +1422,7 @@ final class WorkspaceModel: ObservableObject {
                 pendingThreadLink = nil
                 resetConnection()
                 error = nil
-                attach(worker, account: command.config.account)
+                attach(worker, config: command.config)
                 receive(event, from: worker, account: command.config.account)
                 finishOpeningThreadLink()
                 pending.result.resume(returning: true)
@@ -1551,7 +1559,8 @@ final class WorkspaceModel: ObservableObject {
         let destination = PendingConversationFork(projectID: project.id, threadID: UUID())
         let child = Conversation(id: destination.threadID, title: source.title + " fork",
                                  lastActiveAt: Date(), location: source.location, isDraft: false,
-                                 forkOrigin: .init(threadID: source.id, messageID: messageID))
+                                 forkOrigin: .init(threadID: source.id, messageID: messageID),
+                                 modelSelection: source.modelSelection)
         do {
             try store.prepareFork(destination, in: workspace)
             error = nil
@@ -1815,7 +1824,93 @@ final class WorkspaceModel: ObservableObject {
 
     func hasKey(for settings: ModelSettings) -> Bool {
         guard let settings = try? settings.validated() else { return false }
-        return (try? vault.exists(settings.account)) ?? false
+        return (try? credentialExists(settings.account)) ?? false
+    }
+
+    var canChooseComposerModel: Bool {
+        canUseQueue && queueEdit == nil && pendingAgentQuestion == nil && [.closed, .ready, .running].contains(phase) &&
+            !gitMutationInProgress && !preparingWorktree && forkRequest == nil && pendingThreadLink == nil
+    }
+
+    private var lockedModelAccount: String? {
+        guard phase.isRunning || messages.contains(where: { $0.role == .user }) else { return nil }
+        return connectedModel?.account ?? (try? effectiveModel.validated())?.account
+    }
+
+    private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
+
+    func composerModelOptions() -> [ComposerModelOption] {
+        let profiles = [conversation?.modelSelection, inheritedModel, workspace.model].compactMap { $0 }
+        var seen = Set<ModelSettings.Identity>()
+        var hasCredential: [String: Bool] = [:]
+        var options: [ComposerModelOption] = []
+        let locked = lockedModelAccount
+
+        func add(_ profile: ModelSettings, name: String) {
+            let validated = try? profile.validated()
+            let settings = validated ?? profile
+            guard seen.insert(settings.identity).inserted else { return }
+            let reason: String?
+            if validated == nil {
+                reason = "Check this model’s configuration in Settings."
+            } else if locked != nil && settings.account != locked {
+                reason = "Start a new thread to switch providers."
+            } else if settings.provider != .local, let catalog = modelCatalog[settings.provider],
+                      catalog[settings.model] == nil {
+                reason = "This model is missing from Pi’s bundled catalog."
+            } else {
+                let exists = hasCredential[settings.account] ?? ((try? credentialExists(settings.account)) ?? false)
+                hasCredential[settings.account] = exists
+                reason = exists ? nil : "Save an API key for this provider in Settings."
+            }
+            options.append(.init(settings: settings, name: name, unavailableReason: reason))
+        }
+
+        for profile in profiles {
+            add(profile, name: modelCatalog[profile.provider]?[profile.model] ?? profile.model)
+        }
+        for profile in profiles {
+            guard let models = modelCatalog[profile.provider] else { continue }
+            for (id, name) in models.sorted(by: { $0.key.localizedStandardCompare($1.key) == .orderedAscending }) {
+                var settings = profile
+                settings.model = id
+                add(settings, name: name)
+            }
+        }
+        return options
+    }
+
+    var canUseInheritedComposerModel: Bool {
+        guard conversation?.modelSelection != nil else { return false }
+        if !phase.isRunning { return true }
+        return lockedModelAccount.map { $0 == (try? inheritedModel.validated())?.account } ?? true
+    }
+
+    @discardableResult
+    func chooseComposerModel(_ option: ComposerModelOption?, in scope: DraftProjectScope) -> Bool {
+        guard canChooseComposerModel, scope == draftProjectScope, let conversation else { return false }
+        if let option {
+            guard option.unavailableReason == nil,
+                  lockedModelAccount.map({ $0 == option.settings.account }) ?? true else { return false }
+            if effectiveModel.identity == option.id { return true }
+            guard hasKey(for: option.settings) else {
+                error = "Save an API key for this provider in Settings."
+                return false
+            }
+        } else {
+            guard canUseInheritedComposerModel else { return false }
+        }
+        do {
+            try saveThread(conversation.id) { $0.modelSelection = option?.settings }
+            if !phase.isRunning, connectedModel != (try? effectiveModel.validated()) {
+                error = nil
+                connect(keepingThread: true)
+            }
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
     }
 
     func applySettings(_ settings: ModelSettings, in scope: ModelSettingsScope,
@@ -2459,19 +2554,23 @@ final class WorkspaceModel: ObservableObject {
         workspace.projects.firstIndex { $0.id == workspace.selectedProject }
     }
 
-    private func resetConnection() {
-        shutdown()
-        messages = []
+    private func resetConnection(keepingThread: Bool = false) {
+        shutdown(keepingQueue: keepingThread)
+        if !keepingThread { messages = [] }
         partial = ""
         activity = ""
         repositoryRevision += 1
     }
 
     func connect() {
+        connect(keepingThread: false)
+    }
+
+    private func connect(keepingThread: Bool) {
         guard worktreeTask == nil, forkRequest == nil else { return }
-        resetConnection()
+        resetConnection(keepingThread: keepingThread)
         guard let store, let project, let conversation, let directory = workingDirectory else { return }
-        error = nil
+        if !keepingThread { error = nil }
         if conversation.worktreeLaunch?.interruption != nil {
             finishWorktreeInterruption()
             return
@@ -2485,7 +2584,7 @@ final class WorkspaceModel: ObservableObject {
         do {
             let command = try openCommand(project: project, thread: conversation, store: store)
             let worker = try makeProcess(store.config, directory)
-            attach(worker, account: command.config.account)
+            attach(worker, config: command.config)
             try worker.send(command)
         } catch {
             connectionFailed(error.localizedDescription)
@@ -2495,16 +2594,17 @@ final class WorkspaceModel: ObservableObject {
     private func openCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
         try OpenConversation(cwd: thread.workingLocation.directory(in: project),
                              sessionDir: store.history(project: project.id, conversation: thread.id).path,
-                             threadID: thread.id.uuidString, config: (project.modelOverride ?? workspace.model).validated(),
+                             threadID: thread.id.uuidString, config: workspace.modelSettings(for: thread, in: project).validated(),
                              toolPermission: project.toolPermission, forkMessageID: thread.forkOrigin?.messageID)
     }
 
-    private func attach(_ worker: any PiConnection, account: String) {
+    private func attach(_ worker: any PiConnection, config: ModelSettings) {
         phase = .connecting
         process = worker
+        connectedModel = config
         worker.onEvent = { [weak self, weak worker] event in
             guard let self, let worker, self.process === worker else { return }
-            self.receive(event, from: worker, account: account)
+            self.receive(event, from: worker, account: config.account)
         }
         worker.onClose = { [weak self, weak worker] in
             guard let self, let worker, self.process === worker else { return }
@@ -2607,7 +2707,7 @@ final class WorkspaceModel: ObservableObject {
         var result = CredentialResult(requestID: id)
         do {
             if read { result.key = try readCredential(account) }
-            else { result.exists = try vault.exists(account) }
+            else { result.exists = try credentialExists(account) }
         } catch {
             result.error = true
         }
@@ -2624,6 +2724,8 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 connectionFailed("The Pi helper disconnected during Keychain access.")
             }
+        case let .modelCatalog(catalog):
+            modelCatalog = catalog
         case let .ready(history, supportsImages):
             guard phase == .connecting else { return }
             messages = history
@@ -2639,6 +2741,7 @@ final class WorkspaceModel: ObservableObject {
             if !confirmWorktreePrompt(in: history), preparingWorktree {
                 submitWorktreePrompt(using: worker)
             }
+            drainQueue()
         case let .history(history):
             messages = history
             partial = ""
@@ -2717,6 +2820,11 @@ final class WorkspaceModel: ObservableObject {
             }
             if let skipped, let item = queuedMessages.first(where: { $0.id == skipped }) {
                 startQueuedMessage(item, skippingCompaction: true)
+                if phase != .ready { return }
+            }
+            // Reopen the same history on the new model before the next queued turn.
+            if connectedModel != (try? effectiveModel.validated()) {
+                connect(keepingThread: true)
             } else {
                 drainQueue()
             }

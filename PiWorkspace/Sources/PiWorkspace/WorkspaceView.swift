@@ -48,6 +48,7 @@ struct WorkspaceView: View {
     @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
     @State private var draftProjectPicker: DraftProjectPickerPresentation?
+    @State private var composerModelPicker: ComposerModelPresentation?
     @State private var paletteChoosingProject = false
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
@@ -71,6 +72,18 @@ struct WorkspaceView: View {
     @State private var targetingComposerDrop = false
     @State private var imagePreview: ChatImagePreview?
     @FocusState private var focusedImageOpener: ChatImagePreview.Opener?
+
+    private struct ComposerModelPresentation {
+        let scope: DraftProjectScope
+        let options: [ComposerModelOption]
+    }
+
+    private struct ComposerModelAnchor: PreferenceKey {
+        static var defaultValue: Anchor<CGRect>? { nil }
+        static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+            value = nextValue() ?? value
+        }
+    }
 
     private struct Notice {
         let id: UUID
@@ -163,10 +176,21 @@ struct WorkspaceView: View {
     private let accent = Color(red: 0.24, green: 0.48, blue: 0.70)
 
     var body: some View {
-        let findRequest = model.activeThreadFind?.request
-        let branchRequest = copyBranchReadRequest
-        let images = imagePreview.map { previewImages(for: $0.opener.owner) } ?? []
-        let imageIndex = imagePreview?.index(in: images)
+        workspaceBody
+            .overlayPreferenceValue(ComposerModelAnchor.self) { anchor in
+                if let anchor, let picker = composerModelPicker, imagePreview == nil {
+                    composerModelOverlay(picker, anchoredAt: anchor)
+                }
+            }
+            .onChange(of: model.canChooseComposerModel) { _, canChoose in
+                if !canChoose { composerModelPicker = nil }
+            }
+            .onChange(of: model.showingSettings) { _, showing in
+                if showing { composerModelPicker = nil }
+            }
+    }
+
+    private func workspaceSurface(images: [ChatImagePreview.ImageItem], imageIndex: Int?) -> some View {
         ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
@@ -255,6 +279,14 @@ struct WorkspaceView: View {
             .accessibilityHidden(true)
         }
         .background(ThreadTerminalKeyboard())
+    }
+
+    private var workspaceBody: some View {
+        let findRequest = model.activeThreadFind?.request
+        let branchRequest = copyBranchReadRequest
+        let images = imagePreview.map { previewImages(for: $0.opener.owner) } ?? []
+        let imageIndex = imagePreview?.index(in: images)
+        return workspaceSurface(images: images, imageIndex: imageIndex)
         .onReceive(model.sidebarCommand) { command in
             guard imageIndex == nil else { return }
             switch command {
@@ -297,6 +329,7 @@ struct WorkspaceView: View {
         }
         .onChange(of: model.draftProjectScope) { _, scope in
             if let draftProjectPicker, draftProjectPicker.scope != scope { self.draftProjectPicker = nil }
+            if composerModelPicker?.scope != scope { composerModelPicker = nil }
             showingComposerStash = false
         }
         .onChange(of: model.messages.last?.id) { _, _ in
@@ -2044,6 +2077,7 @@ struct WorkspaceView: View {
         }
         .frame(maxWidth: .infinity)
         .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
+        .anchorPreference(key: ComposerModelAnchor.self, value: .bounds) { $0 }
     }
 
     private func composerContextStrip(_ project: Project, _ thread: Conversation, width: CGFloat,
@@ -2277,17 +2311,55 @@ struct WorkspaceView: View {
         let settings = model.effectiveModel
         let title = settings.thinkingLevel.map { "\(settings.model) \($0.label)" } ?? settings.model
         return Button {
-            model.openSettings(.model)
+            guard model.canChooseComposerModel, let scope = model.draftProjectScope else { return }
+            composerModelPicker = ComposerModelPresentation(scope: scope, options: model.composerModelOptions())
         } label: {
-            Label(title, systemImage: "cpu")
-                .lineLimit(1)
-                .frame(minHeight: 28)
-                .contentShape(Rectangle())
+            HStack(spacing: 4) {
+                Label(title, systemImage: "cpu").lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption2).accessibilityHidden(true)
+            }
+            .frame(minHeight: 28)
+            .contentShape(Rectangle())
         }
+        .accessibilityLabel("Choose model, \(title)")
         .accessibilityIdentifier("active-model")
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .disabled(model.phase.isRunning)
+        .disabled(!model.canChooseComposerModel)
+    }
+
+    private func composerModelOverlay(_ picker: ComposerModelPresentation, anchoredAt anchor: Anchor<CGRect>) -> some View {
+        GeometryReader { geometry in
+            let box = geometry[anchor]
+            let width = min(350, max(0, geometry.size.width - 16))
+            let above = box.minY - 10
+            let below = geometry.size.height - box.maxY - 10
+            let opensAbove = above >= 240 || above >= below
+            let height = min(300, max(120, opensAbove ? above : below))
+            let x = min(max(width / 2 + 8, box.maxX - width / 2), geometry.size.width - width / 2 - 8)
+            let y = opensAbove ? box.minY - height / 2 - 4 : box.maxY + height / 2 + 4
+            Color.clear.contentShape(Rectangle())
+                .onTapGesture { closeComposerModelPicker() }
+                .accessibilityHidden(true)
+            ComposerModelPicker(options: picker.options,
+                                current: ((try? model.effectiveModel.validated()) ?? model.effectiveModel).identity,
+                                canUseDefault: model.canUseInheritedComposerModel, choose: { option in
+                if model.chooseComposerModel(option, in: picker.scope) { closeComposerModelPicker() }
+            }, useDefault: {
+                if model.chooseComposerModel(nil, in: picker.scope) { closeComposerModelPicker() }
+            }, openSettings: {
+                composerModelPicker = nil
+                model.openSettings(.model)
+            }, close: closeComposerModelPicker)
+            .frame(width: width, height: height)
+            .position(x: x, y: min(max(y, height / 2 + 4), geometry.size.height - height / 2 - 4))
+        }
+    }
+
+    private func closeComposerModelPicker() {
+        guard let picker = composerModelPicker else { return }
+        composerModelPicker = nil
+        if model.draftProjectScope == picker.scope { focusedComposer = picker.scope.threadID }
     }
 
     private var composerActions: some View {
@@ -2404,6 +2476,7 @@ struct WorkspaceView: View {
     private func acceptsWorkspaceKeys(in window: NSWindow) -> Bool {
         !model.showingWelcome && !model.showingSettings && !model.showingCommandPalette &&
             !model.showingQuitSaveFailure && model.projectPicker == nil && draftProjectPicker == nil &&
+            composerModelPicker == nil &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
             rename == nil && removingProject == nil

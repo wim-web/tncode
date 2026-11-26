@@ -16,6 +16,7 @@ struct ChatMessage: Decodable, Identifiable {
 
 enum PiEvent: Decodable {
     case credential(id: String, read: Bool)
+    case modelCatalog([Provider: [String: String]])
     case ready([ChatMessage], supportsImages: Bool = false)
     case history([ChatMessage])
     case sentImage(requestID: UUID, ComposerAttachment.Payload?)
@@ -33,11 +34,11 @@ enum PiEvent: Decodable {
     case fatal(String)
 
     private enum Field: String, CodingKey {
-        case type, requestID, operation, messages, image, text, error, turnID, queuedID, mode, threadID, scope
+        case type, requestID, operation, messages, image, text, error, turnID, queuedID, mode, threadID, scope, models
     }
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
-        case credential, ready, history, sentImage, partial, activity, toolApproval, finished, fatal
+        case credential, modelCatalog, ready, history, sentImage, partial, activity, toolApproval, finished, fatal
         case agentQuestion, agentQuestionEnded, agentQuestionRejected
         case inputMode, queueRejected, compactionSkipped, forked
     }
@@ -50,6 +51,11 @@ enum PiEvent: Decodable {
         case .credential:
             self = .credential(id: try fields.decode(String.self, forKey: .requestID),
                                read: try fields.decode(Operation.self, forKey: .operation) == .read)
+        case .modelCatalog:
+            let models = try fields.decode([String: [String: String]].self, forKey: .models)
+            self = .modelCatalog(Dictionary(uniqueKeysWithValues: Provider.allCases.compactMap { provider in
+                models[provider.rawValue].map { (provider, $0) }
+            }))
         case .ready:
             let capabilities = try decoder.container(keyedBy: Capability.self)
             self = .ready(try fields.decode([ChatMessage].self, forKey: .messages),

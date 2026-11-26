@@ -50,6 +50,13 @@ struct ModelSettings: Codable, Equatable {
         provider == .local ? "local:" + endpoint : provider.rawValue
     }
 
+    struct Identity: Hashable {
+        let account: String
+        let model: String
+    }
+
+    var identity: Identity { Identity(account: account, model: model) }
+
     func validated() throws -> Self {
         var settings = self
         settings.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -173,11 +180,14 @@ struct Conversation: Codable, Identifiable {
     var forkOrigin: ForkOrigin?
     var linkedPullRequests: [ThreadPullRequestLink]?
     var snoozedUntil: Date?
+    var modelSelection: ModelSettings?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
     var pullRequestLinks: [ThreadPullRequestLink] { linkedPullRequests ?? [] }
-    var hasDraftContent: Bool { composerText != nil || !(composerAttachments ?? []).isEmpty || !pullRequestLinks.isEmpty }
+    var hasDraftContent: Bool {
+        composerText != nil || !(composerAttachments ?? []).isEmpty || !pullRequestLinks.isEmpty || modelSelection != nil
+    }
     var canDiscardDraft: Bool {
         isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil
     }
@@ -367,7 +377,15 @@ struct Workspace: Codable {
     var activeProject: Project? {
         projects.first { $0.id == selectedProject && $0.detached != true }
     }
-    var effectiveModel: ModelSettings { activeProject?.modelOverride ?? model }
+    var effectiveModel: ModelSettings {
+        guard let project = activeProject else { return model }
+        let thread = project.conversations.first { $0.id == project.selectedConversation }
+        return modelSettings(for: thread, in: project)
+    }
+
+    func modelSettings(for thread: Conversation?, in project: Project) -> ModelSettings {
+        thread?.modelSelection ?? project.modelOverride ?? model
+    }
 
     var projects: [Project] = []
     var selectedProject: UUID?
