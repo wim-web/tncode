@@ -26,8 +26,12 @@ import { verifyThreadActions } from "./verify-thread-actions.mjs";
 import { verifySidebarPersistence } from "./verify-sidebar-persistence.mjs";
 import { verifyChatImages } from "./verify-chat-images.mjs";
 import { verifyProjectSettings } from "./verify-project-settings.mjs";
+import { verifyThreadSnooze } from "./verify-thread-snooze.mjs";
+import { verifyNewThreadRoutes } from "./verify-new-thread-routes.mjs";
 
-const packagedApp = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
+const packagedApp = process.env.PI_WORKSPACE_VERIFY_APP
+  ? resolve(process.env.PI_WORKSPACE_VERIFY_APP)
+  : resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 let app = packagedApp;
 let testBundleDirectory;
 const ax = process.argv[2];
@@ -264,6 +268,10 @@ const panelDriver = {
   segment: (group, label) => drive("segment", [group, label]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
   keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers]),
+  windowKey: (code, ...modifiers) => {
+    drive("activate", []);
+    drive("key", [String(code), ...modifiers]);
+  },
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
   popoverFrame: id => drive("frame", [id, "--popover"]).trim().split(/\s+/).map(Number),
   webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
@@ -1130,9 +1138,11 @@ try {
   const sidebarOnly = process.argv.includes("--sidebar-and-checks-only");
   const terminalOnly = process.argv.includes("--terminal-only");
   const projectSettingsOnly = process.argv.includes("--project-settings-only");
+  const snoozeOnly = process.argv.includes("--snooze-only");
+  const newThreadOnly = process.argv.includes("--new-thread-routes-only");
   const focused = [
     usageOnly, controlsOnly, conversationOnly, projectFlowsOnly, threadActionsOnly,
-    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly,
+    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly, snoozeOnly, newThreadOnly,
   ].some(Boolean);
   if (threadActionsOnly || Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS) > 0) {
     testBundleDirectory = mkdtempSync("/private/tmp/pi-workspace-test-app-");
@@ -1168,6 +1178,12 @@ try {
   }
   if (projectSettingsOnly) {
     await verifyProjectSettings(panelDriver, { root: join(directory, "project-settings"), git, launch, quit, record });
+  }
+  if (snoozeOnly) {
+    await verifyThreadSnooze(panelDriver, { root: join(directory, "snooze"), quit, launch, record });
+  }
+  if (newThreadOnly) {
+    await verifyNewThreadRoutes(panelDriver, { root: join(directory, "new-thread-routes"), quit, launch, record });
   }
   if (terminalOnly) {
     makeRepository();

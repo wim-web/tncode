@@ -94,9 +94,13 @@ export async function verifySidebarPersistence(driver, { root, git, launch, quit
   record("Beta's thread menu applied and cleared its project scope while Gamma's draft stayed active.");
   press("sidebar-home");
   await until(() => index().selectedProject == null && tree().includes("What should we work on?"), "sidebar brand opens home");
+  press("workspace-history-back");
+  await until(() => current() && visible("workspace-history-forward").includes("enabled=true"), "Back restored Gamma and its draft");
+  press("workspace-history-forward");
+  await until(() => index().selectedProject == null && tree().includes("What should we work on?"), "Forward restored Home");
   press(row(gamma));
   await until(() => current() && index().projects.find(p => p.id === gamma.id).selectedConversation === gamma.selectedConversation, "same draft after returning from Home");
-  record("The sidebar brand opened Home. Reopening Gamma from its row restored the same draft ID and unsent text.");
+  record("The sidebar brand opened Home. Back restored Gamma, Forward returned to Home, and reopening Gamma's row retained the same draft ID and unsent text.");
   writeFileSync(stateFile, "check-logs-denied\n");
   press("pull-requests");
   await until(() => visible("pr-row-42"), "pull request from Gamma's checkout");

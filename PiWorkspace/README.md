@@ -13,6 +13,8 @@ open "dist/Pi Workspace.app"
 
 The app bundles Node.js and Pi. The build uses the current Mac's architecture and ad-hoc signing.
 
+To keep a build for comparison, pass its destination directory to `./scripts/build-app.sh`. Set `PI_WORKSPACE_VERIFY_APP` to the resulting `.app` path when running the UI verifier.
+
 **Pi Workspace → About Pi Workspace** shows the bundled version, build, and runtime versions. Select **Open source licenses…** to search the notices included in that build.
 
 ## Start a conversation
@@ -126,11 +128,16 @@ node scripts/verify-native-paste.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-app.mjs "$PWD/.build/ax" --thread-actions-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --sidebar-and-checks-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --image-preview-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --new-thread-routes-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --snooze-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --project-settings-only
 node scripts/verify-file-drops.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-attachments.mjs --release-suite "dist/Pi Workspace.app"
 ```
 
 The app verifier writes its report under `dist/verification-*/logs`. The neighboring `fixture` link points to the test data in a temporary folder outside the source checkout. Model turns use a disposable Keychain item. The worktree run checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. The file-drop verifier moves the pointer across a disposable source window and the app. The release suite supplies loopback providers for both the attachment and question tests. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
+
+On a shared Mac, set `PI_WORKSPACE_VERIFY_IDLE_SECONDS=180` to wait for three minutes of keyboard and pointer inactivity before each test launch. The verifier runs a private copy of the named build throughout that scenario.
 
 To test which network connections the packaged Pi helper attempts during startup, idle time, an explicit local turn, and shutdown, run `node scripts/verify-default-telemetry.mjs`. It checks the Node network and child-process APIs against a loopback receiver and applies a macOS process sandbox. Native app and WebKit traffic require separate observation.
 
