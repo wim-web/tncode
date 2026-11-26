@@ -1,6 +1,17 @@
 import Combine
 import SwiftUI
 
+private struct ComposerFocusKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var editingComposer: Bool? {
+        get { self[ComposerFocusKey.self] }
+        set { self[ComposerFocusKey.self] = newValue }
+    }
+}
+
 struct ComposerTextField: NSViewRepresentable {
     let target: ComposerAttachmentTarget
     let placeholder: String

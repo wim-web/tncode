@@ -174,6 +174,7 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
 
 private struct WorkspaceSidebarCommands: Commands {
     @ObservedObject var model: WorkspaceModel
+    @FocusedValue(\.editingComposer) private var editingComposer
 
     private var workspaceOpen: Bool {
         model.startupFailure == nil && !model.showingWelcome && !model.showingCommandPalette && !model.showingSettings
@@ -196,6 +197,11 @@ private struct WorkspaceSidebarCommands: Commands {
             }
         }
         CommandGroup(after: .pasteboard) {
+            Button("Paste and Match Style") {
+                NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(editingComposer != true)
             Button("Command Palette…", action: model.requestCommandPalette)
                 .keyboardShortcut("k")
                 .accessibilityIdentifier("open-command-palette")

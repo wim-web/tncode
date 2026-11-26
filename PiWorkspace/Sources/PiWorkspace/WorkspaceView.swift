@@ -1555,6 +1555,7 @@ struct WorkspaceView: View {
             }
                 .id(threadID)
                 .focused($focusedComposer, equals: threadID)
+                .focusedValue(\.editingComposer, true)
                 .task(id: threadID) {
                     await Task.yield()
                     if !Task.isCancelled && model.conversation?.id == threadID &&

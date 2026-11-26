@@ -29,8 +29,8 @@ writeFileSync(indexPath, JSON.stringify({
   projects: [{ id: projectID, path: project, title: "Paste fixture", allowEdits: false, selectedConversation: active,
     conversations: [{ id: active, title: "Active", archived: false, isDraft: true, composerText: seed }, otherRow] }],
   selectedProject: projectID, welcomeCompleted: true,
-  model: { provider: "OpenAI", model: "gpt-5-mini", endpoint: "http://127.0.0.1:11434/v1", contextWindow: 8192 },
-}));
+  model: { provider: "local", model: "paste-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192, localImages: true },
+}), { mode: 0o600 });
 const log = openSync(join(root, "app.log"), "wx", 0o600);
 const child = spawn(resolve(app, "Contents/MacOS/PiWorkspace"), [
   "--workspace", workspace, "-ApplePersistenceIgnoreState", "YES", "-AppleLanguages", "(en)",
@@ -41,7 +41,7 @@ const closed = once(child, "close").catch(error => { launchError = error; });
 console.log("Native paste fixture " + root + ", PID " + child.pid);
 
 function drive(action, args, input) {
-  return execFileSync(ax, [action, String(child.pid), ...args], { encoding: "utf8", input, timeout: 8000 });
+  return execFileSync(ax, [action, String(child.pid), ...args], { encoding: "utf8", input, timeout: 8000, stdio: ["pipe", "pipe", "pipe"] });
 }
 async function until(check, message) {
   const deadline = Date.now() + 30_000;
@@ -56,12 +56,12 @@ async function until(check, message) {
 }
 const focus = () => drive("type", ["composer", "--replace"], "");
 const focused = () => /focused=true/.test(drive("get", ["composer"]));
-function commandKey(code) {
-  drive("key-focused", ["composer", String(code), "cmd", "--no-activate"]);
+function commandKey(code, ...modifiers) {
+  drive("key-focused", ["composer", String(code), "cmd", ...modifiers]);
 }
 function menu(title) {
   assert(focused(), "The composer must own focus before Edit > " + title);
-  drive("menu-item", [title, "--no-activate"]);
+  drive("menu-item", [title]);
 }
 let savedIDs = [];
 async function expectDraft(text, attachments, message) {
@@ -86,7 +86,10 @@ async function expectDraft(text, attachments, message) {
 }
 
 try {
-  await until(() => { focus(); return focused(); }, "the selected draft's composer");
+  await until(() => drive("get", ["composer", "--values"]).includes("value=" + JSON.stringify(seed)), "the selected draft's composer");
+  drive("activate", []);
+  focus();
+  assert(focused(), "The seeded draft must own the field editor.");
   const unit = "日本語 with spaces 🌸\n";
   const size = 32 * 1024;
   const repeated = unit.repeat(Math.floor(size / Buffer.byteLength(unit)));
@@ -98,12 +101,17 @@ try {
   commandKey(9);
   await expectDraft(seed, [textAttachment], "Cmd-V attached exactly 32,768 UTF-8 bytes and preserved the seed.");
 
-  // Select the seed for inline replacement. Paste and Match Style must bypass the attachment rule.
   focus();
   menu("Paste and Match Style");
   await expectDraft(boundary, [textAttachment], "Edit > Paste and Match Style restored the same bytes inline.");
   commandKey(6);
   await expectDraft(seed, [textAttachment], "Undo restored the seeded draft and kept its original attachment.");
+  await until(() => /enabled=true/.test(drive("get", ["redo:"])), "Edit > Redo");
+  drive("press", ["redo:"]);
+  await expectDraft(boundary, [textAttachment], "Edit > Redo reapplied the full text without duplicating the attachment.");
+  await until(() => /enabled=true/.test(drive("get", ["undo:"])), "Edit > Undo");
+  drive("press", ["undo:"]);
+  await expectDraft(seed, [textAttachment], "Edit > Undo restored the seed again.");
 
   const overFileLimit = boundary + boundary + "x";
   execFileSync(writer, [board, "text"], { input: overFileLimit });
@@ -118,10 +126,13 @@ try {
   commandKey(9);
   await expectDraft(seed, [textAttachment, pngAttachment], "Cmd-V chose the small PNG over its text alternative.");
   focus();
-  menu("Paste and Match Style");
-  await expectDraft(alternative, [textAttachment, pngAttachment], "The explicit inline paste chose the PNG's text alternative.");
+  commandKey(9, "shift");
+  await expectDraft(alternative, [textAttachment, pngAttachment], "Cmd-Shift-V chose the PNG's text alternative.");
   commandKey(6);
   await expectDraft(seed, [textAttachment, pngAttachment], "Both files, the seed, and the other row survived.");
+} catch (error) {
+  try { writeFileSync(join(root, "failure-ui.txt"), drive("dump", ["--values"]), { mode: 0o600 }); } catch {}
+  throw error;
 } finally {
   if (child.pid && child.exitCode === null && child.signalCode === null) child.kill();
   await closed;
