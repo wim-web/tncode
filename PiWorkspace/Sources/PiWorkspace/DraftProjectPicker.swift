@@ -33,6 +33,8 @@ struct DraftProjectPicker: View {
                 .focused($searchFocused)
                 .accessibilityIdentifier("draft-project-search")
                 .onChange(of: query) { highlight = nil }
+                .onSubmit { if let selected { finish(selected) } }
+                .submitScope()
             if destinations.isEmpty {
                 Text("No matching projects.")
                     .foregroundStyle(.secondary)
