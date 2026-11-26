@@ -2,7 +2,10 @@ import SwiftUI
 
 struct QueuedMessagesView: View {
     @ObservedObject var model: WorkspaceModel
+    let threadID: UUID
     let focusComposer: () -> Void
+    let previewFocus: FocusState<ChatImagePreview.Opener?>.Binding
+    let openPreview: (ChatImagePreview.Opener) -> Void
     @State private var expanded = false
 
     var body: some View {
@@ -59,6 +62,7 @@ struct QueuedMessagesView: View {
                 .help(item.text)
                 .accessibilityIdentifier("queued-message-\(item.id)")
             if let attachments = item.attachments, !attachments.isEmpty {
+                imagePreviews(attachments.filter { $0.payload?.isImage == true }, message: item.id)
                 Label("\(attachments.count)", systemImage: "paperclip")
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(attachments.count) attachments")
@@ -102,5 +106,33 @@ struct QueuedMessagesView: View {
         }
         .buttonStyle(.borderless)
         .frame(height: 30)
+    }
+
+    @ViewBuilder
+    private func imagePreviews(_ images: [ComposerAttachment], message: UUID) -> some View {
+        if !images.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(images) { attachment in
+                        ChatImagePreviewButton(opener: .init(owner: .queued(thread: threadID, message: message),
+                                                            attachmentID: attachment.id),
+                                               name: attachment.name,
+                                               identifier: "preview-queued-attachment-\(message)-\(attachment.id)",
+                                               focus: previewFocus, open: openPreview) {
+                            Group {
+                                if let raster = attachment.preview(maximumSize: 72) {
+                                    Image(nsImage: raster).resizable().scaledToFit()
+                                } else {
+                                    Image(systemName: "photo")
+                                }
+                            }
+                            .frame(width: 24, height: 24)
+                        }
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: CGFloat(images.count * 28 - 4))
+        }
     }
 }

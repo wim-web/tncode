@@ -18,6 +18,7 @@ enum PiEvent: Decodable {
     case credential(id: String, read: Bool)
     case ready([ChatMessage], supportsImages: Bool = false)
     case history([ChatMessage])
+    case sentImage(requestID: UUID, ComposerAttachment.Payload?)
     case partial(String)
     case activity(String)
     case toolApproval(ToolApproval)
@@ -32,11 +33,11 @@ enum PiEvent: Decodable {
     case fatal(String)
 
     private enum Field: String, CodingKey {
-        case type, requestID, operation, messages, text, error, turnID, queuedID, mode, threadID, scope
+        case type, requestID, operation, messages, image, text, error, turnID, queuedID, mode, threadID, scope
     }
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
-        case credential, ready, history, partial, activity, toolApproval, finished, fatal
+        case credential, ready, history, sentImage, partial, activity, toolApproval, finished, fatal
         case agentQuestion, agentQuestionEnded, agentQuestionRejected
         case inputMode, queueRejected, compactionSkipped, forked
     }
@@ -54,6 +55,9 @@ enum PiEvent: Decodable {
             self = .ready(try fields.decode([ChatMessage].self, forKey: .messages),
                           supportsImages: try capabilities.decodeIfPresent(Bool.self, forKey: .supportsImages) ?? false)
         case .history: self = .history(try fields.decode([ChatMessage].self, forKey: .messages))
+        case .sentImage:
+            self = .sentImage(requestID: try fields.decode(UUID.self, forKey: .requestID),
+                              try? fields.decode(ComposerAttachment.Payload.self, forKey: .image))
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
         case .toolApproval: self = .toolApproval(try ToolApproval(from: decoder))
@@ -97,6 +101,13 @@ struct ForkConversation: Encodable {
     let type = "fork"
     let threadID: UUID
     let messageID: String
+}
+
+struct ReadSentImage: Encodable {
+    let type = "readSentImage"
+    let requestID: UUID
+    let messageID: String
+    let attachmentID: UUID
 }
 
 struct SendPrompt: Encodable {

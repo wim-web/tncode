@@ -7,7 +7,8 @@ struct ComposerAttachmentsView: View {
     @State private var choosingFiles = false
     @State private var replacementID: UUID?
     @State private var pickerTarget: ComposerAttachmentTarget?
-    @State private var preview: ComposerAttachment?
+    let previewFocus: FocusState<ChatImagePreview.Opener?>.Binding
+    let openPreview: (ChatImagePreview.Opener) -> Void
     private var target: ComposerAttachmentTarget {
         model.attachmentTarget(for: threadID)
     }
@@ -60,28 +61,6 @@ struct ComposerAttachmentsView: View {
             }
         }
         .fileDialogDefaultDirectory(model.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) })
-        .sheet(item: $preview) { attachment in
-            VStack(alignment: .trailing, spacing: 12) {
-                HStack {
-                    Text(attachment.name).font(.headline)
-                    Spacer()
-                    Button("Close Image Preview") { preview = nil }
-                        .keyboardShortcut(.cancelAction)
-                        .accessibilityIdentifier("close-image-preview")
-                }
-                if let image = attachment.preview(maximumSize: 1600) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .accessibilityLabel(attachment.name)
-                        .accessibilityIdentifier("expanded-attachment-\(attachment.id)")
-                }
-            }
-            .padding()
-            .frame(width: 640, height: 460)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("attachment-image-preview")
-        }
     }
 
     private func chooseFiles(replacing id: UUID?) {
@@ -92,16 +71,19 @@ struct ComposerAttachmentsView: View {
 
     private func tile(_ attachment: ComposerAttachment) -> some View {
         HStack(spacing: 6) {
-            if let image = attachment.preview(maximumSize: 96) {
-                Button { preview = attachment } label: {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 34, height: 34)
+            if let item = ChatImagePreview.ImageItem(attachment) {
+                ChatImagePreviewButton(opener: .init(owner: .composer(target), attachmentID: item.id),
+                                       name: item.name, identifier: "preview-attachment-\(item.id)",
+                                       focus: previewFocus, open: openPreview) {
+                    Group {
+                        if let image = attachment.preview(maximumSize: 96) {
+                            Image(nsImage: image).resizable().scaledToFit()
+                        } else {
+                            Image(systemName: "photo")
+                        }
+                    }
+                    .frame(width: 34, height: 34)
                 }
-                .help("Preview \(attachment.name)")
-                .accessibilityLabel("Preview \(attachment.name)")
-                .accessibilityIdentifier("preview-attachment-\(attachment.id)")
             } else {
                 Image(systemName: attachment.payload == nil ? "exclamationmark.triangle" : "doc.text")
                     .accessibilityHidden(true)

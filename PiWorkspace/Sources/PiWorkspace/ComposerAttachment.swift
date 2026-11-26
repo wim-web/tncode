@@ -259,9 +259,16 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
     }
 
     func preview(maximumSize: Int) -> NSImage? {
-        guard let payload, payload.isImage,
+        guard let payload else { return nil }
+        return Self.preview(payload, maximumSize: maximumSize)
+    }
+
+    static func preview(_ payload: Payload, maximumSize: Int) -> NSImage? {
+        guard let type = imageTypes.first(where: { $0.value == payload.mimeType })?.key,
               let source = CGImageSourceCreateWithData(payload.data as CFData, nil),
-              let image = Self.thumbnail(source, maximumSize: maximumSize) else { return nil }
+              CGImageSourceGetType(source) == type.identifier as CFString,
+              previewEdge(source) != nil,
+              let image = thumbnail(source, maximumSize: maximumSize) else { return nil }
         return NSImage(cgImage: image, size: .zero)
     }
 
@@ -287,4 +294,5 @@ struct SentAttachment: Decodable, Identifiable {
     let id: UUID
     let name: String
     let mimeType: String
+    let hasImage: Bool?
 }

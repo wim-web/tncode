@@ -1,5 +1,7 @@
 import AppKit
+import Carbon
 import Combine
+import SwiftUI
 import XCTest
 @testable import PiWorkspace
 
@@ -121,6 +123,94 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertEqual(model.queuedMessages.first?.attachments?.map(\.name), ["first.txt", "second.txt"])
     }
 
+    func testOffscreenPreviewKeepsDraftAndQueuedCollectionsSeparate() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        try model.applySettings(ModelSettings(provider: .local, model: "image-fixture", localImages: true),
+                                in: .workspace, newKey: "", removeKey: false)
+        try model.openProject(fixture.root)
+        fixture.worker.onEvent?(.ready([], supportsImages: true))
+        let projectID = try XCTUnwrap(model.project?.id)
+        let threadID = try XCTUnwrap(model.conversation?.id)
+        let target = model.attachmentTarget(for: threadID)
+        let png = try makeAttachmentImage(width: 16, height: 16, type: .png)
+        let jpg = try makeAttachmentImage(width: 24, height: 16, type: .jpeg)
+        model.draft = "Active turn"
+        model.send()
+        let prompt = try XCTUnwrap(fixture.worker.prompt)
+        fixture.worker.onEvent?(.history([ChatMessage(id: "active", role: .user, text: prompt.text)]))
+        let files = try ["first", "second"].map { directory in
+            let folder = fixture.root.appendingPathComponent(directory)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("same.png")
+            try png.write(to: file)
+            return file
+        }
+        XCTAssertTrue(model.attach([.file(files[0]), .pastedText("Text file"), .file(files[1])], to: target))
+        model.queueDraft()
+        let queue = try XCTUnwrap(model.queuedMessages.first)
+        let queuedImages = try XCTUnwrap(queue.attachments).filter { $0.payload?.isImage == true }
+        XCTAssertEqual(queuedImages.map(\.name), ["same.png", "same.png"])
+        XCTAssertTrue(model.attach([.image(jpg, .jpeg)], to: target))
+        let draftImage = try XCTUnwrap(model.composerAttachments.first)
+        let ui = OffscreenPreviewWorkspace(model)
+        defer { ui.close() }
+
+        let opener = "preview-queued-attachment-\(queue.id)-\(queuedImages[0].id)"
+        try await ui.press(opener)
+        try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        try await ui.focused("close-image-preview")
+        try await ui.press("previous-image-preview")
+        try await ui.visible("expanded-attachment-\(queuedImages[1].id)")
+        try ui.key(kVK_RightArrow, "\u{f703}")
+        try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        try ui.key(kVK_ANSI_Equal, "=")
+        try ui.key(kVK_ANSI_Equal, "=")
+        try ui.key(kVK_RightArrow, "\u{f703}")
+        try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        try ui.key(kVK_ANSI_0, "0")
+        try await ui.press("next-image-preview")
+        try await ui.visible("expanded-attachment-\(queuedImages[1].id)")
+        try ui.key(kVK_Escape, "\u{1b}")
+        try await ui.hidden("attachment-image-preview")
+        try await ui.focused(opener)
+
+        try await ui.press("preview-attachment-\(draftImage.id)")
+        try await ui.visible("expanded-attachment-\(draftImage.id)")
+        XCTAssertNil(ui.element("previous-image-preview"))
+        XCTAssertNil(ui.element("next-image-preview"))
+        try await ui.press("close-image-preview")
+        try await ui.hidden("attachment-image-preview")
+        try await ui.focused("preview-attachment-\(draftImage.id)")
+
+        model.editQueuedMessage(queue.id)
+        try await ui.press("preview-attachment-\(queuedImages[0].id)")
+        try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        model.cancelQueuedMessageEdit()
+        try await ui.hidden("attachment-image-preview")
+
+        try await ui.press(opener)
+        try await ui.visible("expanded-attachment-\(queuedImages[0].id)")
+        model.removeQueuedMessage(queue.id)
+        try await ui.hidden("attachment-image-preview")
+        XCTAssertNil(ui.element(opener))
+        XCTAssertEqual(model.composerAttachments.map(\.id), [draftImage.id])
+
+        try await ui.press("preview-attachment-\(draftImage.id)")
+        try await ui.visible("expanded-attachment-\(draftImage.id)")
+        fixture.worker.onEvent?(.finished(turnID: prompt.turnID, [], error: nil))
+        model.addConversation()
+        XCTAssertNotEqual(model.conversation?.id, threadID)
+        try await ui.hidden("attachment-image-preview")
+        XCTAssertNil(ui.element("preview-attachment-\(draftImage.id)"))
+        model.selectConversation(threadID, in: projectID)
+        try await ui.visible("preview-attachment-\(draftImage.id)")
+        try await ui.press("preview-attachment-\(draftImage.id)")
+        try await ui.visible("expanded-attachment-\(draftImage.id)")
+        model.removeAttachment(draftImage.id, in: model.attachmentTarget(for: threadID))
+        try await ui.hidden("attachment-image-preview")
+    }
+
     func testSelectedAttachmentsReachPinnedSDK() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let endpoint = environment["PI_ATTACHMENT_TEST_ENDPOINT"],
@@ -168,31 +258,64 @@ final class ComposerAttachmentTests: XCTestCase {
             XCTAssertTrue(model.terminate())
         }
 
+        let user: ChatMessage
+        let added: UUID
+        let projectID: UUID
+        do {
+            let model = open()
+            model.start()
+            await wait(for: .ready, in: model)
+            XCTAssertEqual(model.conversation?.id, threadID)
+            XCTAssertTrue(model.restoreStashedPrompt(stashID, to: try XCTUnwrap(model.draftProjectScope)))
+            XCTAssertEqual(model.composerAttachments.map(\.id).prefix(2), [removed, kept])
+            model.removeAttachment(removed, in: model.attachmentTarget(for: threadID))
+            XCTAssertEqual(model.composerAttachments.map(\.name), ["same.png", "note.txt"])
+            XCTAssertEqual(model.composerAttachments.first?.id, kept)
+            XCTAssertTrue(model.attach([.file(first)], to: model.attachmentTarget(for: threadID)))
+            added = try XCTUnwrap(model.composerAttachments.last?.id)
+            XCTAssertNotEqual(added, removed)
+            XCTAssertTrue(model.canSend)
+            model.send()
+            XCTAssertEqual(model.phase, .running)
+            await wait(for: .ready, in: model)
+            XCTAssertNil(model.error)
+            XCTAssertEqual(model.messages.last?.text, "Attachment fixture received.")
+            user = try XCTUnwrap(model.messages.first)
+            XCTAssertEqual(user.attachments?.map(\.name), ["same.png", "note.txt", "same.png"])
+            XCTAssertEqual(user.attachments?.first?.id, kept)
+            XCTAssertEqual(user.attachments?.map(\.hasImage), [true, false, true])
+            XCTAssertNotNil(user.submissionID)
+            XCTAssertTrue(model.composerAttachments.isEmpty)
+
+            projectID = try XCTUnwrap(model.project?.id)
+            XCTAssertTrue(model.terminate())
+        }
+
         let model = open()
+        defer { _ = model.terminate() }
         model.start()
+        model.selectConversation(threadID, in: projectID)
         await wait(for: .ready, in: model)
         XCTAssertEqual(model.conversation?.id, threadID)
-        XCTAssertTrue(model.restoreStashedPrompt(stashID, to: try XCTUnwrap(model.draftProjectScope)))
-        XCTAssertEqual(model.composerAttachments.map(\.id).prefix(2), [removed, kept])
-        model.removeAttachment(removed, in: model.attachmentTarget(for: threadID))
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["same.png", "note.txt"])
-        XCTAssertEqual(model.composerAttachments.first?.id, kept)
-        XCTAssertTrue(model.canSend)
-        model.send()
-        XCTAssertEqual(model.phase, .running)
-        await wait(for: .ready, in: model)
-        XCTAssertNil(model.error)
-        XCTAssertEqual(model.messages.last?.text, "Attachment fixture received.")
-        let user = try XCTUnwrap(model.messages.first)
-        XCTAssertEqual(user.attachments?.map(\.name), ["same.png", "note.txt"])
-        XCTAssertEqual(user.attachments?.first?.id, kept)
-        XCTAssertNotNil(user.submissionID)
-        XCTAssertTrue(model.composerAttachments.isEmpty)
-
-        model.connect()
-        await wait(for: .ready, in: model)
+        let sentIDs = try XCTUnwrap(user.attachments).map(\.id)
         XCTAssertEqual(model.messages.first?.id, user.id)
-        XCTAssertEqual(model.messages.first?.attachments?.map(\.name), ["same.png", "note.txt"])
+        XCTAssertEqual(model.messages.first?.attachments?.map(\.id), sentIDs)
+        let blue = await model.readSentImage(threadID: threadID, messageID: user.id, attachmentID: kept)
+        let red = await model.readSentImage(threadID: threadID, messageID: user.id, attachmentID: added)
+        XCTAssertEqual(blue?.data, try Data(contentsOf: second))
+        XCTAssertEqual(red?.data, try Data(contentsOf: first))
+        let removedImage = await model.readSentImage(threadID: threadID, messageID: user.id, attachmentID: removed)
+        XCTAssertNil(removedImage)
+        do {
+            let ui = OffscreenPreviewWorkspace(model)
+            defer { ui.close() }
+            try await ui.press("sent-attachment-\(added)")
+            try await ui.visible("expanded-attachment-\(added)")
+            try ui.key(kVK_RightArrow, "\u{f703}")
+            try await ui.visible("expanded-attachment-\(kept)")
+            try await ui.press("close-image-preview")
+            try await ui.hidden("attachment-image-preview")
+        }
 
         let largeText = "\u{FEFF}" + String(repeating: "  日本語 👩🏽‍💻 e\u{301}\r\n", count: 1300)
         let largeImage = try makeAttachmentImage(width: 2200, height: 1600, type: .png, noisy: true)
@@ -230,6 +353,39 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertFalse(model.canSend)
         XCTAssertNotNil(model.attachmentSendError)
         XCTAssertEqual(model.composerAttachments.map(\.name), ["same.png"])
+    }
+
+    func testOffscreenPreviewShowsUnreadableSentImageAndKeepsTheGalleryUsable() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        try model.openProject(fixture.root)
+        fixture.worker.onEvent?(.ready([]))
+        model.draft = "Fixture"
+        model.send()
+        let prompt = try XCTUnwrap(fixture.worker.prompt)
+        let broken = SentAttachment(id: UUID(), name: "broken.png", mimeType: "image/png", hasImage: true)
+        let valid = SentAttachment(id: UUID(), name: "valid.jpg", mimeType: "image/jpeg", hasImage: true)
+        let missing = SentAttachment(id: UUID(), name: "missing.png", mimeType: "image/png", hasImage: false)
+        fixture.worker.sentImages[broken.id] = .init(mimeType: "image/png", data: Data("Unreadable".utf8))
+        fixture.worker.sentImages[valid.id] = .init(mimeType: "image/jpeg",
+                                                    data: try makeAttachmentImage(width: 16, height: 16, type: .jpeg))
+        let message = ChatMessage(id: "sent", role: .user, text: prompt.text, attachments: [broken, valid, missing])
+        fixture.worker.onEvent?(.finished(turnID: prompt.turnID, [message], error: nil))
+        let ui = OffscreenPreviewWorkspace(model)
+        defer { ui.close() }
+
+        try await ui.press("sent-attachment-\(broken.id)")
+        try await ui.visible("image-preview-unavailable")
+        XCTAssertNil(ui.element("expanded-attachment-\(broken.id)"))
+        try await ui.press("next-image-preview")
+        try await ui.visible("expanded-attachment-\(valid.id)")
+        try await ui.copyImage("expanded-attachment-\(valid.id)")
+        try await ui.press("next-image-preview")
+        try await ui.visible("image-preview-unavailable")
+        try await ui.press("close-image-preview")
+        try await ui.focused("sent-attachment-\(broken.id)")
+        try await ui.visible("sent-attachment-\(missing.id)")
+        XCTAssertEqual(ui.element("sent-attachment-\(missing.id)")?.accessibilityRole?(), .staticText)
     }
 
     private func previewColor(_ attachment: ComposerAttachment) throws -> NSColor {
@@ -270,12 +426,103 @@ final class ComposerAttachmentTests: XCTestCase {
         var onClose: (() -> Void)?
         var prompt: SendPrompt?
         var steer: SendQueuedInput?
+        var sentImages: [UUID: ComposerAttachment.Payload] = [:]
 
         func send(_ command: any Encodable) throws {
             if let command = command as? SendPrompt { prompt = command }
             if let command = command as? SendQueuedInput { steer = command }
+            if let command = command as? ReadSentImage {
+                onEvent?(.sentImage(requestID: command.requestID, sentImages[command.attachmentID]))
+            }
         }
 
         func close() {}
     }
+}
+
+@MainActor
+private final class OffscreenPreviewWorkspace {
+    private let app = NSApplication.shared
+    private let policy: NSApplication.ActivationPolicy
+    private let window: NSPanel
+    private let host: NSHostingView<WorkspaceView>
+    private let pasteboard = NSPasteboard.withUniqueName()
+
+    init(_ model: WorkspaceModel) {
+        policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+        let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2200, y: 0)
+        window = ImagePreviewOffscreenPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 1100, height: 720)),
+                                            styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                     workspacePasteboard: pasteboard))
+        window.contentView = host
+        window.setFrameOrigin(origin)
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        window.orderBack(nil)
+    }
+
+    func close() {
+        window.contentView = nil
+        window.close()
+        pasteboard.releaseGlobally()
+        app.setActivationPolicy(policy)
+    }
+
+    func element(_ id: String) -> AnyObject? {
+        var visited = Set<ObjectIdentifier>()
+        func find(_ node: AnyObject) -> AnyObject? {
+            guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+            if node.accessibilityIdentifier?() == id { return node }
+            for child in node.accessibilityChildren?() ?? [] {
+                if let found = find(child as AnyObject) { return found }
+            }
+            return nil
+        }
+        return find(host) ?? find(window)
+    }
+
+    func press(_ id: String) async throws {
+        try await visible(id)
+        XCTAssertEqual(element(id)?.accessibilityPerformPress?(), true, id)
+    }
+
+    func visible(_ id: String) async throws { try await waitFor(id) { self.element(id) != nil } }
+    func hidden(_ id: String) async throws { try await waitFor(id) { self.element(id) == nil } }
+    func focused(_ id: String) async throws {
+        try await waitFor("focus on \(id)") { self.element(id)?.isAccessibilityFocused?() == true }
+    }
+
+    func copyImage(_ id: String) async throws {
+        let actions = try XCTUnwrap(element(id)?.accessibilityCustomActions?())
+        let action = try XCTUnwrap(actions.first { $0.name == "Copy Image" })
+        XCTAssertEqual(action.handler?(), true)
+        try await waitFor("PNG on the isolated pasteboard") { self.pasteboard.data(forType: .png) != nil }
+    }
+
+    private func waitFor(_ id: String, _ predicate: () -> Bool) async throws {
+        for _ in 0..<80 {
+            host.layoutSubtreeIfNeeded()
+            if predicate() { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let message = "Timed out waiting for the expected visibility of \(id)."
+        XCTFail(message)
+        throw WorkspaceError(message)
+    }
+
+    func key(_ code: Int, _ characters: String) throws {
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: window.windowNumber, context: nil, characters: characters,
+                                                  charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(code)))
+        app.sendEvent(event)
+    }
+}
+
+private final class ImagePreviewOffscreenPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

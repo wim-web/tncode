@@ -34,7 +34,7 @@ const server = createServer(async (request, response) => {
     const urls = message.content.filter(({ type }) => type === "image_url").map(({ image_url }) => image_url.url);
     if (requests.length === 1) {
       assert.equal(text, `Attached text file "note.txt":\n${note}`);
-      assert.deepEqual(urls, [`data:image/png;base64,${images.blue}`]);
+      assert.deepEqual(urls, [images.blue, images.red].map((image) => `data:image/png;base64,${image}`));
     } else {
       const run = requests.length - 1;
       const largeText = "\uFEFF" + "  日本語 👩🏽‍💻 e\u0301\r\n".repeat(1300);

@@ -66,6 +66,8 @@ struct WorkspaceView: View {
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
     @State private var targetingComposerDrop = false
+    @State private var imagePreview: ChatImagePreview?
+    @FocusState private var focusedImageOpener: ChatImagePreview.Opener?
 
     private struct Notice {
         let id: UUID
@@ -146,6 +148,8 @@ struct WorkspaceView: View {
     var body: some View {
         let findRequest = model.activeThreadFind?.request
         let branchRequest = copyBranchReadRequest
+        let images = imagePreview.map { previewImages(for: $0.opener.owner) } ?? []
+        let imageIndex = imagePreview?.index(in: images)
         ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
@@ -162,13 +166,26 @@ struct WorkspaceView: View {
                 }
             }
             .opacity(model.showingWelcome ? 0 : 1)
-            .accessibilityHidden(model.showingWelcome)
-            .disabled(model.showingWelcome)
+            .accessibilityHidden(model.showingWelcome || imageIndex != nil)
+            .disabled(model.showingWelcome || imageIndex != nil)
             if model.showingWelcome { welcome }
+            if let imagePreview, let imageIndex {
+                ChatImagePreviewDialog(items: images, index: imageIndex, close: closeImagePreview,
+                                       navigate: navigateImagePreview, load: { item in
+                    if case .sent(let threadID, let messageID) = imagePreview.opener.owner {
+                        return await model.readSentImage(threadID: threadID, messageID: messageID, attachmentID: item.id)
+                    }
+                    return item.payload
+                }, pasteboard: workspacePasteboard)
+            }
+        }
+        .onChange(of: imageIndex) { _, index in
+            if index == nil { closeImagePreview() }
         }
         .tint(accent)
         .background {
             WindowKeyMonitor { event, window in
+                guard imageIndex == nil else { return false }
                 if showingComposerStash, event.keyCode == kVK_Escape,
                    event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
                    acceptsWorkspaceKeys(in: window),
@@ -208,6 +225,7 @@ struct WorkspaceView: View {
         }
         .background(ThreadTerminalKeyboard())
         .onReceive(model.sidebarCommand) { command in
+            guard imageIndex == nil else { return }
             switch command {
             case .commandPalette: openCommandPalette()
             case .newThread, .search:
@@ -1369,6 +1387,7 @@ struct WorkspaceView: View {
                         let isMatch = message.id == target?.messageID
                         VStack(alignment: .leading, spacing: 8) {
                             messageRow(message.text, role: message.role, attachments: message.attachments ?? [],
+                                       imageOwner: .sent(thread: thread.id, message: message.id),
                                        selection: isMatch ? target : nil)
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
@@ -1419,10 +1438,10 @@ struct WorkspaceView: View {
                 if let id { reader.scrollTo(TranscriptAnchor.message(id), anchor: .center) }
             }
             .onChange(of: model.messages.count) { _, _ in
-                if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
+                if target == nil, imagePreview == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
             }
             .onChange(of: model.partial) { _, _ in
-                if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
+                if target == nil, imagePreview == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
             }
         }
     }
@@ -1484,7 +1503,48 @@ struct WorkspaceView: View {
         .disabled(!model.canOpenForkLink(threadID))
     }
 
+    private func previewImages(for owner: ChatImagePreview.Owner) -> [ChatImagePreview.ImageItem] {
+        guard model.conversation?.id == owner.threadID, !model.showingWelcome else { return [] }
+        switch owner {
+        case .composer(let target):
+            guard target == model.attachmentTarget(for: target.threadID) else { return [] }
+            return model.composerAttachments.compactMap(ChatImagePreview.ImageItem.init)
+        case .queued(_, let message):
+            let attachments = model.queuedMessages.first { $0.id == message }?.attachments ?? []
+            return attachments.compactMap(ChatImagePreview.ImageItem.init)
+        case .sent(_, let message):
+            let attachments = model.messages.first { $0.id == message }?.attachments ?? []
+            return attachments.compactMap(ChatImagePreview.ImageItem.init)
+        }
+    }
+
+    private func openImagePreview(_ opener: ChatImagePreview.Opener) {
+        let selection = ChatImagePreview(opener)
+        guard selection.index(in: previewImages(for: opener.owner)) != nil else { return }
+        imagePreview = selection
+    }
+
+    private func navigateImagePreview(_ direction: Int) {
+        guard let selection = imagePreview else { return }
+        let images = previewImages(for: selection.opener.owner)
+        guard images.count > 1, let index = selection.index(in: images) else { return }
+        let next = (index + direction + images.count) % images.count
+        imagePreview?.selectedID = images[next].id
+    }
+
+    private func closeImagePreview() {
+        guard let selection = imagePreview else { return }
+        imagePreview = nil
+        Task { @MainActor in
+            guard imagePreview == nil, previewImages(for: selection.opener.owner).contains(where: {
+                $0.id == selection.opener.attachmentID
+            }) else { return }
+            focusedImageOpener = selection.opener
+        }
+    }
+
     private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = [],
+                            imageOwner: ChatImagePreview.Owner? = nil,
                             selection: ThreadFindSession.Selection? = nil) -> some View {
         let rendered = TranscriptText.rendered(text, role: role)
         return HStack {
@@ -1501,9 +1561,22 @@ struct WorkspaceView: View {
                     }
                 }
                 ForEach(attachments) { attachment in
-                    Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
-                        .font(.callout)
-                        .accessibilityIdentifier("sent-attachment-\(attachment.id)")
+                    let label = Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
+                    if let imageOwner, case .sent(let threadID, let messageID) = imageOwner, attachment.hasImage == true {
+                        ChatImagePreviewButton(opener: .init(owner: imageOwner, attachmentID: attachment.id),
+                                               name: attachment.name, identifier: "sent-attachment-\(attachment.id)",
+                                               focus: $focusedImageOpener, open: openImagePreview) {
+                            SentImageThumbnail(name: attachment.name) {
+                                await model.readSentImage(threadID: threadID, messageID: messageID, attachmentID: attachment.id)
+                            }
+                        }
+                            .buttonStyle(.borderless)
+                            .font(.callout)
+                    } else {
+                        label
+                            .font(.callout)
+                            .accessibilityIdentifier("sent-attachment-\(attachment.id)")
+                    }
                 }
             }
             .padding(role == .user ? 11 : 0)
@@ -1548,7 +1621,8 @@ struct WorkspaceView: View {
                         model.respond(to: approval.requestID, with: $0)
                     }
                 }
-                QueuedMessagesView(model: model) { focusedComposer = thread.id }
+                QueuedMessagesView(model: model, threadID: thread.id, focusComposer: { focusedComposer = thread.id },
+                                   previewFocus: $focusedImageOpener, openPreview: openImagePreview)
                     .id(thread.id)
                 if let scope = model.draftProjectScope {
                     composerStash(in: scope)
@@ -1657,7 +1731,8 @@ struct WorkspaceView: View {
             return !attachments.isEmpty && ownsComposer() && model.canEditAttachments && model.attach(attachments, to: target)
         }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
         return VStack(alignment: .leading, spacing: 0) {
-            ComposerAttachmentsView(model: model, threadID: threadID)
+            ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedImageOpener,
+                                    openPreview: openImagePreview)
                 .id(target)
                 .padding(.bottom, 6)
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(

@@ -99,17 +99,45 @@ function forkReplyStatus(entry) {
   }
 }
 
+const imageMime = (mimeType) => mimeType === "image/png" || mimeType === "image/jpeg";
+
+function sentImageBlocks(message) {
+  const attachments = message.workspaceInput?.attachments?.filter(({ mimeType }) => imageMime(mimeType)) ?? [];
+  const images = Array.isArray(message.content) ? message.content.filter(({ type }) => type === "image") : [];
+  // Pi stores images in submission order. With missing blocks the remaining bytes cannot be identified.
+  if (attachments.length !== images.length) return new Map();
+  return new Map(attachments.flatMap(({ id }, index) => {
+    const { data, mimeType } = images[index];
+    return imageMime(mimeType) && typeof data === "string" && data.length > 0 &&
+      data.length <= Math.ceil(maxAttachmentBytes / 3) * 4 ? [[id, { data, mimeType }]] : [];
+  }));
+}
+
+function readSentImage({ requestID, messageID, attachmentID }) {
+  if (!session || !validID(requestID) || !validID(attachmentID) || typeof messageID !== "string") return;
+  const entry = manager.getBranch().find(({ id }) => id === messageID);
+  const image = entry?.type === "message" && entry.message.role === "user"
+    ? sentImageBlocks(entry.message).get(attachmentID)
+    : undefined;
+  emit({ type: "sentImage", requestID, image });
+}
+
 function history() {
   return manager.getBranch().flatMap((entry) => {
     if (entry.type !== "message") return [];
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
     const { workspaceInput, workspaceQueuedID, workspaceSubmissionID } = entry.message;
+    const attachments = workspaceInput?.attachments;
     const text = redact(workspaceInput?.text ?? messageText(entry.message));
     const forkStatus = forkReplyStatus(entry);
-    return text || workspaceInput?.attachments.length ? [{
+    const images = sentImageBlocks(entry.message);
+    return text || attachments?.length ? [{
       id: entry.id, role, text, queuedID: workspaceQueuedID, submissionID: workspaceSubmissionID,
-      attachments: workspaceInput?.attachments, canFork: forkStatus === "replayable",
+      attachments: attachments?.map((attachment) => ({
+        ...attachment, hasImage: images.has(attachment.id),
+      })),
+      canFork: forkStatus === "replayable",
       incompleteReply: ["interrupted", "truncated"].includes(forkStatus) ? forkStatus : undefined,
     }] : [];
   });
@@ -521,6 +549,8 @@ input.on("line", (line) => {
     void prompt(command);
   } else if (command.type === "fork") {
     forkConversation(command);
+  } else if (command.type === "readSentImage") {
+    readSentImage(command);
   } else if (command.type === "steer" || command.type === "skipCompaction") {
     handleQueuedInput(command);
   } else if (command.type === "toolApprovalResult") {

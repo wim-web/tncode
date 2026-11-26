@@ -142,6 +142,26 @@ final class WorkspaceModel: ObservableObject {
         if let queueEdit { return queueEdit.attachments ?? [] }
         return conversation?.composerAttachments ?? []
     }
+
+    func readSentImage(threadID: UUID, messageID: String, attachmentID: UUID) async -> ComposerAttachment.Payload? {
+        guard let process, conversation?.id == threadID, !Task.isCancelled else { return nil }
+        let request = ReadSentImage(requestID: UUID(), messageID: messageID, attachmentID: attachmentID)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                sentImageRequests[request.requestID] = continuation
+                do {
+                    try process.send(request)
+                } catch {
+                    sentImageRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
+                }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                self?.sentImageRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
+            }
+        }
+    }
+
     var canEditAttachments: Bool { canUseQueue }
     var attachmentSendError: String? { attachmentSendError(for: composerAttachments) }
 
@@ -429,6 +449,7 @@ final class WorkspaceModel: ObservableObject {
     private let makeProcess: (URL, String) throws -> any PiConnection
     private let makeGitHubReader: (String) -> GitHubReader
     private var process: (any PiConnection)?
+    private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
 
     init(root: URL, keychainService: String, readCredential: ((String) throws -> String?)? = nil,
@@ -573,6 +594,9 @@ final class WorkspaceModel: ObservableObject {
     func shutdown() {
         process?.close()
         process = nil
+        let requests = sentImageRequests
+        sentImageRequests.removeAll()
+        for continuation in requests.values { continuation.resume(returning: nil) }
         if forkRequest != nil {
             forkRequest = nil
             try? store?.recoverFork(in: workspace)
@@ -2017,6 +2041,8 @@ final class WorkspaceModel: ObservableObject {
 
     private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
         switch event {
+        case let .sentImage(requestID, image):
+            sentImageRequests.removeValue(forKey: requestID)?.resume(returning: image)
         case let .credential(id, read):
             var result = CredentialResult(requestID: id)
             do {
