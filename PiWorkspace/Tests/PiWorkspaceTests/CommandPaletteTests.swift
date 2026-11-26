@@ -5,6 +5,186 @@ import XCTest
 
 @MainActor
 final class CommandPaletteTests: XCTestCase {
+    func testQuotedQueryRequiresTheWordsTogether() {
+        let rows = [
+            CommandPaletteRow(action: .settings, title: "Review build results", icon: "gearshape"),
+            CommandPaletteRow(action: .home, title: "Review this build results", icon: "house")
+        ]
+        XCTAssertEqual(CommandPaletteRow.matching("\"review build\"", in: rows).map(\.action), [.settings])
+    }
+
+    func testMessageSearchRejectsSupersededQueryScopeAndSubmenuResults() throws {
+        let fixture = try Fixture()
+        let alpha = try fixture.openProject("Alpha")
+        defer { fixture.model.terminate() }
+        let threadID = try XCTUnwrap(fixture.model.conversation?.id)
+        fixture.model.draft = "A pending draft"
+        let contents = contents(in: fixture.model, projectID: alpha)
+        var session = CommandPaletteSession()
+        session.query = "orbital lantern"
+        let obsolete = try XCTUnwrap(session.messageSearch(in: contents, latestMessageID: nil))
+        let matches = [threadID: SidebarMessageSearch.Match(messageID: "old", excerpt: "orbital lantern")]
+        session.receive(matches, for: obsolete)
+        XCTAssertEqual(session.messageMatches(for: obsolete)?.count, 1)
+        let changedTranscript = session.messageSearch(in: contents, latestMessageID: "new")
+        XCTAssertNil(session.messageMatches(for: changedTranscript))
+        let beta = try fixture.openProject("Beta")
+        fixture.model.draft = "Another pending draft"
+        let changedScope = try XCTUnwrap(session.messageSearch(in: self.contents(in: fixture.model, projectID: beta),
+                                                              latestMessageID: nil))
+        XCTAssertNil(session.messageMatches(for: changedScope))
+
+        session.query = "other term"
+        session.query = "orbital lantern"
+        let current = try XCTUnwrap(session.messageSearch(in: contents, latestMessageID: nil))
+        session.receive(matches, for: obsolete)
+        XCTAssertNil(session.messageMatches(for: current))
+        session.receive(matches, for: current)
+        XCTAssertEqual(session.messageMatches(for: current)?.count, 1)
+
+        XCTAssertEqual(session.select(.chooseProject), .handled)
+        session.query = "orbital lantern"
+        XCTAssertNil(session.messageSearch(in: contents, latestMessageID: nil))
+        session.back()
+        XCTAssertEqual(session.query, "orbital lantern")
+        XCTAssertNil(session.messageMatches(for: session.messageSearch(in: contents, latestMessageID: nil)))
+
+        session.query = ">orbital lantern"
+        XCTAssertNil(session.messageSearch(in: contents, latestMessageID: nil))
+        XCTAssertNil(contents.messageSearch(for: "la", choosingProject: false))
+        XCTAssertNotNil(contents.messageSearch(for: "履歴", choosingProject: false))
+    }
+
+    func testPaletteSearchAndSelectionWithRealPiHistory() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sidecar = environment["PI_PALETTE_SIDECAR"] ?? package.appendingPathComponent("Sidecar").path
+        guard FileManager.default.fileExists(atPath: sidecar + "/node_modules/@earendil-works/pi-coding-agent") else {
+            throw XCTSkip("Set PI_PALETTE_SIDECAR to a Sidecar directory with the bundled Pi SDK.")
+        }
+        let node = environment["PI_PALETTE_NODE"] ?? "/opt/homebrew/bin/node"
+        guard FileManager.default.isExecutableFile(atPath: node) else {
+            throw XCTSkip("Set PI_PALETTE_NODE to the absolute path of Node.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = root.appendingPathComponent("workspace")
+        let draft = Conversation(id: UUID(), title: "My draft", isDraft: true, composerText: "Before edit")
+        let older = Conversation(id: UUID(), title: "Shared thread", lastActiveAt: Date(timeIntervalSince1970: 2))
+        let titled = Conversation(id: UUID(), title: "Orbital lantern by title", lastActiveAt: Date(timeIntervalSince1970: 1))
+        let settled = Conversation(id: UUID(), title: "Settled", lastActiveAt: Date(), shelf: .settled)
+        let archived = Conversation(id: UUID(), title: "Archived", archived: true, lastActiveAt: Date())
+        let outOfScope = Conversation(id: UUID(), title: "Shared thread", lastActiveAt: Date())
+        let alpha = Project(id: UUID(), path: root.appendingPathComponent("Alpha").path, title: "Alpha",
+                            conversations: [draft, older, titled, settled, archived], selectedConversation: draft.id)
+        let beta = Project(id: UUID(), path: root.appendingPathComponent("Beta").path, title: "Beta",
+                           conversations: [outOfScope])
+        let empty = Project(id: UUID(), path: root.appendingPathComponent("Empty").path, title: "Empty")
+        for project in [alpha, beta, empty] {
+            try FileManager.default.createDirectory(atPath: project.path, withIntermediateDirectories: true)
+        }
+        try WorkspaceStore(root: workspace).save(Workspace(projects: [alpha, beta, empty], selectedProject: alpha.id,
+                                                           model: ModelSettings(provider: .local, model: "palette-fixture"),
+                                                           welcomeCompleted: true))
+
+        struct Seed: Decodable { let messageID: String; let abandonedID: String }
+        func seed(_ project: Project, _ thread: Conversation) throws -> Seed {
+            let writer = Process()
+            let output = Pipe()
+            writer.executableURL = URL(fileURLWithPath: node)
+            writer.arguments = [package.appendingPathComponent("scripts/fixtures/palette-message-history.mjs").path,
+                                sidecar, workspace.path, project.id.uuidString, thread.id.uuidString,
+                                project.path, "orbital lantern"]
+            writer.standardOutput = output
+            writer.environment = ["PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_CODING_AGENT_DIR": root.path]
+            try writer.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            writer.waitUntilExit()
+            XCTAssertEqual(writer.terminationStatus, 0)
+            return try JSONDecoder().decode(Seed.self, from: data)
+        }
+
+        let history = try seed(alpha, older)
+        _ = try seed(alpha, titled)
+        let archiveHistory = try seed(alpha, archived)
+        _ = try seed(beta, outOfScope)
+        func openModel() -> WorkspaceModel {
+            WorkspaceModel(root: workspace, keychainService: "palette-pi-test", readCredential: { _ in nil }) { config, cwd in
+                try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: node),
+                              arguments: [sidecar + "/worker.mjs"])
+            }
+        }
+
+        do {
+            let model = openModel()
+            defer { model.terminate() }
+            model.draft = "Typed while editing the draft"
+            var session = CommandPaletteSession()
+            session.query = "\"orbital lantern\""
+            let alphaContents = contents(in: model, projectID: alpha.id)
+            let search = try XCTUnwrap(session.messageSearch(in: alphaContents, latestMessageID: nil))
+            let matches = try await model.searchMessages(search.request)
+            XCTAssertEqual(Set(matches.keys), [older.id])
+            XCTAssertEqual(matches[older.id]?.messageID, history.messageID)
+            XCTAssertTrue(matches[older.id]?.excerpt.contains("orbital lantern") == true)
+            let groups = alphaContents.groups(for: session.query, choosingProject: false,
+                                             search: search.request, matches: matches)
+            XCTAssertEqual(groups.map(\.id), [.threads, .messages])
+            let rows = groups.flatMap(\.rows)
+            XCTAssertEqual(rows.first?.action, .openThread(titled.id, project: alpha.id))
+            _ = session.handle(.down, rows: rows, repeated: false, composing: false)
+            guard case .run(.openMessage(let thread, let project, let messageID, let term)) =
+                    session.handle(.select, rows: rows, repeated: false, composing: false) else {
+                return XCTFail("Return should select the highlighted message result")
+            }
+            XCTAssertEqual(messageID, history.messageID)
+            XCTAssertEqual(term.text, "orbital lantern")
+
+            let ready = expectation(description: "Real Pi reopened the selected history")
+            let observation = model.$phase.first { $0 == .ready }.sink { _ in ready.fulfill() }
+            model.selectConversation(thread, in: project)
+            await fulfillment(of: [ready], timeout: 10)
+            observation.cancel()
+            XCTAssertEqual(model.messages.first?.id, messageID)
+            XCTAssertNotEqual(model.messages.last?.id, messageID)
+            XCTAssertFalse(model.messages.contains { $0.id == history.abandonedID })
+            let abandoned = try XCTUnwrap(alphaContents.messageSearch(for: "palette-abandoned-branch-marker", choosingProject: false))
+            let abandonedMatches = try await model.searchMessages(abandoned)
+            XCTAssertTrue(abandonedMatches.isEmpty)
+
+            let archive = contents(in: model, projectID: alpha.id, archived: true)
+            let archiveSearch = try XCTUnwrap(archive.messageSearch(for: "lantern orbital", choosingProject: false))
+            let archiveMatches = try await model.searchMessages(archiveSearch)
+            XCTAssertEqual(Set(archiveMatches.keys), [archived.id])
+            XCTAssertEqual(archiveMatches[archived.id]?.messageID, archiveHistory.messageID)
+
+            model.selectProjectFromPalette(empty.id)
+            XCTAssertEqual(model.project?.id, empty.id)
+            XCTAssertEqual(model.conversation?.isDraft, true)
+            model.selectProjectFromPalette(alpha.id)
+            XCTAssertEqual(model.conversation?.id, older.id)
+        }
+
+        let relaunched = openModel()
+        defer { relaunched.terminate() }
+        relaunched.start()
+        let search = try XCTUnwrap(contents(in: relaunched, projectID: alpha.id)
+            .messageSearch(for: "orbital lantern", choosingProject: false))
+        let matches = try await relaunched.searchMessages(search)
+        XCTAssertEqual(matches[older.id]?.messageID, history.messageID)
+        relaunched.selectConversation(draft.id, in: alpha.id)
+        XCTAssertEqual(relaunched.draft, "Typed while editing the draft")
+    }
+
+    private func contents(in model: WorkspaceModel, projectID: UUID, archived: Bool = false) -> CommandPaletteContents {
+        let projects = model.projects.filter { $0.id == projectID }
+        let threads = SidebarThread.matching(in: projects, search: "", archived: archived)
+            .filter { model.showsInSidebar($0.thread) }
+        return CommandPaletteContents(projects: projects, availableProjects: projects, preferredProject: projectID,
+                                      threads: threads, activeThread: model.conversation?.id, canStartScratchThread: true)
+    }
+
     func testProjectPickerSelectsADraftInTheChosenProject() throws {
         let fixture = try Fixture()
         let model = fixture.model

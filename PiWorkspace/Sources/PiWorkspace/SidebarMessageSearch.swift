@@ -1,6 +1,58 @@
 import Darwin
 import Foundation
 
+enum TranscriptSearchTerm: Hashable, Sendable {
+    case literal(String)
+    case words([String])
+    case phrase([String])
+
+    var text: String {
+        switch self {
+        case .literal(let text): text
+        case .words(let words), .phrase(let words): words.joined(separator: " ")
+        }
+    }
+
+    static func quotedPhrase(in query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.first == "\"", trimmed.last == "\"" else { return nil }
+        return String(trimmed.dropFirst().dropLast())
+    }
+
+    init?(paletteQuery query: String) {
+        let phrase = Self.quotedPhrase(in: query)
+        let words = (phrase ?? query).split(whereSeparator: \.isWhitespace).map(String.init)
+        guard words.contains(where: { word in
+            word.count >= 3 || (word.count == 2 && word.range(
+                of: #"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]"#, options: .regularExpression
+            ) != nil)
+        }) else { return nil }
+        self = phrase == nil ? .words(words) : .phrase(words)
+    }
+
+    func range(in message: String) -> Range<String.Index>? {
+        switch self {
+        case .literal(let text):
+            return message.range(of: text, options: .caseInsensitive, locale: .current)
+        case .phrase(let words):
+            let pattern = words.map(NSRegularExpression.escapedPattern).joined(separator: #"\s{1,16}"#)
+            return message.range(of: pattern, options: [.regularExpression, .caseInsensitive])
+        case .words(let words):
+            if let phrase = message.range(of: text, options: .caseInsensitive, locale: .current) { return phrase }
+            var anchor: Range<String.Index>?
+            var longest = 0
+            for word in words {
+                guard let range = message.range(of: word, options: .caseInsensitive, locale: .current) else { return nil }
+                if word.count > longest {
+                    anchor = range
+                    longest = word.count
+                }
+            }
+            return anchor
+        }
+    }
+}
+
 struct SidebarMessageSearch: Equatable, Sendable {
     struct Thread: Equatable, Sendable {
         let projectID: UUID
@@ -12,12 +64,21 @@ struct SidebarMessageSearch: Equatable, Sendable {
         let excerpt: String
     }
 
-    let query: String
+    let term: TranscriptSearchTerm
     let threads: [Thread]
+
+    init(query: String, threads: [Thread]) {
+        self.init(term: .literal(query), threads: threads)
+    }
+
+    init(term: TranscriptSearchTerm, threads: [Thread]) {
+        self.term = term
+        self.threads = threads
+    }
 
     func matches(in root: URL) async throws -> [UUID: Match] {
         try Task.checkCancellation()
-        guard !query.isEmpty, !threads.isEmpty else { return [:] }
+        guard !term.text.isEmpty, !threads.isEmpty else { return [:] }
         let worker = Task.detached(priority: .userInitiated) { try scan(root) }
         return try await withTaskCancellationHandler {
             let matches = try await worker.value
@@ -128,8 +189,7 @@ struct SidebarMessageSearch: Equatable, Sendable {
         while let id = leaf, let entry = entries[id] {
             try Task.checkCancellation()
             guard visited.insert(id).inserted else { return nil }
-            if match == nil, let text = entry.message?.text,
-               let range = text.range(of: query, options: .caseInsensitive, locale: .current) {
+            if match == nil, let text = entry.message?.text, let range = term.range(in: text) {
                 let start = text.index(range.lowerBound, offsetBy: -24, limitedBy: text.startIndex) ?? text.startIndex
                 let end = text.index(range.upperBound, offsetBy: 48, limitedBy: text.endIndex) ?? text.endIndex
                 let excerpt = text[start..<end].split(whereSeparator: \.isWhitespace).joined(separator: " ")

@@ -82,7 +82,8 @@ struct WorkspaceView: View {
         let requestID = UUID()
         let projectID: UUID
         let threadID: UUID
-        let messageID: String
+        let messageID: String?
+        var find: TranscriptSearchTerm? = nil
     }
 
     private enum TranscriptAnchor: Hashable {
@@ -168,7 +169,8 @@ struct WorkspaceView: View {
             if running { messageJump = nil }
         }
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
-            CommandPaletteView(contents: paletteContents) { action in
+            CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
+                               searchMessages: model.searchMessages) { action in
                 guard model.showingCommandPalette else { return }
                 paletteAction = action
                 model.showingCommandPalette = false
@@ -403,7 +405,7 @@ struct WorkspaceView: View {
         }
         .background(rail)
         .task(id: key) {
-            guard !key.search.query.isEmpty else { return }
+            guard !key.search.term.text.isEmpty else { return }
             do {
                 if !key.search.threads.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
                 let matches = try await model.searchMessages(key.search)
@@ -1090,6 +1092,7 @@ struct WorkspaceView: View {
                     composer(project, thread)
                 }
             } else {
+                if let jump, let find = jump.find { transcriptFind(jump, find: find) }
                 transcript(jump, project: project, thread: thread)
                 composer(project, thread).padding(.vertical, 12)
             }
@@ -1166,7 +1169,7 @@ struct WorkspaceView: View {
         return ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 23) {
-                    if jump != nil, target == nil, model.phase == .ready {
+                    if jump?.messageID != nil, target == nil, model.phase == .ready {
                         Text("The matching message is no longer available.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -1216,7 +1219,7 @@ struct WorkspaceView: View {
             }
             .accessibilityIdentifier("transcript")
             .onChange(of: target, initial: true) { _, target in
-                if let target { reader.scrollTo(TranscriptAnchor.message(target.messageID), anchor: .center) }
+                if let id = target?.messageID { reader.scrollTo(TranscriptAnchor.message(id), anchor: .center) }
             }
             .onChange(of: model.messages.count) { _, _ in
                 if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
@@ -1225,6 +1228,51 @@ struct WorkspaceView: View {
                 if target == nil { reader.scrollTo(TranscriptAnchor.latest, anchor: .bottom) }
             }
         }
+    }
+
+    private func transcriptFind(_ jump: MessageJump, find: TranscriptSearchTerm) -> some View {
+        let matches = find.text.isEmpty ? [] : model.messages.filter { find.range(in: $0.text) != nil }
+        let index = matches.firstIndex { $0.id == jump.messageID }
+        return HStack(spacing: 8) {
+            TextField("Find in thread", text: Binding(get: { find.text }, set: { query in
+                let term = TranscriptSearchTerm.literal(query)
+                let first = model.messages.first { !query.isEmpty && term.range(in: $0.text) != nil }
+                setTranscriptFind(jump, term, messageID: first?.id)
+            }))
+            .textFieldStyle(.roundedBorder)
+            .accessibilityIdentifier("thread-find-query")
+            if model.phase == .ready {
+                Text(index.map { "\($0 + 1) of \(matches.count)" } ?? "\(matches.count) matches")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("thread-find-match-count")
+            }
+            Button {
+                let previous = ((index ?? 0) + matches.count - 1) % matches.count
+                setTranscriptFind(jump, find, messageID: matches[previous].id)
+            } label: { Image(systemName: "chevron.up") }
+                .accessibilityLabel("Previous match")
+                .disabled(matches.isEmpty)
+            Button {
+                let next = ((index ?? -1) + 1) % matches.count
+                setTranscriptFind(jump, find, messageID: matches[next].id)
+            } label: { Image(systemName: "chevron.down") }
+                .accessibilityLabel("Next match")
+                .disabled(matches.isEmpty)
+            Button {
+                messageJump = nil
+                if model.conversation?.archived == false { focusCurrentComposer() }
+            } label: { Image(systemName: "xmark") }
+                .accessibilityLabel("Close thread find")
+                .accessibilityIdentifier("thread-find-close")
+        }
+        .font(.callout)
+        .padding(.horizontal, WorkspaceLayout.editorInset)
+        .padding(.top, 8)
+    }
+
+    private func setTranscriptFind(_ jump: MessageJump, _ term: TranscriptSearchTerm, messageID: String?) {
+        messageJump = MessageJump(projectID: jump.projectID, threadID: jump.threadID, messageID: messageID, find: term)
     }
 
     private func forkHistoryLink(_ title: String, threadID: UUID, source: Bool) -> some View {
@@ -1560,8 +1608,11 @@ struct WorkspaceView: View {
         case .settings:
             model.openSettings()
         case .openProject(let id):
-            model.selectProject(id)
+            guard filteredProjects.contains(where: { $0.id == id }) else { return }
+            model.selectProjectFromPalette(id)
             if model.project?.id == id {
+                messageJump = nil
+                clearSearch()
                 collapsed.remove(id)
                 focusCurrentComposer()
             }
@@ -1569,6 +1620,10 @@ struct WorkspaceView: View {
             guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
             openThread(target)
             if model.conversation?.id == id { focusCurrentComposer() }
+        case .openMessage(let id, let project, let messageID, let term):
+            guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
+            openThread(target, messageID: messageID, find: term)
+            if model.conversation?.id == id, !target.thread.archived { focusCurrentComposer() }
         }
     }
 
@@ -1615,14 +1670,18 @@ struct WorkspaceView: View {
     }
 
     private func openThread(_ item: SidebarThread, messageMatch: SidebarMessageSearch.Match? = nil) {
+        openThread(item, messageID: messageMatch?.messageID)
+    }
+
+    private func openThread(_ item: SidebarThread, messageID: String?, find: TranscriptSearchTerm? = nil) {
         model.selectConversation(item.id, in: item.project.id)
         guard model.project?.id == item.project.id, model.conversation?.id == item.id else { return }
-        messageJump = messageMatch.map {
-            MessageJump(projectID: item.project.id, threadID: item.id, messageID: $0.messageID)
+        messageJump = messageID.map {
+            MessageJump(projectID: item.project.id, threadID: item.id, messageID: $0, find: find)
         }
-        guard !searchTerm.isEmpty else { return }
         collapsed.remove(item.project.id)
         if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
+        guard !searchTerm.isEmpty else { return }
         searchFocused = false
         clearSearch()
     }

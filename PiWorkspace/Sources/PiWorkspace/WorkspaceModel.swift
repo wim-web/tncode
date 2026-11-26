@@ -528,6 +528,19 @@ final class WorkspaceModel: ObservableObject {
         connect()
     }
 
+    func selectProjectFromPalette(_ id: UUID) {
+        guard !operationsInProgress, let project = projects.first(where: { $0.id == id }) else { return }
+        let latest = SidebarThread.matching(in: [project], search: "", archived: false).first {
+            $0.thread.threadShelf != .settled && $0.thread.isDraft != true
+        }
+        if let latest {
+            selectConversation(latest.id, in: id)
+            if conversation?.id == latest.id { showArchive = false }
+        } else {
+            addConversation(in: id)
+        }
+    }
+
     func showHome() {
         guard !operationsInProgress, workspace.selectedProject != nil,
               save({ $0.selectedProject = nil }) else { return }
