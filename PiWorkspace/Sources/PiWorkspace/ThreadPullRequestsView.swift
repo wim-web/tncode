@@ -45,7 +45,9 @@ struct ThreadPullRequestsView: View {
                     .frame(width: 250, alignment: .leading)
                     Divider()
                     if let selection, links.contains(where: { $0.id == selection }) {
-                        PullRequestDetailsView(directory: scope.directory, repository: selection.repository, number: selection.number)
+                        PullRequestDetailsView(reader: GitHubReader(directory: scope.directory),
+                                               repository: selection.repository, number: selection.number)
+                            .id(workspace.repositoryRevision)
                             .id(selection)
                     } else {
                         Text(scope.canReadRepository ? "Select a pull request" : "Create the worktree to read pull request details.")

@@ -20,8 +20,8 @@ if [ -n "${PI_GH_FIXTURE_LOG:-}" ]; then
     command=$(printf '%s' "$*" | /usr/bin/tr '\n' ' ')
     printf '%s\n' "$(pwd -P)|$command" >> "$PI_GH_FIXTURE_LOG"
 fi
-case "$mode" in
-    held|held-error)
+case "$mode:${2:-}" in
+    held:*|held-error:*|check-logs-held:*/logs)
         : > "$PI_GH_FIXTURE_GATE.started"
         remaining=200
         while [ ! -f "$PI_GH_FIXTURE_GATE.release" ] && [ "$remaining" -gt 0 ]; do
@@ -260,13 +260,71 @@ graphql() {
     esac
 }
 
-if [ "${1:-}" = api ]; then
+if [ "${1:-}" = api ] && [ "${2:-}" = graphql ]; then
     graphql "$@"
     exit
 fi
 
 fields=number,title,state,isDraft,author
+head=0123456789abcdef0123456789abcdef01234567
+actions_url="https://$expected_repo/actions/runs/58008/job"
+checks='null'
+case "$mode" in
+    check-logs*)
+        checks=$(cat <<JSON
+[
+  {"name":"build","workflowName":"CI","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"$actions_url/61001"},
+  {"name":"build","workflowName":"Tests","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"$actions_url/61002#step:3:4"},
+  {"context":"External CI","state":"FAILURE","targetUrl":"https://checks.example.invalid/build"},
+  {"name":"foreign","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com/fixture/other/actions/runs/58008/job/61002"},
+  {"name":"spoofed","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com.example.invalid/fixture/workspace/actions/runs/58008/job/61002"},
+  {"name":"running","status":"IN_PROGRESS","detailsUrl":"$actions_url/61003"}
+]
+JSON
+)
+        ;;
+esac
+
 case "$*" in
+    "api repos/${expected_repo#github.com/}/actions/jobs/61001 --hostname github.com --method GET" | \
+    "api repos/${expected_repo#github.com/}/actions/jobs/61002 --hostname github.com --method GET")
+        job=${2##*/}
+        status=completed
+        run=58008
+        if [ "$mode" = check-logs-pending ]; then status=in_progress; fi
+        if [ "$mode" = check-logs-mismatched-job ]; then run=58066; fi
+        if [ "$mode" = check-logs-mismatched-head ]; then head=ffffffffffffffffffffffffffffffffffffffff; fi
+        printf '{"id":%s,"run_id":%s,"head_sha":"%s","html_url":"%s/%s","status":"%s"}\n' \
+            "$job" "$run" "$head" "$actions_url" "$job" "$status"
+        ;;
+    "api repos/${expected_repo#github.com/}/actions/jobs/61001/logs --hostname github.com --method GET --allow-escape-sequences")
+        printf 'ONLY-BUILD-61001\n'
+        ;;
+    "api repos/${expected_repo#github.com/}/actions/jobs/61002/logs --hostname github.com --method GET --allow-escape-sequences")
+        case "$mode" in
+            check-logs-legacy-cli) printf '%s\n' 'unknown flag: --allow-escape-sequences' >&2; exit 1 ;;
+            check-logs-denied) printf '%s\n' 'gh: Resource not accessible (HTTP 403)' >&2; exit 1 ;;
+            check-logs-missing) printf '%s\n' 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+            check-logs-expired) printf '%s\n' 'gh: Gone (HTTP 410)' >&2; exit 1 ;;
+            check-logs-empty) exit 0 ;;
+            check-logs-long)
+                awk 'BEGIN {
+                    print "OMIT-START"
+                    for (i = 1; i <= 3000; i++) printf "filler %04d %060d\r\n", i, i
+                }'
+                ;;
+        esac
+        printf 'Tests / build\r\n\033[31mONLY-TESTS-61002\033[0m\r\n'
+        ;;
+    "api repos/${expected_repo#github.com/}/actions/jobs/61002/logs --hostname github.com --method GET")
+        test "$mode" = check-logs-legacy-cli
+        printf 'Tests / build\r\n\033[31mONLY-TESTS-61002\033[0m\r\n'
+        ;;
+    "pr view 42 --json headRefOid,statusCheckRollup,url --repo $expected_repo")
+        if [ "$mode" = check-logs-new-head ]; then head=ffffffffffffffffffffffffffffffffffffffff; fi
+        if [ "$mode" = check-logs-replaced ]; then checks='[]'; fi
+        printf '{"headRefOid":"%s","statusCheckRollup":%s,"url":"https://%s/pull/42"}\n' "$head" "$checks" "$expected_repo"
+        ;;
     "issue view 71 --json number,title,state,author,labels,body --repo $expected_repo")
         if [ "$mode" = missing ]; then
             printf '%s\n' "GraphQL: Could not resolve to an Issue with the number of 71." >&2
@@ -281,7 +339,7 @@ case "$*" in
     "issue view 73 --json number,title,state,author,labels,body --repo $expected_repo")
         printf '%s\n' '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":""}'
         ;;
-    "pr view 42 --json $fields,headRefName,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
+    "pr view 42 --json $fields,headRefName,headRefOid,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
         if [ "$mode" = missing ]; then
             printf '%s\n' "GraphQL: Could not resolve to a PullRequest with the number of 42." >&2
             exit 1
@@ -289,7 +347,9 @@ case "$*" in
         pr_url="https://$expected_repo/pull/42"
         if [ "$mode" = wrong-repo ]; then pr_url="https://github.com/fixture/unrelated/pull/42"; fi
         if [ "$mode" = updated ]; then
-            printf '{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"},"headRefName":"new-head","baseRefName":"main","body":"Fixture description","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://checks.example.invalid/build-new"}],"url":"%s"}\n' "$pr_url"
+            printf '{"number":42,"title":"Update checkout (updated)","state":"OPEN","isDraft":false,"author":{"login":"fixture-author"},"headRefName":"new-head","headRefOid":"ffffffffffffffffffffffffffffffffffffffff","baseRefName":"main","body":"Fixture description","statusCheckRollup":[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://checks.example.invalid/build-new"}],"url":"%s"}\n' "$pr_url"
+        elif [ "$checks" != null ]; then
+            printf '{"number":42,"title":"Update checkout","state":"OPEN","isDraft":true,"author":{"login":"fixture-author"},"headRefName":"fixture-branch","headRefOid":"%s","baseRefName":"main","body":"Fixture description","statusCheckRollup":%s,"url":"%s"}\n' "$head" "$checks" "$pr_url"
         else
             /bin/cat <<JSON
 {
@@ -300,6 +360,7 @@ case "$*" in
   "isDraft": true,
   "author": { "login": "fixture-author" },
   "headRefName": "fixture-branch",
+  "headRefOid": "$head",
   "baseRefName": "main",
   "body": "Fixture description",
   "statusCheckRollup": [
@@ -312,8 +373,8 @@ case "$*" in
 JSON
         fi
         ;;
-    "pr view 43 --json $fields,headRefName,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
-        printf '{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null,"headRefName":"new-branch","baseRefName":"main","body":"","statusCheckRollup":null,"url":"https://%s/pull/43"}\n' "$expected_repo"
+    "pr view 43 --json $fields,headRefName,headRefOid,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
+        printf '{"number":43,"title":"No checks yet","state":"OPEN","isDraft":false,"author":null,"headRefName":"new-branch","headRefOid":"%s","baseRefName":"main","body":"","statusCheckRollup":null,"url":"https://%s/pull/43"}\n' "$head" "$expected_repo"
         ;;
     *) printf '%s\n' "Unexpected mock gh arguments: $*" >&2; exit 64 ;;
 esac

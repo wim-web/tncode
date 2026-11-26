@@ -309,6 +309,12 @@ struct GitWorkspace: Sendable {
             : nil
     }
 
+    func headObjectID() async throws -> String? {
+        let result = try await run(["rev-parse", "--verify", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
+        guard result.status == 0 else { return nil }
+        return try Self.decode(result.output.bytes, command: "rev-parse").trimmingCharacters(in: .newlines)
+    }
+
     func worktrees() async throws -> [GitCheckout] {
         let listing = try await run(["worktree", "list", "--porcelain", "-z"])
         let pathPrefix = "worktree ".utf8
@@ -870,7 +876,7 @@ enum WorkspaceCommand {
 
     static func capture(
         _ process: Process, outputLimit: Int?, timeout: DispatchTimeInterval? = nil,
-        cancelOnTaskCancellation: Bool = false
+        cancelOnTaskCancellation: Bool = false, keepOutputTail: Bool = false
     ) async throws -> Capture {
         let output = Pipe()
         let errorOutput = Pipe()
@@ -883,7 +889,7 @@ enum WorkspaceCommand {
             defer { cancellation?.finish() }
             async let termination = launch(process, output: output, errorOutput: errorOutput,
                                            timeout: timeout, cancellation: cancellation)
-            async let stdout = read(output.fileHandleForReading, limit: outputLimit)
+            async let stdout = read(output.fileHandleForReading, limit: outputLimit, keepTail: keepOutputTail)
             async let stderr = read(errorOutput.fileHandleForReading, limit: 16 * 1024)
             let (exit, outputCapture, errorCapture) = try await (termination, stdout, stderr)
             if cancellation != nil { try Task.checkCancellation() }
@@ -961,7 +967,7 @@ enum WorkspaceCommand {
         let exitedNormally: Bool
     }
 
-    private static func read(_ handle: FileHandle, limit: Int?) async throws -> Output {
+    private static func read(_ handle: FileHandle, limit: Int?, keepTail: Bool = false) async throws -> Output {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 defer { try? handle.close() }
@@ -969,9 +975,17 @@ enum WorkspaceCommand {
                     var bytes = Data()
                     var truncated = false
                     while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
-                        let available = limit.map { $0 - bytes.count } ?? chunk.count
-                        bytes.append(chunk.prefix(available))
-                        truncated = truncated || chunk.count > available
+                        if let limit, bytes.count + chunk.count > limit {
+                            truncated = true
+                            if keepTail {
+                                bytes.append(chunk)
+                                bytes.removeFirst(bytes.count - limit)
+                            } else {
+                                bytes.append(chunk.prefix(limit - bytes.count))
+                            }
+                        } else {
+                            bytes.append(chunk)
+                        }
                     }
                     return Output(bytes: bytes, truncated: truncated)
                 })

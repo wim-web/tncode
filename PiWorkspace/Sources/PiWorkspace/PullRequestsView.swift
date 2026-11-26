@@ -31,7 +31,7 @@ private struct GitHubBrowserView: View {
         case pullRequests, issues, linkedItems
     }
 
-    let workspace: WorkspaceModel
+    @ObservedObject var workspace: WorkspaceModel
     let scope: ThreadPullRequestScope
     let pasteboard: NSPasteboard
     @Environment(\.dismiss) private var dismiss
@@ -66,8 +66,9 @@ private struct GitHubBrowserView: View {
             if tab == .linkedItems {
                 ThreadPullRequestsView(workspace: workspace, scope: scope, pasteboard: pasteboard)
             } else {
-                GitHubListView(directory: scope.directory, model: tab == .pullRequests ? pullRequests : issues)
-                    .id(tab)
+                GitHubListView(directory: scope.directory, repositoryRevision: workspace.repositoryRevision,
+                               model: tab == .pullRequests ? pullRequests : issues)
+                .id(tab)
             }
         }
         .frame(minWidth: 660, idealWidth: 730, minHeight: 425, idealHeight: 510)
@@ -90,6 +91,7 @@ private struct GitHubBrowserView: View {
 
 private struct GitHubListView: View {
     let directory: String
+    let repositoryRevision: Int
     @ObservedObject var model: GitHubBrowserModel
 
     private var prefix: String { model.kind.idPrefix }
@@ -176,7 +178,9 @@ private struct GitHubListView: View {
             Group {
                 switch model.kind {
                 case .pullRequests:
-                    PullRequestDetailsView(directory: directory, repository: selection.repository, number: selection.number)
+                    PullRequestDetailsView(reader: GitHubReader(directory: directory),
+                                           repository: selection.repository, number: selection.number)
+                        .id(repositoryRevision)
                 case .issues:
                     IssueDetailsView(directory: directory, repository: selection.repository, number: selection.number)
                 }
@@ -575,11 +579,12 @@ private struct IssueDetailsView: View {
 }
 
 struct PullRequestDetailsView: View {
-    let directory: String
+    let reader: GitHubReader
     let repository: GitHubRepository
     let number: Int
     @State private var retry = 0
     @State private var content: GitHubDetailLoad<GitHubPullRequestDetails> = .loading
+    @State private var selectedCheckIndex: Int?
 
     var body: some View {
         Group {
@@ -596,8 +601,20 @@ struct PullRequestDetailsView: View {
                 }
                 .padding(24)
             case .loaded(let details):
-                ScrollView {
-                    summary(details)
+                if let index = selectedCheckIndex, details.checks.indices.contains(index) {
+                    PullRequestCheckLogView(
+                        reader: reader, details: details, check: details.checks[index]
+                    ) {
+                        selectedCheckIndex = nil
+                    } refresh: {
+                        selectedCheckIndex = nil
+                        retry += 1
+                    }
+                    .id(index)
+                } else {
+                    ScrollView {
+                        summary(details)
+                    }
                 }
             }
         }
@@ -648,7 +665,8 @@ struct PullRequestDetailsView: View {
     }
 
     private func checkRow(_ check: GitHubCheck, index: Int) -> some View {
-        HStack(spacing: 8) {
+        let title = [check.workflowName, check.name].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " / ")
+        return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: check.name).font(.callout)
                 if let workflow = check.workflowName, !workflow.isEmpty {
@@ -660,6 +678,11 @@ struct PullRequestDetailsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("pr-check-status-\(index)")
+            if check.hasFailureLog {
+                Button("View log") { selectedCheckIndex = index }
+                    .accessibilityLabel("View log for \(title)")
+                    .accessibilityIdentifier("pr-check-log-\(index)")
+            }
             if let url = check.url {
                 Link(destination: url) { Image(systemName: "arrow.up.right.square") }
                     .help("Open check details")
@@ -673,13 +696,96 @@ struct PullRequestDetailsView: View {
     private func load() async {
         guard !Task.isCancelled else { return }
         content = .loading
+        selectedCheckIndex = nil
         do {
-            let details = try await GitHubReader(directory: directory).pullRequestDetails(for: number, in: repository)
+            let details = try await reader.pullRequestDetails(for: number, in: repository)
             guard !Task.isCancelled else { return }
             content = .loaded(details)
         } catch {
             guard !Task.isCancelled else { return }
             content = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private struct PullRequestCheckLogView: View {
+    let reader: GitHubReader
+    let details: GitHubPullRequestDetails
+    let check: GitHubCheck
+    let back: () -> Void
+    let refresh: () -> Void
+    @State private var retry = 0
+    @State private var result: Result<GitHubCheckLog, Error>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button(action: back) { Label("Back to checks", systemImage: "chevron.left") }
+                    .accessibilityIdentifier("pr-check-log-back")
+                Spacer()
+                if let url = check.url {
+                    Link(destination: url) { Label("Open check details", systemImage: "arrow.up.right.square") }
+                        .accessibilityIdentifier("pr-check-log-open")
+                }
+            }
+            Text(verbatim: check.name)
+                .font(.title3.weight(.semibold))
+                .accessibilityIdentifier("pr-check-log-title")
+            if let workflow = check.workflowName, !workflow.isEmpty {
+                Text(verbatim: workflow)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            switch result {
+            case nil:
+                ProgressView("Loading job log…")
+                    .accessibilityIdentifier("pr-check-log-loading")
+            case .success(let log):
+                if log.truncated {
+                    Text("Showing the end of this log.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("pr-check-log-truncated")
+                }
+                ScrollView {
+                    Text(verbatim: log.text)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("pr-check-log-text")
+                }
+            case .failure(let error):
+                Text(error.localizedDescription)
+                    .accessibilityIdentifier("pr-check-log-error")
+                switch error as? GitHubCheckLogError {
+                case .unsupported:
+                    EmptyView()
+                case .checkChanged, .checkoutChanged:
+                    Button("Refresh pull request", action: refresh)
+                        .accessibilityIdentifier("pr-check-log-refresh")
+                default:
+                    Button("Retry") { retry += 1 }
+                        .accessibilityIdentifier("pr-check-log-retry")
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task(id: retry) { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard !Task.isCancelled else { return }
+        result = nil
+        do {
+            let log = try await reader.checkLog(for: check, in: details)
+            guard !Task.isCancelled else { return }
+            result = .success(log)
+        } catch {
+            guard !Task.isCancelled else { return }
+            result = .failure(error)
         }
     }
 }

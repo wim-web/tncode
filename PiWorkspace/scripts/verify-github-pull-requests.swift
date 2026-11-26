@@ -33,6 +33,7 @@ struct VerifyGitHubPullRequests {
                     "commit", "--allow-empty", "-m", "Base")
         let worktree = temp.appendingPathComponent("linked worktree")
         _ = try git(project, "worktree", "add", "-b", "fixture", worktree.path)
+        _ = try git(worktree, "branch", "fixture-second")
         let directory = worktree.appendingPathComponent("nested $(printf wrong)")
         try manager.createDirectory(at: directory, withIntermediateDirectories: false)
         try Data("staged\n".utf8).write(to: directory.appendingPathComponent("edit.txt"))
@@ -122,6 +123,7 @@ struct VerifyGitHubPullRequests {
         let deadlineTest = GitHubReader(directory: directory.path, environment: env, timeout: .milliseconds(250))
         try await expectFailure("timed out") { try await deadlineTest.list(.init(.pullRequests, .open)) }
         try mode("initial")
+        try await verifyCheckLogs(service, repository: listing.repository, worktree: worktree, mode: mode, gate: gate, log: log)
         try await verifyPullRequestFilters(service, project: project, mockRepo: mockRepo, env: env, mode: mode, gate: gate, log: log)
         let issueCursor = try await verifyBrowsing(service, mode: mode, gate: gate, log: log)
         try expect(snapshot(worktree) == before, "reads preserve refs, Git config, the index, and working changes")
@@ -157,12 +159,75 @@ struct VerifyGitHubPullRequests {
             try expect(call.hasPrefix(prefix), "gh runs in the selected worktree subdirectory")
             let arguments = call.dropFirst(prefix.count)
             try expect(arguments.hasPrefix("api graphql --hostname github.com ")
+                       || [
+                           "api repos/fixture/workspace/actions/jobs/61001 --hostname github.com --method GET",
+                           "api repos/fixture/workspace/actions/jobs/61002 --hostname github.com --method GET",
+                           "api repos/fixture/workspace/actions/jobs/61001/logs --hostname github.com --method GET --allow-escape-sequences",
+                           "api repos/fixture/workspace/actions/jobs/61002/logs --hostname github.com --method GET --allow-escape-sequences",
+                           "api repos/fixture/workspace/actions/jobs/61002/logs --hostname github.com --method GET",
+                       ].contains(String(arguments))
                        || ((arguments.hasPrefix("pr view ") || arguments.hasPrefix("issue view "))
                            && arguments.hasSuffix("--repo github.com/fixture/workspace")),
                        "only GitHub read commands can reach the mock: \(arguments)")
         }
         print("Verified PR and Issue lists and details, query and label filters, cursor pagination, refresh and retry.")
         print("Verified stale response rejection, selected checkout scope, and preservation of Git state.")
+    }
+
+    @MainActor
+    private static func verifyCheckLogs(
+        _ service: GitHubReader, repository: GitHubRepository, worktree: URL,
+        mode: (String) throws -> Void, gate: URL, log: URL
+    ) async throws {
+        try mode("check-logs")
+        let details = try await service.pullRequestDetails(for: 42, in: repository)
+        try expect(details.checks.count == 6 && details.checks.filter(\.hasFailureLog).count == 5,
+                   "failure logs can be opened from failed checks and running checks stay in the summary")
+        let first = try await service.checkLog(for: details.checks[0], in: details)
+        let second = try await service.checkLog(for: details.checks[1], in: details)
+        try expect(first.text == "ONLY-BUILD-61001" && !first.truncated, "selected build job owns the first log")
+        try expect(second.text == "Tests / build\nONLY-TESTS-61002" && !second.truncated,
+                   "the second job with the same check name has its own plain-text log")
+        let beforeUnsupported = try Data(contentsOf: log)
+        for check in details.checks.dropFirst(2) {
+            try await expectFailure("no GitHub Actions job log") { try await service.checkLog(for: check, in: details) }
+        }
+        try expect(Data(contentsOf: log) == beforeUnsupported,
+                   "external checks, foreign repositories, deceptive hosts, and running checks launch no log reads")
+        let check = details.checks[1]
+        try mode("check-logs-legacy-cli")
+        let legacy = try await service.checkLog(for: check, in: details)
+        try expect(legacy.text == second.text, "an older gh without the escape-sequence flag also returns plain text")
+        try mode("check-logs-long")
+        let long = try await service.checkLog(for: check, in: details)
+        try expect(long.truncated && long.text.split(separator: "\n").count == 200
+                   && !long.text.contains("OMIT-START") && long.text.hasSuffix("ONLY-TESTS-61002"),
+                   "long logs preserve the final 200 lines past the byte limit")
+
+        for (fixtureMode, message) in [
+            ("check-logs-pending", "waiting to start"), ("check-logs-denied", "denied access"),
+            ("check-logs-missing", "couldn’t provide this job’s log"), ("check-logs-expired", "couldn’t provide this job’s log"),
+            ("check-logs-empty", "couldn’t provide this job’s log"), ("check-logs-mismatched-job", "no longer matches"),
+            ("check-logs-mismatched-head", "no longer matches"), ("check-logs-new-head", "no longer matches"),
+            ("check-logs-replaced", "no longer matches"),
+        ] {
+            try mode(fixtureMode)
+            try await expectFailure(message) { try await service.checkLog(for: check, in: details) }
+        }
+        try mode("check-logs")
+        let retry = try await service.checkLog(for: check, in: details)
+        try expect(retry.text == second.text, "retry shows the selected job log")
+
+        try mode("check-logs-held")
+        let staleLog = Task { try await service.checkLog(for: check, in: details) }
+        try await waitForMock(gate)
+        _ = try git(worktree, "symbolic-ref", "HEAD", "refs/heads/fixture-second")
+        try releaseMock(gate)
+        try await expectFailure("checkout changed") { try await staleLog.value }
+        try clearMockGate(gate)
+        _ = try git(worktree, "symbolic-ref", "HEAD", "refs/heads/fixture")
+        try mode("initial")
+        print("Verified scoped Actions job logs, bounds and plain text, unavailable logs, retry, and stale head and branch rejection.")
     }
 
     @MainActor

@@ -89,6 +89,7 @@ struct GitHubPullRequestDetails: Sendable {
     let pullRequest: GitHubPullRequest
     let reference: GitHubPullRequestReference
     let headRef: String
+    let headOID: String
     let baseRef: String
     let body: String
     let checks: [GitHubCheck]
@@ -101,6 +102,11 @@ struct GitHubCheck: Decodable, Sendable {
     let workflowName: String?
     let status: String
     let url: URL?
+    let actionsJob: GitHubActionsJob?
+
+    var hasFailureLog: Bool {
+        ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"].contains(status)
+    }
 
     private enum CodingKeys: String, CodingKey {
         case name, workflowName, status, conclusion, detailsUrl
@@ -111,7 +117,8 @@ struct GitHubCheck: Decodable, Sendable {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         workflowName = try fields.decodeIfPresent(String.self, forKey: .workflowName)
         let link: String?
-        if let context = try fields.decodeIfPresent(String.self, forKey: .context) {
+        let context = try fields.decodeIfPresent(String.self, forKey: .context)
+        if let context {
             name = context
             status = try fields.decode(String.self, forKey: .state)
             link = try fields.decodeIfPresent(String.self, forKey: .targetUrl)
@@ -133,6 +140,61 @@ struct GitHubCheck: Decodable, Sendable {
             url = components.url
         } else {
             url = nil
+        }
+        actionsJob = context == nil ? url.flatMap(GitHubActionsJob.init(url:)) : nil
+    }
+}
+
+struct GitHubActionsJob: Equatable, Sendable {
+    let repository: GitHubRepository
+    let runID: Int
+    let jobID: Int
+
+    init?(url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "https", components.host?.lowercased() == "github.com",
+              components.port == nil, components.user == nil, components.password == nil,
+              let path = components.percentEncodedPath.wholeMatch(of: #/\/([^\/]+)\/([^\/]+)\/actions\/runs\/([0-9]+)\/job\/([0-9]+)\/?/#),
+              let repository = GitHubRepository(owner: path.1, name: path.2),
+              let runID = Int(path.3), runID > 0, let jobID = Int(path.4), jobID > 0 else { return nil }
+        self.repository = repository
+        self.runID = runID
+        self.jobID = jobID
+    }
+}
+
+struct GitHubCheckLog: Sendable {
+    static let lineLimit = 200
+    static let byteLimit = 96 * 1024
+
+    let text: String
+    let truncated: Bool
+
+    fileprivate init(output: WorkspaceCommand.Output) {
+        var log = String(decoding: output.bytes, as: UTF8.self)
+        log = log.replacingOccurrences(
+            of: #"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\))|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]"#,
+            with: "",
+            options: .regularExpression
+        )
+        var lines = log.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        if lines.last?.isEmpty == true { lines.removeLast() }
+        if output.truncated, lines.count > 1 { lines.removeFirst() }
+        text = lines.suffix(Self.lineLimit).joined(separator: "\n")
+        truncated = output.truncated || lines.count > Self.lineLimit
+    }
+}
+
+enum GitHubCheckLogError: LocalizedError {
+    case unsupported, pending, unavailable, checkoutChanged, checkChanged
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported: "There is no GitHub Actions job log for this check in the pull request’s repository."
+        case .pending: "This Actions job is still running or waiting to start."
+        case .unavailable: "GitHub couldn’t provide this job’s log. It may have expired, the job may never have started, or your account may lack access."
+        case .checkoutChanged: "The checkout changed while reading the log. Refresh the pull request and try again."
+        case .checkChanged: "This check no longer matches the pull request’s current head. Refresh the pull request and try again."
         }
     }
 }
@@ -162,7 +224,7 @@ struct GitHubReader: Sendable {
         let repository = try await repository(matching: expectedRepository)
         let response: DetailResponse = try await read(
             ["pr", "view", String(number), "--json",
-             GitHubPullRequest.fields + ",headRefName,baseRefName,body,statusCheckRollup,url", "--repo", repository.cliName],
+             GitHubPullRequest.fields + ",headRefName,headRefOid,baseRefName,body,statusCheckRollup,url", "--repo", repository.cliName],
             for: .pullRequests
         )
         guard response.pullRequest.number == number,
@@ -174,10 +236,58 @@ struct GitHubReader: Sendable {
             pullRequest: response.pullRequest,
             reference: reference,
             headRef: response.headRefName,
+            headOID: response.headRefOid,
             baseRef: response.baseRefName,
             body: response.body ?? "",
             checks: response.statusCheckRollup ?? []
         )
+    }
+
+    func checkLog(for check: GitHubCheck, in details: GitHubPullRequestDetails) async throws -> GitHubCheckLog {
+        guard check.hasFailureLog, let target = check.actionsJob, target.repository == details.reference.repository else {
+            throw GitHubCheckLogError.unsupported
+        }
+        let repository = try await repository(matching: target.repository)
+        let git = GitWorkspace(path: directory)
+        let checkout = try await (git.currentBranch(), git.headObjectID())
+        let endpoint = "repos/\(repository.slug)/actions/jobs/\(target.jobID)"
+        let options = ["--hostname", "github.com", "--method", "GET"]
+        let log: GitHubCheckLog
+        do {
+            let job: ActionsJobResponse = try await read(["api", endpoint] + options, for: .pullRequests)
+            guard job.id == target.jobID, job.runID == target.runID, job.headSHA == details.headOID,
+                  GitHubActionsJob(url: job.url) == target else {
+                throw GitHubCheckLogError.checkChanged
+            }
+            guard job.status == "completed" else { throw GitHubCheckLogError.pending }
+
+            // gh writes only to the capture pipe. GitHubCheckLog strips control sequences before display.
+            let output = try await capture(
+                ["api", endpoint + "/logs"] + options + ["--allow-escape-sequences"],
+                for: .pullRequests, tailLimit: GitHubCheckLog.byteLimit
+            )
+            log = GitHubCheckLog(output: output)
+        } catch ReadError.notFound, ReadError.gone, ReadError.readFailed {
+            throw GitHubCheckLogError.unavailable
+        }
+        guard !log.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw GitHubCheckLogError.unavailable
+        }
+        let current: CheckSnapshot = try await read(
+            ["pr", "view", String(details.reference.number), "--json", "headRefOid,statusCheckRollup,url",
+             "--repo", repository.cliName], for: .pullRequests
+        )
+        guard GitHubPullRequestReference(url: current.url) == details.reference,
+              current.headRefOid == details.headOID,
+              current.statusCheckRollup?.contains(where: { $0.hasFailureLog && $0.actionsJob == target }) == true else {
+            throw GitHubCheckLogError.checkChanged
+        }
+        _ = try await self.repository(matching: repository)
+        guard try await (git.currentBranch(), git.headObjectID()) == checkout else {
+            throw GitHubCheckLogError.checkoutChanged
+        }
+        try Task.checkCancellation()
+        return log
     }
 
     func repository(matching expected: GitHubRepository? = nil) async throws -> GitHubRepository {
@@ -209,6 +319,18 @@ struct GitHubReader: Sendable {
     }
 
     func read<Value: Decodable>(_ arguments: [String], for kind: GitHubBrowseKind) async throws -> Value {
+        let output = try await capture(arguments, for: kind)
+        guard !output.truncated else { throw ReadError.responseTooLarge }
+        do {
+            return try JSONDecoder().decode(Value.self, from: output.bytes)
+        } catch {
+            throw ReadError.invalidResponse(kind)
+        }
+    }
+
+    private func capture(
+        _ arguments: [String], for kind: GitHubBrowseKind, tailLimit: Int? = nil
+    ) async throws -> WorkspaceCommand.Output {
         try Task.checkCancellation()
         let cli = (environment["PATH"] ?? "").split(separator: ":")
             .lazy.filter { $0.hasPrefix("/") }
@@ -240,7 +362,12 @@ struct GitHubReader: Sendable {
 
         let result: WorkspaceCommand.Capture
         do {
-            result = try await WorkspaceCommand.capture(process, outputLimit: 2 * 1024 * 1024, timeout: timeout)
+            result = try await WorkspaceCommand.capture(
+                process, outputLimit: tailLimit ?? 2 * 1024 * 1024, timeout: timeout,
+                cancelOnTaskCancellation: true, keepOutputTail: tailLimit != nil
+            )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw ReadError.launchFailed
         }
@@ -250,6 +377,10 @@ struct GitHubReader: Sendable {
         }
         guard result.status == 0 else {
             let stderr = result.errorMessage.lowercased()
+            if tailLimit != nil, arguments.last == "--allow-escape-sequences",
+               stderr.contains("unknown flag: --allow-escape-sequences") {
+                return try await capture(Array(arguments.dropLast()), for: kind, tailLimit: tailLimit)
+            }
             if result.status == 4 || stderr.contains("http 401") || stderr.contains("gh auth login") {
                 throw ReadError.authentication
             }
@@ -259,36 +390,57 @@ struct GitHubReader: Sendable {
             if stderr.contains("http 404") || stderr.contains("could not resolve to") {
                 throw ReadError.notFound(kind)
             }
+            if stderr.contains("http 410") {
+                throw ReadError.gone
+            }
             if ["error connecting", "dial tcp", "network is unreachable", "timeout", "no such host"]
                 .contains(where: stderr.contains) {
                 throw ReadError.network
             }
             throw ReadError.readFailed(kind)
         }
-        guard !result.output.truncated else { throw ReadError.responseTooLarge }
-        do {
-            return try JSONDecoder().decode(Value.self, from: result.output.bytes)
-        } catch {
-            throw ReadError.invalidResponse(kind)
+        return result.output
+    }
+
+    private struct ActionsJobResponse: Decodable {
+        let id: Int
+        let runID: Int
+        let headSHA: String
+        let url: URL
+        let status: String
+
+        private enum CodingKeys: String, CodingKey {
+            case id, status
+            case runID = "run_id"
+            case headSHA = "head_sha"
+            case url = "html_url"
         }
+    }
+
+    private struct CheckSnapshot: Decodable {
+        let url: String
+        let headRefOid: String
+        let statusCheckRollup: [GitHubCheck]?
     }
 
     private struct DetailResponse: Decodable {
         let pullRequest: GitHubPullRequest
         let headRefName: String
+        let headRefOid: String
         let baseRefName: String
         let body: String?
         let statusCheckRollup: [GitHubCheck]?
         let url: String
 
         private enum CodingKeys: CodingKey {
-            case headRefName, baseRefName, body, statusCheckRollup, url
+            case headRefName, headRefOid, baseRefName, body, statusCheckRollup, url
         }
 
         init(from decoder: Decoder) throws {
             pullRequest = try GitHubPullRequest(from: decoder)
             let fields = try decoder.container(keyedBy: CodingKeys.self)
             headRefName = try fields.decode(String.self, forKey: .headRefName)
+            headRefOid = try fields.decode(String.self, forKey: .headRefOid)
             baseRefName = try fields.decode(String.self, forKey: .baseRefName)
             body = try fields.decodeIfPresent(String.self, forKey: .body)
             statusCheckRollup = try fields.decodeIfPresent([GitHubCheck].self, forKey: .statusCheckRollup)
@@ -300,7 +452,7 @@ struct GitHubReader: Sendable {
         case checkoutUnavailable, noGitHubRemote, ambiguousRemote, repositoryChanged
         case cliUnavailable, launchFailed, authentication, accessDenied, network, timedOut
         case notFound(GitHubBrowseKind), readFailed(GitHubBrowseKind), invalidResponse(GitHubBrowseKind)
-        case responseTooLarge, invalidSearch
+        case responseTooLarge, invalidSearch, gone
 
         var errorDescription: String? {
             switch self {
@@ -319,6 +471,7 @@ struct GitHubReader: Sendable {
             case .responseTooLarge: "The GitHub response was too large to display."
             case .invalidResponse(let kind): "GitHub CLI returned an unreadable \(kind.itemName) response."
             case .invalidSearch: "Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces."
+            case .gone: "GitHub no longer has this resource."
             }
         }
     }
