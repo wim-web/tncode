@@ -1,0 +1,335 @@
+import Foundation
+
+struct GitChangesCheckout: Sendable {
+    let root: String
+    let branch: String?
+    let head: String?
+    let refs: [GitBranchRef]
+    let automaticRef: String?
+
+    var headLabel: String { branch ?? head.map { String($0.prefix(7)) } ?? "HEAD" }
+}
+
+struct GitChangesCommit: Identifiable, Hashable, Sendable {
+    let id: String
+    let subject: String
+
+    var shortID: String { String(id.prefix(7)) }
+    var label: String { subject.isEmpty ? "Commit \(shortID)" : "\(shortID) · \(subject)" }
+}
+
+enum GitChangesScope: Hashable, Sendable {
+    case changes
+    case uncommitted
+    case commit(GitChangesCommit)
+
+    var label: String {
+        switch self {
+        case .changes: "Changes"
+        case .uncommitted: "Uncommitted"
+        case .commit(let commit): "Commit \(commit.shortID)"
+        }
+    }
+}
+
+struct GitChangesTarget: Sendable {
+    let checkout: GitChangesCheckout
+    let baseRef: String?
+    let baseTip: String?
+    let before: String
+    let after: String?
+}
+
+struct GitChangesFile: Identifiable, Hashable, Sendable {
+    let path: String
+    let previousPath: String?
+    let status: Character
+
+    var isUntracked: Bool { status == "?" }
+    var id: String { isUntracked ? path + "\0?" : path }
+}
+
+private enum GitChangesError: LocalizedError {
+    case missingBase(String)
+    case noCommonCommit(String, shallow: Bool)
+    case unavailableCommit
+    case unavailableParent(String)
+    case checkoutChanged
+
+    var errorDescription: String? {
+        switch self {
+        case .missingBase(let ref):
+            "The comparison branch \(GitBranchRef.displayName(ref)) is unavailable locally."
+        case .noCommonCommit(let ref, let shallow):
+            "No common commit with \(GitBranchRef.displayName(ref))."
+                + (shallow ? " This checkout has shallow history." : "")
+        case .unavailableCommit:
+            "The selected commit is unavailable locally."
+        case .unavailableParent(let sha):
+            "Commit \(sha.prefix(7))’s first parent is unavailable locally."
+        case .checkoutChanged:
+            "The checkout or comparison branch changed. Refresh Git changes to continue."
+        }
+    }
+}
+
+extension GitWorkspace {
+    private static let reviewDiffOptions = [
+        "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative", "--find-renames", "--ignore-submodules=none"
+    ]
+
+    func changesCheckout() async throws -> GitChangesCheckout {
+        let root = try await repositoryRoot()
+        let branch = try await currentBranch()
+        let head = try await headObjectID()
+        let refs = try await branchRefs()
+        let automatic = try await automaticComparisonRef(branch: branch, refs: refs, root: root)
+        let checkout = GitChangesCheckout(root: root, branch: branch, head: head, refs: refs, automaticRef: automatic)
+        try await verifyChangesCheckout(checkout)
+        return checkout
+    }
+
+    private func automaticComparisonRef(branch: String?, refs: [GitBranchRef], root: String) async throws -> String? {
+        guard let branch else { return nil }
+        func ref(_ id: String) -> GitBranchRef? {
+            refs.first { $0.id.utf8.elementsEqual(id.utf8) }
+        }
+
+        func config(_ key: String) async throws -> String? {
+            let result = try await run(["config", "--get", "branch.\(branch).\(key)"],
+                                       in: root, acceptedStatuses: [0, 1], cancellable: true)
+            return result.status == 0 ? try Self.decode(result.output.bytes.dropLast(), command: "config") : nil
+        }
+
+        func upstream(of localBranch: String) -> String? {
+            guard let upstream = ref("refs/heads/" + localBranch)?.upstream,
+                  ref(upstream)?.isRemote == true else { return nil }
+            return upstream
+        }
+
+        if let configured = try await config("t3-merge-base-ref"), ref(configured) != nil { return configured }
+        var configured = try await config("t3-merge-base")
+        if configured == nil { configured = try await config("gh-merge-base") }
+        if let configured {
+            if ref(configured) != nil { return configured }
+            if configured.contains("/"), ref("refs/heads/" + configured) != nil {
+                return "refs/heads/" + configured
+            }
+            if ref("refs/remotes/" + configured) != nil { return "refs/remotes/" + configured }
+            if configured != branch, let tracked = upstream(of: configured) { return tracked }
+        }
+
+        let remotes = try await remoteNames(in: root)
+        let primary = remotes.contains("origin") ? "origin" : remotes.first
+        let remotePrefix = primary.map { "refs/remotes/" + $0 + "/" }
+        let defaultName = refs.first { $0.isRemote && $0.isDefault }.flatMap { ref in
+            remotePrefix.map { String(ref.id.dropFirst($0.count)) }
+        }
+        for name in [configured, defaultName, "main", "master"].compactMap({ $0 }) {
+            if name == branch, let tracked = upstream(of: branch) { return tracked }
+            if let remotePrefix, ref(remotePrefix + name) != nil { return remotePrefix + name }
+            if name != branch, ref("refs/heads/" + name) != nil { return "refs/heads/" + name }
+        }
+        return nil
+    }
+
+    func changesTarget(_ scope: GitChangesScope, checkout: GitChangesCheckout, selectedBase: String?) async throws -> GitChangesTarget {
+        let root = checkout.root
+        var after: String?
+        var baseRef: String?
+        var baseTip: String?
+        let before: String
+
+        switch scope {
+        case .changes:
+            baseRef = selectedBase ?? checkout.automaticRef
+            if let baseRef, selectedBase != nil || checkout.head != nil {
+                guard checkout.refs.contains(where: { $0.id.utf8.elementsEqual(baseRef.utf8) }),
+                      let tip = try await changesObjectID(baseRef, root: root) else {
+                    throw GitChangesError.missingBase(baseRef)
+                }
+                guard let head = checkout.head else { throw GitChangesError.noCommonCommit(baseRef, shallow: false) }
+                let merge = try await run(["merge-base", tip, head], in: root,
+                                          acceptedStatuses: [0, 1], cancellable: true)
+                guard merge.status == 0 else {
+                    let shallow = try await run(["rev-parse", "--is-shallow-repository"], in: root, cancellable: true)
+                    throw GitChangesError.noCommonCommit(baseRef, shallow: Self.line(shallow) == "true")
+                }
+                baseTip = tip
+                before = Self.line(merge)
+            } else {
+                baseRef = nil
+                before = try await changesHeadTree(checkout)
+            }
+        case .uncommitted:
+            before = try await changesHeadTree(checkout)
+        case .commit(let commit):
+            guard [40, 64].contains(commit.id.utf8.count),
+                  commit.id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                  let sha = try await changesObjectID(commit.id, root: root) else {
+                throw GitChangesError.unavailableCommit
+            }
+            after = sha
+            // The stored parent survives the shallow graft that hides it from log and revision walks.
+            let object = try await run(["cat-file", "commit", sha], in: root, outputLimit: 1024, cancellable: true)
+            let parent = String(decoding: object.output.bytes, as: UTF8.self).split(separator: "\n").dropFirst().first
+            if let parent, parent.hasPrefix("parent ") {
+                let oid = String(parent.dropFirst(7))
+                guard try await changesObjectID(oid, root: root) != nil else {
+                    throw GitChangesError.unavailableParent(sha)
+                }
+                before = oid
+            } else {
+                before = try await changesEmptyTree(root)
+            }
+        }
+
+        let target = GitChangesTarget(checkout: checkout, baseRef: baseRef, baseTip: baseTip, before: before, after: after)
+        try await verifyChangesTarget(target)
+        return target
+    }
+
+    func changesCommits(_ checkout: GitChangesCheckout, selectedBase: String?) async throws -> [GitChangesCommit] {
+        guard let head = checkout.head else { return [] }
+        let target: GitChangesTarget?
+        let range: String
+        do {
+            let comparison = try await changesTarget(.changes, checkout: checkout, selectedBase: selectedBase)
+            target = comparison
+            range = comparison.before == head ? head : "\(comparison.before)..\(head)"
+        } catch GitChangesError.missingBase(_) {
+            target = nil
+            range = head
+        } catch GitChangesError.noCommonCommit(_, _) {
+            target = nil
+            range = head
+        }
+        let log = try await run(["log", "-z", "--format=%H%x00%s", "--no-notes",
+                                 "--no-show-signature", "--max-count=100", range, "--"],
+                                in: checkout.root, cancellable: true)
+        var fields = log.output.bytes.split(separator: 0, omittingEmptySubsequences: false).dropLast().makeIterator()
+        var commits: [GitChangesCommit] = []
+        while let sha = fields.next() {
+            guard let subject = fields.next() else { throw WorkspaceError.invalidOutput(command: "log") }
+            commits.append(GitChangesCommit(id: String(decoding: sha, as: UTF8.self),
+                                            subject: String(String(decoding: subject, as: UTF8.self).prefix(300))))
+        }
+        if let target {
+            try await verifyChangesTarget(target)
+        } else {
+            try await verifyChangesCheckout(checkout)
+        }
+        return commits
+    }
+
+    func changedFiles(in target: GitChangesTarget) async throws -> [GitChangesFile] {
+        let result = try await changesDiff(in: target, format: ["--name-status", "-z"])
+        var fields = result.output.bytes.split(separator: 0, omittingEmptySubsequences: false).dropLast().makeIterator()
+        var files: [GitChangesFile] = []
+        while let status = fields.next() {
+            guard let code = status.first, let first = fields.next(), !first.isEmpty else {
+                throw WorkspaceError.invalidOutput(command: "diff --name-status")
+            }
+            let firstPath = try Self.decode(first, command: "diff --name-status")
+            let kind = Character(UnicodeScalar(code))
+            if kind == "R" || kind == "C" {
+                guard let next = fields.next(), !next.isEmpty else {
+                    throw WorkspaceError.invalidOutput(command: "diff --name-status")
+                }
+                let path = try Self.decode(next, command: "diff --name-status")
+                files.append(GitChangesFile(path: path, previousPath: firstPath, status: kind))
+            } else {
+                files.append(GitChangesFile(path: firstPath, previousPath: nil, status: kind))
+            }
+        }
+
+        if target.after == nil {
+            let others = try await run(["ls-files", "--others", "--exclude-standard", "-z"],
+                                       in: target.checkout.root, cancellable: true)
+            for field in others.output.bytes.split(separator: 0) {
+                let path = try Self.decode(field, command: "ls-files")
+                files.append(GitChangesFile(path: path, previousPath: nil, status: "?"))
+            }
+        }
+        try await verifyChangesTarget(target)
+        return files
+    }
+
+    func changesPatch(in target: GitChangesTarget, file: GitChangesFile?, files: [GitChangesFile]) async throws -> String {
+        let limit = Self.patchLimit
+        let tracked: WorkspaceCommand.Capture?
+        if file?.isUntracked == true {
+            tracked = nil
+        } else {
+            let paths = file.map { [$0.previousPath, $0.path].compactMap { $0 } } ?? []
+            tracked = try await changesDiff(in: target, format: ["--patch"], paths: paths, limit: limit)
+        }
+        var data = tracked?.output.bytes ?? Data()
+        var truncated = tracked?.output.truncated == true
+        let untracked = file.map { $0.isUntracked ? [$0] : [] } ?? files.filter(\.isUntracked)
+        for (index, item) in untracked.enumerated() {
+            guard !truncated, data.count < limit, index < 64 else {
+                truncated = true
+                break
+            }
+            let result = try await run(["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv",
+                                        "--no-index", "--", "/dev/null", "./" + item.path],
+                                       in: target.checkout.root, outputLimit: limit - data.count,
+                                       acceptedStatuses: [0, 1], cancellable: true)
+            guard result.status == 0 || !result.output.bytes.isEmpty else {
+                throw WorkspaceError.commandFailed(command: "diff", status: result.status, message: result.errorMessage)
+            }
+            data.append(result.output.bytes)
+            truncated = result.output.truncated
+        }
+        try await verifyChangesTarget(target)
+        let patch = String(decoding: data, as: UTF8.self)
+        guard truncated else { return patch }
+        let notice = file == nil ? "Diff preview limited. Select a file to view its patch." : "Diff truncated after 256 KiB."
+        return patch + "\n[\(notice)]\n"
+    }
+
+    func verifyChangesCheckout(_ checkout: GitChangesCheckout) async throws {
+        try Task.checkCancellation()
+        let branch = try await currentBranch()
+        guard try await repositoryRoot() == checkout.root,
+              branch.map({ Data($0.utf8) }) == checkout.branch.map({ Data($0.utf8) }),
+              try await headObjectID() == checkout.head else {
+            throw GitChangesError.checkoutChanged
+        }
+        try Task.checkCancellation()
+    }
+
+    private func verifyChangesTarget(_ target: GitChangesTarget) async throws {
+        try await verifyChangesCheckout(target.checkout)
+        if let ref = target.baseRef, try await changesObjectID(ref, root: target.checkout.root) != target.baseTip {
+            throw GitChangesError.checkoutChanged
+        }
+    }
+
+    private func changesDiff(in target: GitChangesTarget, format: [String], paths: [String] = [],
+                             limit: Int? = nil) async throws -> WorkspaceCommand.Capture {
+        let revisions = [target.before, target.after].compactMap { $0 }
+        return try await run(["diff"] + Self.reviewDiffOptions + format + revisions + ["--"] + paths,
+                             in: target.checkout.root, outputLimit: limit, cancellable: true)
+    }
+
+    private func changesHeadTree(_ checkout: GitChangesCheckout) async throws -> String {
+        if let head = checkout.head { return head }
+        return try await changesEmptyTree(checkout.root)
+    }
+
+    private func changesEmptyTree(_ root: String) async throws -> String {
+        Self.line(try await run(["hash-object", "-t", "tree", "/dev/null"], in: root, cancellable: true))
+    }
+
+    private func changesObjectID(_ ref: String, root: String) async throws -> String? {
+        let result = try await run(["rev-parse", "--verify", "--quiet", "--end-of-options", ref + "^{commit}"],
+                                   in: root, acceptedStatuses: [0, 1], cancellable: true)
+        return result.status == 0 ? Self.line(result) : nil
+    }
+
+    private static func line(_ result: WorkspaceCommand.Capture) -> String {
+        String(decoding: result.output.bytes.dropLast(), as: UTF8.self)
+    }
+}

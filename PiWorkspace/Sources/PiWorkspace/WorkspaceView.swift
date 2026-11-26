@@ -1470,16 +1470,15 @@ struct WorkspaceView: View {
             case .browser:
                 BrowserPreviewView(preview: browser)
             case .changes:
-                if let directory = model.workingDirectory {
-                    SourceControlView(directory: directory, model: model, openBranch: {
+                if let location = WorkspaceFilesLocation(thread: thread, project: project) {
+                    SourceControlView(directory: location.directory, model: model, openBranch: {
                         openBranchPicker()
                     }, copyBranch: copyBranch) { path in
-                        guard let location = selectedFilesLocation, location.threadID == thread.id,
-                              location.directory == directory else { return }
+                        guard selectedFilesLocation == location else { return }
                         selectedFiles[location] = path
                         rightPanels[thread.id]?.show(.files)
                     }
-                    .id(directory)
+                    .id(location)
                 }
             case .terminal(let number):
                 if let group = panel.terminals[.terminal(number)] {

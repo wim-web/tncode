@@ -9,13 +9,26 @@ struct SourceControlView: View {
     @State private var state: GitRepositoryState?
     @State private var selected: GitFileChange?
     @State private var excludedPaths: Set<String> = []
-    @State private var staged = false
-    @State private var patch = ""
+    @State private var stage = Stage.all
     @State private var commitMessage = ""
     @State private var error: String?
-    @State private var patchError: String?
     @State private var loading = true
     @State private var refresh = 0
+    @State private var scope = GitChangesScope.changes
+    @State private var baseRef: String?
+    @State private var comparisonFileID: String?
+    @State private var scopeRevision = 0
+    @State private var fileRevision = 0
+    @State private var chooser: Chooser?
+    @State private var refSearch = ""
+    @State private var checkoutResult: (ReadRequest, GitChangesCheckout)?
+    @State private var checkoutError: (ReadRequest, String)?
+    @State private var reviewResult: (ReviewRequest, Review)?
+    @State private var reviewError: (ReviewRequest, String)?
+    @State private var historyResult: (HistoryRequest, [GitChangesCommit])?
+    @State private var historyError: (HistoryRequest, String)?
+    @State private var patchResult: (DiffRequest, String)?
+    @State private var patchError: (DiffRequest, String)?
 
     private let refreshLabel = "Refresh Git changes"
 
@@ -25,10 +38,37 @@ struct SourceControlView: View {
         let refresh: Int
     }
 
-    private struct DiffRequest: Hashable {
+    private enum Stage: Hashable {
+        case all, unstaged, staged
+    }
+
+    private enum Chooser {
+        case scope, base
+    }
+
+    private struct HistoryRequest: Hashable {
         let key: ReadRequest
-        let file: GitFileChange?
-        let staged: Bool
+        let baseRef: String?
+    }
+
+    private struct ReviewRequest: Hashable {
+        let key: ReadRequest
+        let scope: GitChangesScope
+        let baseRef: String?
+        let scopeRevision: Int
+    }
+
+    private struct Review {
+        let target: GitChangesTarget
+        let files: [GitChangesFile]
+    }
+
+    private struct DiffRequest: Hashable {
+        let key: ReviewRequest
+        let reviewFile: GitChangesFile?
+        let workingFile: GitFileChange?
+        let stage: Stage
+        let fileRevision: Int
     }
 
     private var request: ReadRequest {
@@ -37,7 +77,43 @@ struct SourceControlView: View {
 
     private var busy: Bool { model.operationsInProgress }
 
+    private var checkout: GitChangesCheckout? {
+        checkoutResult?.0 == request ? checkoutResult?.1 : nil
+    }
+
+    private var historyRequest: HistoryRequest? {
+        guard checkout != nil, chooser == .scope else { return nil }
+        return HistoryRequest(key: request, baseRef: baseRef)
+    }
+
+    private var reviewRequest: ReviewRequest? {
+        guard checkout != nil else { return nil }
+        return ReviewRequest(key: request, scope: scope, baseRef: scope == .changes ? baseRef : nil,
+                             scopeRevision: scopeRevision)
+    }
+
+    private var review: Review? {
+        guard let reviewRequest, reviewResult?.0 == reviewRequest else { return nil }
+        return reviewResult?.1
+    }
+
+    private var reviewFile: GitChangesFile? {
+        review?.files.first { $0.id == (scope == .uncommitted ? selected?.id : comparisonFileID) }
+    }
+
+    private var diffRequest: DiffRequest? {
+        guard let reviewRequest, review != nil else { return nil }
+        return DiffRequest(key: reviewRequest, reviewFile: reviewFile, workingFile: selected, stage: stage,
+                           fileRevision: fileRevision)
+    }
+
     var body: some View {
+        let read = request
+        let activeCheckout = checkout
+        let history = historyRequest
+        let comparison = reviewRequest
+        let activeReview = review
+        let diff = diffRequest
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Changes").font(.system(size: 13, weight: .semibold))
@@ -56,14 +132,30 @@ struct SourceControlView: View {
             .padding(.horizontal, 12)
             Divider()
             if let state {
-                files(state)
+                comparisonControls
+                if scope == .uncommitted {
+                    files(state)
+                } else if let activeReview {
+                    comparisonFiles(activeReview.files)
+                }
                 Divider()
                 diffHeader
                 patchContent
-                Divider()
-                commitBar(state)
+                if scope == .changes && !state.files.isEmpty {
+                    Divider()
+                    Text("Working Tree").font(.caption.weight(.medium))
+                        .padding(.horizontal, 12).padding(.top, 8)
+                    files(state)
+                }
+                if managesWorkingTree {
+                    Divider()
+                    commitBar(state)
+                }
             } else if loading {
                 ProgressView().controlSize(.small).padding(16)
+            } else if checkoutError?.0 == read, let message = checkoutError?.1 {
+                Text(message).font(.callout).foregroundStyle(.secondary).padding(12)
+                    .accessibilityIdentifier("git-review-error")
             } else {
                 Text("No Git repository in this workspace.")
                     .foregroundStyle(.secondary)
@@ -78,8 +170,154 @@ struct SourceControlView: View {
             if state == nil { Spacer() }
         }
         .frame(minWidth: 290, idealWidth: 360, maxHeight: .infinity)
-        .task(id: request) { await loadState() }
-        .task(id: DiffRequest(key: request, file: selected, staged: staged)) { await loadPatch() }
+        .task(id: read) { await loadCheckout(read) }
+        .task(id: history) {
+            if let history, let activeCheckout { await loadHistory(history, checkout: activeCheckout) }
+        }
+        .task(id: comparison) {
+            if let comparison, let activeCheckout { await loadReview(comparison, checkout: activeCheckout) }
+        }
+        .task(id: diff) {
+            if let diff, let activeReview { await loadPatch(diff, review: activeReview) }
+        }
+    }
+
+    private var managesWorkingTree: Bool {
+        if case .commit = scope { return false }
+        return true
+    }
+
+    private var comparisonControls: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Button {
+                    chooser = chooser == .scope ? nil : .scope
+                } label: {
+                    Label(scope.label, systemImage: "chevron.down")
+                }
+                .accessibilityLabel("Diff scope: \(scope.label)")
+                .accessibilityIdentifier("git-review-scope")
+                Spacer()
+            }
+            if scope == .changes {
+                let head = checkout?.headLabel ?? state?.branch ?? "HEAD"
+                HStack {
+                    Text(head).lineLimit(1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(head)
+                        .accessibilityIdentifier("git-review-head")
+                    Text("vs").foregroundStyle(.secondary)
+                    baseButton
+                    Spacer(minLength: 0)
+                }
+            }
+            switch chooser {
+            case .scope: scopeChoices
+            case .base: baseChoices
+            case nil: EmptyView()
+            }
+        }
+        .font(.caption)
+        .padding(8)
+    }
+
+    private var baseButton: some View {
+        let label = baseRef.map { ref in
+            GitBranchRef.displayName(ref) + (ref.hasPrefix("refs/remotes/") ? " (Remote)" : "")
+        } ??
+            (checkout?.automaticRef.map { "Automatic (\(GitBranchRef.displayName($0)))" } ?? "Automatic (HEAD)")
+        return Button {
+            refSearch = ""
+            chooser = chooser == .base ? nil : .base
+        } label: {
+            Label(label, systemImage: "chevron.down").lineLimit(1)
+        }
+        .accessibilityLabel("Change comparison target. Currently \(label)")
+        .accessibilityIdentifier("git-review-base")
+    }
+
+    private var scopeChoices: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                choice("Changes", id: "git-review-scope-changes") { selectScope(.changes) }
+                choice("Uncommitted", id: "git-review-scope-uncommitted") { selectScope(.uncommitted) }
+                if let historyRequest {
+                    if historyResult?.0 == historyRequest, let commits = historyResult?.1 {
+                        ForEach(commits) { commit in
+                            choice(commit.label, id: "git-review-commit-" + commit.id) { selectScope(.commit(commit)) }
+                        }
+                    } else if historyError?.0 == historyRequest, let message = historyError?.1 {
+                        Text(message).foregroundStyle(.red)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 124)
+    }
+
+    private var baseChoices: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("Search refs…", text: $refSearch)
+                .accessibilityIdentifier("git-review-ref-search")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    choice("Automatic", id: "git-review-base-automatic") { selectBase(nil) }
+                    ForEach(checkout?.refs.filter { refSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(refSearch) } ?? []) { ref in
+                        choice(ref.isRemote ? ref.name + " (Remote)" : ref.name, id: "git-review-base-" + ref.id) {
+                            selectBase(ref.id)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 124)
+        }
+    }
+
+    private func choice(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .help(label)
+    }
+
+    private func selectScope(_ next: GitChangesScope) {
+        scope = next
+        comparisonFileID = nil
+        selected = nil
+        stage = .all
+        scopeRevision += 1
+        chooser = nil
+    }
+
+    private func selectBase(_ ref: String?) {
+        baseRef = ref
+        selectScope(.changes)
+    }
+
+    private func comparisonFiles(_ files: [GitChangesFile]) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+                ForEach(files) { file in
+                    let label = file.previousPath.map { "\($0) → \(file.path)" } ?? file.path
+                    choice("\(file.status)  \(label)", id: "git-review-file-" + (file.isUntracked ? "untracked-" : "") + file.path) {
+                        comparisonFileID = file.id
+                        fileRevision += 1
+                    }
+                    .padding(4)
+                    .background(comparisonFileID == file.id ? Color.primary.opacity(0.08) : .clear,
+                                in: RoundedRectangle(cornerRadius: 5))
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(maxHeight: files.isEmpty ? 0 : 100)
     }
 
     private func files(_ state: GitRepositoryState) -> some View {
@@ -135,8 +373,10 @@ struct SourceControlView: View {
                                 .help("Include \(file.path) in the commit")
                         }
                         Button {
+                            if scope != .uncommitted { selectScope(.uncommitted) }
                             selected = file
-                            staged = file.worktreeStatus == " " && file.isStaged
+                            stage = file.worktreeStatus == " " && file.isStaged ? .staged : .unstaged
+                            fileRevision += 1
                         } label: {
                             HStack(spacing: 6) {
                                 Text(verbatim: String([file.indexStatus, file.worktreeStatus]))
@@ -201,32 +441,43 @@ struct SourceControlView: View {
 
     private var diffHeader: some View {
         HStack {
-            if let file = selected {
-                if let path = state?.workspacePath(for: file) {
-                    Button { openFile(path) } label: {
-                        Text(file.path).lineLimit(1).truncationMode(.middle)
+            if let path = selected?.path ?? reviewFile?.path {
+                if managesWorkingTree, let relative = state?.workspacePath(for: path) {
+                    Button { openFile(relative) } label: {
+                        Text(path).lineLimit(1).truncationMode(.middle)
                     }
                     .buttonStyle(.plain)
                     .help("Open Source File")
                     .accessibilityIdentifier("git-open-source")
                 } else {
-                    Text(file.path).lineLimit(1).truncationMode(.middle)
+                    Text(path).lineLimit(1).truncationMode(.middle)
                 }
-                Button { selected = nil } label: { Image(systemName: "xmark.circle.fill") }
+                Button {
+                    selected = nil
+                    comparisonFileID = nil
+                    fileRevision += 1
+                } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Show all changes")
+                    .accessibilityIdentifier("git-review-all-files")
             } else {
                 Text("All files").font(.caption.weight(.medium))
             }
             Spacer()
-            Picker("Changes", selection: $staged) {
-                Text("Unstaged").tag(false)
-                Text("Staged").tag(true)
+            if scope == .uncommitted {
+                Picker("Changes", selection: Binding(get: { stage }, set: {
+                    stage = $0
+                    fileRevision += 1
+                })) {
+                    Text("All").tag(Stage.all)
+                    Text("Unstaged").tag(Stage.unstaged)
+                    Text("Staged").tag(Stage.staged)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("git-diff-mode")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityIdentifier("git-diff-mode")
         }
         .font(.caption.weight(.medium))
         .padding(8)
@@ -234,31 +485,51 @@ struct SourceControlView: View {
 
     private var patchContent: some View {
         ScrollView([.horizontal, .vertical]) {
-            if let patchError {
-                Text(patchError).font(.callout).foregroundStyle(.red)
-                    .padding(10)
-            } else if patch.isEmpty {
-                Text("No changes to display")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .padding(10)
-            } else {
-                let lines = patch.split(separator: "\n", omittingEmptySubsequences: false)
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(lines.indices, id: \.self) { index in
-                        let line = lines[index]
-                        Text(line.isEmpty ? " " : String(line))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(diffColor(line))
-                            .fixedSize()
-                            .textSelection(.enabled)
-                    }
+            if checkoutError?.0 == request, let message = checkoutError?.1 {
+                reviewFailure(message)
+            } else if let reviewRequest, reviewError?.0 == reviewRequest, let message = reviewError?.1 {
+                reviewFailure(message)
+            } else if let diffRequest, patchError?.0 == diffRequest, let message = patchError?.1 {
+                reviewFailure(message)
+            } else if let diffRequest, patchResult?.0 == diffRequest, let patch = patchResult?.1 {
+                if patch.isEmpty {
+                    Text("No changes to display").font(.callout).foregroundStyle(.secondary)
+                        .padding(10)
+                        .accessibilityIdentifier("git-review-empty")
+                } else {
+                    patchLines(patch)
                 }
-                .padding(9)
-                .accessibilityIdentifier("git-patch")
+            } else {
+                ProgressView().controlSize(.small)
+                    .padding(10)
+                    .accessibilityIdentifier("git-review-loading")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.35))
+    }
+
+    private func reviewFailure(_ message: String) -> some View {
+        Text(message).font(.callout).foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true).padding(10)
+            .accessibilityIdentifier("git-review-error")
+    }
+
+    private func patchLines(_ patch: String) -> some View {
+        let lines = patch.split(separator: "\n", omittingEmptySubsequences: false)
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(lines.indices, id: \.self) { index in
+                let line = lines[index]
+                Text(line.isEmpty ? " " : String(line))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(diffColor(line))
+                    .fixedSize()
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(9)
+        .accessibilityIdentifier("git-patch")
+        .id(diffRequest)
     }
 
     private func commitBar(_ state: GitRepositoryState) -> some View {
@@ -299,32 +570,76 @@ struct SourceControlView: View {
         }
     }
 
-    private func loadState() async {
-        let git = GitWorkspace(path: directory)
-        defer { if !Task.isCancelled { loading = false } }
+    private func loadCheckout(_ key: ReadRequest) async {
+        let git = GitWorkspace(path: key.location)
+        defer { if !Task.isCancelled, key == request { loading = false } }
         do {
+            let checkout = try await git.changesCheckout()
             let newState = try await git.state()
-            guard !Task.isCancelled else { return }
+            try await git.verifyChangesCheckout(checkout)
+            guard !Task.isCancelled, key == request else { return }
             state = newState
+            checkoutResult = (key, checkout)
+            checkoutError = nil
             excludedPaths.formIntersection(newState.files.map(\.path))
             if let current = selected {
                 selected = newState.files.first(where: { $0.id == current.id })
             }
-        } catch {
-            if !Task.isCancelled { state = nil }
+        } catch let failure {
+            guard !Task.isCancelled, key == request else { return }
+            state = nil
+            checkoutResult = nil
+            checkoutError = (key, failure.localizedDescription)
         }
     }
 
-    private func loadPatch() async {
+    private func loadHistory(_ key: HistoryRequest, checkout: GitChangesCheckout) async {
         do {
-            let result = try await GitWorkspace(path: directory).patch(for: selected, staged: staged)
-            guard !Task.isCancelled else { return }
-            patch = result
+            let commits = try await GitWorkspace(path: key.key.location).changesCommits(checkout, selectedBase: key.baseRef)
+            guard !Task.isCancelled, key == historyRequest else { return }
+            historyResult = (key, commits)
+            historyError = nil
+        } catch {
+            guard !Task.isCancelled, key == historyRequest else { return }
+            historyResult = nil
+            historyError = (key, error.localizedDescription)
+        }
+    }
+
+    private func loadReview(_ key: ReviewRequest, checkout: GitChangesCheckout) async {
+        do {
+            let git = GitWorkspace(path: key.key.location)
+            let target = try await git.changesTarget(key.scope, checkout: checkout, selectedBase: key.baseRef)
+            let files = try await git.changedFiles(in: target)
+            guard !Task.isCancelled, key == reviewRequest else { return }
+            reviewResult = (key, Review(target: target, files: files))
+            reviewError = nil
+        } catch {
+            guard !Task.isCancelled, key == reviewRequest else { return }
+            reviewResult = nil
+            reviewError = (key, error.localizedDescription)
+        }
+    }
+
+    private func loadPatch(_ key: DiffRequest, review: Review) async {
+        do {
+            let git = GitWorkspace(path: key.key.key.location)
+            let patch: String
+            if key.key.scope == .uncommitted && key.stage != .all {
+                patch = try await git.patch(for: key.workingFile, staged: key.stage == .staged, cancellable: true)
+                try await git.verifyChangesCheckout(review.target.checkout)
+            } else if key.key.scope == .uncommitted && key.workingFile != nil && key.reviewFile == nil {
+                patch = ""
+            } else {
+                patch = try await git.changesPatch(in: review.target, file: key.reviewFile, files: review.files)
+            }
+            guard !Task.isCancelled, key == diffRequest else { return }
+            patchResult = (key, patch)
             patchError = nil
-        } catch let failure {
-            guard !Task.isCancelled else { return }
-            patch = ""
-            patchError = failure.localizedDescription
+        } catch {
+            guard !Task.isCancelled, key == diffRequest else { return }
+            patchResult = nil
+            patchError = (key, error.localizedDescription)
         }
     }
 }

@@ -8,8 +8,12 @@ struct GitRepositoryState: Sendable {
     let directoryPrefix: String
 
     func workspacePath(for file: GitFileChange) -> String? {
-        guard file.path.hasPrefix(directoryPrefix) else { return nil }
-        return String(file.path.dropFirst(directoryPrefix.count))
+        workspacePath(for: file.path)
+    }
+
+    func workspacePath(for path: String) -> String? {
+        guard path.hasPrefix(directoryPrefix) else { return nil }
+        return String(path.dropFirst(directoryPrefix.count))
     }
 }
 
@@ -92,7 +96,7 @@ struct GitWorkspace: Sendable {
     }
 
     private let path: String
-    private static let patchLimit = 256 * 1024
+    static let patchLimit = 256 * 1024
 
     init(path: String) {
         self.path = path
@@ -384,14 +388,15 @@ struct GitWorkspace: Sendable {
         }
     }
 
-    func patch(for file: GitFileChange?, staged: Bool) async throws -> String {
+    func patch(for file: GitFileChange?, staged: Bool, cancellable: Bool = false) async throws -> String {
         let root = try await repositoryRoot()
         var arguments = ["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv"]
         let result: WorkspaceCommand.Capture
 
         if let file, file.isUntracked && !staged {
             arguments += ["--no-index", "--", "/dev/null", "./" + file.path]
-            result = try await run(arguments, in: root, outputLimit: Self.patchLimit, acceptedStatuses: [0, 1])
+            result = try await run(arguments, in: root, outputLimit: Self.patchLimit,
+                                   acceptedStatuses: [0, 1], cancellable: cancellable)
             if result.status == 1 && result.output.bytes.isEmpty {
                 throw WorkspaceError.commandFailed(command: "diff", status: result.status, message: result.errorMessage)
             }
@@ -408,7 +413,7 @@ struct GitWorkspace: Sendable {
                 }
                 arguments.append(file.path)
             }
-            result = try await run(arguments, in: root, outputLimit: Self.patchLimit)
+            result = try await run(arguments, in: root, outputLimit: Self.patchLimit, cancellable: cancellable)
         }
 
         let output = String(decoding: result.output.bytes, as: UTF8.self)
@@ -434,7 +439,7 @@ struct GitWorkspace: Sendable {
         return checkout
     }
 
-    private func remoteNames(in directory: String) async throws -> [String] {
+    func remoteNames(in directory: String) async throws -> [String] {
         let result = try await run(["remote"], in: directory)
         return try Self.decode(result.output.bytes, command: "remote").split(separator: "\n").map(String.init)
     }
@@ -756,7 +761,7 @@ struct GitWorkspace: Sendable {
         try data.write(to: file)
     }
 
-    private func repositoryRoot(in directory: String? = nil) async throws -> String {
+    func repositoryRoot(in directory: String? = nil) async throws -> String {
         try await revParse(["--show-toplevel"], in: directory)
     }
 
@@ -796,19 +801,20 @@ struct GitWorkspace: Sendable {
         return changes
     }
 
-    private static func decode(_ bytes: Data, command: String) throws -> String {
+    static func decode(_ bytes: Data, command: String) throws -> String {
         guard let string = String(data: bytes, encoding: .utf8) else {
             throw WorkspaceError.invalidOutput(command: command)
         }
         return string
     }
 
-    private func run(
+    func run(
         _ arguments: [String],
         in directory: String? = nil,
         index: URL? = nil,
         outputLimit: Int? = nil,
-        acceptedStatuses: [Int32] = [0]
+        acceptedStatuses: [Int32] = [0],
+        cancellable: Bool = false
     ) async throws -> WorkspaceCommand.Capture {
         let directory = directory ?? path
         guard !directory.isEmpty else {
@@ -836,6 +842,9 @@ struct GitWorkspace: Sendable {
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_NO_LAZY_FETCH"] = "1"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
+        if cancellable {
+            environment["GIT_ALLOW_PROTOCOL"] = ""
+        }
         if cloning {
             environment["GIT_ALLOW_PROTOCOL"] = "file:git:http:https:ssh"
         }
@@ -849,7 +858,7 @@ struct GitWorkspace: Sendable {
 
         let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit,
                                                         timeout: fetching ? .seconds(300) : nil,
-                                                        cancelOnTaskCancellation: cloning || fetching)
+                                                        cancelOnTaskCancellation: cloning || fetching || cancellable)
         if !result.exitedNormally || !acceptedStatuses.contains(result.status) {
             throw WorkspaceError.commandFailed(command: arguments[0], status: result.status, message: result.errorMessage)
         }
@@ -995,7 +1004,7 @@ enum WorkspaceCommand {
 }
 
 extension GitWorkspace {
-    private enum WorkspaceError: LocalizedError {
+    enum WorkspaceError: LocalizedError {
         case invalidBranch
         case branchExists(String)
         case worktreeChanged
