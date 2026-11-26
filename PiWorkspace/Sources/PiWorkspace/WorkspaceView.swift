@@ -36,6 +36,7 @@ struct WorkspaceView: View {
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
+    @State private var createdProject: UUID?
     @FocusState private var focusedComposer: UUID?
     @State private var focusAfterPicker = false
     @State private var targetingProjectDrop = false
@@ -56,8 +57,9 @@ struct WorkspaceView: View {
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var threads: [SidebarThread] {
-        SidebarThread.matching(in: filteredProjects, search: searchTerm, archived: model.showArchive)
-            .filter { model.showsInSidebar($0.thread) }
+        let scope = projectFilter.selection.isEmpty ? model.threadProjects : filteredProjects
+        return SidebarThread.matching(in: scope, search: searchTerm, archived: model.showArchive)
+            .filter { $0.project.isScratch || model.showsInSidebar($0.thread) }
     }
 
     private var rail: Color { colorScheme == .dark ? Color(white: 0.082) : Color(white: 0.955) }
@@ -84,6 +86,21 @@ struct WorkspaceView: View {
             searchThreads: { searchFocused = true }
         ))
         .onChange(of: model.projects.map(\.id)) { _, ids in projectFilter.retainProjects(ids) }
+        .overlay(alignment: .topTrailing) {
+            if let createdProject {
+                Text("Project created")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(10)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("project-created")
+                    .task(id: createdProject) {
+                        try? await Task.sleep(for: .seconds(3))
+                        if !Task.isCancelled { self.createdProject = nil }
+                    }
+            }
+        }
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
@@ -103,6 +120,10 @@ struct WorkspaceView: View {
             ForEach(filteredProjects) { project in
                 Button(project.title) { startThread(in: project.id) }
                     .accessibilityIdentifier("new-thread-project-\(project.id)")
+            }
+            if model.canStartScratchThread {
+                Button("No project", action: startScratchThread)
+                    .accessibilityIdentifier("new-thread-no-project")
             }
         }
         .sheet(item: $model.projectPicker, onDismiss: {
@@ -337,6 +358,7 @@ struct WorkspaceView: View {
             ForEach(pinned) { link in threadRow(link, showProject: true) }
         }
         if grouped {
+            ForEach(active.filter { $0.project.isScratch }) { link in threadRow(link, showProject: true) }
             let threadsByProject = Dictionary(grouping: active, by: { $0.project.id })
             ForEach(filteredProjects) { project in
                 let items = threadsByProject[project.id, default: []]
@@ -457,7 +479,7 @@ struct WorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if showProject {
                     HStack(spacing: 5) {
-                        Image(systemName: "folder")
+                        Image(systemName: link.project.isScratch ? "doc" : "folder")
                             .font(.system(size: 9, weight: .medium))
                         Text(link.project.title).lineLimit(1)
                         Spacer(minLength: 0)
@@ -510,6 +532,13 @@ struct WorkspaceView: View {
             Button("Filter by \(project.title)") { projectFilter.selectOnly(project.id) }
         }
         Button("Rename Thread…") { beginRename(.conversation(thread.id, project: project.id), title: thread.title) }
+        if project.isScratch {
+            Button("Turn into project") {
+                if model.convertScratchThread(thread.id, in: project.id) { createdProject = project.id }
+            }
+            .accessibilityIdentifier("turn-into-project")
+            .disabled(model.operationsInProgress)
+        }
         if !thread.archived {
             Button(thread.threadShelf == .pinned ? "Unpin Thread" : "Pin Thread") {
                 model.moveConversation(thread.id, in: project.id,
@@ -569,6 +598,10 @@ struct WorkspaceView: View {
                 Button("Add Project") { model.openFolder() }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("empty-open-project")
+                if model.canStartScratchThread {
+                    Button("Start without a project", action: startScratchThread)
+                        .accessibilityIdentifier("start-without-project")
+                }
             }
         }
         .padding(20)
@@ -577,18 +610,42 @@ struct WorkspaceView: View {
 
     private func header(_ project: Project, _ thread: Conversation) -> some View {
         HStack(spacing: 8) {
-            Menu {
-                projectActions(project)
-            } label: {
-                Label(project.title, systemImage: "folder")
+            let canSwitchProject = model.canSwitchDraftProject &&
+                !openTerminals.contains { $0.thread == thread.id } &&
+                (!project.isScratch || !model.projects.isEmpty)
+            if canSwitchProject || !project.isScratch {
+                Menu {
+                    if canSwitchProject {
+                        Menu("Draft project") {
+                            ForEach(model.projects.filter { $0.id != project.id }) { target in
+                                Button(target.title) { switchDraftProject(to: target.id) }
+                                    .accessibilityIdentifier("draft-project-\(target.id)")
+                            }
+                            if !project.isScratch {
+                                Button("No project") { switchDraftProject(to: nil) }
+                                    .accessibilityIdentifier("draft-no-project")
+                            }
+                        }
+                        .accessibilityIdentifier("draft-project-picker")
+                    }
+                    if !project.isScratch {
+                        projectActions(project)
+                    }
+                } label: {
+                    Label(project.title, systemImage: project.isScratch ? "doc" : "folder")
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .tint(.primary)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityIdentifier("thread-project")
+            } else {
+                Label(project.title, systemImage: "doc")
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .tint(.primary)
-            .accessibilityIdentifier("project-actions")
-            .fixedSize(horizontal: true, vertical: false)
             Text("/").foregroundStyle(.tertiary).accessibilityHidden(true)
             Menu {
                 threadActions(thread, project: project)
@@ -642,7 +699,7 @@ struct WorkspaceView: View {
         return VStack(spacing: 0) {
             if drafting {
                 Spacer()
-                Text("What should we build in \(project.title)?")
+                Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
                     .font(.system(size: 27, weight: .semibold))
                     .padding(.bottom, 12)
                 composer(project, thread)
@@ -954,6 +1011,21 @@ struct WorkspaceView: View {
         if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
         searchFocused = false
         clearSearch()
+    }
+
+    private func startScratchThread() {
+        model.startScratchThread()
+        projectFilter.clear()
+        query = ""
+    }
+
+    private func switchDraftProject(to projectID: UUID?) {
+        let previousProject = model.project?.id
+        model.switchDraftProject(to: projectID)
+        guard let project = model.project, project.id != previousProject else { return }
+        projectFilter.clear()
+        collapsed.remove(project.id)
+        focusedComposer = model.conversation?.id
     }
 
     private func beginRename(_ target: RenameTarget, title: String) {

@@ -53,7 +53,8 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    var projects: [Project] { workspace.projects.filter { $0.detached != true } }
+    var threadProjects: [Project] { workspace.projects.filter { $0.detached != true } }
+    var projects: [Project] { threadProjects.filter { !$0.isScratch } }
     var project: Project? { workspace.activeProject }
     var effectiveModel: ModelSettings { workspace.effectiveModel }
     var conversation: Conversation? {
@@ -65,7 +66,14 @@ final class WorkspaceModel: ObservableObject {
         return conversation.workingLocation.directory(in: project)
     }
     var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree }
+    var canStartScratchThread: Bool { store != nil }
     var canChangeWorkspace: Bool {
+        project?.isScratch == false && canChangeWorkingDirectory
+    }
+    var canSwitchDraftProject: Bool {
+        conversation?.isDraft == true && conversation?.worktreeLaunch == nil && canChangeWorkingDirectory
+    }
+    private var canChangeWorkingDirectory: Bool {
         guard !operationsInProgress,
               let store, let project, let conversation, !conversation.archived else { return false }
         if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout { return false }
@@ -92,6 +100,11 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil else { return }
+        if project?.isScratch == true, let conversation {
+            showArchive = conversation.archived
+            connect()
+            return
+        }
         let recent = projects.max { lhs, rhs in
             if lhs.lastActivity == rhs.lastActivity { return rhs.id == workspace.selectedProject && lhs.id != rhs.id }
             return lhs.lastActivity < rhs.lastActivity
@@ -198,6 +211,10 @@ final class WorkspaceModel: ObservableObject {
         guard save({
             $0.welcomeCompleted = true
             if let index {
+                if $0.projects[index].isScratch {
+                    $0.projects[index].kind = nil
+                    $0.projects[index].title = $0.projects[index].conversations.first?.title ?? folder.lastPathComponent
+                }
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
                 $0.selectedProject = $0.projects[index].id
@@ -221,18 +238,18 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func selectProject(_ id: UUID) {
-        guard !operationsInProgress, workspace.selectedProject != id else { return }
+        guard !operationsInProgress, workspace.selectedProject != id, projects.contains(where: { $0.id == id }) else { return }
         guard save({ $0.selectedProject = id }) else { return }
         connect()
     }
 
     func removeProject(_ id: UUID) {
         guard !operationsInProgress,
-              let index = workspace.projects.firstIndex(where: { $0.id == id }) else { return }
+              let index = workspace.projects.firstIndex(where: { $0.id == id && !$0.isScratch }) else { return }
         let selected = workspace.selectedProject == id
         guard save({
             $0.projects[index].detached = true
-            if selected { $0.selectedProject = $0.projects.first { $0.detached != true }?.id }
+            if selected { $0.selectedProject = $0.projects.first { $0.detached != true && !$0.isScratch }?.id }
         }) else { return }
         if selected {
             connect()
@@ -252,6 +269,10 @@ final class WorkspaceModel: ObservableObject {
     func addConversation(in requestedProject: UUID? = nil) {
         guard !operationsInProgress else { return }
         let projectID = requestedProject ?? project?.id ?? projects.first?.id
+        if projectID == nil || threadProjects.contains(where: { $0.id == projectID && $0.isScratch }) {
+            startScratchThread()
+            return
+        }
         guard let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }) else {
             openFolder(startThread: true)
             return
@@ -263,6 +284,89 @@ final class WorkspaceModel: ObservableObject {
         }) else { return }
         showArchive = false
         connect()
+    }
+
+    func startScratchThread() {
+        guard !operationsInProgress, let store else { return }
+        do {
+            let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
+            let scratch = try store.makeScratchProject(for: thread)
+            guard save({
+                $0.projects.append(scratch)
+                $0.selectedProject = scratch.id
+            }) else {
+                store.discardEmptyScratchFolder(scratch)
+                return
+            }
+            showArchive = false
+            connect()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func convertScratchThread(_ id: UUID, in projectID: UUID) -> Bool {
+        guard !operationsInProgress,
+              let index = workspace.projects.firstIndex(where: { $0.id == projectID && $0.isScratch }),
+              let thread = workspace.projects[index].conversations.first(where: { $0.id == id }) else { return false }
+        let path = workspace.projects[index].path
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        guard folder.resolvingSymlinksInPath().path == path,
+              (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            error = "The thread’s workspace folder is no longer available."
+            return false
+        }
+        return save {
+            $0.projects[index].kind = nil
+            $0.projects[index].title = thread.title
+        }
+    }
+
+    func switchDraftProject(to projectID: UUID?) {
+        guard canSwitchDraftProject, let store, let source = selectedProjectIndex, let project,
+              var thread = conversation, project.id != projectID else { return }
+        let target = workspace.projects.firstIndex { $0.id == projectID && !$0.isScratch && $0.detached != true }
+        guard projectID == nil ? !project.isScratch : target != nil else { return }
+        if draft.isEmpty {
+            if let projectID {
+                addConversation(in: projectID)
+            } else {
+                startScratchThread()
+            }
+            return
+        }
+
+        do {
+            if project.isScratch, try !FileManager.default.contentsOfDirectory(atPath: project.path).isEmpty {
+                throw WorkspaceError("Turn this thread into a project to keep its scratch files.")
+            }
+            thread.location = nil
+            let scratch = target == nil ? try store.makeScratchProject(for: thread) : nil
+            guard save({
+                if let target {
+                    $0.projects[target].conversations.insert(thread, at: 0)
+                    $0.projects[target].selectedConversation = thread.id
+                    $0.selectedProject = $0.projects[target].id
+                } else if let scratch {
+                    $0.projects.append(scratch)
+                    $0.selectedProject = scratch.id
+                }
+                if project.isScratch {
+                    $0.projects.remove(at: source)
+                } else {
+                    $0.projects[source].conversations.removeAll { $0.id == thread.id }
+                    $0.projects[source].selectedConversation = $0.projects[source].conversations.first { !$0.archived }?.id
+                }
+            }) else {
+                if let scratch { store.discardEmptyScratchFolder(scratch) }
+                return
+            }
+            store.discardEmptyScratchFolder(project)
+            showArchive = false
+            connect()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func selectConversation(_ id: UUID, in projectID: UUID) {

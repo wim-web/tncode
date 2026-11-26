@@ -197,6 +197,10 @@ enum ProjectFolder {
 }
 
 struct Project: Codable, Identifiable {
+    enum Kind: String, Codable {
+        case scratch
+    }
+
     let id: UUID
     var path: String
     var title: String
@@ -208,6 +212,9 @@ struct Project: Codable, Identifiable {
     var selectedConversation: UUID?
     var createdAt: Date?
     var modelOverride: ModelSettings?
+    var kind: Kind?
+
+    var isScratch: Bool { kind == .scratch }
 
     var lastActivity: Date {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
@@ -294,6 +301,27 @@ final class WorkspaceStore {
         root.appendingPathComponent("sessions", isDirectory: true)
             .appendingPathComponent(project.uuidString, isDirectory: true)
             .appendingPathComponent(conversation.uuidString, isDirectory: true)
+    }
+
+    func makeScratchProject(for thread: Conversation) throws -> Project {
+        let id = UUID()
+        let parent = root.resolvingSymlinksInPath().standardizedFileURL
+            .appendingPathComponent("scratch", isDirectory: true)
+        let files = FileManager.default
+        try files.createDirectory(at: parent, withIntermediateDirectories: true,
+                                  attributes: [.posixPermissions: 0o700])
+        guard parent.resolvingSymlinksInPath().path == parent.path else {
+            throw WorkspaceError("The scratch folder must be inside this workspace.")
+        }
+        let folder = parent.appendingPathComponent(id.uuidString, isDirectory: true)
+        try files.createDirectory(at: folder, withIntermediateDirectories: false,
+                                  attributes: [.posixPermissions: 0o700])
+        return Project(id: id, path: folder.path, title: "No project", conversations: [thread],
+                       selectedConversation: thread.id, createdAt: Date(), kind: .scratch)
+    }
+
+    func discardEmptyScratchFolder(_ project: Project) {
+        if project.isScratch { _ = Darwin.rmdir(project.path) }
     }
 
     func worktree(project: UUID, conversation: UUID) throws -> URL {

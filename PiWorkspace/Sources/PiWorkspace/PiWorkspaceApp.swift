@@ -107,6 +107,11 @@ private struct WorkspaceSidebarCommands: Commands {
             Button("New Thread") { actions?.newThread?() }
                 .keyboardShortcut("n")
                 .disabled(actions?.newThread == nil)
+            if model.canStartScratchThread {
+                Button("New Thread Without a Project", action: model.startScratchThread)
+                    .keyboardShortcut("n", modifiers: [.command, .option])
+                    .disabled(model.showingWelcome || model.operationsInProgress)
+            }
         }
         CommandGroup(after: .pasteboard) {
             Button("Search Threads") { actions?.searchThreads() }
