@@ -44,6 +44,8 @@ struct WorkspaceView: View {
     @State private var title = ""
     @State private var removingProject: Project?
     @State private var createdProject: UUID?
+    @State private var draftSettingsProject: Project?
+    @State private var draftCheckoutBranches: [String: String] = [:]
     @FocusState private var focusedComposer: UUID?
     @State private var focusAfterPicker = false
     @State private var targetingProjectDrop = false
@@ -149,6 +151,19 @@ struct WorkspaceView: View {
             if running { messageJump = nil }
         }
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
+        .sheet(item: $draftSettingsProject) { ModelSettingsView(model: model, projectID: $0.id) }
+        .task(id: model.repositoryRevision) {
+            var branches: [String: String] = [:]
+            let paths = Set(model.threadProjects.flatMap(\.conversations).compactMap { thread -> String? in
+                guard thread.isDraft == true, case let .worktree(path, _) = thread.workingLocation else { return nil }
+                return path
+            })
+            for path in paths {
+                if Task.isCancelled { return }
+                branches[path] = try? await GitWorkspace(path: path).currentBranch()
+            }
+            if !Task.isCancelled { draftCheckoutBranches = branches }
+        }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
         }
@@ -639,6 +654,65 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private func threadActions(_ thread: Conversation, project: Project) -> some View {
+        if thread.isDraft == true && !thread.archived {
+            draftActions(thread, project: project)
+        } else {
+            submittedThreadActions(thread, project: project)
+        }
+    }
+
+    @ViewBuilder
+    private func draftActions(_ thread: Conversation, project: Project) -> some View {
+        let path = thread.workingLocation.directory(in: project)
+        let branch = draftBranch(in: thread.workingLocation)
+        Menu("Copy") {
+            if !path.isEmpty {
+                Button("Path") { copyToPasteboard(path) }
+                    .accessibilityIdentifier("draft-copy-path")
+            }
+            if let branch, !branch.isEmpty {
+                Button("Branch") { copyToPasteboard(branch) }
+                    .accessibilityIdentifier("draft-copy-branch")
+            }
+        }
+        .accessibilityIdentifier("draft-copy")
+        .disabled(path.isEmpty && (branch ?? "").isEmpty)
+        if project.isScratch {
+            turnIntoProject(thread, project: project)
+        } else {
+            Button("Project settings") { draftSettingsProject = project }
+                .accessibilityIdentifier("draft-project-settings")
+                .disabled(model.operationsInProgress)
+        }
+        Divider()
+        Button("Discard draft", role: .destructive) { model.discardDraft(thread.id, in: project.id) }
+            .accessibilityIdentifier("discard-draft")
+            .disabled(model.operationsInProgress || !thread.canDiscardDraft)
+    }
+
+    private func draftBranch(in location: ThreadLocation) -> String? {
+        switch location {
+        case .project: nil
+        case let .newWorktree(_, base): base
+        case let .worktree(path, _): draftCheckoutBranches[path]
+        }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
+        Button("Turn into project") {
+            if model.convertScratchThread(thread.id, in: project.id) { createdProject = project.id }
+        }
+        .accessibilityIdentifier("turn-into-project")
+        .disabled(model.operationsInProgress)
+    }
+
+    @ViewBuilder
+    private func submittedThreadActions(_ thread: Conversation, project: Project) -> some View {
         if projectFilter.selection == [project.id] {
             Button("Show All Projects") { projectFilter.clear() }
         } else {
@@ -646,11 +720,7 @@ struct WorkspaceView: View {
         }
         Button("Rename Thread…") { beginRename(.conversation(thread.id, project: project.id), title: thread.title) }
         if project.isScratch {
-            Button("Turn into project") {
-                if model.convertScratchThread(thread.id, in: project.id) { createdProject = project.id }
-            }
-            .accessibilityIdentifier("turn-into-project")
-            .disabled(model.operationsInProgress)
+            turnIntoProject(thread, project: project)
         }
         if !thread.archived {
             Button(thread.threadShelf == .pinned ? "Unpin Thread" : "Pin Thread") {
@@ -1137,7 +1207,11 @@ struct WorkspaceView: View {
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            TextField("Ask Pi anything", text: $model.draft, axis: .vertical)
+            TextField("Ask Pi anything", text: Binding(
+                get: { model.conversation?.id == threadID ? model.draft : "" },
+                set: { model.editDraft($0, in: threadID) }
+            ), axis: .vertical)
+                .id(threadID)
                 .lineLimit(2...7)
                 .textFieldStyle(.plain)
                 .focused($focusedComposer, equals: threadID)
@@ -1150,7 +1224,7 @@ struct WorkspaceView: View {
                 .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
                 .accessibilityIdentifier("composer")
-                .disabled(model.preparingWorktree)
+                .disabled(model.preparingWorktree || model.conversation?.composerSubmission != nil)
             HStack(spacing: 13) {
                 if model.effectiveModel.supportsTools {
                     Menu {

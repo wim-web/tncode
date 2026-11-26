@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CryptoKit
 import Darwin
 import SwiftUI
@@ -9,6 +10,7 @@ struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @State private var launched = false
     private let launchProject: URL?
+    private let termination: AnyCancellable
 
     init() {
         signal(SIGPIPE, SIG_IGN)
@@ -42,9 +44,10 @@ struct PiWorkspaceApp: App {
                 exit(1)
             }
         }
-        _model = StateObject(wrappedValue: WorkspaceModel(
-            root: root, keychainService: keychainService
-        ))
+        let model = WorkspaceModel(root: root, keychainService: keychainService)
+        _model = StateObject(wrappedValue: model)
+        termination = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak model] _ in model?.terminate() }
     }
 
     var body: some Scene {
@@ -58,9 +61,6 @@ struct PiWorkspaceApp: App {
                 }
             }
                 .frame(minWidth: 800, minHeight: 540)
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    model.shutdown()
-                }
         }
         .defaultSize(width: 1080, height: 720)
         .commands {
@@ -123,11 +123,14 @@ struct ModelSettingsView: View {
     @State private var key = ""
     @State private var removeKey = false
     @State private var error: String?
+    private let projectID: UUID?
 
-    init(model: WorkspaceModel) {
+    init(model: WorkspaceModel, projectID: UUID? = nil) {
         self.model = model
-        _scope = State(initialValue: model.project.flatMap { $0.isScratch ? nil : .project($0.id) } ?? .workspace)
-        _settings = State(initialValue: model.effectiveModel)
+        let project = projectID.flatMap { id in model.projects.first { $0.id == id } } ?? model.project
+        self.projectID = project?.isScratch == false ? project?.id : nil
+        _scope = State(initialValue: self.projectID.map { .project($0) } ?? .workspace)
+        _settings = State(initialValue: project?.modelOverride ?? model.workspace.model)
     }
 
     private var scopedProject: Project? {
@@ -140,7 +143,7 @@ struct ModelSettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Model Settings").font(.title2.weight(.semibold))
             Form {
-                if let project = model.project, !project.isScratch {
+                if let project = model.projects.first(where: { $0.id == projectID }) {
                     Picker("Scope", selection: Binding(get: { scope }, set: selectScope)) {
                         Text("Workspace default").tag(ModelSettingsScope.workspace)
                         Text("Project: \(project.title)").tag(ModelSettingsScope.project(project.id))

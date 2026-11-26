@@ -17,7 +17,7 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 
 1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
 2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
-3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app opens a draft in the most recently active project. Select the previous conversation in the sidebar to continue it.
+3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app reopens the selected conversation if it has unfinished text. Select a conversation in the sidebar to continue it.
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
@@ -25,7 +25,7 @@ If a project folder moves, use **Relink Folder** in its context menu to point th
 
 Choose **Start without a project** on the empty home screen to work in a private folder. The thread menu's **Turn into project** action registers that folder and keeps the conversation history.
 
-Unsent composer text stays in memory while you switch threads. A worktree preparation failure saves the submitted prompt so you can retry after relaunch.
+Unsent composer text stays with its thread when you switch threads or quit. Right-click a draft in the sidebar to copy its working path or selected branch, open its project settings, or discard it. A worktree preparation failure saves the submitted prompt so you can retry after relaunch.
 
 Pi can read files with models that support tools. Choose **Supervised** to approve or decline individual shell and edit requests. **Shell and edits** enables those tools for the project. They use the permissions of your macOS user.
 

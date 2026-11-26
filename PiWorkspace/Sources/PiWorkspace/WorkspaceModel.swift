@@ -22,17 +22,54 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
-    @Published private var composerText: [UUID: String] = [:]
+    private var composerSave: Task<Void, Never>?
+    private var composerCredential: (account: String, key: String?)?
+
     var draft: String {
-        get { conversation.flatMap { composerText[$0.id] } ?? "" }
+        get { conversation?.composerText ?? "" }
         set {
             guard let id = conversation?.id else { return }
-            composerText[id] = newValue.isEmpty ? nil : newValue
+            editDraft(newValue, in: id)
         }
     }
 
+    func editDraft(_ text: String, in threadID: UUID) {
+        guard let conversation, conversation.id == threadID, !conversation.archived,
+              conversation.composerSubmission == nil, text != draft,
+              let p = selectedProjectIndex,
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return }
+        var text = text
+        if !text.isEmpty {
+            do {
+                let account = ((try? effectiveModel.validated()) ?? effectiveModel).account
+                if composerCredential?.account != account {
+                    composerCredential = (account, try readCredential(account))
+                }
+                if let key = composerCredential?.key, text.contains(key) {
+                    text = ""
+                    error = "Enter your API key in Model Settings."
+                }
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
+        }
+        workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
+        composerSave?.cancel()
+        composerSave = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(350)) }
+            catch { return }
+            self?.flushComposerEdits()
+        }
+    }
+
+    private func flushComposerEdits() {
+        guard composerSave != nil else { return }
+        save { _ in }
+    }
+
     func showsInSidebar(_ thread: Conversation) -> Bool {
-        thread.isDraft != true || composerText[thread.id] != nil
+        thread.isDraft != true || thread.composerText != nil
     }
 
     func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
@@ -50,12 +87,18 @@ final class WorkspaceModel: ObservableObject {
     let root: URL
     private var store: WorkspaceStore?
     private let vault: KeyVault
+    private let readCredential: (String) throws -> String?
+    private let makeProcess: (URL, String) throws -> PiProcess
     private var process: PiProcess?
     private var activeTurnID: UUID?
 
-    init(root: URL, keychainService: String) {
+    init(root: URL, keychainService: String, readCredential: ((String) throws -> String?)? = nil,
+         makeProcess: ((URL, String) throws -> PiProcess)? = nil) {
         self.root = root
-        vault = KeyVault(service: keychainService)
+        let vault = KeyVault(service: keychainService)
+        self.vault = vault
+        self.readCredential = readCredential ?? vault.read
+        self.makeProcess = makeProcess ?? PiProcess.init(config:cwd:)
         openWorkspace()
     }
 
@@ -90,11 +133,12 @@ final class WorkspaceModel: ObservableObject {
         project?.isScratch == false && canChangeWorkingDirectory
     }
     var canSwitchDraftProject: Bool {
-        conversation?.isDraft == true && conversation?.worktreeLaunch == nil && canChangeWorkingDirectory
+        conversation?.canDiscardDraft == true && canChangeWorkingDirectory
     }
     private var canChangeWorkingDirectory: Bool {
         guard !operationsInProgress,
-              let store, let project, let conversation, !conversation.archived else { return false }
+              let store, let project, let conversation, !conversation.archived,
+              conversation.composerSubmission == nil else { return false }
         if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout { return false }
         let history = store.history(project: project.id, conversation: conversation.id)
         do {
@@ -108,7 +152,7 @@ final class WorkspaceModel: ObservableObject {
     }
     var canSend: Bool {
         phase == .ready && !operationsInProgress && conversation?.archived == false &&
-        conversation?.worktreeLaunch == nil &&
+        conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil &&
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     var canRetryWorktree: Bool {
@@ -119,7 +163,7 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil else { return }
-        if project?.isScratch == true, let conversation {
+        if let conversation, project?.isScratch == true || conversation.composerText != nil {
             showArchive = conversation.archived
             connect()
             return
@@ -145,19 +189,31 @@ final class WorkspaceModel: ObservableObject {
         phase = .closed
     }
 
+    func terminate() {
+        flushComposerEdits()
+        shutdown()
+    }
+
     @discardableResult
     private func save(_ edit: (inout Workspace) -> Void) -> Bool {
-        guard let store else { return false }
         var updated = workspace
         edit(&updated)
         do {
-            try store.save(updated)
-            workspace = updated
+            try persist(updated)
             return true
         } catch {
             self.error = error.localizedDescription
             return false
         }
+    }
+
+    private func persist(_ updated: Workspace) throws {
+        guard let store else { throw WorkspaceError("Could not open the workspace.") }
+        try store.save(updated)
+        composerSave?.cancel()
+        composerSave = nil
+        composerCredential = nil
+        workspace = updated
     }
 
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
@@ -226,7 +282,6 @@ final class WorkspaceModel: ObservableObject {
             index = existing
         }
         let previous = project
-        let occupied = Set(composerText.keys)
         guard save({
             $0.welcomeCompleted = true
             if let index {
@@ -239,11 +294,11 @@ final class WorkspaceModel: ObservableObject {
                 $0.selectedProject = $0.projects[index].id
                 if startThread || $0.projects[index].selectedConversation == nil ||
                     (relinking == nil && previous?.id != $0.selectedProject) {
-                    $0.projects[index].selectDraft(occupied: occupied)
+                    $0.projects[index].selectDraft()
                 }
             } else {
                 var project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date())
-                project.selectDraft(occupied: occupied)
+                project.selectDraft()
                 $0.projects.append(project)
                 $0.selectedProject = project.id
             }
@@ -296,10 +351,9 @@ final class WorkspaceModel: ObservableObject {
             openFolder(startThread: true)
             return
         }
-        let occupied = Set(composerText.keys)
         guard save({
             $0.selectedProject = $0.projects[index].id
-            $0.projects[index].selectDraft(occupied: occupied)
+            $0.projects[index].selectDraft()
         }) else { return }
         showArchive = false
         connect()
@@ -400,6 +454,35 @@ final class WorkspaceModel: ObservableObject {
         connect()
     }
 
+    func discardDraft(_ id: UUID, in projectID: UUID) {
+        guard !operationsInProgress, let store,
+              let p = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id && $0.canDiscardDraft })
+        else { return }
+        let project = workspace.projects[p]
+        let isOpen = conversation?.id == id
+        guard save({
+            $0.projects[p].conversations.remove(at: t)
+            if $0.projects[p].conversations.isEmpty && project.isScratch {
+                $0.projects.remove(at: p)
+                if $0.selectedProject == projectID {
+                    $0.selectedProject = $0.projects.first { $0.detached != true }?.id
+                }
+            } else if project.selectedConversation == id {
+                if isOpen {
+                    $0.projects[p].selectDraft()
+                } else {
+                    $0.projects[p].selectedConversation = $0.projects[p].conversations.first { !$0.archived }?.id
+                }
+            }
+        }) else { return }
+        if project.isScratch && project.conversations.count == 1 { store.discardEmptyScratchFolder(project) }
+        if isOpen {
+            showArchive = conversation?.archived == true
+            connect()
+        }
+    }
+
     func renameConversation(_ id: UUID, in projectID: UUID, title: String) {
         guard let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }) else { return }
@@ -435,7 +518,7 @@ final class WorkspaceModel: ObservableObject {
 
     func applySettings(_ settings: ModelSettings, in scope: ModelSettingsScope,
                        newKey: String, removeKey: Bool) throws {
-        guard !operationsInProgress, let store else {
+        guard !operationsInProgress, store != nil else {
             throw WorkspaceError("Wait for the current operation to finish.")
         }
         let settings = try settings.validated()
@@ -453,8 +536,7 @@ final class WorkspaceModel: ObservableObject {
 
         let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let replacement = !removeKey && !key.isEmpty ? try KeyVault.validatedKey(key) : nil
-        try store.save(updated)
-        workspace = updated
+        try persist(updated)
         defer { connect() }
         do {
             if removeKey { try vault.remove(settings.account) }
@@ -465,15 +547,14 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func resetProjectModel(_ id: UUID) throws {
-        guard !operationsInProgress, let store else {
+        guard !operationsInProgress, store != nil else {
             throw WorkspaceError("Wait for the current operation to finish.")
         }
         let index = try modelSettingsProjectIndex(id)
         guard workspace.projects[index].modelOverride != nil else { return }
         var updated = workspace
         updated.projects[index].modelOverride = nil
-        try store.save(updated)
-        workspace = updated
+        try persist(updated)
         if project?.id == id { connect() }
     }
 
@@ -549,10 +630,13 @@ final class WorkspaceModel: ObservableObject {
                     $0.recordPrompt(text)
                     $0.worktreeLaunch = launch
                 }
-                draft = ""
                 startWorktreeLaunch(launch, in: conversation)
             } else {
-                try send(text, using: process)
+                let submission = Conversation.ComposerSubmission(
+                    previousUserMessageID: messages.last { $0.role == .user }?.id
+                )
+                try saveThread(conversation.id) { $0.composerSubmission = submission }
+                try beginTurn(text, using: process)
             }
         } catch {
             if conversation.workingLocation.needsWorktree {
@@ -576,7 +660,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func canUsePrompt(_ text: String, fromComposer: Bool = false) throws -> Bool {
         let settings = try effectiveModel.validated()
-        guard let key = try vault.read(settings.account) else {
+        guard let key = try readCredential(settings.account) else {
             showingSettings = true
             return false
         }
@@ -629,13 +713,10 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func send(_ text: String, using process: PiProcess) throws {
-        guard let id = conversation?.id else { throw WorkspaceError("Select a thread before sending.") }
-        try saveThread(id) { $0.recordPrompt(text) }
+    private func beginTurn(_ text: String, using process: PiProcess) throws {
         let turnID = UUID()
         try process.send(SendPrompt(turnID: turnID, text: text))
         activeTurnID = turnID
-        draft = ""
         partial = ""
         activity = ""
         error = nil
@@ -689,7 +770,7 @@ final class WorkspaceModel: ObservableObject {
         phase = .connecting
         do {
             let settings = try effectiveModel.validated()
-            let worker = try PiProcess(config: store.config, cwd: directory)
+            let worker = try makeProcess(store.config, directory)
             process = worker
             worker.onEvent = { [weak self, weak worker] event in
                 guard let self, let worker, self.process === worker else { return }
@@ -726,7 +807,7 @@ final class WorkspaceModel: ObservableObject {
             try saveThread(conversation.id) {
                 $0.worktreeLaunch = WorktreeLaunch(prompt: launch.prompt, stage: .sendPrompt)
             }
-            try send(launch.prompt, using: worker)
+            try beginTurn(launch.prompt, using: worker)
             preparingWorktree = false
         } catch {
             shutdown()
@@ -743,6 +824,18 @@ final class WorkspaceModel: ObservableObject {
         return true
     }
 
+    private func reconcileComposerSubmission(in history: [ChatMessage], ended: Bool = false) {
+        guard let conversation, let submission = conversation.composerSubmission else { return }
+        let text = conversation.composerText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let latest = history.last { $0.role == .user }
+        let accepted = latest.map { $0.id != submission.previousUserMessageID && $0.text == text } ?? false
+        guard accepted || ended else { return }
+        try? saveThread(conversation.id) {
+            if accepted, let text { $0.recordPrompt(text) }
+            else { $0.composerSubmission = nil }
+        }
+    }
+
     func dismissUnconfirmedWorktreePrompt() {
         guard phase == .ready, !operationsInProgress,
               let conversation, !conversation.archived,
@@ -755,7 +848,7 @@ final class WorkspaceModel: ObservableObject {
         case let .credential(id, read):
             var result = CredentialResult(requestID: id)
             do {
-                if read { result.key = try vault.read(account) }
+                if read { result.key = try readCredential(account) }
                 else { result.exists = try vault.exists(account) }
             } catch {
                 result.error = true
@@ -768,12 +861,14 @@ final class WorkspaceModel: ObservableObject {
         case let .ready(history):
             messages = history
             phase = .ready
+            reconcileComposerSubmission(in: history, ended: true)
             if !confirmWorktreePrompt(in: history), preparingWorktree {
                 submitWorktreePrompt(using: worker)
             }
         case let .history(history):
             messages = history
             partial = ""
+            reconcileComposerSubmission(in: history)
             confirmWorktreePrompt(in: history)
         case let .partial(text):
             partial = text
@@ -793,6 +888,7 @@ final class WorkspaceModel: ObservableObject {
             repositoryRevision += 1
             phase = .ready
             self.error = error
+            reconcileComposerSubmission(in: history, ended: true)
             if !confirmWorktreePrompt(in: history), conversation?.worktreeLaunch?.awaitingHistory == true {
                 self.error = nil
                 failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")

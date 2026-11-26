@@ -102,18 +102,22 @@ struct GitWorkspace: Sendable {
 
     func state() async throws -> GitRepositoryState {
         let files = try await changes()
-        let head = try await run(["symbolic-ref", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
+        let branch = try await currentBranch()
         let refs = try await run(["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/"])
-        let headRef = try Self.decode(head.output.bytes, command: "symbolic-ref")
-        let localBranchPrefix = "refs/heads/"
-        let branch = headRef.hasPrefix(localBranchPrefix)
-            ? String(decoding: headRef.utf8.dropFirst(localBranchPrefix.utf8.count).dropLast(), as: UTF8.self)
-            : nil
         let branches = try Self.decode(refs.output.bytes, command: "for-each-ref")
             .split(separator: "\n")
             .map(String.init)
 
         return GitRepositoryState(branch: branch, branches: branches, files: files)
+    }
+
+    func currentBranch() async throws -> String? {
+        let head = try await run(["symbolic-ref", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
+        let headRef = try Self.decode(head.output.bytes, command: "symbolic-ref")
+        let localBranchPrefix = "refs/heads/"
+        return headRef.hasPrefix(localBranchPrefix)
+            ? String(decoding: headRef.utf8.dropFirst(localBranchPrefix.utf8.count).dropLast(), as: UTF8.self)
+            : nil
     }
 
     func worktrees() async throws -> [GitCheckout] {

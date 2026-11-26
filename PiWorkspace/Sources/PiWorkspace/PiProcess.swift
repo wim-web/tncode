@@ -68,13 +68,21 @@ final class PiProcess {
     var onEvent: ((PiEvent) -> Void)?
     var onClose: (() -> Void)?
 
-    init(config: URL, cwd: String) throws {
+    convenience init(config: URL, cwd: String) throws {
         guard let resources = Bundle.main.resourceURL else { throw WorkspaceError("App resources are missing.") }
         let sidecar = resources.appendingPathComponent("Sidecar", isDirectory: true)
+        try self.init(
+            config: config, cwd: cwd,
+            executable: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/node"),
+            arguments: [sidecar.appendingPathComponent("worker.mjs").path]
+        )
+    }
+
+    init(config: URL, cwd: String, executable: URL, arguments: [String]) throws {
         try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        child.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/node")
-        child.arguments = [sidecar.appendingPathComponent("worker.mjs").path]
+        child.executableURL = executable
+        child.arguments = arguments
         child.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         child.environment = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",

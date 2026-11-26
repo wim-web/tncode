@@ -137,6 +137,10 @@ struct WorktreeLaunch: Codable {
 }
 
 struct Conversation: Codable, Identifiable {
+    struct ComposerSubmission: Codable {
+        let previousUserMessageID: String?
+    }
+
     let id: UUID
     var title: String
     var archived = false
@@ -145,12 +149,19 @@ struct Conversation: Codable, Identifiable {
     var shelf: ThreadShelf?
     var isDraft: Bool?
     var worktreeLaunch: WorktreeLaunch?
+    var composerText: String?
+    var composerSubmission: ComposerSubmission?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
+    var canDiscardDraft: Bool {
+        isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil
+    }
 
     mutating func recordPrompt(_ text: String) {
         isDraft = false
+        composerText = nil
+        composerSubmission = nil
         lastActiveAt = Date()
         if threadShelf == .settled { shelf = .active }
         if ["New thread", "New conversation"].contains(title) {
@@ -221,9 +232,9 @@ struct Project: Codable, Identifiable {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
     }
 
-    mutating func selectDraft(occupied: Set<UUID>) {
+    mutating func selectDraft() {
         if let empty = conversations.first(where: {
-            $0.isDraft == true && !$0.archived && !occupied.contains($0.id)
+            $0.canDiscardDraft && $0.composerText == nil
         }) {
             selectedConversation = empty.id
             return
