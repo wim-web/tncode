@@ -8,6 +8,8 @@ struct WorkspaceFilesView: View {
     let pasteboard: NSPasteboard
     let activeLocation: () -> WorkspaceFilesLocation?
     let close: () -> Void
+    let canAddToComposer: Bool
+    let addToComposer: (WorkspaceFileTarget) throws -> Void
     @Binding var selection: String?
 
     @State private var tree: Result<WorkspaceFileTree, Error>?
@@ -17,6 +19,7 @@ struct WorkspaceFilesView: View {
     @State private var refreshing = 0
     @State private var showingExplorer = true
     @State private var recovery: WorkspaceFileSaveSession?
+    @State private var mentionError: String?
 
     static func saveFocusedFile(in window: NSWindow) -> Bool {
         guard let editor = window.firstResponder as? NSTextView,
@@ -50,6 +53,13 @@ struct WorkspaceFilesView: View {
             .padding(.horizontal, 12)
             .frame(height: 34)
             Divider()
+            if let mentionError {
+                Text(mentionError)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .accessibilityIdentifier("files-mention-error")
+            }
             GeometryReader { geometry in
                 if let target {
                     let twoColumns = geometry.size.width >= 416
@@ -68,6 +78,7 @@ struct WorkspaceFilesView: View {
                             showingExplorer: $showingExplorer, goToFolder: goToFolder,
                             folderEntries: { parent in entries.filter { $0.parent == parent && $0.kind != .link } },
                             openFile: openFile,
+                            mentionActions: mentionActions(for: target, fromPreview: true),
                             close: { selection = nil }
                         )
                         .id(target)
@@ -95,6 +106,7 @@ struct WorkspaceFilesView: View {
             Text("The unsaved edits belong to \(session.target.fullPath). Discarding them removes the draft.")
         }
         .task(id: refreshing) {
+            mentionError = nil
             saves.recoverMovedDrafts(in: location)
             let directory = location.directory
             do {
@@ -255,6 +267,39 @@ struct WorkspaceFilesView: View {
         .help(entry.kind == .link ? "Symbolic link" : entry.path)
         .accessibilityAddTraits(selection == entry.path ? .isSelected : [])
         .accessibilityIdentifier("files-row-" + entry.path)
+        .contextMenu {
+            if entry.kind == .file {
+                mentionActions(for: WorkspaceFileTarget(location: location, path: entry.path), fromPreview: false)
+            }
+        }
+    }
+
+    private func mentionActions(for file: WorkspaceFileTarget, fromPreview: Bool) -> FileMentionMenuItems {
+        FileMentionMenuItems(idPrefix: fromPreview ? "files-preview" : "files-tree", canAdd: canAddToComposer,
+                             copy: {
+            performMentionAction(for: file, fromPreview: fromPreview) {
+                let mention = try file.composerMention()
+                pasteboard.clearContents()
+                guard pasteboard.setString(mention, forType: .string) else {
+                    throw WorkspaceError("Failed to copy file mention.")
+                }
+            }
+        }, add: {
+            performMentionAction(for: file, fromPreview: fromPreview) {
+                try addToComposer(file)
+            }
+        })
+    }
+
+    private func performMentionAction(for file: WorkspaceFileTarget, fromPreview: Bool,
+                                      _ action: () throws -> Void) {
+        guard activeLocation() == file.location, !fromPreview || target == file else { return }
+        do {
+            try action()
+            mentionError = nil
+        } catch {
+            mentionError = error.localizedDescription
+        }
     }
 
     private func goToFolder(_ path: String) {
@@ -268,6 +313,21 @@ struct WorkspaceFilesView: View {
     }
 }
 
+private struct FileMentionMenuItems: View {
+    let idPrefix: String
+    let canAdd: Bool
+    let copy: () -> Void
+    let add: () -> Void
+
+    var body: some View {
+        Button("Copy file mention", action: copy)
+            .accessibilityIdentifier(idPrefix + "-copy-mention")
+        Button("Add to composer", action: add)
+            .disabled(!canAdd)
+            .accessibilityIdentifier(idPrefix + "-add-to-composer")
+    }
+}
+
 private struct WorkspaceFilePreviewView: View {
     let target: WorkspaceFileTarget
     let saves: WorkspaceFileSaves
@@ -278,6 +338,7 @@ private struct WorkspaceFilePreviewView: View {
     let goToFolder: (String) -> Void
     let folderEntries: (String) -> [WorkspaceFileEntry]
     let openFile: (String) -> Void
+    let mentionActions: FileMentionMenuItems
     let close: () -> Void
 
     @State private var session: WorkspaceFileSaveSession?
@@ -429,6 +490,7 @@ private struct WorkspaceFilePreviewView: View {
         Menu {
             Button("Copy Path") { copy(target.path) }
                 .accessibilityIdentifier("files-copy-path")
+            mentionActions
             if let text = draft?.text ?? session?.diskText?.text {
                 Button("Copy Contents") { copy(text) }
                     .accessibilityIdentifier("files-copy-contents")

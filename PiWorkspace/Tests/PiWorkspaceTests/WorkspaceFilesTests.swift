@@ -9,6 +9,74 @@ import XCTest
 @testable import PiWorkspace
 
 final class WorkspaceFilesTests: XCTestCase {
+    @MainActor
+    func testFileMentionsStayWithTheSelectedCheckoutAndQueueEdit() throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try folder("Project Checkout", in: root)
+        let linked = root.appendingPathComponent("Linked Checkout", isDirectory: true)
+        let name = "Review [v2] #%.md"
+        let path = "Study notes/" + name
+        let notes = try folder("Study notes", in: repo)
+        try write("project", name, in: notes)
+        _ = try git(repo, ["init", "-q", "-b", "main"])
+        _ = try git(repo, ["add", "--", path])
+        _ = try git(repo, ["commit", "-qm", "File mention fixture"])
+        _ = try git(repo, ["worktree", "add", "--detach", "--", linked.path, "HEAD"])
+        try write("linked", name, in: linked.appendingPathComponent("Study notes"))
+
+        let queued = QueuedMessage(text: "Queued draft\n")
+        let local = Conversation(id: UUID(), title: "Local", composerText: "Local draft")
+        let worktree = Conversation(id: UUID(), title: "Linked", location: .worktree(path: linked.path, base: "main"),
+                                    composerText: "Keep this draft 🌱", queuedMessages: [queued])
+        let project = Project(id: UUID(), path: repo.path, title: "Fixture",
+                              conversations: [local, worktree], selectedConversation: worktree.id)
+        let store = try folder("store", in: root)
+        try WorkspaceStore(root: store).save(Workspace(projects: [project], selectedProject: project.id, welcomeCompleted: true))
+        let model = WorkspaceModel(root: store, keychainService: UUID().uuidString, readCredential: { _ in "fixture-key" }) { _, _ in
+            throw WorkspaceError("This test edits drafts without Pi.")
+        }
+        defer { model.terminate() }
+        let worktreeLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: worktree, project: project))
+        let target = WorkspaceFileTarget(location: worktreeLocation, path: path)
+        let mention = #"[Review \[v2\] #%.md](./Study%20notes/Review%20%5Bv2%5D%20%23%25.md)"#
+        XCTAssertEqual(try target.composerMention(), mention)
+
+        let localLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: local, project: project))
+        XCTAssertThrowsError(try model.addFileMention(.init(location: localLocation, path: path)))
+        XCTAssertEqual(model.draft, "Keep this draft 🌱")
+        // A stale tree row must not fall back to the same file path in the project checkout.
+        try FileManager.default.removeItem(atPath: target.fullPath)
+        XCTAssertThrowsError(try model.addFileMention(target))
+        try write("linked again", name, in: linked.appendingPathComponent("Study notes"))
+
+        XCTAssertTrue(try model.addFileMention(target))
+        let draft = "Keep this draft 🌱 \(mention) "
+        XCTAssertEqual(model.draft, draft)
+        model.editQueuedMessage(queued.id)
+        XCTAssertTrue(try model.addFileMention(target))
+        XCTAssertEqual(model.draft, queued.text + mention + " ")
+        model.cancelQueuedMessageEdit()
+        XCTAssertEqual(model.queuedMessages, [queued])
+        XCTAssertEqual(model.draft, draft)
+
+        model.editQueuedMessage(queued.id)
+        XCTAssertTrue(try model.addFileMention(target))
+        model.updateQueuedMessage()
+        XCTAssertEqual(model.queuedMessages.map(\.id), [queued.id])
+        XCTAssertEqual(model.queuedMessages.map(\.text), [queued.text + mention])
+        XCTAssertEqual(model.draft, draft)
+        XCTAssertTrue(model.composerAttachments.isEmpty)
+
+        let rejectedName = "fixture-key.txt"
+        try write("key-like filename", rejectedName, in: linked)
+        XCTAssertFalse(try model.addFileMention(.init(location: worktreeLocation, path: rejectedName)))
+        XCTAssertEqual(model.draft, draft)
+        model.selectConversation(local.id, in: project.id)
+        XCTAssertThrowsError(try model.addFileMention(target))
+        XCTAssertEqual(model.draft, "Local draft")
+    }
+
     func testTreeSearchAndRefreshStayInsideTheSelectedDirectory() throws {
         try withFixture { root in
             let checkout = try folder("checkout", in: root)
@@ -1067,7 +1135,8 @@ private struct FilesPanelFixtureView: View {
 
     var body: some View {
         WorkspaceFilesView(location: fixture.location, saves: fixture.saves, pasteboard: .general,
-                           activeLocation: { fixture.location }, close: {}, selection: $fixture.selection)
+                           activeLocation: { fixture.location }, close: {},
+                           canAddToComposer: false, addToComposer: { _ in }, selection: $fixture.selection)
             .id(fixture.location)
     }
 }

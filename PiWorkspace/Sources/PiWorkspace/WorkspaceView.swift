@@ -1374,6 +1374,13 @@ struct WorkspaceView: View {
             WorkspaceFilesView(location: location, saves: model.fileSaves, pasteboard: workspacePasteboard,
                                activeLocation: { showingFiles.contains(thread.id) ? selectedFilesLocation : nil },
                                close: { showingFiles.remove(thread.id) },
+                               canAddToComposer: model.canAddFileMention(from: location),
+                               addToComposer: { target in
+                                   if try model.addFileMention(target) {
+                                       showingComposerStash = false
+                                       focusedComposer = target.location.threadID
+                                   }
+                               },
                                selection: Binding(get: { selectedFiles[location] },
                                                   set: { selectedFiles[location] = $0 }))
                 .id(location)

@@ -124,11 +124,12 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    func editDraft(_ text: String, in threadID: UUID) {
+    @discardableResult
+    func editDraft(_ text: String, in threadID: UUID, preserveDraftOnCredentialMatch: Bool = false) -> Bool {
         guard let conversation, conversation.id == threadID, !conversation.archived,
               conversation.worktreeLaunch == nil, conversation.composerSubmission == nil, text != draft,
               let p = selectedProjectIndex,
-              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return }
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return false }
         var text = text
         if !text.isEmpty {
             do {
@@ -137,18 +138,19 @@ final class WorkspaceModel: ObservableObject {
                     composerCredential = (account, try readCredential(account))
                 }
                 if let key = composerCredential?.key, text.contains(key) {
-                    text = ""
                     error = "Enter your API key in Model Settings."
+                    guard !preserveDraftOnCredentialMatch else { return false }
+                    text = ""
                 }
             } catch {
                 self.error = error.localizedDescription
-                return
+                return false
             }
         }
         composerRevision += 1
         if queueEdit != nil {
             queueEdit?.text = text
-            return
+            return true
         }
         workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
         composerDirty = true
@@ -158,6 +160,23 @@ final class WorkspaceModel: ObservableObject {
             catch { return }
             self?.savePendingComposer()
         }
+        return true
+    }
+
+    func canAddFileMention(from location: WorkspaceFilesLocation) -> Bool {
+        guard canUseQueue, pendingAgentQuestion == nil, let conversation, let project else { return false }
+        return WorkspaceFilesLocation(thread: conversation, project: project) == location
+    }
+
+    func addFileMention(_ target: WorkspaceFileTarget) throws -> Bool {
+        guard canAddFileMention(from: target.location) else {
+            throw WorkspaceError("The chat isn’t ready to accept input right now.")
+        }
+        let mention = try target.composerMention()
+        let current = draft
+        let boundary = current.last?.isWhitespace == false ? " " : ""
+        return editDraft(current + boundary + mention + " ", in: target.location.threadID,
+                         preserveDraftOnCredentialMatch: true)
     }
 
     @discardableResult
