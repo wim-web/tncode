@@ -7,6 +7,7 @@ import SwiftUI
 @main
 @MainActor
 struct PiWorkspaceApp: App {
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var model: WorkspaceModel
     @State private var launched = false
     @State private var showingBrowserSettings = false
@@ -76,6 +77,10 @@ struct PiWorkspaceApp: App {
         .defaultSize(width: 1080, height: 720)
         .commands {
             WorkspaceSidebarCommands(model: model)
+            CommandGroup(replacing: .appInfo) {
+                Button("About \(AboutInfo().name)") { openWindow(id: AboutView.windowID) }
+                    .accessibilityIdentifier("about-menu")
+            }
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
@@ -90,6 +95,13 @@ struct PiWorkspaceApp: App {
                               || model.showingSettings || model.projectPicker != nil)
             }
         }
+
+        Window("About \(AboutInfo().name)", id: AboutView.windowID) {
+            AboutView()
+        }
+        .defaultSize(width: 760, height: 520)
+        .windowResizability(.contentMinSize)
+        .commandsRemoved()
     }
 
     private func launchWorkspace() {
@@ -132,6 +144,7 @@ private struct WorkspaceSidebarCommands: Commands {
 struct ModelSettingsView: View {
     @ObservedObject var model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     @State private var scope: ModelSettingsScope
     @State private var settings: ModelSettings
     @State private var key = ""
@@ -155,7 +168,12 @@ struct ModelSettingsView: View {
     var body: some View {
         let hasKey = model.hasKey(for: settings)
         VStack(alignment: .leading, spacing: 18) {
-            Text("Model Settings").font(.title2.weight(.semibold))
+            HStack {
+                Text("Model Settings").font(.title2.weight(.semibold))
+                Spacer()
+                Button("About") { openWindow(id: AboutView.windowID) }
+                    .accessibilityIdentifier("settings-about")
+            }
             Form {
                 if let project = model.projects.first(where: { $0.id == projectID }) {
                     Picker("Scope", selection: Binding(get: { scope }, set: selectScope)) {
