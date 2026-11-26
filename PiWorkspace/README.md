@@ -142,6 +142,7 @@ From this directory, run the Swift verifier with the mock GitHub CLI. It creates
 mkdir -p .build
 swiftc -module-cache-path .build/pr-test-cache \
     Sources/PiWorkspace/GitWorkspace.swift Sources/PiWorkspace/GitHubPullRequests.swift \
+    Sources/PiWorkspace/GitHubPullRequestFiles.swift \
     Sources/PiWorkspace/GitHubBrowse.swift \
     scripts/verify-github-pull-requests.swift -o .build/verify-github-pull-requests
 .build/verify-github-pull-requests "$PWD/scripts/fixtures/github-read"

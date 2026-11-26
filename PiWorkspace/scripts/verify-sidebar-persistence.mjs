@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { verifyCheckLog } from "./verify-panels.mjs";
+import { verifyCheckLog, verifyPRCode } from "./verify-panels.mjs";
 
 export async function verifySidebarPersistence(driver, { root, git, launch, quit, record, stateFile, logFile }) {
   const { until, press, dismiss, visible, value, tree, click } = driver;
@@ -67,8 +67,10 @@ export async function verifySidebarPersistence(driver, { root, git, launch, quit
   press("pr-row-42");
   await until(() => visible("pr-check-log-1"), "selected PR checks");
   await verifyCheckLog(driver, stateFile, logFile, gamma.path);
+  await verifyPRCode(driver, stateFile, logFile, gamma.path);
   dismiss("pr-close");
   await until(() => current() && !has("pr-close"), "return from failed job logs to Gamma's draft");
   await quit();
   record("PR #42's second check reported a denied Actions log. Retry displayed ONLY-TESTS-61002 from job 61002 in Gamma's checkout. Back returned to its checks, and closing the panel restored the draft.");
+  record("Code loaded PR #42's forge patch, the rename's old path and separate patch, and no prior text for a binary file. Paging loaded file 31. A changed head cleared the old patch until Refresh loaded seven current files.");
 }

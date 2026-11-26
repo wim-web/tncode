@@ -792,7 +792,7 @@ private func run(_ arguments: [String]) throws {
     case .openThreadLink(let link):
         let args = try processArguments(pid)
         guard let running = NSRunningApplication(processIdentifier: pid), running.bundleIdentifier == "dev.piworkspace.app",
-              let bundle = running.bundleURL, bundle.deletingLastPathComponent().lastPathComponent.hasPrefix("pi-link-test-app-"),
+              let bundle = running.bundleURL, bundle.deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-test-app-"),
               let option = args.firstIndex(of: "--workspace"), args.indices.contains(option + 1),
               URL(fileURLWithPath: args[option + 1]).deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-verification-"),
               let url = URL(string: link), url.scheme == "pi-workspace", url.host == "thread" else {

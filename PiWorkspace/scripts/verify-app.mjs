@@ -25,10 +25,11 @@ import { verifyWorktreeBases } from "./verify-worktree-bases.mjs";
 import { verifyThreadActions } from "./verify-thread-actions.mjs";
 import { verifySidebarPersistence } from "./verify-sidebar-persistence.mjs";
 import { verifyChatImages } from "./verify-chat-images.mjs";
+import { verifyProjectSettings } from "./verify-project-settings.mjs";
 
 const packagedApp = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 let app = packagedApp;
-let linkTestBundleDirectory;
+let testBundleDirectory;
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), /accessibility=true keyboard=true/);
@@ -1128,7 +1129,17 @@ try {
   const threadActionsOnly = process.argv.includes("--thread-actions-only");
   const sidebarOnly = process.argv.includes("--sidebar-and-checks-only");
   const terminalOnly = process.argv.includes("--terminal-only");
-  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly || threadActionsOnly || sidebarOnly || imagesOnly || terminalOnly;
+  const projectSettingsOnly = process.argv.includes("--project-settings-only");
+  const focused = [
+    usageOnly, controlsOnly, conversationOnly, projectFlowsOnly, threadActionsOnly,
+    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly,
+  ].some(Boolean);
+  if (threadActionsOnly || Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS) > 0) {
+    testBundleDirectory = mkdtempSync("/private/tmp/pi-workspace-test-app-");
+    app = join(testBundleDirectory, "Pi Workspace.app");
+    execFileSync("/bin/cp", ["-cR", packagedApp, app]);
+    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+  }
   if (focused) {
     record("Verification folder: " + reportDirectory);
     record("Isolated fixture: " + directory);
@@ -1154,6 +1165,9 @@ try {
     });
     await quit();
     record("The new Git branch started at the selected alternate commit. Choosing a branch already in use moved the same draft to its linked checkout and preserved the original checkout and index.");
+  }
+  if (projectSettingsOnly) {
+    await verifyProjectSettings(panelDriver, { root: join(directory, "project-settings"), git, launch, quit, record });
   }
   if (terminalOnly) {
     makeRepository();
@@ -1183,10 +1197,6 @@ try {
       stateFile: forgeState, logFile: forgeLog });
   }
   if (threadActionsOnly) {
-    linkTestBundleDirectory = mkdtempSync("/private/tmp/pi-link-test-app-");
-    app = join(linkTestBundleDirectory, "Pi Workspace.app");
-    execFileSync("/bin/cp", ["-cR", packagedApp, app]);
-    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
     await verifyThreadActions(panelDriver, { root: join(directory, "thread-actions"), app, git, launch, quit, record });
     assert.equal(inspectFiles().length, 3);
   }
@@ -1240,7 +1250,7 @@ try {
   server.closeAllConnections();
   server.close();
   execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
-  if (linkTestBundleDirectory && !appPID) rmSync(linkTestBundleDirectory, { recursive: true, force: true });
+  if (testBundleDirectory && !appPID) rmSync(testBundleDirectory, { recursive: true, force: true });
   const preferenceChecks = [[usageWorkspace, "browser", "usagePeriod"]];
   if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
   for (const [root, feature, key] of preferenceChecks) {

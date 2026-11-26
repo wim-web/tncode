@@ -11,7 +11,7 @@ export async function verifyProjectSettings(driver, { root, git, launch, quit, r
     const path = join(root, folder, "Project");
     mkdirSync(path, { recursive: true });
     const draft = { id: uuid(), title: name, isDraft: true, archived: false, composerText };
-    return { id: uuid(), title: "Project", path, modelOverride: model(name),
+    return { id: uuid(), title: "Project", path, allowEdits: false, modelOverride: model(name),
       selectedConversation: draft.id, conversations: [draft] };
   };
   const alpha = makeProject("first", "first-model", "Other unsent draft");

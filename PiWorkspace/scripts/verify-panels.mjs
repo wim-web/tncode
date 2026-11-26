@@ -192,6 +192,34 @@ export async function verifyCheckLog({ press, dismiss, visible, tree, until }, s
   await until(() => visible("pr-check-log-1") && !tree().includes('id="pr-check-log-text"'), "back to the PR checks");
 }
 
+export async function verifyPRCode({ press, visible, value, tree, until }, stateFile, logFile, checkout) {
+  writeFileSync(stateFile, "files-denied\n");
+  press("pr-tab-code");
+  await until(() => visible("pr-files-retry") && value("pr-files-error").includes("denied access"), "denied PR file list");
+  writeFileSync(stateFile, "files-many\n");
+  press("pr-files-retry");
+  await until(() => visible("pr-file-row-0"), "PR files after retry");
+  press("pr-file-row-0");
+  await until(() => value("pr-file-diff-text").includes("+FORGE-CHECKOUT"), "forge patch for the selected path");
+  press("pr-file-row-1");
+  await until(() => value("pr-file-diff-previous-path").includes("docs/old guide.md") &&
+                    value("pr-file-diff-text").includes("+FORGE-GUIDE"), "renamed file and its own patch");
+  press("pr-file-row-2");
+  await until(() => visible("pr-file-diff-unavailable") && !tree().includes('id="pr-file-diff-text"'), "binary selection clears the previous patch");
+  press("pr-files-load-more");
+  await until(() => value("pr-files-count").includes("31 of 31"), "second page of PR files");
+  writeFileSync(stateFile, "files-stale\n");
+  press("pr-file-row-0");
+  await until(() => visible("pr-files-refresh") && !tree().includes('id="pr-file-diff-text"'), "changed head clears the selected patch");
+  press("pr-files-refresh");
+  await until(() => value("pr-files-count").includes("7 of 7"), "current head file list after refresh");
+  const reads = readFileSync(logFile, "utf8").split("\n").filter(s => s.includes("/pulls/42/files?"));
+  assert(reads.length >= 2 && reads.every(s => s.startsWith(realpathSync(checkout) + "|")));
+  writeFileSync(stateFile, "initial\n");
+  press("pr-tab-summary");
+  await until(() => value("pr-detail-title").includes("#42"), "the same PR summary");
+}
+
 export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
   const { press, visible, tree, until, setField, pick } = driver;
   const checkoutPrefix = realpathSync(checkout) + "|";
@@ -200,6 +228,7 @@ export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
   press("pr-row-42");
   await until(() => tree().includes("fixture-branch") && tree().includes('value="Failure"'), "initial pull request head and failing check");
   await verifyCheckLog(driver, stateFile, logFile, checkout);
+  await verifyPRCode(driver, stateFile, logFile, checkout);
   writeFileSync(stateFile, "updated\n");
   press("pr-refresh");
   await until(() => tree().includes("new-head") && tree().includes("Update checkout (updated)") && tree().includes('value="Success"'),
