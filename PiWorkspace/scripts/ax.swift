@@ -12,7 +12,7 @@ Usage:
   ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
   ax menu-command PID CHARACTER
-  ax menu-item PID TITLE
+  ax menu-item PID TITLE [--no-activate]
   ax pick PID POPUP_IDENTIFIER OPTION_TITLE
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
@@ -33,7 +33,7 @@ Usage:
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
   ax key PID KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
-  ax key-focused PID IDENTIFIER KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
+  ax key-focused PID IDENTIFIER KEYCODE [cmd] [shift] [opt] [ctrl] [fn] [--no-activate]
 
 dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
@@ -697,7 +697,10 @@ private func run(_ arguments: [String]) throws {
     guard arguments.count >= 2, let pid = pid_t(arguments[1]), pid > 0 else {
         throw Failure("A positive PID is required. See ax --help.")
     }
-    let operation = try Operation(arguments[0], arguments.dropFirst(2))
+    var operands = arguments.dropFirst(2)
+    let noActivate = ["menu-item", "key-focused"].contains(arguments[0]) && operands.last == "--no-activate"
+    if noActivate { operands = operands.dropLast() }
+    let operation = try Operation(arguments[0], operands)
     guard kill(pid, 0) == 0 else { throw Failure("The specified PID is unavailable.") }
 
     if case let .key(code, flags) = operation {
@@ -740,7 +743,7 @@ private func run(_ arguments: [String]) throws {
         }
         var matches = enabledItems()
         if matches.count != 1 {
-            try activateForInput(app, pid: pid)
+            if !noActivate { try activateForInput(app, pid: pid) }
             let deadline = ProcessInfo.processInfo.systemUptime + 1
             repeat {
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.04))
@@ -820,7 +823,7 @@ private func run(_ arguments: [String]) throws {
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .keyFocused(let id, let code, let flags):
         try requireKeyboardAccess()
-        try activateForInput(app, pid: pid)
+        if !noActivate { try activateForInput(app, pid: pid) }
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
         let characters: [CGKeyCode: UInt16] = [0: 0x61, 2: 0x64, 3: 0x66, 6: 0x7A, 7: 0x78, 8: 0x63, 9: 0x76, 13: 0x77,
@@ -828,7 +831,7 @@ private func run(_ arguments: [String]) throws {
                                                30: 0x5D, 32: 0x75, 33: 0x5B, 35: 0x70, 37: 0x6C,
                                                36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
                                                 123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
-        try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: true)
+        try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: !noActivate)
     case .webFrame(let id):
         let matches = Tree(root: app).map(\.element).filter { attribute("AXDOMIdentifier", on: $0) as? String == id }
         guard matches.count == 1, let node = matches.first else { throw Failure("Expected one DOM element with this identifier.") }

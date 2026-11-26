@@ -57,11 +57,11 @@ async function until(check, message) {
 const focus = () => drive("type", ["composer", "--replace"], "");
 const focused = () => /focused=true/.test(drive("get", ["composer"]));
 function commandKey(code) {
-  drive("key-focused", ["composer", String(code), "cmd"]);
+  drive("key-focused", ["composer", String(code), "cmd", "--no-activate"]);
 }
 function menu(title) {
   assert(focused(), "The composer must own focus before Edit > " + title);
-  drive("menu-item", [title]);
+  drive("menu-item", [title, "--no-activate"]);
 }
 let savedIDs = [];
 async function expectDraft(text, attachments, message) {
