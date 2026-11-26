@@ -1154,6 +1154,15 @@ struct WorkspaceView: View {
 
     private func composer(_ project: Project, _ thread: Conversation) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let saveError = model.composerSaveError {
+                HStack {
+                    Text("Draft not saved. \(saveError)").foregroundStyle(.red)
+                    Spacer()
+                    Button("Retry Saving") { model.savePendingComposer() }
+                        .accessibilityIdentifier("retry-saving-draft")
+                }
+                .font(.callout)
+            }
             if let error = model.error {
                 HStack {
                     Text(error).foregroundStyle(.red)

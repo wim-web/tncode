@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import CryptoKit
 import Darwin
 import SwiftUI
@@ -7,6 +6,7 @@ import SwiftUI
 @main
 @MainActor
 struct PiWorkspaceApp: App {
+    @NSApplicationDelegateAdaptor(WorkspaceApplicationDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
     @StateObject private var model: WorkspaceModel
     @StateObject private var appearance: AppearanceSettings
@@ -16,7 +16,6 @@ struct PiWorkspaceApp: App {
     private let browserDefaults: UserDefaults
     private let draftPasteboard: NSPasteboard
     private let launchProject: URL?
-    private let termination: AnyCancellable
 
     init() {
         signal(SIGPIPE, SIG_IGN)
@@ -61,8 +60,7 @@ struct PiWorkspaceApp: App {
         _model = StateObject(wrappedValue: model)
         let appearanceDefaults = override == nil ? .standard : UserDefaults(suiteName: "dev.piworkspace.appearance.\(scope)")
         _appearance = StateObject(wrappedValue: AppearanceSettings(defaults: appearanceDefaults))
-        termination = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
-            .sink { [weak model] _ in model?.terminate() }
+        appDelegate.model = model
     }
 
     var body: some Scene {
@@ -77,6 +75,14 @@ struct PiWorkspaceApp: App {
             }
                 .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView(defaults: browserDefaults) }
                 .sheet(isPresented: $showingAppearanceSettings) { AppearanceSettingsView(settings: appearance) }
+                .alert("Your draft couldn’t be saved", isPresented: $model.showingQuitSaveFailure) {
+                    Button("Keep Editing", role: .cancel) {}
+                        .accessibilityIdentifier("keep-editing-draft")
+                    Button("Retry and Quit") { NSApp.terminate(nil) }
+                        .accessibilityIdentifier("retry-save-and-quit")
+                } message: {
+                    Text(model.composerSaveError ?? "Restore write access to the workspace and try again.")
+                }
                 .onChange(of: appearance.colorScheme, initial: true) { _, scheme in
                     scheme.apply(to: NSApplication.shared)
                 }
@@ -123,6 +129,21 @@ struct PiWorkspaceApp: App {
             do { try model.openProject(launchProject) }
             catch { model.error = error.localizedDescription }
         } else { model.start() }
+    }
+}
+
+@MainActor
+final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
+    weak var model: WorkspaceModel?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model, !model.savePendingComposer() else { return .terminateNow }
+        model.showingQuitSaveFailure = true
+        return .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model?.shutdown()
     }
 }
 

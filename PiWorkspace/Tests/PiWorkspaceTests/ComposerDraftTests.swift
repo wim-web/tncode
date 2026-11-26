@@ -4,6 +4,61 @@ import XCTest
 
 @MainActor
 final class ComposerDraftTests: XCTestCase {
+    func testQuitRefusesToDiscardAnUnwritableDraft() async throws {
+        let fixture = try Fixture()
+        let latest = "Edit made just before quitting"
+        do {
+            let model = fixture.open()
+            try model.openProject(fixture.project)
+            await wait(for: .ready, in: model)
+            model.draft = "Saved text"
+            XCTAssertTrue(model.savePendingComposer())
+            try fixture.blockBackup()
+            model.draft = latest
+            XCTAssertFalse(model.terminate())
+            XCTAssertEqual(model.phase, .ready)
+            XCTAssertNotNil(model.composerSaveError)
+            XCTAssertEqual(model.draft, latest)
+            try fixture.repairBackup()
+            XCTAssertTrue(model.terminate())
+        }
+        let reopened = fixture.open()
+        reopened.start()
+        XCTAssertEqual(reopened.draft, latest)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.commands.path))
+        reopened.terminate()
+    }
+
+    func testFinishedSubmissionUnlocksTheDraftWhenTheBackupCannotBeSaved() async throws {
+        for accepted in [false, true] {
+            let fixture = try Fixture()
+            let model = fixture.open()
+            try model.openProject(fixture.project)
+            await wait(for: .ready, in: model)
+            if !accepted { try Data().write(to: fixture.reject) }
+            let gate = fixture.project.appendingPathComponent("hold-response")
+            try Data().write(to: gate)
+            model.draft = "Send this message"
+            model.send()
+            XCTAssertEqual(model.phase, .running)
+            try fixture.blockBackup()
+            try FileManager.default.removeItem(at: gate)
+            await wait(for: .ready, in: model)
+            XCTAssertNotNil(model.composerSaveError)
+            XCTAssertNil(model.conversation?.composerSubmission)
+            XCTAssertEqual(model.draft, accepted ? "" : "Send this message")
+            model.draft = "Editable follow-up"
+            XCTAssertEqual(model.draft, "Editable follow-up")
+            XCTAssertFalse(model.savePendingComposer())
+            try fixture.repairBackup()
+            XCTAssertTrue(model.savePendingComposer())
+            XCTAssertNil(model.composerSaveError)
+            XCTAssertEqual(try fixture.saved().activeProject?.conversations.first?.composerText, "Editable follow-up")
+            XCTAssertEqual(try String(contentsOf: fixture.commands, encoding: .utf8).split(separator: "\n").count, 1)
+            model.terminate()
+        }
+    }
+
     func testSwitchingAndQuittingRetainsTwoPopulatedDrafts() async throws {
         let fixture = try Fixture()
         let firstText = "  First line\nSecond line 🌱"
@@ -316,6 +371,21 @@ final class ComposerDraftTests: XCTestCase {
             try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: workspace.appendingPathComponent("workspace.json")))
         }
 
+        private var backup: URL { workspace.appendingPathComponent("workspace.previous.json") }
+        private var heldBackup: URL { root.appendingPathComponent("held-index") }
+
+        func blockBackup() throws {
+            let files = FileManager.default
+            if files.fileExists(atPath: backup.path) { try files.moveItem(at: backup, to: heldBackup) }
+            try files.createDirectory(at: backup, withIntermediateDirectories: false)
+            try Data().write(to: backup.appendingPathComponent("obstruction"))
+        }
+
+        func repairBackup() throws {
+            try FileManager.default.removeItem(at: backup)
+            if FileManager.default.fileExists(atPath: heldBackup.path) { try FileManager.default.moveItem(at: heldBackup, to: backup) }
+        }
+
         private static let helper = #"""
             while IFS= read -r command; do
                 case "$command" in
@@ -325,6 +395,7 @@ final class ComposerDraftTests: XCTestCase {
                         ;;
                     *'"type":"prompt"'*)
                         printf '%s\n' "$command" >> "$1"
+                        while [ -e hold-response ]; do sleep 0.02; done
                         if [ -f fixture-interrupt-before ]; then exit 0; fi
                         if [ -f fixture-reject ]; then
                             printf '{"type":"finished","messages":%s,"error":"The fixture declined the prompt."}\n' "$history"

@@ -22,6 +22,9 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
+    @Published private(set) var composerSaveError: String?
+    @Published var showingQuitSaveFailure = false
+    private var composerDirty = false
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
 
@@ -55,17 +58,25 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
+        composerDirty = true
         composerSave?.cancel()
         composerSave = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) }
             catch { return }
-            self?.flushComposerEdits()
+            self?.savePendingComposer()
         }
     }
 
-    private func flushComposerEdits() {
-        guard composerSave != nil else { return }
-        save { _ in }
+    @discardableResult
+    func savePendingComposer() -> Bool {
+        guard composerDirty else { return true }
+        do {
+            try persist(workspace)
+            return true
+        } catch {
+            composerSaveError = error.localizedDescription
+            return false
+        }
     }
 
     func showsInSidebar(_ thread: Conversation) -> Bool {
@@ -189,9 +200,11 @@ final class WorkspaceModel: ObservableObject {
         phase = .closed
     }
 
-    func terminate() {
-        flushComposerEdits()
+    @discardableResult
+    func terminate() -> Bool {
+        guard savePendingComposer() else { return false }
         shutdown()
+        return true
     }
 
     @discardableResult
@@ -212,6 +225,8 @@ final class WorkspaceModel: ObservableObject {
         try store.save(updated)
         composerSave?.cancel()
         composerSave = nil
+        composerDirty = false
+        composerSaveError = nil
         composerCredential = nil
         workspace = updated
     }
@@ -631,20 +646,19 @@ final class WorkspaceModel: ObservableObject {
                     $0.worktreeLaunch = launch
                 }
                 startWorktreeLaunch(launch, in: conversation)
-            } else {
-                let submission = Conversation.ComposerSubmission(
-                    previousUserMessageID: messages.last { $0.role == .user }?.id
-                )
-                try saveThread(conversation.id) { $0.composerSubmission = submission }
-                try beginTurn(text, using: process)
+                return
             }
+            let submission = Conversation.ComposerSubmission(previousUserMessageID: messages.last { $0.role == .user }?.id)
+            try saveThread(conversation.id) { $0.composerSubmission = submission }
         } catch {
-            if conversation.workingLocation.needsWorktree {
-                self.error = error.localizedDescription
-            } else {
-                self.error = "Pi is unavailable. Reconnect to send your message."
-                shutdown()
-            }
+            self.error = error.localizedDescription
+            return
+        }
+        do {
+            try beginTurn(text, using: process)
+        } catch {
+            self.error = "Pi is unavailable. Reconnect to send your message."
+            shutdown()
         }
     }
 
@@ -830,10 +844,15 @@ final class WorkspaceModel: ObservableObject {
         let latest = history.last { $0.role == .user }
         let accepted = latest.map { $0.id != submission.previousUserMessageID && $0.text == text } ?? false
         guard accepted || ended else { return }
-        try? saveThread(conversation.id) {
-            if accepted, let text { $0.recordPrompt(text) }
-            else { $0.composerSubmission = nil }
+        guard let p = selectedProjectIndex,
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation.id }) else { return }
+        if accepted, let text {
+            workspace.projects[p].conversations[t].recordPrompt(text)
+        } else {
+            workspace.projects[p].conversations[t].composerSubmission = nil
         }
+        composerDirty = true
+        savePendingComposer()
     }
 
     func dismissUnconfirmedWorktreePrompt() {
