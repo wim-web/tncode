@@ -5,6 +5,7 @@ struct SourceControlView: View {
     @ObservedObject var model: WorkspaceModel
     @State private var state: GitRepositoryState?
     @State private var selected: GitFileChange?
+    @State private var excludedPaths: Set<String> = []
     @State private var staged = false
     @State private var patch = ""
     @State private var commitMessage = ""
@@ -23,7 +24,7 @@ struct SourceControlView: View {
 
     private struct DiffRequest: Hashable {
         let key: ReadRequest
-        let file: String?
+        let file: GitFileChange?
         let staged: Bool
     }
 
@@ -74,7 +75,7 @@ struct SourceControlView: View {
         }
         .frame(minWidth: 290, idealWidth: 360, maxHeight: .infinity)
         .task(id: request) { await loadState() }
-        .task(id: DiffRequest(key: request, file: selected?.id, staged: staged)) { await loadPatch() }
+        .task(id: DiffRequest(key: request, file: selected, staged: staged)) { await loadPatch() }
     }
 
     private func branchMenu(_ state: GitRepositoryState) -> some View {
@@ -97,17 +98,52 @@ struct SourceControlView: View {
     }
 
     private func files(_ state: GitRepositoryState) -> some View {
+        let paths = Set(state.files.map(\.path))
+        let trackedPaths = Set(state.files.filter { $0.indexStatus != "?" }.map(\.path))
+        return VStack(alignment: .leading, spacing: 0) {
+            if !paths.isEmpty {
+                HStack {
+                    Toggle("Include all files", sources: paths.map(inclusion), isOn: \.self)
+                        .toggleStyle(.checkbox)
+                        .disabled(busy)
+                        .accessibilityIdentifier("git-include-all")
+                    Spacer()
+                    Text("\(paths.subtracting(excludedPaths).count) of \(paths.count) selected")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("git-selection-count")
+                }
+                .font(.caption)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+            }
+            fileRows(state.files, trackedPaths: trackedPaths)
+        }
+    }
+
+    private func fileRows(_ files: [GitFileChange], trackedPaths: Set<String>) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 3) {
-                if state.files.isEmpty {
+                if files.isEmpty {
                     Text("Working tree clean")
                         .foregroundStyle(.secondary)
                         .font(.callout)
                         .padding(.vertical, 6)
                         .accessibilityIdentifier("git-clean")
                 }
-                ForEach(state.files) { file in
+                ForEach(files) { file in
                     HStack(spacing: 7) {
+                        if file.indexStatus == "?" && trackedPaths.contains(file.path) {
+                            // The tracked row already controls this path's inclusion.
+                            Spacer().frame(width: 14)
+                        } else {
+                            Toggle("Include \(file.path)", isOn: inclusion(file.path))
+                                .labelsHidden()
+                                .toggleStyle(.checkbox)
+                                .disabled(busy)
+                                .accessibilityLabel("Include \(file.path)")
+                                .accessibilityIdentifier("git-include-" + file.path)
+                                .help("Include \(file.path) in the commit")
+                        }
                         Button {
                             selected = file
                             staged = file.worktreeStatus == " " && isStaged(file)
@@ -147,6 +183,18 @@ struct SourceControlView: View {
             .padding(8)
         }
         .frame(height: 124)
+    }
+
+    private func inclusion(_ path: String) -> Binding<Bool> {
+        Binding {
+            !excludedPaths.contains(path)
+        } set: { included in
+            if included {
+                excludedPaths.remove(path)
+            } else {
+                excludedPaths.insert(path)
+            }
+        }
     }
 
     private func fileAction(
@@ -215,19 +263,20 @@ struct SourceControlView: View {
     }
 
     private func commitBar(_ state: GitRepositoryState) -> some View {
-        HStack {
+        let paths = Set(state.files.map(\.path)).subtracting(excludedPaths)
+        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HStack {
             TextField("Commit message", text: $commitMessage)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("git-commit-message")
             Button("Commit") {
-                let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
                 mutate { git in
-                    try await git.commit(message: message)
+                    try await git.commit(message: message, paths: paths)
                     commitMessage = ""
                 }
             }
-            .disabled(busy || !state.files.contains(where: isStaged) ||
-                commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(busy || paths.isEmpty || message.isEmpty)
+            .help("Commit the current contents of the included files")
             .accessibilityIdentifier("git-commit")
         }
         .padding(9)
@@ -262,6 +311,7 @@ struct SourceControlView: View {
             let newState = try await git.state()
             guard !Task.isCancelled else { return }
             state = newState
+            excludedPaths.formIntersection(newState.files.map(\.path))
             if let current = selected {
                 selected = newState.files.first(where: { $0.id == current.id })
             }

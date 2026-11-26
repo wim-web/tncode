@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct GitRepositoryState: Sendable {
@@ -32,6 +33,13 @@ struct GitFileChange: Identifiable, Hashable, Sendable {
     fileprivate var isUntracked: Bool {
         indexStatus == "?" && worktreeStatus == "?"
     }
+
+    fileprivate var commitPaths: [String] {
+        if let originalPath, indexStatus == "R" || worktreeStatus == "R" {
+            return [path, originalPath]
+        }
+        return [path]
+    }
 }
 
 struct GitWorkspace: Sendable {
@@ -43,9 +51,7 @@ struct GitWorkspace: Sendable {
     }
 
     func state() async throws -> GitRepositoryState {
-        let status = try await run([
-            "status", "--porcelain=v1", "-z", "--untracked-files=all", "--renames", "--ignore-submodules=none"
-        ])
+        let files = try await changes()
         let head = try await run(["symbolic-ref", "--quiet", "HEAD"], acceptedStatuses: [0, 1])
         let refs = try await run(["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/"])
         let headRef = try Self.decode(head.output.bytes, command: "symbolic-ref")
@@ -57,7 +63,7 @@ struct GitWorkspace: Sendable {
             .split(separator: "\n")
             .map(String.init)
 
-        return GitRepositoryState(branch: branch, branches: branches, files: try Self.parseStatus(status.output.bytes))
+        return GitRepositoryState(branch: branch, branches: branches, files: files)
     }
 
     func worktrees() async throws -> [GitCheckout] {
@@ -146,12 +152,87 @@ struct GitWorkspace: Sendable {
         _ = try await run(["reset", "--quiet", "--"] + paths, in: root)
     }
 
-    func commit(message: String) async throws {
-        _ = try await run(["commit", "--message", message])
+    func commit(message: String, paths: Set<String>) async throws {
+        guard !paths.isEmpty else { throw WorkspaceError.emptySelection }
+        let root = try await repositoryRoot()
+        let indexPath = try await resolvePath(["--path-format=absolute", "--git-path", "index"], in: root)
+        let index = URL(fileURLWithPath: indexPath)
+        let lockPath = indexPath + ".lock"
+        let lock = open(lockPath, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o666)
+        if lock == -1 {
+            let code = errno
+            if code == EEXIST { throw WorkspaceError.indexLocked }
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+        defer { unlink(lockPath) }
+        close(lock)
+
+        let currentChanges = try await changes(in: root)
+        let selected = currentChanges.filter { paths.contains($0.path) }
+        guard Set(selected.map(\.path)) == paths else { throw WorkspaceError.staleSelection }
+        let commitPaths = Set(selected.flatMap(\.commitPaths))
+        let excludedPaths = Set(currentChanges.filter { !paths.contains($0.path) }.flatMap(\.commitPaths))
+        for path in excludedPaths {
+            let overlaps = commitPaths.contains { selectedPath in
+                selectedPath == path || selectedPath.hasPrefix(path + "/") || path.hasPrefix(selectedPath + "/")
+            }
+            guard !overlaps else {
+                throw WorkspaceError.overlappingSelection(path)
+            }
+        }
+
+        // Git requires new paths to be in the index before `commit --only` can select them.
+        // Keep their intent-to-add entries private and publish the resulting index only after commit succeeds.
+        let scratch = index.deletingLastPathComponent().appendingPathComponent("pi-commit-" + UUID().uuidString)
+        let manager = FileManager.default
+        try manager.createDirectory(at: scratch, withIntermediateDirectories: false,
+                                    attributes: [.posixPermissions: 0o700])
+        defer { try? manager.removeItem(at: scratch) }
+        let temporaryIndex = scratch.appendingPathComponent("index")
+        do {
+            try manager.copyItem(at: index, to: temporaryIndex)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            // A new repository may not have an index yet. Git can start from an absent alternate index.
+        }
+
+        let pathspec = scratch.appendingPathComponent("paths")
+        let pathspecArguments = ["--pathspec-from-file=" + pathspec.path, "--pathspec-file-nul"]
+        let untracked = selected.filter(\.isUntracked).map(\.path)
+        if !untracked.isEmpty {
+            try Self.writePathspec(untracked, to: pathspec)
+            _ = try await run(["add", "--intent-to-add"] + pathspecArguments, in: root, index: temporaryIndex)
+        }
+        try Self.writePathspec(commitPaths.sorted(), to: pathspec)
+        _ = try await run(["commit", "--only", "--message", message] + pathspecArguments,
+                          in: root, index: temporaryIndex)
+
+        guard rename(temporaryIndex.path, indexPath) == 0 else {
+            throw WorkspaceError.indexInstallFailed(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+        }
+    }
+
+    private func changes(in directory: String? = nil) async throws -> [GitFileChange] {
+        let status = try await run([
+            "status", "--porcelain=v1", "-z", "--untracked-files=all", "--renames", "--ignore-submodules=none"
+        ], in: directory)
+        return try Self.parseStatus(status.output.bytes)
+    }
+
+    private static func writePathspec(_ paths: [String], to file: URL) throws {
+        var data = Data()
+        for path in paths {
+            data.append(contentsOf: path.utf8)
+            data.append(0)
+        }
+        try data.write(to: file)
     }
 
     private func repositoryRoot(in directory: String? = nil) async throws -> String {
-        let result = try await run(["rev-parse", "--show-toplevel"], in: directory)
+        try await resolvePath(["--show-toplevel"], in: directory)
+    }
+
+    private func resolvePath(_ arguments: [String], in directory: String?) async throws -> String {
+        let result = try await run(["rev-parse"] + arguments, in: directory)
         guard result.output.bytes.last == 10 else {
             throw WorkspaceError.invalidOutput(command: "rev-parse")
         }
@@ -196,6 +277,7 @@ struct GitWorkspace: Sendable {
     private func run(
         _ arguments: [String],
         in directory: String? = nil,
+        index: URL? = nil,
         outputLimit: Int? = nil,
         acceptedStatuses: [Int32] = [0]
     ) async throws -> CommandResult {
@@ -217,9 +299,10 @@ struct GitWorkspace: Sendable {
         process.standardError = errorOutput
 
         var environment = ProcessInfo.processInfo.environment
-        for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_PREFIX"] {
+        for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_PREFIX"] {
             environment.removeValue(forKey: key)
         }
+        environment["GIT_INDEX_FILE"] = index?.path
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_NO_LAZY_FETCH"] = "1"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -297,6 +380,11 @@ struct GitWorkspace: Sendable {
 
     private enum WorkspaceError: LocalizedError {
         case emptyRepositoryPath
+        case emptySelection
+        case staleSelection
+        case overlappingSelection(String)
+        case indexLocked
+        case indexInstallFailed(POSIXError)
         case invalidArgument
         case invalidOutput(command: String)
         case commandFailed(command: String, status: Int32, message: String)
@@ -305,6 +393,16 @@ struct GitWorkspace: Sendable {
             switch self {
             case .emptyRepositoryPath:
                 return "The Git repository path is empty."
+            case .emptySelection:
+                return "Select at least one file to commit."
+            case .staleSelection:
+                return "The selected changes have changed. Review the refreshed file list and try again."
+            case .overlappingSelection(let path):
+                return "The selected changes overlap \(path). Include all related paths to commit them together."
+            case .indexLocked:
+                return "The Git index is locked. Finish the other Git operation and try again."
+            case .indexInstallFailed(let error):
+                return "Git created the commit, but could not save the updated index. \(error.localizedDescription)"
             case .invalidArgument:
                 return "A Git argument contains a NUL character."
             case .invalidOutput(let command):
