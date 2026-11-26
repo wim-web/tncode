@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { images, note } from "./fixtures/attachments.mjs";
 
 const workspace = resolve(import.meta.dirname, "..");
 const app = process.argv[2] && resolve(process.argv[2], "Contents");
@@ -15,11 +16,6 @@ const installed = JSON.parse(readFileSync(join(sidecar, sdk, "package.json"), "u
 assert.equal(installed.version, lock.packages[sdk].version);
 
 const root = mkdtempSync(join(tmpdir(), "pi-attachments-"));
-const images = {
-  red: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
-  blue: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR4nGNgYPgPRmAKABf2A/1+6zfzAAAAAElFTkSuQmCC",
-};
-const note = "Selected file contents Ω\nSecond fixture line.\n";
 const requests = [];
 let fixtureError;
 const server = createServer(async (request, response) => {

@@ -20,6 +20,7 @@ Usage:
   ax press PID IDENTIFIER
   ax close-window PID WINDOW_IDENTIFIER
   ax select-folder PID ABSOLUTE_PATH
+  ax select-path PID ABSOLUTE_PATH
   ax confirm PID IDENTIFIER
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
@@ -117,7 +118,7 @@ private enum Operation {
             self = .press(id)
         case ("close-window", let id?) where arguments.count == 1:
             self = .closeWindow(id)
-        case ("select-folder", let path?) where arguments.count == 1 && path.hasPrefix("/"):
+        case (let command, let path?) where ["select-folder", "select-path"].contains(command) && arguments.count == 1 && path.hasPrefix("/"):
             self = .selectFolder(path)
         case ("confirm", let id?) where arguments.count == 1:
             self = .confirm(id)
@@ -278,7 +279,7 @@ private func selectFolder(_ path: String, in panel: AXUIElement) throws {
             item = parent
         }
     }
-    throw Failure("The requested folder is not selectable in the open panel.")
+    throw Failure("The requested path is not selectable in the open panel.")
 }
 
 private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to pid: pid_t) throws {
@@ -431,15 +432,16 @@ private func run(_ arguments: [String]) throws {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
             try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
                                "Activate the designated keyboard target")
-            let deadline = ProcessInfo.processInfo.systemUptime + 1
+            NSRunningApplication(processIdentifier: pid)?.activate()
+            let deadline = ProcessInfo.processInfo.systemUptime + 2
             while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
                 guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure("The designated application did not gain focus.") }
-                Thread.sleep(forTimeInterval: 0.025)
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025))
             }
         }
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
-        let characters: [CGKeyCode: UInt16] = [3: 0x66, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
+        let characters: [CGKeyCode: UInt16] = [3: 0x66, 30: 0x5D, 33: 0x5B, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
                                                 123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
         try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: true)
     case .webFrame(let id):

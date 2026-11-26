@@ -25,7 +25,7 @@ export async function verifyAbout({ menuItem, press, visible, value, until, clos
   press("licenses-back");
   await until(matchesBundle, "return to About");
   closeWindow("about");
-  menuItem("Model Settings…");
+  await until(() => { menuItem("Model Settings…"); return true; }, "enabled Model Settings menu");
   await until(() => visible("settings-about"), "About in Model Settings");
   press("settings-about");
   await until(matchesBundle, "About from settings");
@@ -82,4 +82,43 @@ export async function restoreAppearance(driver) {
   await until(() => value("appearance-chat-width").includes("Comfortable") && value("appearance-color-scheme").includes("System") &&
                     visible("appearance-restore-defaults").includes("enabled=false"), "default appearance restored");
   press("appearance-done");
+}
+export async function verifySettingsSearch({ press, visible, value, tree, setField, until, keyFor }, index) {
+  const before = index();
+  const savedModel = before.projects.find(p => p.id === before.selectedProject).modelOverride ?? before.model;
+  press("model-settings");
+  await until(() => visible("settings-heading-general") && visible("settings-search").includes("focused=true"), "Settings opens General with search focus");
+  await setField("settings-search", "no such setting in this fixture");
+  await until(() => visible("settings-search-empty"), "unmatched settings search");
+  keyFor("settings-search", 53);
+  await until(() => value("settings-search").includes('value=""') && visible("settings-nav-model"), "Escape clears the current settings query");
+
+  async function result(query, id) {
+    await setField("settings-search", query);
+    await until(() => visible("settings-result-" + id), "settings result for " + query);
+    keyFor("settings-search", 125);
+    keyFor("settings-search", 126);
+    keyFor("settings-search", 36);
+  }
+  await result("Model ID", "model-id");
+  await until(() => visible("model-id").includes("focused=true") && value("model-id").includes(savedModel.model),
+              "Return focuses the project's actual model field");
+  await setField("model-id", "unsaved-route-fixture");
+  keyFor("model-id", 3, "cmd");
+  await until(() => visible("settings-search").includes("focused=true"), "Command-F returns to settings search");
+  await result("Open source licenses", "licenses-search");
+  await until(() => visible("licenses-search").includes("focused=true"), "licenses search in the About pane");
+  await setField("licenses-search", "SwiftTerm");
+  press("license-entry-swiftterm");
+  await until(() => value("license-notice-text-LICENSE").includes("Miguel de Icaza"), "bundled license text via settings search");
+  press("settings-nav-model");
+  await until(() => value("model-id").includes("unsaved-route-fixture"), "unsaved model edit stays in its pane");
+  press("settings-nav-general");
+  await until(() => visible("settings-close"), "General Done button");
+  press("settings-close");
+  await until(() => !tree().includes('id="settings-search"'), "Settings closed");
+  const saved = index();
+  assert.deepEqual(saved.projects.find(p => p.id === before.selectedProject).modelOverride,
+                   before.projects.find(p => p.id === before.selectedProject).modelOverride);
+  assert.deepEqual(saved.model, before.model);
 }

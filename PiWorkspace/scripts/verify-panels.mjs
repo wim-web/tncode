@@ -238,16 +238,16 @@ export async function verifyPullRequests({ press, visible, tree, until, setField
   await until(() => !tree().includes('id="pr-close"'), "closed pull request sheet");
 }
 
-export async function setProjectModel({ menuItem, visible, tree, until, setField, closeSettings }, model) {
-  menuItem("Model Settings…");
+export async function setProjectModel({ openModelSettings, visible, tree, until, setField, closeSettings }, model) {
+  await openModelSettings();
   await until(() => tree().includes("Inherits Workspace default"), "inherited project settings");
   await setField("model-id", model);
   await closeSettings();
   await until(() => visible("active-model").includes(model), "overridden composer model");
 }
 
-export async function resetProjectModel({ menuItem, press, visible, tree, until, closeSettings }, inheritedModel) {
-  menuItem("Model Settings…");
+export async function resetProjectModel({ openModelSettings, press, visible, tree, until, closeSettings }, inheritedModel) {
+  await openModelSettings();
   await until(() => visible("reset-model-override") && tree().includes("Project override"), "saved project override");
   press("reset-model-override");
   await until(() => tree().includes("Inherits Workspace default"), "reset model inheritance");

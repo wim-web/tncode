@@ -7,10 +7,14 @@ import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
-import { restoreAppearance, verifyAbout, verifyAppearance } from "./verify-settings-panels.mjs";
+import { restoreAppearance, verifyAbout, verifyAppearance, verifySettingsSearch } from "./verify-settings-panels.mjs";
 import { verifyFiles } from "./verify-workspace-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
 import { verifyCommandPalette } from "./verify-command-palette.mjs";
+import { closeTerminalPane, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
+import { verifyFork } from "./verify-fork-ui.mjs";
+import { verifyAttachmentUI } from "./verify-attachment-ui.mjs";
+import { linkFixturePullRequest, verifyRestoredLink } from "./verify-linked-prs.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -207,7 +211,9 @@ function pressDismissal(id) {
   catch (error) { if (!String(error.stderr).includes("AX error -25204")) throw error; }
 }
 const panelDriver = {
-  press, visible, tree, setField, until, closeSettings,
+  press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
+  selectPath: path => drive("select-path", [path]),
+  dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
   checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
   closeWindow: id => drive("close-window", [id]),
@@ -265,6 +271,8 @@ async function quit() {
 
 async function settings() {
   press("model-settings");
+  await until(() => visible("settings-nav-model"), "model page in Settings navigation");
+  press("settings-nav-model");
   await until(() => visible("key-input"), "API key field");
 }
 
@@ -424,6 +432,7 @@ if [ -t 0 ]; then
   pwd -P > tty-proof.txt
   printf '%s\n' "$$" > retained-shell.txt
   printf '%s\n' 'Fixture terminal ready.'
+  printf 'Fixture terminal PID %s\n' "$$"
 fi
 exec /bin/sh -i
 `, { mode: 0o700 });
@@ -548,12 +557,8 @@ async function verifyCheckout(checkout) {
   assert.equal(Number(readFileSync(shellProof, "utf8")), shellPID);
   process.kill(shellPID, 0);
   await until(() => drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."), "reopened terminal output");
-  press("close-terminal");
-  await until(() => {
-    try { process.kill(shellPID, 0); } catch { return true; }
-    return false;
-  }, "shell exits when its drawer is closed");
-  record("The terminal launched an interactive shell on a PTY in the worktree, kept the same shell across hide and reopen, and closed it explicitly.");
+  await verifyTerminalPanes(panelDriver, shellPID);
+  record("Four distinct worktree shell PIDs survived tab changes and both split directions. Previous and next shortcuts focused the expected pane. Cancel kept all shells, and each confirmed close stopped only that pane.");
 
   writeFileSync(join(checkout, "base.txt"), "first edit\n");
   git(checkout, "add", "base.txt");
@@ -756,7 +761,7 @@ try {
   const endpoint = "http://127.0.0.1:" + server.address().port + "/v1";
   keyAccount = "local:" + endpoint;
   writeFileSync(join(workspace, "workspace.json"), JSON.stringify({
-    projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel },
+    projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel, localImages: fixtureModel },
   }), { mode: 0o600 });
 
   record("Verification folder: " + directory);
@@ -786,6 +791,10 @@ try {
   record("Welcome completed through " + startTitle + ". The configured model has a Keychain item.");
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const draftID = index().projects[0].selectedConversation;
+  if (fixtureModel) {
+    await verifySettingsSearch(panelDriver, index);
+    record("Settings search on General handled no results and Escape. Return focused the project model ID and license search. SwiftTerm's packaged license was readable, and switching panes preserved the unsaved model edit without changing its stored value.");
+  }
   if (worktreeTest) {
     press("choose-workspace");
     await until(() => visible("use-project-workspace"), "local folder workspace");
@@ -842,6 +851,8 @@ try {
   assert.equal(targets[0].status, 200);
   const previous = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const threadID = previous.projects[0].selectedConversation;
+  const projectID = previous.selectedProject;
+  const conversation = () => index().projects.find(p => p.id === projectID).conversations.find(t => t.id === threadID);
   assert.equal(threadID, draftID);
   assert.equal(targets[0].body.messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes(firstPrompt)).length, 1);
   const selectedThread = previous.projects[0].conversations.find(thread => thread.id === threadID);
@@ -851,6 +862,7 @@ try {
   if (worktreeTest) {
     await verifyCheckout(checkout);
     await verifyPullRequests(panelDriver, forgeState, forgeLog, checkout);
+    await linkFixturePullRequest(panelDriver, conversation);
     record("The mock forge read PRs and Issues only from the selected checkout. Label search, distinct pages, a changed head and Issue body, page retry, and recovery from signed-out and missing-Issue responses passed.");
   }
   if (fixtureModel) {
@@ -873,7 +885,7 @@ try {
       process.kill(previewShellPID, 0);
       assert(drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."));
       record("Files searched and refreshed the checkout tree, showed binary and large-text previews, and saved only the working file. Git's staged bytes, parent checkout, browser page, composer text, and live PTY survived. Read-only and externally changed files retained their pending edits.");
-      press("close-terminal");
+      await closeTerminalPane(panelDriver);
     }
     record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
     record("Zoom changed the rendered width of a 100 CSS-pixel button. Refresh fetched a new revision, Stop cancelled an outstanding GET, and the error view showed details and reloaded the repaired local server.");
@@ -925,6 +937,14 @@ try {
   record("Second request returned HTTP 200. Reply: " + JSON.stringify(targets[1].fragments.join("").trim()));
 
   if (fixtureModel) {
+    await verifyAttachmentUI(panelDriver, { workspace, checkout: checkout ?? project, conversation, targets, quit, launch });
+    record("The native picker loaded two same-name PNGs and UTF-8 text. A missing attachment blocked Send until Attach Again repaired its original ID. Both previews opened. After removing red and relaunching, the provider received the blue PNG and complete text, and both retained IDs appeared in the transcript.");
+    const childID = await verifyFork(panelDriver, { workspace, projectID, threadID, index, targets, send });
+    record("Forking at the second reply copied exactly those first two turns. A single child continuation kept both histories independent, and opening the source restored its unsent draft.");
+    if (worktreeTest) {
+      await verifyRestoredLink(panelDriver, childID, conversation);
+      record("The parent linked #42 by number and URL without duplicating it. Copy produced the expected URL and number. The link survived relaunch, remained absent from the child, and unlinked locally.");
+    }
     holdForStop = true;
     await send("Hold a stream open for the Stop test.");
     await until(() => tree().includes("Partial reply before Stop."), "partial reply before Stop");
@@ -966,7 +986,7 @@ try {
   await closeSettings();
   await quit();
   const transcripts = inspectFiles();
-  assert.equal(transcripts.length, fixtureModel ? (worktreeTest ? 3 : 2) : 1);
+  assert.equal(transcripts.length, fixtureModel ? (worktreeTest ? 4 : 3) : 1);
   record("No auth.json or plaintext key under the project, app data, transcripts, or captured logs. Keychain test item removed.");
   if (fixtureModel) {
     const previousIndex = JSON.parse(readFileSync(join(workspace, "workspace.previous.json"), "utf8"));
