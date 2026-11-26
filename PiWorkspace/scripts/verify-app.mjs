@@ -238,7 +238,6 @@ const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
   activate: () => drive("activate", []),
   focus: id => drive("type", [id], ""),
-  typeText: (id, text) => drive("type", [id], text),
   selection: (id, ...range) => drive("selection", [id, ...range.map(String)]).trim().split(/\s+/).map(Number),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,

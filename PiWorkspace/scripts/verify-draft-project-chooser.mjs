@@ -16,6 +16,8 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
       conversations: [{ id: thread, archived: false, title: name + " draft", isDraft: true, composerText: draft }] };
   };
   const alpha = register("Alpha", ""), beta = register("Café Beta", text);
+  const model = { provider: "local", model: "local-draft-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 };
+  alpha.modelOverride = { ...model, model: "alpha-only-model" };
   mkdirSync(newProject);
   const alphaNote = join(alpha.path, "notes.txt"), betaNote = join(beta.path, "notes.txt");
   writeFileSync(alphaNote, "Alpha notes\n");
@@ -25,7 +27,7 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
   const store = join(root, "workspace.json");
   writeFileSync(store, JSON.stringify({
     projects: [alpha, beta], selectedProject: beta.id, welcomeCompleted: true,
-    model: { provider: "local", endpoint: "http://127.0.0.1:1/v1", model: "local-draft-fixture", contextWindow: 8192 },
+    model,
   }), { mode: 0o600 });
   const index = () => JSON.parse(readFileSync(store, "utf8"));
   const selected = () => {
@@ -67,12 +69,15 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
            Buffer.from(thread.composerAttachments[0].payload.data, "base64").toString() === blueNote;
   };
   await until(() => selected().project.id === beta.id && sameDraft() && composer(text), "existing populated Beta draft");
+  await until(() => visible("active-model").includes(model.model), "Beta inherits the workspace model");
   await openChooser();
   press("draft-project-" + alpha.id);
   await until(() => selected().project.id === alpha.id && sameDraft() && composer(text), "populated draft moved to Alpha");
+  await until(() => visible("active-model").includes(alpha.modelOverride.model), "moved draft uses the destination project model");
   await openChooser();
   press("draft-no-project");
   const scratch = await until(() => selected().project.kind === "scratch" && sameDraft() && selected().project, "same draft with no project");
+  await until(() => visible("active-model").includes(model.model), "no-project draft uses the workspace model");
   assert.equal(realpathSync(scratch.path), realpathSync(join(root, "scratch", scratch.id)));
 
   for (const cancel of [true, false]) {

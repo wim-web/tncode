@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { seedPaletteMessageHistory } from "./fixtures/palette-message-history.mjs";
 
 export async function verifyConversationControls(driver, { root, app, credential, removeFixtureCredential, key, launch, quit, record }) {
-  const { until, visible, value, tree, press, setField, focus, keyFor, selection, typeText } = driver;
+  const { until, visible, value, tree, press, dismiss: pressChangingUI, setField, focus, keyFor, selection } = driver;
   const projectID = randomUUID().toUpperCase();
   const findThread = randomUUID().toUpperCase();
   const questionThread = randomUUID().toUpperCase();
@@ -56,14 +56,17 @@ export async function verifyConversationControls(driver, { root, app, credential
     focus("composer");
     keyFor("composer", 3, "cmd", "shift");
     await until(() => focusIs("thread-search"), "sidebar search focused");
+    await setField("thread-search", "Question fixture");
+    await until(() => visible("thread-row-" + questionThread) && !has("thread-row-" + findThread), "distinct title finds the draft without Pi history");
     await setField("thread-search", "buriedattachment");
     await until(() => tree().includes("No matching threads"), "hidden attachment excluded from sidebar results");
     await setField("thread-search", "caption");
     const captionResult = "message-search-result-" + findThread + "-" + history.captionID;
     await until(() => visible(captionResult), "visible Pi attachment caption");
-    press(captionResult);
+    pressChangingUI(captionResult);
     await until(() => is("thread-find-match-count", "1 of 1") && selected() === "caption", "sidebar opened at the caption range");
-    press("thread-find-close");
+    pressChangingUI("thread-find-close");
+    await until(() => !has("thread-find-query"), "close the sidebar match");
     press("thread-row-" + questionThread);
     await until(() => is("composer", "Question fixture draft."), "open another thread before searching from the palette");
     focus("composer");
@@ -72,15 +75,15 @@ export async function verifyConversationControls(driver, { root, app, credential
     await setField("command-palette-search", "doublemark");
     const paletteResult = "command-palette-message-" + findThread + "-" + history.latestID;
     await until(() => visible(paletteResult), "palette found repeated text in the original Pi reply");
-    press(paletteResult);
+    pressChangingUI(paletteResult);
     await until(() => is("thread-find-match-count", "1 of 2") && selected() === "doublemark", "palette opened at first occurrence");
     keyFor("thread-find-query", 36);
     await until(() => is("thread-find-match-count", "2 of 2") && selected() === "DOUBLEMARK", "Return selected the second exact range");
     keyFor("thread-find-query", 36, "shift");
     await until(() => is("thread-find-match-count", "1 of 2") && selected() === "doublemark", "Shift-Return selected the first range again");
-    press("thread-find-close");
-    await until(() => is("composer", draft), "returned to the original Find thread");
-    record("The sidebar excluded buriedattachment and opened on caption. From another thread the palette opened at doublemark, 1 of 2. Return selected DOUBLEMARK, 2 of 2, and Shift-Return selected doublemark again.");
+    pressChangingUI("thread-find-close");
+    await until(() => !has("thread-find-query") && is("composer", draft), "returned to the original Find thread");
+    record("The sidebar found the unsent draft by its distinct title, excluded buriedattachment and opened on caption. From another thread the palette opened at doublemark, 1 of 2. Return selected DOUBLEMARK, 2 of 2, and Shift-Return selected doublemark again.");
 
     focus("composer");
     assert.deepEqual(selection("composer", 4, 0), [4, 0]);
@@ -90,9 +93,9 @@ export async function verifyConversationControls(driver, { root, app, credential
     await until(() => is("thread-find-match-count", "1 of 2") && visible("transcript-message-" + history.messageID), "first saved match");
     keyFor("thread-find-query", 36);
     await until(() => is("thread-find-match-count", "2 of 2") && visible("transcript-message-" + history.latestID), "Return finds the later reply");
-    press("thread-find-next");
+    pressChangingUI("thread-find-next");
     await until(() => is("thread-find-match-count", "1 of 2"), "next wraps");
-    press("thread-find-previous");
+    pressChangingUI("thread-find-previous");
     await until(() => is("thread-find-match-count", "2 of 2"), "previous wraps");
     await setField("thread-find-query", "palette-abandoned-branch-marker");
     await until(() => is("thread-find-match-count", "0 matches"), "abandoned branch excluded");
@@ -102,20 +105,20 @@ export async function verifyConversationControls(driver, { root, app, credential
       await setField("thread-find-query", "orbital lantern");
       await until(() => is("thread-find-match-count", "Search failed") && visible("thread-find-retry"), "unavailable history reported");
     } finally { unlinkSync(duplicate); }
-    press("thread-find-retry");
+    pressChangingUI("thread-find-retry");
     await until(() => is("thread-find-match-count", "1 of 2") && is("thread-find-query", "orbital lantern"), "successful retry of the same search");
     focus("thread-find-query");
     keyFor("thread-find-query", 53);
     await until(() => !has("thread-find-query") && focusIs("composer") && is("composer", draft), "Escape restores the composer");
     assert.deepEqual(selection("composer"), [4, 0]);
-    typeText("composer", "!");
-    const edited = draft.slice(0, 4) + "!" + draft.slice(4);
+    keyFor("composer", 7);
+    const edited = draft.slice(0, 4) + "x" + draft.slice(4);
     await until(() => is("composer", edited), "input after Find inserts at the original caret");
     const range = [edited.indexOf(phrase), phrase.length];
     assert.deepEqual(selection("composer", ...range), range);
     keyFor("composer", 3, "cmd");
     await until(() => focusIs("thread-find-query"), "reopen Find with an active Unicode selection");
-    press("thread-find-close");
+    pressChangingUI("thread-find-close");
     await until(() => focusIs("composer"), "return from Find to the selected phrase");
     assert.deepEqual(selection("composer"), range);
     press("conversation-title");
@@ -124,9 +127,10 @@ export async function verifyConversationControls(driver, { root, app, credential
     await until(() => focusIs("thread-find-query"), "open Find again from the menu");
     await setField("thread-find-query", "orbital lantern");
     await until(() => is("thread-find-match-count", "1 of 2"), "same results after reopening Find");
-    press("thread-find-close");
+    pressChangingUI("thread-find-close");
     await until(() => !has("thread-find-query") && focusIs("composer") && is("composer", edited), "close Find via its button");
     record("Find opened with Command-F and from the thread menu. It found two messages thirty turns apart and wrapped in both directions, excluding the abandoned branch. Repair and Retry restored the query. Both Escape and Close returned to the unfinished draft.");
+    record("After Escape, typing x at the restored offset 4 produced Keepx this draft. The Close button restored the exact UTF-16 selection over 選択👩🏽‍💻.");
 
     press("thread-row-" + questionThread);
     await until(() => is("composer", "Question fixture draft."), "separate question thread");

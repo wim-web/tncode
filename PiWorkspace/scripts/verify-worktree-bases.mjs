@@ -86,11 +86,15 @@ export async function verifyWorktreeBases(driver, { root, git, endpoint, credent
       press("git-start-from-remote");
       await until(() => thread().worktreeStartsFromRemote === true, "reenabled for this draft");
     }
+    await setField("git-branch-search", "absent-branch-fixture");
+    await until(() => visible("git-branch-empty"), "branch search with no matches");
     await setField("git-branch-search", ref);
     const id = "refs/heads/" + ref;
     await until(() => visible("git-branch-ref-" + id), "resolved local ref " + ref);
     press("git-branch-ref-" + id);
     await until(() => thread().location?.newWorktree?.base === id && !tree().includes('id="git-branch-search"'), "pinned base branch");
+    const label = "From " + ref + (fromRemote ? " (remote)" : "");
+    await until(() => visible("composer-branch").includes(JSON.stringify(label)), "visible base " + label);
   }
   async function run(prompt, head, marker) {
     const id = thread().id, count = targets.length;
