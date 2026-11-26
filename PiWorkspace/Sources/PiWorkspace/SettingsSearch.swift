@@ -1,7 +1,7 @@
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, appearance, model, worktrees, usage, browser, about
+    case general, appearance, project, model, worktrees, usage, browser, about
 
     var id: String { rawValue }
 
@@ -9,6 +9,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
+        case .project: "Project Overview"
         case .model: "Model Settings"
         case .worktrees: "Worktrees"
         case .usage: "Usage"
@@ -21,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .appearance: "paintbrush"
+        case .project: "folder"
         case .model: "cpu"
         case .worktrees: "arrow.triangle.branch"
         case .usage: "chart.bar"
@@ -89,6 +91,7 @@ struct SettingsSearchAvailability {
 
     func includes(_ result: SettingsSearchResult) -> Bool {
         guard result.page != .model || canEditModels else { return false }
+        guard result.page != .project || hasProjectScope else { return false }
         return switch result.anchor {
         case .scope: hasProjectScope
         case .endpoint, .contextWindow, .localTools, .localImages: usesLocalProvider
@@ -143,6 +146,7 @@ struct SettingsSearch {
         .init(page: .appearance, anchor: .colorScheme, title: "Color scheme", keywords: "theme light dark system"),
         .init(page: .appearance, anchor: .chatWidth, title: "Chat width", keywords: "conversation composer comfortable wide full"),
         .init(page: .appearance, anchor: .restoreAppearance, title: "Restore Defaults", keywords: "reset appearance color width"),
+        .init(page: .project, title: "Project Overview", keywords: "project settings name folder path checkouts pin"),
         .init(page: .model, title: "Model Settings", keywords: "providers Pi project workspace"),
         .init(page: .model, anchor: .scope, title: "Scope", keywords: "workspace project default inheritance override"),
         .init(page: .model, anchor: .provider, title: "Provider", keywords: "OpenAI Anthropic local OpenAI-compatible"),

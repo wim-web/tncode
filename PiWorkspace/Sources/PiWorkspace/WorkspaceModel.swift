@@ -510,6 +510,7 @@ final class WorkspaceModel: ObservableObject {
     func openSettings(_ page: SettingsPage = .general, anchor: SettingsAnchor? = nil, projectID: UUID? = nil) {
         guard settingsRequest == nil else { return }
         let project = projects.first { $0.id == (projectID ?? self.project?.id) }
+        guard page != .project || project != nil else { return }
         settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id)
     }
 
@@ -882,9 +883,20 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    func renameProject(_ id: UUID, title: String) {
-        guard let index = workspace.projects.firstIndex(where: { $0.id == id }) else { return }
-        save { $0.projects[index].title = title }
+    @discardableResult
+    func renameProject(_ id: UUID, title: String) -> Bool {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true }) else { return false }
+        return save { $0.projects[index].title = title }
+    }
+
+    func copyProjectPath(_ id: UUID, to pasteboard: NSPasteboard) throws {
+        guard let project = projects.first(where: { $0.id == id }), project.folderIsAvailable else {
+            throw WorkspaceError("The project folder is no longer available.")
+        }
+        pasteboard.clearContents()
+        guard pasteboard.setString(project.path, forType: .string) else {
+            throw WorkspaceError("Couldn’t copy the project path to the clipboard.")
+        }
     }
 
     var sidebarProjectFilter: SidebarProjectFilter {
@@ -1366,21 +1378,26 @@ final class WorkspaceModel: ObservableObject {
         }
         let settings = try settings.validated()
         var updated = workspace
+        let affectsActiveProject: Bool
         switch scope {
         case .workspace:
             updated.model = settings
+            affectsActiveProject = true
         case .project(let id):
             let index = try modelSettingsProjectIndex(id)
             let inherited = try? workspace.model.validated()
             if updated.projects[index].modelOverride != nil || settings != inherited {
                 updated.projects[index].modelOverride = settings
             }
+            affectsActiveProject = project?.id == id
         }
 
         let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let replacement = !removeKey && !key.isEmpty ? try KeyVault.validatedKey(key) : nil
         try persist(updated)
-        defer { connect() }
+        defer {
+            if affectsActiveProject || removeKey || replacement != nil { connect() }
+        }
         do {
             if removeKey { try vault.remove(settings.account) }
             else if let replacement { try vault.save(replacement, account: settings.account) }

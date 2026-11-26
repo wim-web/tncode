@@ -4,6 +4,7 @@ struct SidebarProjectScopeRow: View {
     let project: Project
     let setIncluded: (Bool) -> Void
     let selectOnly: () -> Void
+    var openSettings: (() -> Void)? = nil
 
     private var included: Bool { project.inSidebarScope == true }
 
@@ -30,6 +31,13 @@ struct SidebarProjectScopeRow: View {
             .buttonStyle(.plain)
             .help("Filter by \(project.title). Shift-click to add or remove this project.")
             .accessibilityIdentifier("project-filter-choice-\(project.id)")
+            if let openSettings {
+                Button(action: openSettings) { Image(systemName: "gearshape") }
+                    .buttonStyle(.plain)
+                    .help("Project settings for \(project.title)")
+                    .accessibilityLabel("Project settings for \(project.title)")
+                    .accessibilityIdentifier("project-filter-settings-\(project.id)")
+            }
         }
     }
 }

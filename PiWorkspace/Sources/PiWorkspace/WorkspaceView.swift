@@ -709,9 +709,10 @@ struct WorkspaceView: View {
                                     selectOnly: {
                                         model.updateSidebarScope { $0.selectOnly(project.id) }
                                         showingSidebarFilters = false
-                                    }
+                                    },
+                                    openSettings: { openProjectSettings(project.id) }
                                 )
-                                .contextMenu { projectPinAction(project) }
+                                .contextMenu { projectFolderActions(project) }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -750,6 +751,11 @@ struct WorkspaceView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("project-group-\(project.id)")
                 .accessibilityAddTraits(expanded ? .isSelected : [])
+                Button { openProjectSettings(project.id) } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(.plain)
+                    .help("Project settings for \(project.title)")
+                    .accessibilityLabel("Project settings for \(project.title)")
+                    .accessibilityIdentifier("project-group-settings-\(project.id)")
                 Button { startThread(in: project.id) } label: { Image(systemName: "square.and.pencil") }
                     .buttonStyle(.plain)
                     .help("New Thread in \(project.title)")
@@ -827,7 +833,7 @@ struct WorkspaceView: View {
     private func projectActions(_ project: Project) -> some View {
         Button("New Thread") { startThread(in: project.id) }
             .disabled(model.operationsInProgress)
-        projectPinAction(project)
+        projectFolderActions(project)
         Button("Rename Project…") { beginRename(.project(project.id), title: project.title) }
         Button("Relink Folder…") { model.openFolder(relinking: project.id) }
             .disabled(model.phase.isRunning)
@@ -835,11 +841,25 @@ struct WorkspaceView: View {
             .disabled(model.phase.isRunning)
     }
 
-    private func projectPinAction(_ project: Project) -> some View {
+    @ViewBuilder
+    private func projectFolderActions(_ project: Project) -> some View {
+        Button("Copy path") {
+            copyTask?.cancel()
+            do { try model.copyProjectPath(project.id, to: workspacePasteboard) }
+            catch { model.error = error.localizedDescription }
+        }
+        .accessibilityIdentifier("project-copy-path")
         Button(project.pinned == true ? "Unpin Project" : "Pin Project") {
             model.setProjectPinned(project.id, pinned: project.pinned != true)
         }
         .accessibilityIdentifier("toggle-project-pin-\(project.id)")
+        Button("Project settings") { openProjectSettings(project.id) }
+            .accessibilityIdentifier("project-settings")
+    }
+
+    private func openProjectSettings(_ id: UUID) {
+        showingSidebarFilters = false
+        model.openSettings(.project, projectID: id)
     }
 
     @ViewBuilder
@@ -864,9 +884,8 @@ struct WorkspaceView: View {
         if project.isScratch {
             turnIntoProject(thread, project: project)
         } else {
-            Button("Project settings") { model.openSettings(.model, projectID: project.id) }
+            Button("Project settings") { openProjectSettings(project.id) }
                 .accessibilityIdentifier("draft-project-settings")
-                .disabled(model.operationsInProgress)
         }
         Divider()
         Button("Discard draft", role: .destructive) { model.discardDraft(thread.id, in: project.id) }
@@ -947,6 +966,9 @@ struct WorkspaceView: View {
             .accessibilityIdentifier("rename-thread")
         if project.isScratch {
             turnIntoProject(thread, project: project)
+        } else {
+            Button("Project settings") { openProjectSettings(project.id) }
+                .accessibilityIdentifier("thread-project-settings")
         }
         if !thread.archived {
             Button(thread.threadShelf == .pinned ? "Unpin Thread" : "Pin Thread") {
@@ -1897,14 +1919,11 @@ struct WorkspaceView: View {
     private var paletteContents: CommandPaletteContents {
         let projects = filteredProjects
         return CommandPaletteContents(
-            projects: projects, availableProjects: projects.filter(availableForNewThread),
+            projects: projects, availableProjects: projects.filter(\.folderIsAvailable),
             preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
-            canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope
+            canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope,
+            settingsProject: model.project.flatMap { $0.isScratch ? nil : $0 }
         )
-    }
-
-    private func availableForNewThread(_ project: Project) -> Bool {
-        (try? ProjectFolder.existing(at: URL(fileURLWithPath: project.path, isDirectory: true))) != nil
     }
 
     private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
@@ -2028,7 +2047,7 @@ struct WorkspaceView: View {
             break
         case .newThread(let id):
             guard let project = filteredProjects.first(where: { $0.id == id }) else { return }
-            guard availableForNewThread(project) else {
+            guard project.folderIsAvailable else {
                 model.error = "The project folder is no longer available."
                 return
             }
@@ -2047,6 +2066,8 @@ struct WorkspaceView: View {
             openFind(in: scope)
         case .settings:
             model.openSettings()
+        case .projectSettings(let id):
+            openProjectSettings(id)
         case .openProject(let id):
             guard filteredProjects.contains(where: { $0.id == id }) else { return }
             model.selectProjectFromPalette(id)

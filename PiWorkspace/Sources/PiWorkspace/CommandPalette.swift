@@ -8,6 +8,7 @@ enum CommandPaletteAction: Hashable {
     case addProject
     case home
     case settings
+    case projectSettings(UUID)
     case searchThreads
     case findInCurrentThread(SidebarMessageSearch.Thread)
     case openProject(UUID)
@@ -22,6 +23,7 @@ enum CommandPaletteAction: Hashable {
         case .addProject: "add-project"
         case .home: "home"
         case .settings: "settings"
+        case .projectSettings(let id): "project-settings-\(id)"
         case .searchThreads: "search-threads"
         case .findInCurrentThread: "find-current-thread"
         case .openProject(let id): "project-\(id)"
@@ -84,6 +86,7 @@ struct CommandPaletteContents {
     let activeThread: UUID?
     let canStartScratchThread: Bool
     var findThread: SidebarMessageSearch.Thread? = nil
+    var settingsProject: Project? = nil
 
     var commands: [CommandPaletteRow] {
         var rows: [CommandPaletteRow] = []
@@ -109,6 +112,11 @@ struct CommandPaletteContents {
             rows.append(.init(action: .home, title: "Go to home", icon: "house"))
         }
         rows.append(.init(action: .settings, title: "Settings", icon: "gearshape", searchTerms: "preferences"))
+        if let settingsProject {
+            rows.append(.init(action: .projectSettings(settingsProject.id), title: "Project settings",
+                              icon: "folder", detail: settingsProject.title,
+                              searchTerms: "overview name folder path checkout model pin"))
+        }
         return rows
     }
 

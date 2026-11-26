@@ -312,6 +312,11 @@ struct Project: Codable, Identifiable {
 
     var isScratch: Bool { kind == .scratch }
 
+    var folderIsAvailable: Bool {
+        path.hasPrefix("/") && !path.utf8.contains(0) &&
+            (try? ProjectFolder.existing(at: URL(fileURLWithPath: path, isDirectory: true))) != nil
+    }
+
     var lastActivity: Date {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
     }

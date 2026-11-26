@@ -43,6 +43,10 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(search.results(available: availability).first?.anchor, .worktreeLocation)
         search.query = "start from remote"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .startFromRemote)
+        search.query = "project overview"
+        XCTAssertEqual(search.results(available: availability).first?.page, .project)
+        availability.hasProjectScope = false
+        XCTAssertTrue(search.results(available: availability).isEmpty)
     }
 
     func testResultSelectionWrapsAndNewQuerySelectsFirstMatch() {

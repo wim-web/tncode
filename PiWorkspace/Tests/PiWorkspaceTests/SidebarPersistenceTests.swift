@@ -172,6 +172,123 @@ final class SidebarPersistenceTests: XCTestCase {
         try await checkWindow(model: model, collapse: true)
         try await checkWindow(model: model, collapse: false)
     }
+
+    func testProjectOverviewKeepsTheClickedScopeAndOpenDraft() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try files.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: root) }
+        let first = root.appendingPathComponent("first/Project")
+        let second = root.appendingPathComponent("second/Project")
+        let checkout = root.appendingPathComponent("Linked checkout")
+        for folder in [first, second] {
+            try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        func git(_ arguments: String...) throws {
+            let command = Process()
+            command.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            command.arguments = ["-C", second.path] + arguments
+            command.standardOutput = FileHandle.nullDevice
+            try command.run()
+            command.waitUntilExit()
+            XCTAssertEqual(command.terminationStatus, 0, arguments.joined(separator: " "))
+        }
+        try git("init", "--template=", "-b", "main")
+        try git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "Fixture")
+        try git("worktree", "add", "-b", "topic/linked", checkout.path)
+
+        let firstDraft = Conversation(id: UUID(), title: "Other draft", isDraft: true, composerText: "Keep the other draft")
+        let linked = Conversation(id: UUID(), title: "Linked draft", location: .worktree(path: checkout.path, base: "main"),
+                                  isDraft: true, composerText: "Keep this unsent")
+        let alpha = Project(id: UUID(), path: first.path, title: "Project", conversations: [firstDraft],
+                            selectedConversation: firstDraft.id, modelOverride: ModelSettings(provider: .local, model: "first-model"))
+        let beta = Project(id: UUID(), path: second.path, title: "Project", conversations: [linked],
+                           selectedConversation: linked.id, modelOverride: ModelSettings(provider: .local, model: "second-model"))
+        try WorkspaceStore(root: root).save(Workspace(projects: [alpha, beta], selectedProject: beta.id, welcomeCompleted: true))
+        let suite = "ProjectOverviewTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SidebarPreference.groupByProject)
+        var connectionAttempts = 0
+        let model = WorkspaceModel(root: root, keychainService: suite, readCredential: { _ in nil }) { _, _ in
+            connectionAttempts += 1
+            throw WorkspaceError("No Pi helper in this test.")
+        }
+        defer { model.terminate() }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let workspace = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                             browserDefaults: defaults, workspacePasteboard: pasteboard)
+            .defaultAppStorage(defaults))
+        defer { workspace.close() }
+        try await workspace.press("project-group-settings-\(alpha.id)")
+        XCTAssertEqual(model.settingsRequest?.projectID, alpha.id)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [])
+
+        func openOverview() throws -> SidebarOffscreenPanel {
+            let request = try XCTUnwrap(model.settingsRequest)
+            XCTAssertEqual(request.page, .project)
+            return SidebarOffscreenPanel(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+                                                      browserDefaults: defaults, request: request, pasteboard: pasteboard,
+                                                      openWelcome: {}))
+        }
+        do {
+            let settings = try openOverview()
+            defer { settings.close() }
+            try await settings.press("project-settings-copy-path")
+            XCTAssertEqual(pasteboard.string(forType: .string), first.path)
+            try await settings.press("project-settings-pin")
+            XCTAssertTrue(model.projects.first { $0.id == alpha.id }?.pinned == true)
+            XCTAssertNil(model.project?.pinned)
+            try await settings.replaceField("Project", with: "Renamed project")
+            try await settings.press("project-settings-save-name")
+            try await settings.press("project-settings-model")
+            try await settings.replaceField("first-model", with: "edited-first-model")
+            try await settings.press("settings-nav-project")
+            try await settings.press("project-settings-model")
+            _ = try await settings.field(withValue: "edited-first-model")
+            try await settings.press("save-settings")
+        }
+        XCTAssertEqual(connectionAttempts, 0)
+        XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.title, "Renamed project")
+        XCTAssertEqual(model.project?.title, "Project")
+        XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.modelOverride?.model, "edited-first-model")
+        XCTAssertEqual(model.project?.modelOverride?.model, "second-model")
+        XCTAssertEqual(model.conversation?.id, linked.id)
+        XCTAssertEqual(model.workingDirectory, checkout.path)
+        XCTAssertEqual(model.draft, "Keep this unsent")
+        XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.conversations.first?.composerText, "Keep the other draft")
+
+        model.settingsRequest = nil
+        try await workspace.press("project-group-settings-\(beta.id)")
+        do {
+            let settings = try openOverview()
+            defer { settings.close() }
+            let worktree = checkout.resolvingSymlinksInPath().path
+            _ = try await settings.waitForElement("project-settings-checkout-\(worktree)")
+            try await settings.press("project-settings-copy-path")
+            XCTAssertEqual(pasteboard.string(forType: .string), second.path)
+        }
+
+        try files.removeItem(at: first)
+        model.settingsRequest = nil
+        try await workspace.press("project-group-settings-\(alpha.id)")
+        let unavailable = try openOverview()
+        defer { unavailable.close() }
+        _ = try await unavailable.waitForElement("project-settings-folder-unavailable")
+        XCTAssertThrowsError(try model.copyProjectPath(alpha.id, to: pasteboard))
+        XCTAssertEqual(pasteboard.string(forType: .string), second.path)
+        model.settingsRequest = nil
+        model.openSettings(.project, projectID: UUID())
+        XCTAssertNil(model.settingsRequest)
+    }
 }
 
 private final class SidebarOffscreenPanel: NSPanel {
@@ -201,6 +318,42 @@ private final class SidebarOffscreenPanel: NSPanel {
             return nil
         }
         return find(contentView)
+    }
+
+    func waitForElement(_ identifier: String) async throws -> AnyObject {
+        try await waitFor(identifier) { element(identifier) }
+    }
+
+    func press(_ identifier: String) async throws {
+        let button = try await waitForElement(identifier)
+        XCTAssertTrue(button.accessibilityPerformPress?() == true, identifier)
+        await Task.yield()
+    }
+
+    func field(withValue value: String) async throws -> NSTextField {
+        try await waitFor("text field containing \(value)") {
+            func find(in view: NSView) -> NSTextField? {
+                if let field = view as? NSTextField, field.stringValue == value { return field }
+                return view.subviews.lazy.compactMap { find(in: $0) }.first
+            }
+            return contentView.flatMap { find(in: $0) }
+        }
+    }
+
+    func replaceField(_ value: String, with replacement: String) async throws {
+        let field = try await field(withValue: value)
+        XCTAssertTrue(makeFirstResponder(field))
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        editor.insertText(replacement, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+    }
+
+    private func waitFor<Value>(_ description: String, read: () -> Value?) async throws -> Value {
+        for _ in 0..<80 {
+            contentView?.layoutSubtreeIfNeeded()
+            if let value = read() { return value }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw WorkspaceError("Timed out waiting for \(description).")
     }
 
     override func close() {

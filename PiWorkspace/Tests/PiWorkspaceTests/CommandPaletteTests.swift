@@ -13,6 +13,16 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(CommandPaletteRow.matching("\"review build\"", in: rows).map(\.action), [.settings])
     }
 
+    func testProjectSettingsUsesTheActiveFolderEvenWhenTheSidebarFiltersItOut() {
+        let other = Project(id: UUID(), path: "/first/Project", title: "Project")
+        let active = Project(id: UUID(), path: "/second/Project", title: "Project")
+        let contents = CommandPaletteContents(projects: [other], availableProjects: [other], preferredProject: active.id,
+                                              threads: [], activeThread: nil, canStartScratchThread: true,
+                                              settingsProject: active)
+        XCTAssertEqual(contents.results(for: ">Project settings", choosingProject: false).map(\.action),
+                       [.projectSettings(active.id)])
+    }
+
     func testMessageSearchRejectsSupersededQueryScopeAndSubmenuResults() throws {
         let fixture = try Fixture()
         let alpha = try fixture.openProject("Alpha")

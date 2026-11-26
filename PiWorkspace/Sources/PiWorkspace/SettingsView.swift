@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
     let appearance: AppearanceSettings
     let browserDefaults: UserDefaults
+    let pasteboard: NSPasteboard
     let openWelcome: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
@@ -14,6 +15,7 @@ struct SettingsView: View {
     @State private var jump: SettingsJump?
     @State private var search = SettingsSearch()
     @State private var modelDraft: ModelSettingsDraft
+    @State private var projectTitle: String
     @State private var browserDraft: BrowserSearchSettings
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
@@ -23,23 +25,26 @@ struct SettingsView: View {
     @State private var showingLicenses = false
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
-         request: SettingsRequest, openWelcome: @escaping () -> Void) {
+         request: SettingsRequest, pasteboard: NSPasteboard = .general, openWelcome: @escaping () -> Void) {
         self.model = model
         self.appearance = appearance
         self.browserDefaults = browserDefaults
+        self.pasteboard = pasteboard
         self.openWelcome = openWelcome
         _page = State(initialValue: request.page)
         _jump = State(initialValue: request.anchor.map { SettingsJump(anchor: $0) })
         let project = model.projects.first { $0.id == request.projectID }
         _modelDraft = State(initialValue: ModelSettingsDraft(workspace: model.workspace.model, project: project))
+        _projectTitle = State(initialValue: project?.title ?? "")
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
         _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
         _worktreeDirectory = State(initialValue: model.workspace.worktreesDirectory ?? "")
     }
 
+    private var scopedProject: Project? { model.projects.first { $0.id == modelDraft.projectID } }
+
     private var results: [SettingsSearchResult] {
         guard search.isSearching else { return [] }
-        let hasProjectScope = model.projects.contains { $0.id == modelDraft.projectID }
         let scopedOverride: Bool
         if case .project(let id) = modelDraft.scope {
             scopedOverride = model.projects.contains { $0.id == id && $0.modelOverride != nil }
@@ -48,7 +53,7 @@ struct SettingsView: View {
         }
         return search.results(available: SettingsSearchAvailability(
             canEditModels: model.canOpenModelSettings,
-            hasProjectScope: hasProjectScope,
+            hasProjectScope: scopedProject != nil,
             usesLocalProvider: modelDraft.settings.provider == .local,
             hasSavedKey: model.canOpenModelSettings && model.hasKey(for: modelDraft.settings),
             canResetModelOverride: scopedOverride,
@@ -75,7 +80,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if page == .general || page == .worktrees || page == .about || page == .usage {
+                    if page == .general || page == .project || page == .worktrees || page == .about || page == .usage {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
@@ -148,7 +153,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(spacing: 3) {
                         if !search.isSearching {
-                            ForEach(SettingsPage.allCases) { item in
+                            ForEach(SettingsPage.allCases.filter { $0 != .project || scopedProject != nil }) { item in
                                 navigationRow(title: item.title, page: item, selected: item == page) {
                                     navigate(to: item)
                                 }
@@ -220,6 +225,13 @@ struct SettingsView: View {
             }
         case .appearance:
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
+        case .project:
+            if let scopedProject {
+                ProjectOverviewSettingsView(model: model, project: scopedProject, title: $projectTitle,
+                                            pasteboard: pasteboard) { navigate(to: .model) }
+            } else {
+                Text("This project is no longer open.").foregroundStyle(.secondary)
+            }
         case .model:
             ModelSettingsView(model: model, draft: $modelDraft, settingsFocus: $focus)
         case .worktrees:

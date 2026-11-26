@@ -102,7 +102,7 @@ struct PiWorkspaceApp: App {
                     model.openWelcome()
                 }) { request in
                     SettingsView(model: model, appearance: appearance, browserDefaults: browserDefaults,
-                                 request: request) {
+                                 request: request, pasteboard: workspacePasteboard) {
                         showWelcomeAfterSettings = true
                         model.settingsRequest = nil
                     }
