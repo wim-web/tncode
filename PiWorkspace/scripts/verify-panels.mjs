@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export async function verifyPreview({ press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag }, baseURL) {
+export async function verifyPreview(driver, baseURL, network) {
+  const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
   const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), match => match[1]);
   async function newTab(profile) {
     const previous = new Set(tabIDs());
@@ -92,8 +93,49 @@ export async function verifyPreview({ press, visible, tree, setField, until, clo
   press("toggle-browser");
   await until(() => tree().includes("Preview document 1") && tabIDs().includes(third), "closed floating tab retained in its thread");
   assert(tree().includes("Keep this text while previewing."));
+  const testing = await newTab("default");
+  await verifyPageControls(driver, baseURL, network);
+  press("browser-close-tab-" + testing);
+  await until(() => !tabIDs().includes(testing), "closed navigation test tab");
   press("toggle-browser");
   await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
+}
+
+async function verifyPageControls({ press, visible, tree, until, setField, webFrame }, baseURL, network) {
+  async function go(path) {
+    await setField("browser-address", baseURL + path);
+    press("browser-go");
+  }
+  await go("/preview/revision");
+  await until(() => tree().includes("Page revision 1"), "original page revision");
+  const original = webFrame("zoom-marker");
+  const widthAt = zoom => {
+    const width = webFrame("zoom-marker")[2];
+    return Math.abs(width - original[2] * zoom) <= 1;
+  };
+  press("browser-zoom-in");
+  await until(() => tree().includes("110%") && widthAt(1.1), "zoomed-in HTML button");
+  press("browser-zoom-out");
+  press("browser-zoom-out");
+  await until(() => tree().includes("90%") && widthAt(0.9), "zoomed-out HTML button");
+  press("browser-reset-zoom");
+  await until(() => tree().includes("100%") && widthAt(1), "reset HTML button");
+  press("browser-reload");
+  await until(() => tree().includes("Page revision 2"), "fresh content after Reload");
+  await go("/preview/delayed");
+  await until(() => network.delayedRequests > 0 && visible("browser-reload").includes("Stop Loading"), "in-flight page");
+  press("browser-reload");
+  await until(() => network.cancelledRequests > 0 && visible("browser-reload").includes("Reload"), "cancelled page request");
+  network.releaseDelayed = true;
+  press("browser-reload");
+  await until(() => tree().includes("Released page"), "reload after Stop");
+  await go("/preview/unreachable");
+  await until(() => visible("browser-error-details"), "unreachable site");
+  press("browser-error-details");
+  await until(() => visible("browser-error-code") && tree().includes(baseURL + "/preview/unreachable"), "failed URL and native error details");
+  network.recovered = true;
+  press("browser-error-reload");
+  await until(() => tree().includes("Server recovered") && !tree().includes('id="browser-error-details"'), "repaired server");
 }
 
 export async function verifyPullRequests({ press, visible, tree, until }, stateFile, logFile, checkout) {

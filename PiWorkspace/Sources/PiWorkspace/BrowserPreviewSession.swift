@@ -6,6 +6,19 @@ enum BrowserProfile: String, CaseIterable {
     case alternate = "Alternate"
 }
 
+enum BrowserSurface { case panel, miniPlayer, window }
+
+enum BrowserPreviewProblem: Hashable {
+    case notice(String)
+    case unreachable(url: URL, message: String, domain: String, code: Int)
+
+    var message: String {
+        switch self {
+        case .notice(let text), .unreachable(_, let text, _, _): text
+        }
+    }
+}
+
 @MainActor
 struct ThreadBrowserPreview {
     private enum FloatingTab {
@@ -17,11 +30,27 @@ struct ThreadBrowserPreview {
             case .window(let id), .miniPlayer(let id, _): id
             }
         }
+
+        var surface: BrowserSurface {
+            switch self {
+            case .window: .window
+            case .miniPlayer: .miniPlayer
+            }
+        }
     }
 
     private(set) var tabs: [BrowserPreviewSession] = []
     private(set) var selectedTabID: UUID?
-    private var floating: FloatingTab?
+    private var floating: FloatingTab? {
+        didSet {
+            if let previous = oldValue, previous.id != floating?.id {
+                tabs.first { $0.id == previous.id }?.surface = .panel
+            }
+            if let floating, let tab = tabs.first(where: { $0.id == floating.id }), tab.surface != floating.surface {
+                tab.surface = floating.surface
+            }
+        }
+    }
     private var dataStores: [BrowserProfile: WKWebsiteDataStore] = [:]
     var isVisible = false
 
@@ -114,12 +143,14 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     let id = UUID()
     let profile: BrowserProfile
     let webView: WKWebView
+    @Published fileprivate(set) var surface: BrowserSurface = .panel
     @Published var address = ""
     @Published private(set) var pageURL: URL?
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
     @Published private(set) var isLoading = false
-    @Published private(set) var message: String?
+    @Published private(set) var problem: BrowserPreviewProblem?
+    var message: String? { problem?.message }
     @Published private(set) var zoom = 100
     @Published private var retryURL: URL?
     private var pendingURL: URL?
@@ -148,7 +179,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     func openAddress() {
         let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: text, encodingInvalidCharacters: false), Self.isWebURL(url) else {
-            message = "Enter a valid URL starting with http:// or https://."
+            problem = .notice("Enter a valid URL starting with http:// or https://.")
             return
         }
         load(url)
@@ -181,7 +212,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
 
     private func load(_ url: URL) {
         address = url.absoluteString
-        message = nil
+        problem = nil
         retryURL = nil
         pendingURL = url
         webView.load(URLRequest(url: url))
@@ -198,7 +229,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         guard let frame = action.targetFrame else { return .cancel }
         if !frame.isMainFrame { return .allow }
         guard let url = action.request.url, Self.isWebURL(url) else {
-            message = "Browser preview can open HTTP and HTTPS pages."
+            problem = .notice("Browser preview can open HTTP and HTTPS pages.")
             return .cancel
         }
         pendingURL = url
@@ -209,7 +240,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         if !response.isForMainFrame { return .allow }
         guard let url = response.response.url, Self.isWebURL(url) else { return .cancel }
         guard response.canShowMIMEType else {
-            message = "Browser preview can’t display this file type."
+            problem = .notice("Browser preview can’t display this file type.")
             return .cancel
         }
         return .allow
@@ -218,7 +249,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         isLoading = true
         retryURL = nil
-        message = nil
+        problem = nil
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -234,18 +265,20 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        message = "The page stopped responding. Reload to try again."
+        problem = .notice("The page stopped responding. Reload to try again.")
     }
 
     private func showFailure(_ error: Error) {
         let failure = error as NSError
         if failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled { return }
-        let attemptedURL = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? pendingURL
+        let attemptedURL = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? pendingURL ?? pageURL
         pendingURL = nil
         if let url = attemptedURL, Self.isWebURL(url) {
             retryURL = url
             address = url.absoluteString
+            problem = .unreachable(url: url, message: failure.localizedDescription, domain: failure.domain, code: failure.code)
+        } else {
+            problem = .notice(failure.localizedDescription)
         }
-        message = failure.localizedDescription
     }
 }

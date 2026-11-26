@@ -107,6 +107,13 @@ struct BrowserSessionView: View {
     enum Location {
         case panel(miniPlayer: () -> Void, popOut: () -> Void)
         case window(dock: () -> Void)
+
+        var surface: BrowserSurface {
+            switch self {
+            case .panel: .panel
+            case .window: .window
+            }
+        }
     }
 
     @ObservedObject var session: BrowserPreviewSession
@@ -162,7 +169,7 @@ struct BrowserSessionView: View {
             .padding(.bottom, 6)
 
             Divider()
-            if let message = session.message {
+            if case .notice(let message) = session.problem {
                 Text(message)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -171,20 +178,7 @@ struct BrowserSessionView: View {
                     .accessibilityIdentifier("browser-error")
                 Divider()
             }
-            ZStack {
-                let empty = session.pageURL == nil && !session.isLoading
-                BrowserWebView(webView: session.webView)
-                    .opacity(empty ? 0 : 1)
-                    .accessibilityHidden(empty)
-                    .allowsHitTesting(!empty)
-                if empty && session.message == nil {
-                    Text("Enter an HTTP or HTTPS URL to preview a page.")
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            BrowserPageContent(session: session, surface: location.surface, emptyHint: "Enter an HTTP or HTTPS URL to preview a page.")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser-preview")
@@ -203,18 +197,76 @@ struct BrowserSessionView: View {
     }
 }
 
-struct BrowserWebView: NSViewRepresentable {
-    let webView: WKWebView
+struct BrowserPageContent: View {
+    @ObservedObject var session: BrowserPreviewSession
+    let surface: BrowserSurface
+    let emptyHint: String
 
-    final class Host: NSView {
-        weak var sessionView: WKWebView?
+    var body: some View {
+        ZStack {
+            if case let .unreachable(url, message, domain, code) = session.problem {
+                BrowserUnreachableView(url: url, message: message, errorCode: "\(domain) \(code)",
+                                       reload: session.reloadOrStop)
+                    .id(session.problem)
+            } else {
+                let empty = session.pageURL == nil && !session.isLoading
+                BrowserWebView(session: session, surface: surface)
+                    .opacity(empty ? 0 : 1)
+                    .accessibilityHidden(empty)
+                    .allowsHitTesting(!empty)
+                if empty && session.problem == nil {
+                    Text(emptyHint)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    func makeNSView(context: Context) -> Host { Host() }
+private struct BrowserUnreachableView: View {
+    let url: URL
+    let message: String
+    let errorCode: String
+    let reload: () -> Void
+    @State private var showsDetails = false
 
-    func updateNSView(_ host: Host, context: Context) {
-        guard host.sessionView !== webView else { return }
-        host.sessionView = webView
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("This site can’t be reached").font(.headline)
+                Text(url.host() ?? url.absoluteString).fontWeight(.medium)
+                Text(message).foregroundStyle(.secondary)
+                if showsDetails {
+                    Text("Check the connection and make sure the server is running at this address.")
+                    Text(url.absoluteString).textSelection(.enabled)
+                    Text(errorCode).font(.caption.monospaced()).textSelection(.enabled)
+                        .accessibilityIdentifier("browser-error-code")
+                }
+                HStack {
+                    Button(showsDetails ? "Hide Details" : "Details") { showsDetails.toggle() }
+                        .accessibilityIdentifier("browser-error-details")
+                    Button("Reload", action: reload)
+                        .accessibilityIdentifier("browser-error-reload")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding()
+        }
+        .accessibilityIdentifier("browser-unreachable")
+    }
+}
+
+struct BrowserWebView: NSViewRepresentable {
+    @ObservedObject var session: BrowserPreviewSession
+    let surface: BrowserSurface
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ host: NSView, context: Context) {
+        let webView = session.webView
+        guard session.surface == surface, webView.superview !== host else { return }
         host.subviews = []
         webView.removeFromSuperview()
         webView.frame = host.bounds
@@ -222,7 +274,7 @@ struct BrowserWebView: NSViewRepresentable {
         host.addSubview(webView)
     }
 
-    static func dismantleNSView(_ host: Host, coordinator: ()) {
+    static func dismantleNSView(_ host: NSView, coordinator: ()) {
         host.subviews = []
     }
 }

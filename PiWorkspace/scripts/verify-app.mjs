@@ -63,7 +63,24 @@ function fixtureReply(index) {
 }
 
 let previewDocument = 0;
+const previewNetwork = { revision: 0, delayedRequests: 0, cancelledRequests: 0, releaseDelayed: false, recovered: false };
 const server = createServer(async (request, response) => {
+  if (request.method === "GET" && request.url === "/preview/revision") {
+    response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" }).end(
+      '<h1>Page revision ' + ++previewNetwork.revision + '</h1><button id="zoom-marker" style="width:100px;height:32px">Zoom marker</button>');
+    return;
+  }
+  if (request.method === "GET" && request.url === "/preview/delayed") {
+    previewNetwork.delayedRequests++;
+    if (previewNetwork.releaseDelayed) response.writeHead(200, { "Content-Type": "text/html" }).end("<h1>Released page</h1>");
+    else response.on("close", () => { previewNetwork.cancelledRequests++; });
+    return;
+  }
+  if (request.method === "GET" && request.url === "/preview/unreachable") {
+    if (previewNetwork.recovered) response.writeHead(200, { "Content-Type": "text/html" }).end("<h1>Server recovered</h1>");
+    else request.socket.destroy();
+    return;
+  }
   if (request.method === "GET" && request.url === "/preview/profile") {
     response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" }).end(
       `<h1>Preview document ${++previewDocument}</h1><p id="visits"></p><script>
@@ -170,6 +187,7 @@ const panelDriver = {
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
+  webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
   drag: (id, x, y, dx, dy) => drive("drag", [id, ...[x, y, dx, dy].map(String)]),
 };
 
@@ -277,15 +295,19 @@ async function openProject() {
   await chooseLocalFolder();
   const missingChild = join(project, "missing folder");
   await setField("project-path", missingChild);
-  press("browse-project");
-  await until(() => visible("open-panel"), "system folder picker");
-  press("CancelButton");
-  await until(() => !tree().includes('id="open-panel"'), "system picker cancellation");
+  async function finishFolderPicker(button) {
+    press("browse-project");
+    await until(() => visible("open-panel") && visible(button).includes("enabled=true"), "system folder picker");
+    try {
+      press(button);
+    } catch (error) {
+      if (!String(error.stderr).includes("AX error -25204")) throw error;
+    }
+    await until(() => !tree().includes('id="open-panel"') && visible("project-path"), "return to the project path");
+  }
+  await finishFolderPicker("CancelButton");
   assert(drive("get", ["project-path", "--values"]).includes(missingChild));
-  press("browse-project");
-  await until(() => visible("OKButton").includes("enabled=true"), "Choose folder");
-  press("OKButton");
-  await until(() => !tree().includes('id="open-panel"'), "system folder selection");
+  await finishFolderPicker("OKButton");
   const returnedPath = drive("get", ["project-path", "--values"]);
   assert(returnedPath.includes("value=" + JSON.stringify(project)), "Browse did not return the selected folder");
   press("confirm-project");
@@ -651,7 +673,7 @@ try {
         return id;
       }, "live terminal before undocking");
     }
-    await verifyPreview(panelDriver, new URL(endpoint).origin);
+    await verifyPreview(panelDriver, new URL(endpoint).origin, previewNetwork);
     if (worktreeTest) {
       assert.equal(Number(readFileSync(shellProof, "utf8")), previewShellPID);
       process.kill(previewShellPID, 0);
@@ -659,6 +681,7 @@ try {
       press("close-terminal");
     }
     record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
+    record("Zoom changed the rendered width of a 100 CSS-pixel button. Refresh fetched a new revision, Stop cancelled an outstanding GET, and the error view showed details and reloaded the repaired local server.");
     await setProjectModel(panelDriver, "fixture-project-model");
   }
 

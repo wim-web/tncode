@@ -11,6 +11,7 @@ Usage:
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax frame PID IDENTIFIER
+  ax web-frame PID DOM_IDENTIFIER
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax press PID IDENTIFIER
@@ -64,6 +65,7 @@ private enum Operation {
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case frame(String)
+    case webFrame(String)
     case sizeWindow(String, CGSize)
     case drag(String, CGPoint, CGSize)
     case press(String)
@@ -86,6 +88,8 @@ private enum Operation {
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
         case ("frame", let id?) where arguments.count == 1:
             self = .frame(id)
+        case ("web-frame", let id?) where arguments.count == 1:
+            self = .webFrame(id)
         case ("size-window", let id?) where arguments.count == 3:
             let sizes = arguments.dropFirst().compactMap { Double($0) }
             guard sizes.count == 2, sizes.allSatisfy({ $0.isFinite && $0 > 0 }) else {
@@ -361,6 +365,11 @@ private func run(_ arguments: [String]) throws {
         print(try line(for: element(withID: id, in: app), options: options))
     case .frame(let id):
         let rect = try frame(of: element(withID: id, in: app))
+        print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
+    case .webFrame(let id):
+        let matches = Tree(root: app).map(\.element).filter { attribute("AXDOMIdentifier", on: $0) as? String == id }
+        guard matches.count == 1, let node = matches.first else { throw Failure("Expected one DOM element with this identifier.") }
+        let rect = try frame(of: node)
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .sizeWindow(let id, let requested):
         let window = try element(withID: id, in: app)

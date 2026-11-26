@@ -118,13 +118,10 @@ struct BrowserMiniPlayer: View {
     var body: some View {
         let rect = placement.frame(in: canvas, avoiding: obstacles)
         ZStack(alignment: .topLeading) {
-            BrowserWebView(webView: tab.webView)
-            if let message = tab.message {
+            BrowserPageContent(session: tab, surface: .miniPlayer, emptyHint: "Open a URL in the Browser panel.")
+            if case .notice(let message) = tab.problem {
                 Text(message).padding(10).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.regularMaterial)
-            } else if tab.pageURL == nil && !tab.isLoading {
-                Text("Open a URL in the Browser panel.")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(width: rect.width, height: rect.height)
