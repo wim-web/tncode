@@ -66,7 +66,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if page == .general || page == .about {
+                    if page == .general || page == .about || page == .usage {
                         Button("Done") { dismiss() }
                             .accessibilityIdentifier("settings-close")
                     }
@@ -78,6 +78,9 @@ struct SettingsView: View {
                     Group {
                         if page == .about {
                             AboutView(showingLicenses: $showingLicenses, settingsFocus: $focus)
+                        } else if page == .usage {
+                            UsageSettingsView(root: model.root, projects: model.workspace.projects)
+                                .padding(24)
                         } else {
                             ScrollView {
                                 detail
@@ -203,7 +206,7 @@ struct SettingsView: View {
             ModelSettingsView(model: model, draft: $modelDraft, settingsFocus: $focus)
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
-        case .about:
+        case .about, .usage:
             EmptyView()
         }
     }

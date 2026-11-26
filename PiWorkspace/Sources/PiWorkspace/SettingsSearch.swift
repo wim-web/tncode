@@ -1,7 +1,7 @@
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, appearance, model, browser, about
+    case general, appearance, model, usage, browser, about
 
     var id: String { rawValue }
 
@@ -10,6 +10,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: "General"
         case .appearance: "Appearance"
         case .model: "Model Settings"
+        case .usage: "Usage"
         case .browser: "Browser Settings"
         case .about: "About"
         }
@@ -20,6 +21,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .appearance: "paintbrush"
         case .model: "cpu"
+        case .usage: "chart.bar"
         case .browser: "globe"
         case .about: "info.circle"
         }
@@ -146,6 +148,7 @@ struct SettingsSearch {
         .init(page: .model, anchor: .apiKey, title: "API key", keywords: "provider credentials authentication keychain"),
         .init(page: .model, anchor: .removeKey, title: "Remove saved key", keywords: "delete API key credentials"),
         .init(page: .model, anchor: .resetModelOverride, title: "Reset to Workspace default", keywords: "project override restore inherited model"),
+        .init(page: .usage, title: "Usage", keywords: "Pi assistant tokens cost providers billing limits"),
         .init(page: .browser, title: "Browser Settings", keywords: "web preview WKWebView browsing"),
         .init(page: .browser, anchor: .searchEngine, title: "Search engine", keywords: "browser address DuckDuckGo Google Bing Brave Kagi Ecosia Custom"),
         .init(page: .browser, anchor: .customSearchURL, title: "Custom search URL", keywords: "browser search template %s"),

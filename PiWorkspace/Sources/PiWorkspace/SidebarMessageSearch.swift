@@ -96,7 +96,8 @@ struct SidebarMessageSearch: Equatable, Sendable {
         var matches: [UUID: Match] = [:]
         for thread in threads {
             try Task.checkCancellation()
-            guard let file = Self.openHistory(for: thread, in: rootFD) else { continue }
+            guard let file = try? WorkspaceHistory.open(in: rootFD, projectID: thread.projectID,
+                                                        threadID: thread.threadID) else { continue }
             defer { try? file.close() }
             do {
                 matches[thread.threadID] = try match(in: file, threadID: thread.threadID)
@@ -109,52 +110,12 @@ struct SidebarMessageSearch: Equatable, Sendable {
         return matches
     }
 
-    private static func openHistory(for thread: Thread, in rootFD: Int32) -> FileHandle? {
-        var directoryFD = dup(rootFD)
-        guard directoryFD >= 0 else { return nil }
-        for component in WorkspaceStore.historyComponents(project: thread.projectID, conversation: thread.threadID) {
-            let child = openat(directoryFD, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            close(directoryFD)
-            guard child >= 0 else { return nil }
-            directoryFD = child
-        }
-        guard let directory = fdopendir(directoryFD) else {
-            close(directoryFD)
-            return nil
-        }
-        defer { closedir(directory) }
-        var history: String?
-        while let entry = readdir(directory) {
-            let capacity = Int(entry.pointee.d_namlen) + 1
-            let name = withUnsafePointer(to: &entry.pointee.d_name) {
-                $0.withMemoryRebound(to: CChar.self, capacity: capacity) {
-                    String(validatingUTF8: $0)
-                }
-            }
-            guard let name, name.hasSuffix(".jsonl") else { continue }
-            guard history == nil else { return nil }
-            history = name
-        }
-        guard let history else { return nil }
-        let fd = openat(directoryFD, history, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { return nil }
-        var info = stat()
-        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_nlink == 1,
-              flock(fd, LOCK_SH | LOCK_NB) == 0 else {
-            close(fd)
-            return nil
-        }
-        return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    }
-
     private func match(in file: FileHandle, threadID: UUID) throws -> Match? {
         let decoder = JSONDecoder()
-        var line = Data()
         var hasHeader = false
         var leaf: String?
         var entries: [String: Entry] = [:]
-        func recordLine() throws {
-            try Task.checkCancellation()
+        try WorkspaceHistory.readLines(in: file) { line in
             guard let entry = try? decoder.decode(Entry.self, from: line) else { return }
             if entry.type == "session" {
                 guard !hasHeader else { return }
@@ -169,18 +130,6 @@ struct SidebarMessageSearch: Equatable, Sendable {
             }
         }
 
-        while let chunk = try file.read(upToCount: 64 * 1024), !chunk.isEmpty {
-            try Task.checkCancellation()
-            var start = chunk.startIndex
-            for end in chunk.indices where chunk[end] == 0x0A {
-                line.append(chunk[start..<end])
-                try recordLine()
-                line.removeAll(keepingCapacity: true)
-                start = end + 1
-            }
-            line.append(chunk[start...])
-        }
-        if !line.isEmpty { try recordLine() }
         guard hasHeader else { return nil }
 
         // Pi reopens at the last entry and renders the path through parentId.

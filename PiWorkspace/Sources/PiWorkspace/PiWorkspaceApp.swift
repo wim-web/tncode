@@ -109,6 +109,9 @@ struct PiWorkspaceApp: App {
                 Button("Appearance Settings…") { model.openSettings(.appearance) }
                     .accessibilityIdentifier("appearance-settings-menu")
                     .disabled(model.showingSettings || model.showingCommandPalette)
+                Button("Usage…") { model.openSettings(.usage) }
+                    .accessibilityIdentifier("usage-menu")
+                    .disabled(model.startupFailure != nil || model.showingSettings || model.showingCommandPalette)
                 Button("Browser Settings…") { model.openSettings(.browser) }
                     .accessibilityIdentifier("browser-settings-menu")
                     .disabled(model.showingSettings || model.showingCommandPalette)
