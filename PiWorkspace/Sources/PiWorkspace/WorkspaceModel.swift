@@ -4,7 +4,7 @@ import Foundation
 
 @MainActor
 final class WorkspaceModel: ObservableObject {
-    enum SidebarCommand { case newThread, search }
+    enum SidebarCommand { case newThread, search, commandPalette }
     let sidebarCommand = PassthroughSubject<SidebarCommand, Never>()
 
     enum Phase: Equatable {
@@ -137,6 +137,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var showingWelcome = false
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
+    @Published var showingCommandPalette = false
 
     let root: URL
     private var store: WorkspaceStore?
@@ -182,6 +183,10 @@ final class WorkspaceModel: ObservableObject {
         return conversation.workingLocation.directory(in: project)
     }
     var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree }
+    var canOpenCommandPalette: Bool {
+        store != nil && !showingWelcome && !operationsInProgress &&
+            !showingSettings && !showingQuitSaveFailure && projectPicker == nil
+    }
     var canStartScratchThread: Bool { store != nil }
     var canChangeWorkspace: Bool {
         project?.isScratch == false && canChangeWorkingDirectory
@@ -386,6 +391,18 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress, workspace.selectedProject != id, projects.contains(where: { $0.id == id }) else { return }
         guard save({ $0.selectedProject = id }) else { return }
         connect()
+    }
+
+    func showHome() {
+        guard !operationsInProgress, workspace.selectedProject != nil,
+              save({ $0.selectedProject = nil }) else { return }
+        error = nil
+        connect()
+    }
+
+    func requestCommandPalette() {
+        guard canOpenCommandPalette else { return }
+        sidebarCommand.send(.commandPalette)
     }
 
     func removeProject(_ id: UUID) {

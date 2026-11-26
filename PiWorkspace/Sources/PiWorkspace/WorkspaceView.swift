@@ -44,6 +44,8 @@ struct WorkspaceView: View {
     @State private var choosingWorkspace = false
     @State private var confirmingTerminalClose = false
     @State private var choosingThreadProject = false
+    @State private var paletteAction: CommandPaletteAction?
+    @State private var paletteReturnFocus: PaletteReturnFocus?
     @State private var openTerminals: [TerminalLocation] = []
     @State private var settledExpanded = false
     @State private var rename: RenameTarget?
@@ -59,6 +61,11 @@ struct WorkspaceView: View {
     private enum RenameTarget {
         case project(UUID)
         case conversation(UUID, project: UUID)
+    }
+
+    private enum PaletteReturnFocus {
+        case search
+        case composer(UUID)
     }
 
     private struct TerminalLocation: Identifiable, Hashable {
@@ -128,10 +135,12 @@ struct WorkspaceView: View {
         }
         .tint(accent)
         .onReceive(model.sidebarCommand) { command in
-            guard !model.showingWelcome, NSApp.mainWindow?.attachedSheet == nil else { return }
             switch command {
-            case .newThread: newThread()
-            case .search: searchFocused = true
+            case .commandPalette: openCommandPalette()
+            case .newThread, .search:
+                guard !model.showingWelcome, !model.showingCommandPalette,
+                      NSApp.mainWindow?.attachedSheet == nil else { return }
+                if command == .newThread { newThread() } else { searchFocused = true }
             }
         }
         .onChange(of: model.projects.map(\.id)) { _, ids in projectFilter.retainProjects(ids) }
@@ -158,6 +167,13 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $model.showingSettings) { ModelSettingsView(model: model) }
         .sheet(item: $draftSettingsProject) { ModelSettingsView(model: model, projectID: $0.id) }
+        .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
+            CommandPaletteView(contents: paletteContents) { action in
+                guard model.showingCommandPalette else { return }
+                paletteAction = action
+                model.showingCommandPalette = false
+            }
+        }
         .task(id: model.repositoryRevision) {
             var branches: [String: String] = [:]
             let paths = Set(model.threadProjects.flatMap(\.conversations).compactMap { thread -> String? in
@@ -1290,7 +1306,7 @@ struct WorkspaceView: View {
                 .focused($focusedComposer, equals: threadID)
                 .task(id: threadID) {
                     await Task.yield()
-                    if !Task.isCancelled && model.projectPicker == nil && !model.showingSettings {
+                    if !Task.isCancelled && model.projectPicker == nil && !model.showingSettings && !model.showingCommandPalette {
                         focusedComposer = threadID
                     }
                 }
@@ -1406,6 +1422,78 @@ struct WorkspaceView: View {
         } else {
             model.openFolder(startThread: true)
         }
+    }
+
+    private var paletteContents: CommandPaletteContents {
+        let projects = filteredProjects
+        return CommandPaletteContents(
+            projects: projects, availableProjects: projects.filter(availableForNewThread),
+            preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
+            canStartScratchThread: model.canStartScratchThread
+        )
+    }
+
+    private func availableForNewThread(_ project: Project) -> Bool {
+        (try? ProjectFolder.existing(at: URL(fileURLWithPath: project.path, isDirectory: true))) != nil
+    }
+
+    private func openCommandPalette() {
+        guard model.canOpenCommandPalette, !model.showingCommandPalette,
+              let window = NSApp.keyWindow, window === NSApp.mainWindow,
+              window.attachedSheet == nil, NSApp.modalWindow == nil, !ThreadTerminal.hasFocus(in: window),
+              !choosingWorkspace, !choosingThreadProject, !confirmingTerminalClose,
+              draftSettingsProject == nil, rename == nil, removingProject == nil else { return }
+        paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
+        model.showingCommandPalette = true
+    }
+
+    private func finishCommandPalette() {
+        let action = paletteAction
+        paletteAction = nil
+        switch paletteReturnFocus {
+        case .search: searchFocused = true
+        case .composer(let id) where model.conversation?.id == id: focusedComposer = id
+        default: break
+        }
+        paletteReturnFocus = nil
+
+        guard let action, model.canOpenCommandPalette else { return }
+        switch action {
+        case .chooseProject:
+            break
+        case .newThread(let id):
+            guard let project = filteredProjects.first(where: { $0.id == id }) else { return }
+            guard availableForNewThread(project) else {
+                model.error = "The project folder is no longer available."
+                return
+            }
+            startThread(in: id)
+            if model.project?.id == id { focusCurrentComposer() }
+        case .newScratchThread:
+            startScratchThread()
+            focusCurrentComposer()
+        case .addProject:
+            model.openFolder()
+        case .home:
+            model.showHome()
+        case .searchThreads:
+            searchFocused = true
+        case .openProject(let id):
+            model.selectProject(id)
+            if model.project?.id == id {
+                collapsed.remove(id)
+                focusCurrentComposer()
+            }
+        case .openThread(let id, let project):
+            guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
+            openThread(target)
+            if model.conversation?.id == id { focusCurrentComposer() }
+        }
+    }
+
+    private func focusCurrentComposer() {
+        searchFocused = false
+        focusedComposer = model.conversation?.id
     }
 
     private func chooseWorkspace() {

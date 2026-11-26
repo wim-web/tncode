@@ -7,6 +7,10 @@ struct ThreadTerminal: View {
     let directory: String
     let visible: Bool
 
+    static func hasFocus(in window: NSWindow) -> Bool {
+        window.firstResponder is TerminalSessionView
+    }
+
     var body: some View {
         TerminalHost(directory: directory, visible: visible)
     }

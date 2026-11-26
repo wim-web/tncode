@@ -90,7 +90,7 @@ struct PiWorkspaceApp: App {
         }
         .defaultSize(width: 1080, height: 720)
         .commands {
-            WorkspaceSidebarCommands(model: model)
+            WorkspaceSidebarCommands(model: model, showingAppSettings: showingBrowserSettings || showingAppearanceSettings)
             CommandGroup(replacing: .appInfo) {
                 Button("About \(AboutInfo().name)") { openWindow(id: AboutView.windowID) }
                     .accessibilityIdentifier("about-menu")
@@ -98,19 +98,19 @@ struct PiWorkspaceApp: App {
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
-                    .disabled(model.startupFailure != nil || model.phase.isRunning
+                    .disabled(model.startupFailure != nil || model.phase.isRunning || model.showingCommandPalette
                               || showingBrowserSettings || showingAppearanceSettings)
                 Button("Appearance Settings…") { showingAppearanceSettings = true }
                     .accessibilityIdentifier("appearance-settings-menu")
-                    .disabled(model.showingSettings || showingBrowserSettings || showingAppearanceSettings)
+                    .disabled(model.showingSettings || model.showingCommandPalette || showingBrowserSettings || showingAppearanceSettings)
                 Button("Browser Settings…") { showingBrowserSettings = true }
                     .accessibilityIdentifier("browser-settings-menu")
-                    .disabled(model.showingSettings || showingBrowserSettings || showingAppearanceSettings)
+                    .disabled(model.showingSettings || model.showingCommandPalette || showingBrowserSettings || showingAppearanceSettings)
             }
             CommandGroup(after: .help) {
                 Button("Show Welcome") { model.showingWelcome = true }
                     .disabled(model.startupFailure != nil || model.operationsInProgress
-                              || model.showingSettings || model.projectPicker != nil)
+                              || model.showingSettings || model.showingCommandPalette || model.projectPicker != nil)
             }
         }
 
@@ -149,24 +149,31 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
 
 private struct WorkspaceSidebarCommands: Commands {
     @ObservedObject var model: WorkspaceModel
+    let showingAppSettings: Bool
 
-    private var workspaceOpen: Bool { model.startupFailure == nil && !model.showingWelcome }
+    private var workspaceOpen: Bool {
+        model.startupFailure == nil && !model.showingWelcome && !model.showingCommandPalette
+    }
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Add Project…") { model.openFolder() }
                 .keyboardShortcut("o")
-                .disabled(model.startupFailure != nil || model.operationsInProgress)
+                .disabled(model.startupFailure != nil || model.operationsInProgress || model.showingCommandPalette)
             Button("New Thread") { model.sidebarCommand.send(.newThread) }
                 .keyboardShortcut("n")
                 .disabled(!workspaceOpen || model.operationsInProgress)
             if model.canStartScratchThread {
                 Button("New Thread Without a Project", action: model.startScratchThread)
                     .keyboardShortcut("n", modifiers: [.command, .option])
-                    .disabled(model.showingWelcome || model.operationsInProgress)
+                    .disabled(!workspaceOpen || model.operationsInProgress)
             }
         }
         CommandGroup(after: .pasteboard) {
+            Button("Command Palette…", action: model.requestCommandPalette)
+                .keyboardShortcut("k")
+                .accessibilityIdentifier("open-command-palette")
+                .disabled(!model.canOpenCommandPalette || model.showingCommandPalette || showingAppSettings)
             Button("Search Threads") { model.sidebarCommand.send(.search) }
                 .keyboardShortcut("f")
                 .disabled(!workspaceOpen)
