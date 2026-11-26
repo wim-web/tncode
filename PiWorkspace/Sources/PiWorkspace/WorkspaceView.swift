@@ -698,7 +698,8 @@ struct WorkspaceView: View {
             workspaceSize: size,
             preferredRightPanelWidth: hasRightPanel ? preferredWidth : nil,
             rightPanelDrag: rightPanelDrag,
-            showingDetails: showingDetails
+            showingDetails: showingDetails,
+            miniPlayer: browser.wrappedValue.miniPlayer?.placement
         )
         return VStack(spacing: 0) {
             header(project, thread, browserIsVisible: browserIsVisible, detailsFitInline: layout.detailsFitInline)
@@ -710,9 +711,27 @@ struct WorkspaceView: View {
                 .overlay(alignment: .topTrailing) {
                     if showingDetails && layout.detailsFitInline {
                         inspector(project, thread, width: WorkspaceLayout.detailsWidth)
+                            .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.details: $0] }
                             .frame(maxHeight: layout.detailsHeight, alignment: .topLeading)
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                             .padding(WorkspaceLayout.detailsInset)
+                    }
+                }
+                .overlayPreferenceValue(BrowserMiniPlayerObstacles.self) { anchors in
+                    if let mini = browser.wrappedValue.miniPlayer {
+                        GeometryReader { geometry in
+                            BrowserMiniPlayer(tab: mini.tab, placement: mini.placement, canvas: geometry.size,
+                                              obstacles: anchors.values.map { geometry[$0] }) { placement in
+                                browser.wrappedValue.placeMiniPlayer(placement, for: mini.tab.id)
+                            } dock: {
+                                browser.wrappedValue.dockTab(mini.tab.id)
+                            } popOut: {
+                                browser.wrappedValue.openWindow(for: mini.tab.id)
+                            } close: {
+                                browser.wrappedValue.closeMiniPlayer(for: mini.tab.id)
+                            }
+                            .id(mini.tab.id)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1113,6 +1132,7 @@ struct WorkspaceView: View {
             .frame(minHeight: 24)
         }
         .frame(maxWidth: .infinity)
+        .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
     }
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {

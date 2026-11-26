@@ -56,7 +56,7 @@ final class BrowserFloatingPanel: NSPanel, NSWindowDelegate {
         isReleasedWhenClosed = false
         contentMinSize = NSSize(width: 320, height: 200)
         delegate = self
-        contentView = NSHostingView(rootView: BrowserSessionView(session: session, floating: true, move: dock))
+        contentView = NSHostingView(rootView: BrowserSessionView(session: session, location: .window(dock: dock)))
     }
 
     func present(relativeTo workspace: NSWindow) {

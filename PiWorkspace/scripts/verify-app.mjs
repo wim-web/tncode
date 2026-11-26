@@ -165,7 +165,13 @@ async function until(check, label, timeout = 20_000) {
 const visible = (id) => drive("get", [id]);
 const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
-const panelDriver = { press, visible, tree, setField, until, closeSettings, closeWindow: id => drive("close-window", [id]) };
+const panelDriver = {
+  press, visible, tree, setField, until, closeSettings,
+  closeWindow: id => drive("close-window", [id]),
+  sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
+  frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
+  drag: (id, x, y, dx, dy) => drive("drag", [id, ...[x, y, dx, dy].map(String)]),
+};
 
 function replyVisible(target) {
   const plain = (text) => text.replace(/\\[nrt]/g, " ").replace(/[\p{P}\p{S}\s]+/gu, " ").trim();
@@ -652,7 +658,7 @@ try {
       assert(drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."));
       press("close-terminal");
     }
-    record("Browser tabs kept separate history and zoom. Docking and closing the floating window preserved the document and draft. Profile storage was isolated; tabs in the same profile shared it.");
+    record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
     await setProjectModel(panelDriver, "fixture-project-model");
   }
 

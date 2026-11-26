@@ -46,16 +46,18 @@ struct BrowserPreviewView: View {
             Divider()
 
             if let tab = preview.selectedTab {
-                if preview.floatingTab?.id == tab.id {
+                let inMiniPlayer = preview.miniPlayer?.tab.id == tab.id
+                if inMiniPlayer || preview.floatingTab?.id == tab.id {
                     VStack(spacing: 8) {
-                        Text("This tab is in a floating window.")
+                        Text(inMiniPlayer ? "This tab is in the Mini Player." : "This tab is in a floating window.")
                             .foregroundStyle(.secondary)
                         Button("Dock Browser Tab") { preview.dockTab(tab.id) }
                             .accessibilityIdentifier("browser-dock-here")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    BrowserSessionView(session: tab, floating: false) { preview.undockSelectedTab() }
+                    BrowserSessionView(session: tab, location: .panel(miniPlayer: { preview.openMiniPlayer() },
+                                                                     popOut: { preview.undockSelectedTab() }))
                         .id(tab.id)
                 }
             }
@@ -102,9 +104,13 @@ private struct BrowserTabButton: View {
 }
 
 struct BrowserSessionView: View {
+    enum Location {
+        case panel(miniPlayer: () -> Void, popOut: () -> Void)
+        case window(dock: () -> Void)
+    }
+
     @ObservedObject var session: BrowserPreviewSession
-    let floating: Bool
-    let move: () -> Void
+    let location: Location
 
     var body: some View {
         VStack(spacing: 0) {
@@ -122,10 +128,12 @@ struct BrowserSessionView: View {
                     .onSubmit(session.openAddress)
                 control("Open URL", "arrow.right", id: "browser-go", action: session.openAddress)
                     .disabled(session.address.isEmpty)
-                if floating {
-                    control("Dock Browser Tab", "sidebar.right", id: "browser-dock", action: move)
-                } else {
-                    control("Open in Floating Window", "macwindow", id: "browser-undock", action: move)
+                switch location {
+                case let .panel(miniPlayer, popOut):
+                    control("Open Mini Player", "pip.enter", id: "browser-open-mini", action: miniPlayer)
+                    control("Open in Floating Window", "macwindow", id: "browser-undock", action: popOut)
+                case .window(let dock):
+                    control("Dock Browser Tab", "sidebar.right", id: "browser-dock", action: dock)
                 }
             }
             .padding(.horizontal, 8)
@@ -195,13 +203,18 @@ struct BrowserSessionView: View {
     }
 }
 
-private struct BrowserWebView: NSViewRepresentable {
+struct BrowserWebView: NSViewRepresentable {
     let webView: WKWebView
 
-    func makeNSView(context: Context) -> NSView { NSView() }
+    final class Host: NSView {
+        weak var sessionView: WKWebView?
+    }
 
-    func updateNSView(_ host: NSView, context: Context) {
-        guard webView.superview !== host else { return }
+    func makeNSView(context: Context) -> Host { Host() }
+
+    func updateNSView(_ host: Host, context: Context) {
+        guard host.sessionView !== webView else { return }
+        host.sessionView = webView
         host.subviews = []
         webView.removeFromSuperview()
         webView.frame = host.bounds
@@ -209,8 +222,7 @@ private struct BrowserWebView: NSViewRepresentable {
         host.addSubview(webView)
     }
 
-    static func dismantleNSView(_ host: NSView, coordinator: ()) {
-        // The web view may already belong to the other window.
+    static func dismantleNSView(_ host: Host, coordinator: ()) {
         host.subviews = []
     }
 }

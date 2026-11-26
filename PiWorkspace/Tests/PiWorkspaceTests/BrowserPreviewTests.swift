@@ -6,6 +6,32 @@ import XCTest
 @testable import PiWorkspace
 
 final class BrowserPreviewTests: XCTestCase {
+    func testMiniPlayerPreservesAspectAndPreferredPlacementAroundTheComposer() {
+        let large = CGSize(width: 1000, height: 600)
+        let composer = CGRect(x: 60, y: 455, width: 800, height: 140)
+        let placement = BrowserMiniPlayerPlacement(source: CGSize(width: 800, height: 500))
+        let plain = placement.frame(in: large)
+        XCTAssertEqual(plain, CGRect(x: 668, y: 388, width: 320, height: 200))
+        let clear = placement.frame(in: large, avoiding: [composer])
+        XCTAssertEqual(clear.maxY, composer.minY - 12)
+        let moved = placement.moved(from: clear, by: CGSize(width: -1000, height: -1000), in: large, avoiding: [composer])
+        let corner = moved.frame(in: large, avoiding: [composer])
+        XCTAssertEqual(corner.origin, CGPoint(x: 12, y: 12))
+        let resized = moved.resized(from: corner, edge: .bottomRight, by: CGSize(width: 160, height: 100),
+                                    in: large, avoiding: [composer])
+        let result = resized.frame(in: large, avoiding: [composer])
+        XCTAssertEqual(result, CGRect(x: 12, y: 12, width: 480, height: 300))
+        let squeezed = resized.frame(in: CGSize(width: 220, height: 170))
+        XCTAssertEqual(squeezed.width, 196)
+        XCTAssertEqual(squeezed.width / squeezed.height, 1.6, accuracy: 0.001)
+        XCTAssertEqual(resized.frame(in: large, avoiding: [composer]), result)
+        let details = CGRect(x: 10, y: 10, width: 250, height: 150)
+        let avoidingBoth = resized.frame(in: large, avoiding: [composer, details])
+        XCTAssertFalse(avoidingBoth.intersects(composer))
+        XCTAssertFalse(avoidingBoth.intersects(details))
+        XCTAssertEqual(avoidingBoth.size, result.size)
+    }
+
     @MainActor
     func testTabSelectionAndClosingFollowTheThread() throws {
         var preview = ThreadBrowserPreview()
@@ -71,6 +97,22 @@ final class BrowserPreviewTests: XCTestCase {
         _ = try await tab.webView.evaluateJavaScript("document.querySelector('input').value = 'live page'")
         tab.zoomIn()
         tab.address = "unfinished address"
+
+        preview.openMiniPlayer()
+        let mini = try XCTUnwrap(preview.miniPlayer)
+        XCTAssertEqual(tab.id, mini.tab.id)
+        XCTAssertFalse(preview.isVisible)
+        workspace.contentView = NSHostingView(rootView:
+            BrowserMiniPlayer(tab: mini.tab, placement: mini.placement, canvas: workspace.frame.size, obstacles: [],
+                              place: { _ in }, dock: {}, popOut: {}, close: {}))
+        try await waitFor("mini player WebKit view") { tab.webView.window === workspace && tab.webView.bounds.width <= 320 }
+        let miniText = try await tab.webView.evaluateJavaScript("document.querySelector('input').value") as? String
+        XCTAssertEqual(miniText, "live page")
+        preview.closeMiniPlayer(for: UUID())
+        XCTAssertEqual(preview.miniPlayer?.tab.id, tab.id)
+        preview.dockTab(tab.id)
+        XCTAssertNil(preview.miniPlayer)
+        XCTAssertTrue(preview.isVisible)
 
         preview.undockSelectedTab()
         let floatingTab = try XCTUnwrap(preview.floatingTab)

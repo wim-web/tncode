@@ -8,14 +8,34 @@ enum BrowserProfile: String, CaseIterable {
 
 @MainActor
 struct ThreadBrowserPreview {
+    private enum FloatingTab {
+        case window(UUID)
+        case miniPlayer(UUID, BrowserMiniPlayerPlacement)
+
+        var id: UUID {
+            switch self {
+            case .window(let id), .miniPlayer(let id, _): id
+            }
+        }
+    }
+
     private(set) var tabs: [BrowserPreviewSession] = []
     private(set) var selectedTabID: UUID?
-    private var floatingTabID: UUID?
+    private var floating: FloatingTab?
     private var dataStores: [BrowserProfile: WKWebsiteDataStore] = [:]
     var isVisible = false
 
     var selectedTab: BrowserPreviewSession? { tabs.first { $0.id == selectedTabID } }
-    var floatingTab: BrowserPreviewSession? { tabs.first { $0.id == floatingTabID } }
+    var floatingTab: BrowserPreviewSession? {
+        guard case .window(let id) = floating else { return nil }
+        return tabs.first { $0.id == id }
+    }
+
+    var miniPlayer: (tab: BrowserPreviewSession, placement: BrowserMiniPlayerPlacement)? {
+        guard case let .miniPlayer(id, placement) = floating,
+              let tab = tabs.first(where: { $0.id == id }) else { return nil }
+        return (tab, placement)
+    }
 
     mutating func togglePanel() {
         if tabs.isEmpty {
@@ -42,7 +62,7 @@ struct ThreadBrowserPreview {
     mutating func closeTab(_ id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs.remove(at: index)
-        if floatingTabID == id { floatingTabID = nil }
+        if floating?.id == id { floating = nil }
         if selectedTabID == id {
             selectedTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
@@ -51,20 +71,41 @@ struct ThreadBrowserPreview {
 
     mutating func undockSelectedTab() {
         guard let selectedTabID else { return }
-        floatingTabID = selectedTabID
+        openWindow(for: selectedTabID)
+    }
+
+    mutating func openWindow(for id: UUID) {
+        guard tabs.contains(where: { $0.id == id }) else { return }
+        floating = .window(id)
         isVisible = false
     }
 
+    mutating func openMiniPlayer() {
+        guard let tab = selectedTab else { return }
+        floating = .miniPlayer(tab.id, BrowserMiniPlayerPlacement(source: tab.webView.bounds.size))
+        isVisible = false
+    }
+
+    mutating func placeMiniPlayer(_ placement: BrowserMiniPlayerPlacement, for id: UUID) {
+        guard case .miniPlayer(id, _) = floating else { return }
+        floating = .miniPlayer(id, placement)
+    }
+
+    mutating func closeMiniPlayer(for id: UUID) {
+        guard case .miniPlayer(id, _) = floating else { return }
+        floating = nil
+    }
+
     mutating func dockTab(_ id: UUID) {
-        guard floatingTabID == id else { return }
-        floatingTabID = nil
+        guard floating?.id == id else { return }
+        floating = nil
         selectTab(id)
         isVisible = true
     }
 
     mutating func dismissFloatingWindow(for id: UUID) {
-        guard floatingTabID == id else { return }
-        floatingTabID = nil
+        guard case .window(id) = floating else { return }
+        floating = nil
     }
 }
 

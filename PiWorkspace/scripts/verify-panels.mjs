@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export async function verifyPreview({ press, visible, tree, setField, until, closeWindow }, baseURL) {
+export async function verifyPreview({ press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag }, baseURL) {
   const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), match => match[1]);
   async function newTab(profile) {
     const previous = new Set(tabIDs());
@@ -17,6 +17,7 @@ export async function verifyPreview({ press, visible, tree, setField, until, clo
     await until(() => tree().includes("Preview document " + document) && tree().includes("Profile visit " + visit),
                 "document and stored visit count in the selected profile");
   }
+  sizeWindow(1080, 748);
   await setField("composer", "Keep this text while previewing.");
   press("toggle-browser");
   for (const name of ["one", "two"]) {
@@ -39,7 +40,33 @@ export async function verifyPreview({ press, visible, tree, setField, until, clo
   const [first] = tabIDs();
   assert(first);
   await loadProfilePage(1, 1);
-  press("browser-undock");
+  press("browser-open-mini");
+  await until(() => visible("browser-mini-move") && tree().includes("Preview document 1"), "in-chat Mini Player");
+  const player = "browser-mini-player";
+  const start = frame(player);
+  drag("browser-mini-move", 0.5, 0.5, -64, 0);
+  const moved = await until(() => {
+    const rect = frame(player);
+    return rect[0] < start[0] - 10 && rect;
+  }, "dragging the Mini Player from " + start);
+  drag(player, 0.99, 0.5, 48, 0);
+  const resized = await until(() => {
+    const rect = frame(player);
+    return rect[2] > moved[2] + 8 && rect;
+  }, "resizing the Mini Player from " + moved);
+  assert(Math.abs(resized[2] / resized[3] - moved[2] / moved[3]) < 0.05);
+  assert(tree().includes("Keep this text while previewing."));
+  press("browser-mini-dock");
+  await until(() => visible("browser-open-mini") && tree().includes("Preview document 1") && tree().includes("110%"), "redocking the Mini Player");
+  press("browser-open-mini");
+  await until(() => visible("browser-mini-close"), "Mini Player close control");
+  press("browser-mini-close");
+  await until(() => !tree().includes('id="browser-mini-player"'), "closed in-chat preview");
+  press("toggle-browser");
+  await until(() => visible("browser-open-mini") && tabIDs().includes(first) && tree().includes("Preview document 1"), "closed Mini Player tab retained");
+  press("browser-open-mini");
+  await until(() => visible("browser-mini-undock"), "pop-out from the Mini Player");
+  press("browser-mini-undock");
   await until(() => visible("browser-floating-window") && visible("browser-dock"), "floating tab");
   press("browser-dock");
   await until(() => visible("browser-undock") && tree().includes("Preview document 1") && tree().includes("110%"), "same live document after docking");

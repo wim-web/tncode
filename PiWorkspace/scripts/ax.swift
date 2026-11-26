@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -9,6 +10,9 @@ Usage:
   ax menu-command PID CHARACTER
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
+  ax frame PID IDENTIFIER
+  ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
+  ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax press PID IDENTIFIER
   ax close-window PID WINDOW_IDENTIFIER
   ax confirm PID IDENTIFIER
@@ -19,7 +23,8 @@ Usage:
 dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
 AXDescription, and AXPlaceholderValue. set/type read UTF-8 stdin verbatim.
-type and key send events only to PID. Common keycodes: Return 36, Escape 53,
+type and key target PID. drag requires the target window to be frontmost along the entire path.
+Common keycodes: Return 36, Escape 53,
 Tab 48, Space 49, Left 123, Right 124, Down 125, Up 126, G 5.
 """
 
@@ -58,6 +63,9 @@ private enum Operation {
     case menuCommand(String)
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
+    case frame(String)
+    case sizeWindow(String, CGSize)
+    case drag(String, CGPoint, CGSize)
     case press(String)
     case closeWindow(String)
     case confirm(String)
@@ -76,6 +84,21 @@ private enum Operation {
             self = try .dump(DisplayOptions(arguments, allowDepth: true))
         case ("get", let id?):
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
+        case ("frame", let id?) where arguments.count == 1:
+            self = .frame(id)
+        case ("size-window", let id?) where arguments.count == 3:
+            let sizes = arguments.dropFirst().compactMap { Double($0) }
+            guard sizes.count == 2, sizes.allSatisfy({ $0.isFinite && $0 > 0 }) else {
+                throw Failure("size-window needs a positive width and height in points.")
+            }
+            self = .sizeWindow(id, CGSize(width: sizes[0], height: sizes[1]))
+        case ("drag", let id?) where arguments.count == 5:
+            let values = arguments.dropFirst().compactMap { Double($0) }
+            guard values.count == 4, values.allSatisfy(\.isFinite),
+                  (0...1).contains(values[0]), (0...1).contains(values[1]) else {
+                throw Failure("drag requires two fractions and two distances in points.")
+            }
+            self = .drag(id, CGPoint(x: values[0], y: values[1]), CGSize(width: values[2], height: values[3]))
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
         case ("close-window", let id?) where arguments.count == 1:
@@ -207,6 +230,59 @@ private func inputText() throws -> String {
     return text
 }
 
+private func frame(of element: AXUIElement) throws -> CGRect {
+    var point = CGPoint.zero, size = CGSize.zero
+    guard let p = attribute(kAXPositionAttribute, on: element), CFGetTypeID(p) == AXValueGetTypeID(),
+          let s = attribute(kAXSizeAttribute, on: element), CFGetTypeID(s) == AXValueGetTypeID(),
+          AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size) else {
+        throw Failure("The element has no accessible frame.")
+    }
+    return CGRect(origin: point, size: size)
+}
+
+private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to pid: pid_t) throws {
+    let point = CGPoint(x: rect.minX + fraction.x * rect.width, y: rect.minY + fraction.y * rect.height)
+    func targetOwns(_ point: CGPoint) -> Bool {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return false }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        let first = windows?.first { info in
+            guard info[kCGWindowLayer as String] as? Int == 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return false }
+            return frame.contains(point)
+        }
+        return first?[kCGWindowOwnerPID as String] as? Int32 == pid
+    }
+    let steps = 8
+    let points = (0...steps).map { i in
+        CGPoint(x: point.x + delta.width * CGFloat(i) / CGFloat(steps), y: point.y + delta.height * CGFloat(i) / CGFloat(steps))
+    }
+    guard !CGEventSource.buttonState(.combinedSessionState, button: .left), points.allSatisfy(targetOwns),
+          let savedPosition = CGEvent(source: nil)?.location else {
+        throw Failure("Drag needs an idle pointer and an unobstructed path in the frontmost target window.")
+    }
+    var last = point
+    var pressed = false
+    defer {
+        if pressed, let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left) {
+            if targetOwns(last) { up.post(tap: .cghidEventTap) } else { up.postToPid(pid) }
+        }
+        CGWarpMouseCursorPosition(savedPosition)
+    }
+    for (index, current) in points.enumerated() {
+        guard targetOwns(current) else { throw Failure("The target window lost the drag.") }
+        let type: CGEventType = index == 0 ? .leftMouseDown : .leftMouseDragged
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: current, mouseButton: .left) else {
+            throw Failure("Could not create a mouse event.")
+        }
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        event.post(tap: .cghidEventTap)
+        pressed = true
+        last = current
+        Thread.sleep(forTimeInterval: 0.025)
+    }
+}
+
 private func requireKeyboardAccess() throws {
     guard CGPreflightPostEventAccess() else {
         throw Failure("This process cannot post keyboard events in the current macOS session.")
@@ -283,6 +359,28 @@ private func run(_ arguments: [String]) throws {
         }
     case .get(let id, let options):
         print(try line(for: element(withID: id, in: app), options: options))
+    case .frame(let id):
+        let rect = try frame(of: element(withID: id, in: app))
+        print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
+    case .sizeWindow(let id, let requested):
+        let window = try element(withID: id, in: app)
+        guard attribute(kAXRoleAttribute, on: window) as? String == kAXWindowRole else {
+            throw Failure("size-window requires a window identifier.")
+        }
+        let rect = try frame(of: window)
+        var display = CGMainDisplayID(), count: UInt32 = 0
+        CGGetDisplaysWithPoint(CGPoint(x: rect.midX, y: rect.midY), 1, &display, &count)
+        let screen = CGDisplayBounds(count == 0 ? CGMainDisplayID() : display)
+        var size = CGSize(width: min(requested.width, screen.width - 24), height: min(requested.height, screen.height - 84))
+        var point = CGPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2)
+        guard let position = AXValueCreate(.cgPoint, &point), let dimensions = AXValueCreate(.cgSize, &size) else {
+            throw Failure("Could not create the window frame.")
+        }
+        try requireSuccess(AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position), "Move target window")
+        try requireSuccess(AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, dimensions), "Resize target window")
+    case .drag(let id, let fraction, let delta):
+        try requireKeyboardAccess()
+        try drag(in: frame(of: element(withID: id, in: app)), from: fraction, by: delta, to: pid)
     case .press(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXPressAction as CFString), "AXPress")

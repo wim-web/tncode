@@ -43,8 +43,11 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
 
-Open **Browser** in the thread header to preview an HTTP or HTTPS page. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app. Use **Open in Floating Window** to move the live tab, then **Dock Browser Tab** to bring it back.
-6. Open **Pull Requests** in the header to inspect up to 50 pull requests for the selected checkout. Select a state and a PR to see its description, branches, and checks. Use **Refresh pull requests** to reload the list and selected PR. Open the PR or a check with its link.
+Open **Browser** in the thread header to preview an HTTP or HTTPS page. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
+
+Choose **Open Mini Player** to keep the page over the conversation. Drag the arrow handle to move it or drag an edge to resize it. **Open in Browser Panel** returns the page to its tab. **Open in Floating Window** moves it to a separate macOS window.
+
+Open **Pull Requests** in the header to inspect up to 50 pull requests for the selected checkout. Select a state and a PR to see its description, branches, and checks. Use **Refresh pull requests** to reload the list and selected PR. Open the PR or a check with its link.
 
 Pull Requests uses the GitHub CLI (`gh`) on the app's PATH or in a standard Homebrew or MacPorts location. Sign in to GitHub CLI from Terminal before opening the list. The app uses the checkout's GitHub.com `origin` fetch remote or its sole GitHub.com fetch repository.
 

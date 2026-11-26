@@ -20,6 +20,7 @@ struct WorkspaceLayout {
     let preferredRightPanelWidth: CGFloat?
     let rightPanelDrag: CGFloat
     let showingDetails: Bool
+    var miniPlayer: BrowserMiniPlayerPlacement? = nil
 
     static func sidebarWidth(in viewportWidth: CGFloat, preferred: CGFloat, drag: CGFloat = 0) -> CGFloat {
         let limits = 177...max(defaultSidebarWidth, floor(viewportWidth) - 640)
@@ -64,13 +65,21 @@ struct WorkspaceLayout {
     var composerWidth: CGFloat {
         // Give the existing composer controls room when a resized sidebar and panel share a narrow window.
         let gutter = min(Self.chatGutter, max(16, (chatWidth - 240) / 2))
-        let laneEnd = showingDetails && detailsFitInline ? detailsLaneEnd : chatWidth - gutter
+        let laneEnd = composerLaneEnd(gutter: gutter)
         return max(0, min(Self.maximumComposerWidth, min(chatWidth - gutter * 2, laneEnd - gutter)))
     }
 
     var composerLeading: CGFloat {
         let centered = (chatWidth - composerWidth) / 2
-        guard showingDetails && detailsFitInline else { return centered }
-        return min(centered, detailsLaneEnd - composerWidth)
+        return min(centered, composerLaneEnd(gutter: 0) - composerWidth)
+    }
+
+    private func composerLaneEnd(gutter: CGFloat) -> CGFloat {
+        let end = showingDetails && detailsFitInline ? detailsLaneEnd : chatWidth - gutter
+        guard let miniPlayer else { return end }
+        let canvas = CGSize(width: chatWidth, height: max(0, workspaceSize.height - Self.headerHeight))
+        let besidePreview = miniPlayer.frame(in: canvas).minX - BrowserMiniPlayerPlacement.gap
+        guard besidePreview - Self.chatGutter >= Self.minimumDetailsChatWidth else { return end }
+        return min(end, besidePreview)
     }
 }
