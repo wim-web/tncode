@@ -18,6 +18,7 @@ final class WorkspaceFileDrafts {
 struct WorkspaceFilesView: View {
     let location: WorkspaceFilesLocation
     let drafts: WorkspaceFileDrafts
+    let pasteboard: NSPasteboard
     let activeLocation: () -> WorkspaceFilesLocation?
     let close: () -> Void
     @Binding var selection: String?
@@ -66,7 +67,7 @@ struct WorkspaceFilesView: View {
                             Divider()
                         }
                         WorkspaceFilePreviewView(
-                            target: target, drafts: drafts, refreshing: refreshing,
+                            target: target, drafts: drafts, pasteboard: pasteboard, refreshing: refreshing,
                             activeTarget: { activeLocation() == location ? self.target : nil },
                             showingExplorer: $showingExplorer, goToFolder: goToFolder,
                             folderEntries: { parent in entries.filter { $0.parent == parent && $0.kind != .link } },
@@ -251,6 +252,7 @@ struct WorkspaceFilesView: View {
 private struct WorkspaceFilePreviewView: View {
     let target: WorkspaceFileTarget
     let drafts: WorkspaceFileDrafts
+    let pasteboard: NSPasteboard
     let refreshing: Int
     let activeTarget: () -> WorkspaceFileTarget?
     @Binding var showingExplorer: Bool
@@ -480,8 +482,8 @@ private struct WorkspaceFilePreviewView: View {
     }
 
     private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     private func formattedSize(_ size: Int64) -> String {

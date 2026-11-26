@@ -14,7 +14,7 @@ struct PiWorkspaceApp: App {
     @State private var showingBrowserSettings = false
     @State private var showingAppearanceSettings = false
     private let browserDefaults: UserDefaults
-    private let draftPasteboard: NSPasteboard
+    private let workspacePasteboard: NSPasteboard
     private let launchProject: URL?
 
     init() {
@@ -34,9 +34,9 @@ struct PiWorkspaceApp: App {
         browserDefaults = override.flatMap { _ in UserDefaults(suiteName: "dev.piworkspace.browser.\(scope)") } ?? .standard
         if override != nil, let name = ProcessInfo.processInfo.environment["PI_WORKSPACE_TEST_PASTEBOARD"],
            name.hasPrefix("dev.piworkspace.verification.") {
-            draftPasteboard = NSPasteboard(name: .init(name))
+            workspacePasteboard = NSPasteboard(name: .init(name))
         } else {
-            draftPasteboard = .general
+            workspacePasteboard = .general
         }
         if args.contains("--set-api-key-from-stdin") || args.contains("--remove-api-key") {
             do {
@@ -69,7 +69,7 @@ struct PiWorkspaceApp: App {
                 if let failure = model.startupFailure {
                     WorkspaceStartupRecoveryView(model: model, failure: failure)
                 } else {
-                    WorkspaceView(model: model, chatWidthMode: appearance.chatWidth, browserDefaults: browserDefaults, draftPasteboard: draftPasteboard)
+                    WorkspaceView(model: model, chatWidthMode: appearance.chatWidth, browserDefaults: browserDefaults, workspacePasteboard: workspacePasteboard)
                         .onAppear(perform: launchWorkspace)
                 }
             }

@@ -19,7 +19,7 @@ struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     let chatWidthMode: ChatWidth
     var browserDefaults: UserDefaults = .standard
-    var draftPasteboard: NSPasteboard = .general
+    var workspacePasteboard: NSPasteboard = .general
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("groupThreadsByProject") private var grouped = false
     @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
@@ -705,8 +705,8 @@ struct WorkspaceView: View {
     }
 
     private func copyToPasteboard(_ text: String) {
-        draftPasteboard.clearContents()
-        draftPasteboard.setString(text, forType: .string)
+        workspacePasteboard.clearContents()
+        workspacePasteboard.setString(text, forType: .string)
     }
 
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
@@ -872,7 +872,7 @@ struct WorkspaceView: View {
     @ViewBuilder
     private func filesPanel(_ project: Project, _ thread: Conversation) -> some View {
         if let location = WorkspaceFilesLocation(thread: thread, project: project) {
-            WorkspaceFilesView(location: location, drafts: fileDrafts,
+            WorkspaceFilesView(location: location, drafts: fileDrafts, pasteboard: workspacePasteboard,
                                activeLocation: { showingFiles.contains(thread.id) ? selectedFilesLocation : nil },
                                close: { showingFiles.remove(thread.id) },
                                selection: Binding(get: { selectedFiles[location] },

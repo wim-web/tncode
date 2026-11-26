@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export async function verifyPreview(driver, baseURL, network) {
+export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
   const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), match => match[1]);
   async function newTab(profile) {
@@ -41,6 +41,10 @@ export async function verifyPreview(driver, baseURL, network) {
   const [first] = tabIDs();
   assert(first);
   await loadProfilePage(1, 1);
+  if (verifyFiles) {
+    await verifyFiles();
+    await until(() => visible("browser-address") && tree().includes("Preview document 1") && tree().includes("110%"), "live page restored after Files");
+  }
   press("browser-open-mini");
   await until(() => visible("browser-mini-move") && tree().includes("Preview document 1"), "in-chat Mini Player");
   const player = "browser-mini-player";
@@ -165,7 +169,7 @@ async function verifyPageControls({ press, visible, tree, until, setField, webFr
   await until(() => tree().includes("Server recovered") && !tree().includes('id="browser-error-details"'), "repaired server");
 }
 
-export async function verifyPullRequests({ press, visible, tree, until }, stateFile, logFile, checkout) {
+export async function verifyPullRequests({ press, visible, tree, until, setField, menuItem }, stateFile, logFile, checkout) {
   press("pull-requests");
   await until(() => visible("pr-row-42"), "pull requests in fixture checkout");
   press("pr-row-42");
@@ -180,6 +184,56 @@ export async function verifyPullRequests({ press, visible, tree, until }, stateF
   assert(calls.filter(call => call.startsWith(checkout + "|pr view ")).length >= 2);
   assert(visible("pr-open"));
   assert(visible("pr-check-open-0"));
+  writeFileSync(stateFile, "initial\n");
+  async function search(prefix, text) {
+    await setField(prefix + "-search", text);
+    press(prefix + "-search-submit");
+  }
+  await search("pr", "label:bug");
+  await until(() => visible("pr-row-42") && !tree().includes('id="pr-row-43"') && visible("pr-load-more"), "PRs filtered by label");
+  writeFileSync(stateFile, "page-error\n");
+  press("pr-load-more");
+  await until(() => visible("pr-page-retry") && visible("pr-row-42"), "retry page without clearing first PR");
+  writeFileSync(stateFile, "initial\n");
+  press("pr-page-retry");
+  await until(() => visible("pr-row-44") && tree().match(/id="pr-row-42"/g)?.length === 1, "distinct second PR page");
+  press("github-tab-issues");
+  await until(() => visible("issue-row-71") && visible("issue-row-72"), "checkout Issues");
+  await search("issue", "label:bug");
+  await until(() => visible("issue-row-71") && visible("issue-load-more") && !tree().includes('id="issue-row-72"'), "filtered issues");
+  press("issue-load-more");
+  await until(() => visible("issue-row-73"), "second issue page");
+  press("issue-row-71");
+  await until(() => tree().includes("Fixture issue description.") && tree().includes("fixture-reporter") && visible("issue-open"), "reported issue detail");
+  writeFileSync(stateFile, "updated\n");
+  press("issue-refresh");
+  await until(() => tree().includes("Updated fixture issue description."), "refresh changes selected issue details");
+  writeFileSync(stateFile, "missing\n");
+  press("issue-detail-refresh");
+  await until(() => visible("issue-detail-error") && visible("issue-detail-retry"), "missing issue");
+  writeFileSync(stateFile, "initial\n");
+  press("issue-detail-retry");
+  await until(() => tree().includes("Fixture issue description."), "issue detail recovered");
+  press("issue-filter");
+  menuItem("Closed");
+  await until(() => visible("issue-row-70") && !tree().includes('id="issue-row-71"'), "closed issues by label");
+  press("issue-filter");
+  menuItem("Open");
+  await search("issue", "empty");
+  await until(() => visible("issue-list-empty") && visible("issue-search-clear"), "empty issue search");
+  press("issue-search-clear");
+  await until(() => visible("issue-row-72"), "clear issue search");
+  writeFileSync(stateFile, "no-auth\n");
+  press("issue-refresh");
+  await until(() => visible("issue-list-retry"), "signed out read");
+  writeFileSync(stateFile, "initial\n");
+  press("issue-list-retry");
+  await until(() => visible("issue-row-71"), "issue list recovered");
+  const allCalls = readFileSync(logFile, "utf8").trim().split("\n");
+  assert(allCalls.every(call => call.startsWith(checkout + "|")));
+  assert(allCalls.some(call => call.includes("|issue view 71 ")));
+  assert(allCalls.some(call => call.includes("after=issue-search:2==")));
+  assert(allCalls.some(call => call.includes("after=pull-requests:2==")));
   press("pr-close");
   await until(() => !tree().includes('id="pr-close"'), "closed pull request sheet");
 }
