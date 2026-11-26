@@ -92,7 +92,7 @@ final class WorkspaceUsageTests: XCTestCase {
         let request = try XCTUnwrap(model.settingsRequest)
         XCTAssertEqual(request.projectID, fixture.ids.beta)
         let host = NSHostingView(rootView: SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
-                                                       browserDefaults: defaults, request: request)
+                                                       browserDefaults: defaults, request: request, openWelcome: {})
             .defaultAppStorage(defaults))
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 784, height: 474),
                               styleMask: [.titled], backing: .buffered, defer: false)

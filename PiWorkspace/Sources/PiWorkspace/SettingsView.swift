@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
     let appearance: AppearanceSettings
     let browserDefaults: UserDefaults
+    let openWelcome: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SidebarPreference.groupByProject) private var groupByProject = false
@@ -14,18 +15,22 @@ struct SettingsView: View {
     @State private var search = SettingsSearch()
     @State private var modelDraft: ModelSettingsDraft
     @State private var browserDraft: BrowserSearchSettings
+    @State private var projectBaseDirectory: String
+    @State private var projectBaseDirectoryError: String?
     @State private var showingLicenses = false
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
-         request: SettingsRequest) {
+         request: SettingsRequest, openWelcome: @escaping () -> Void) {
         self.model = model
         self.appearance = appearance
         self.browserDefaults = browserDefaults
+        self.openWelcome = openWelcome
         _page = State(initialValue: request.page)
         _jump = State(initialValue: request.anchor.map { SettingsJump(anchor: $0) })
         let project = model.projects.first { $0.id == request.projectID }
         _modelDraft = State(initialValue: ModelSettingsDraft(workspace: model.workspace.model, project: project))
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
+        _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
     }
 
     private var results: [SettingsSearchResult] {
@@ -67,7 +72,7 @@ struct SettingsView: View {
                             .accessibilityIdentifier("settings-about")
                     }
                     if page == .general || page == .about || page == .usage {
-                        Button("Done") { dismiss() }
+                        Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
                 }
@@ -77,7 +82,8 @@ struct SettingsView: View {
                 ScrollViewReader { reader in
                     Group {
                         if page == .about {
-                            AboutView(showingLicenses: $showingLicenses, settingsFocus: $focus)
+                            AboutView(showingLicenses: $showingLicenses, settingsFocus: $focus,
+                                      openWelcome: openWelcome, welcomeEnabled: model.canOpenWelcome)
                         } else if page == .usage {
                             UsageSettingsView(root: model.root, projects: model.workspace.projects)
                                 .padding(24)
@@ -108,6 +114,9 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings")
         .environment(\.settingsJump, jump)
         .background { WindowKeyMonitor(handle: handleKey) }
+        .onChange(of: focus) { previous, _ in
+            if previous == .anchor(.addProjectStartsIn) { commitProjectBaseDirectory() }
+        }
     }
 
     private var navigation: some View {
@@ -198,8 +207,12 @@ struct SettingsView: View {
     private var detail: some View {
         switch page {
         case .general:
-            Toggle("Group by Project", isOn: $groupByProject)
-                .settingsTarget(.groupByProject, focus: $focus)
+            VStack(alignment: .leading, spacing: 18) {
+                Toggle("Group by Project", isOn: $groupByProject)
+                    .settingsTarget(.groupByProject, focus: $focus)
+                Divider()
+                projectBaseDirectorySetting
+            }
         case .appearance:
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
         case .model:
@@ -209,6 +222,53 @@ struct SettingsView: View {
         case .about, .usage:
             EmptyView()
         }
+    }
+
+    private var projectBaseDirectorySetting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Add project starts in")
+                .font(.callout.weight(.medium))
+            Text("Leave empty to start in your home folder.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                TextField("Add project starts in", text: $projectBaseDirectory, prompt: Text("~/"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Add project starts in")
+                    .settingsTarget(.addProjectStartsIn, focus: $focus)
+                if model.workspace.addProjectBaseDirectory != nil {
+                    Button("Reset") {
+                        projectBaseDirectory = ""
+                        commitProjectBaseDirectory()
+                    }
+                    .accessibilityIdentifier("reset-add-project-starts-in")
+                }
+            }
+            if let projectBaseDirectoryError {
+                Text(projectBaseDirectoryError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("add-project-starts-in-error")
+            }
+        }
+    }
+
+    @discardableResult
+    private func commitProjectBaseDirectory() -> Bool {
+        do {
+            try model.updateAddProjectBaseDirectory(projectBaseDirectory)
+            projectBaseDirectory = model.workspace.addProjectBaseDirectory ?? ""
+            projectBaseDirectoryError = nil
+            return true
+        } catch {
+            projectBaseDirectoryError = error.localizedDescription
+            return false
+        }
+    }
+
+    private func closeSettings() {
+        if page != .general || commitProjectBaseDirectory() { dismiss() }
     }
 
     private func navigate(to page: SettingsPage, anchor: SettingsAnchor? = nil) {
@@ -239,18 +299,24 @@ struct SettingsView: View {
             return true
         }
         guard modifiers.isEmpty else { return false }
-        if Int(event.keyCode) == kVK_Escape {
+        let key = Int(event.keyCode)
+        if key == kVK_Escape {
             if !event.isARepeat {
-                if search.query.isEmpty { dismiss() } else { clearSearch() }
+                if search.query.isEmpty { closeSettings() } else { clearSearch() }
             }
+            return true
+        }
+        if focus == .anchor(.addProjectStartsIn), editor?.isFieldEditor == true,
+           key == kVK_Return || key == kVK_ANSI_KeypadEnter {
+            if !event.isARepeat, commitProjectBaseDirectory() { focus = .heading }
             return true
         }
         guard focus == .search, editor?.isFieldEditor == true else { return false }
         let rows = results
-        switch Int(event.keyCode) {
+        switch key {
         case kVK_UpArrow, kVK_DownArrow:
             guard search.isSearching else { return false }
-            search.move(by: Int(event.keyCode) == kVK_UpArrow ? -1 : 1, in: rows)
+            search.move(by: key == kVK_UpArrow ? -1 : 1, in: rows)
         case kVK_Return, kVK_ANSI_KeypadEnter:
             if !event.isARepeat, let result = search.selected(in: rows) {
                 navigate(to: result.page, anchor: result.anchor)

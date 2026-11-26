@@ -249,7 +249,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var error: String?
     @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published var settingsRequest: SettingsRequest?
-    @Published var showingWelcome = false
+    @Published private(set) var showingWelcome = false
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
     @Published var showingCommandPalette = false
@@ -375,10 +375,18 @@ final class WorkspaceModel: ObservableObject {
         if let recent { addConversation(in: recent.id) }
     }
 
+    var canOpenWelcome: Bool {
+        store != nil && !operationsInProgress && !showingCommandPalette && projectPicker == nil
+    }
+
+    func openWelcome() {
+        guard canOpenWelcome, !showingSettings else { return }
+        showingWelcome = true
+    }
+
     func finishWelcome() {
-        guard save({ $0.welcomeCompleted = true }) else { return }
+        guard workspace.welcomeCompleted == true || save({ $0.welcomeCompleted = true }) else { return }
         showingWelcome = false
-        if conversation == nil { start() }
     }
 
     func shutdown() {
@@ -437,11 +445,25 @@ final class WorkspaceModel: ObservableObject {
         if pullRequestScope != previousScope { pullRequestSelectionRevision += 1 }
     }
 
+    func updateAddProjectBaseDirectory(_ input: String) throws {
+        let path = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.utf8.contains(0) else { throw WorkspaceError("Enter a folder path.") }
+        let preference = path.isEmpty ? nil : path
+        guard preference != workspace.addProjectBaseDirectory else { return }
+        var updated = workspace
+        updated.addProjectBaseDirectory = preference
+        try persist(updated)
+    }
+
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
         guard !operationsInProgress else { return }
+        let initialPath = if let id {
+            projects.first(where: { $0.id == id })?.path ?? ""
+        } else {
+            ProjectFolder.addProjectInitialPath(workspace.addProjectBaseDirectory)
+        }
         projectPicker = ProjectPickerRequest(relinking: id, startThread: startThread,
-                                             initialPath: projects.first(where: { $0.id == id })?.path ?? "",
-                                             basePath: project?.path)
+                                             initialPath: initialPath, basePath: project?.path)
     }
 
     func openProject(_ source: ProjectSource, request: ProjectPickerRequest) async throws {

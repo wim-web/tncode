@@ -53,6 +53,7 @@ struct WorkspaceView: View {
     @State private var createdProject: UUID?
     @State private var draftCheckoutBranches: [String: String] = [:]
     @FocusState private var focusedComposer: UUID?
+    @FocusState private var welcomeFocus: WelcomeFocus?
     @State private var focusAfterPicker = false
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
@@ -66,6 +67,10 @@ struct WorkspaceView: View {
     private enum PaletteReturnFocus {
         case search
         case composer(UUID)
+    }
+
+    private enum WelcomeFocus: Hashable {
+        case finish, addProject
     }
 
     private struct MessageSearchKey: Equatable {
@@ -173,6 +178,14 @@ struct WorkspaceView: View {
         .onChange(of: model.conversation?.id) { _, id in
             if messageJump?.threadID != id { messageJump = nil }
         }
+        .onChange(of: model.showingWelcome) { _, showing in
+            if showing {
+                searchFocused = false
+                focusedComposer = nil
+            } else if model.projectPicker == nil {
+                focusCurrentComposer()
+            }
+        }
         .onChange(of: model.phase.isRunning) { _, running in
             if running { messageJump = nil }
         }
@@ -244,6 +257,7 @@ struct WorkspaceView: View {
         }
         .sheet(item: $model.projectPicker, onDismiss: {
             if focusAfterPicker { focusedComposer = model.conversation?.id }
+            if model.showingWelcome { welcomeFocus = .addProject }
             focusAfterPicker = false
         }) { request in
             ProjectFolderView(request: request) { source in
@@ -275,20 +289,31 @@ struct WorkspaceView: View {
 
     private var welcome: some View {
         let ready = model.hasKey(for: model.workspace.model)
+        let returning = model.workspace.welcomeCompleted == true || !model.workspace.projects.isEmpty
         return VStack(alignment: .leading, spacing: 18) {
             Text("Welcome to Pi Workspace")
                 .font(.title.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("welcome-title")
             Text("Connect a model to send messages with Pi. You can open projects before setting up a model.")
                 .foregroundStyle(.secondary)
             LabeledContent("Model", value: model.workspace.model.model)
-            Button("Model Settings…") { model.openSettings(.model) }
-                .accessibilityIdentifier("model-settings")
-            if let error = model.error { Text(error).foregroundStyle(.red) }
-            Button(ready ? "Start" : "Start without an agent", action: model.finishWelcome)
+            HStack {
+                Button("Model Settings…") { model.openSettings(.model) }
+                    .accessibilityIdentifier("model-settings")
+                Button("Add Project…") { model.openFolder() }
+                    .focused($welcomeFocus, equals: .addProject)
+                    .accessibilityIdentifier("welcome-add-project")
+                    .disabled(model.operationsInProgress)
+            }
+            if !returning, let error = model.error { Text(error).foregroundStyle(.red) }
+            Button(returning ? "Close" : ready ? "Start" : "Start without an agent", action: model.finishWelcome)
                 .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("start-workspace")
+                .keyboardShortcut(returning ? .cancelAction : .defaultAction)
+                .focused($welcomeFocus, equals: .finish)
+                .accessibilityIdentifier(returning ? "welcome-close" : "start-workspace")
         }
+        .defaultFocus($welcomeFocus, .finish)
         .padding(32)
         .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1422,7 +1447,8 @@ struct WorkspaceView: View {
                 .focused($focusedComposer, equals: threadID)
                 .task(id: threadID) {
                     await Task.yield()
-                    if !Task.isCancelled && model.projectPicker == nil && !model.showingSettings && !model.showingCommandPalette {
+                    if !Task.isCancelled && !model.showingWelcome && model.projectPicker == nil &&
+                        !model.showingSettings && !model.showingCommandPalette {
                         focusedComposer = threadID
                     }
                 }

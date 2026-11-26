@@ -34,6 +34,7 @@ enum SidebarPreference {
 
 enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
+    case addProjectStartsIn = "add-project-starts-in"
     case colorScheme = "appearance-color-scheme"
     case chatWidth = "appearance-chat-width"
     case restoreAppearance = "appearance-restore-defaults"
@@ -51,6 +52,7 @@ enum SettingsAnchor: String {
     case searchEngine = "browser-search-engine"
     case customSearchURL = "browser-custom-search-url"
     case licenses = "licenses-search"
+    case welcomePage = "welcome-page"
 }
 
 struct SettingsRequest: Identifiable {
@@ -132,6 +134,7 @@ struct SettingsSearch {
     private static let index: [SettingsSearchResult] = [
         .init(page: .general, title: "General", keywords: "preferences sidebar threads"),
         .init(page: .general, anchor: .groupByProject, title: "Group by Project", keywords: "sidebar thread list grouping"),
+        .init(page: .general, anchor: .addProjectStartsIn, title: "Add project starts in", keywords: "base directory folder browser path home"),
         .init(page: .appearance, title: "Appearance", keywords: "visual display theme"),
         .init(page: .appearance, anchor: .colorScheme, title: "Color scheme", keywords: "theme light dark system"),
         .init(page: .appearance, anchor: .chatWidth, title: "Chat width", keywords: "conversation composer comfortable wide full"),
@@ -154,5 +157,6 @@ struct SettingsSearch {
         .init(page: .browser, anchor: .customSearchURL, title: "Custom search URL", keywords: "browser search template %s"),
         .init(page: .about, title: "About", keywords: "app name version build dependencies"),
         .init(page: .about, anchor: .licenses, title: "Open source licenses", keywords: "dependencies third-party notices SwiftTerm Node Pi"),
+        .init(page: .about, anchor: .welcomePage, title: "Welcome page", keywords: "onboarding setup first run getting started agents import projects"),
     ]
 }

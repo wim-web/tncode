@@ -36,6 +36,8 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(search.results(available: availability).isEmpty)
         search.query = "third-party notices"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .licenses)
+        search.query = "onboarding"
+        XCTAssertEqual(search.results(available: availability).first?.anchor, .welcomePage)
     }
 
     func testResultSelectionWrapsAndNewQuerySelectsFirstMatch() {
@@ -106,6 +108,46 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(saved.model.provider, .openai)
     }
 
+    func testNativeFolderPreferenceCommitsOnReturnAndBlur() async throws {
+        let fixture = try Fixture()
+        defer { fixture.window.close() }
+        try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
+        let first = fixture.root.appendingPathComponent("First Projects")
+        let second = fixture.root.appendingPathComponent("Second Projects")
+        for folder in [first, second] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        }
+
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        try await fixture.typeQuery("base directory", in: search)
+        try await fixture.key(kVK_Return, "\r")
+        let field = try await fixture.waitForField("Add project starts in") { $0.placeholderString == "~/" }
+        try await fixture.until("Search focuses the setting field") {
+            field.currentEditor() != nil && field.currentEditor() === fixture.window.firstResponder
+        }
+        XCTAssertEqual(field.stringValue, "")
+
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        editor.insertText("  \(first.path)  ", replacementRange: NSRange(location: 0, length: 0))
+        XCTAssertNil(fixture.model.workspace.addProjectBaseDirectory)
+        try await fixture.key(kVK_Return, "\r")
+        try await fixture.until("Return saves the trimmed folder") {
+            fixture.model.workspace.addProjectBaseDirectory == first.path
+        }
+
+        try await fixture.typeQuery("add project starts in", in: search)
+        try await fixture.key(kVK_Return, "\r")
+        let reopened = try await fixture.waitForField("refocused folder preference") {
+            $0.placeholderString == "~/" && $0.currentEditor() === fixture.window.firstResponder
+        }
+        let next = try XCTUnwrap(reopened.currentEditor() as? NSTextView)
+        next.insertText(second.path, replacementRange: NSRange(location: 0, length: next.string.utf16.count))
+        try await fixture.typeQuery("onboarding", in: search)
+        XCTAssertEqual(fixture.model.workspace.addProjectBaseDirectory, second.path)
+        try await fixture.key(kVK_Return, "\r")
+        XCTAssertEqual(fixture.model.workspace.addProjectBaseDirectory, second.path)
+    }
+
     @MainActor
     private final class Fixture {
         let root: URL
@@ -134,13 +176,15 @@ final class SettingsNavigationTests: XCTestCase {
             let request = try XCTUnwrap(model.settingsRequest)
             let appearance = AppearanceSettings(defaults: defaults)
             host = NSHostingView(rootView: SettingsView(model: model, appearance: appearance,
-                                                       browserDefaults: defaults, request: request)
+                                                       browserDefaults: defaults, request: request, openWelcome: {})
                 .defaultAppStorage(defaults))
-            window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 784, height: 474),
-                              styleMask: [.titled], backing: .buffered, defer: false)
+            let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
+            window = OffscreenSettingsPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 784, height: 474)),
+                                          styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = host
-            window.setFrameOrigin(NSPoint(x: -10000, y: -10000))
+            window.setFrameOrigin(origin)
+            XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
             window.orderBack(nil)
         }
 
@@ -195,4 +239,10 @@ final class SettingsNavigationTests: XCTestCase {
             return find(in: host)
         }
     }
+}
+
+private final class OffscreenSettingsPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

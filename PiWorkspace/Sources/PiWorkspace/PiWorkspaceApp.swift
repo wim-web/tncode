@@ -11,6 +11,7 @@ struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @StateObject private var appearance: AppearanceSettings
     @State private var launched = false
+    @State private var showWelcomeAfterSettings = false
     private let browserDefaults: UserDefaults
     private let workspacePasteboard: NSPasteboard
     private let launchProject: URL?
@@ -71,10 +72,17 @@ struct PiWorkspaceApp: App {
                         .onAppear(perform: launchWorkspace)
                 }
             }
-                .sheet(item: $model.settingsRequest) { request in
+                .sheet(item: $model.settingsRequest, onDismiss: {
+                    guard showWelcomeAfterSettings else { return }
+                    showWelcomeAfterSettings = false
+                    model.openWelcome()
+                }) { request in
                     SettingsView(model: model, appearance: appearance, browserDefaults: browserDefaults,
-                                 request: request)
-                        .defaultAppStorage(browserDefaults)
+                                 request: request) {
+                        showWelcomeAfterSettings = true
+                        model.settingsRequest = nil
+                    }
+                    .defaultAppStorage(browserDefaults)
                 }
                 .defaultAppStorage(browserDefaults)
                 .alert(model.quitFileSaveError == nil ? "Your draft couldn’t be saved" : "A file couldn’t be saved",
@@ -117,9 +125,9 @@ struct PiWorkspaceApp: App {
                     .disabled(model.showingSettings || model.showingCommandPalette)
             }
             CommandGroup(after: .help) {
-                Button("Show Welcome") { model.showingWelcome = true }
-                    .disabled(model.startupFailure != nil || model.operationsInProgress
-                              || model.showingSettings || model.showingCommandPalette || model.projectPicker != nil)
+                Button("Show Welcome", action: model.openWelcome)
+                    .accessibilityIdentifier("show-welcome-menu")
+                    .disabled(!model.canOpenWelcome || model.showingSettings || model.showingWelcome)
             }
         }
 
@@ -175,7 +183,9 @@ private struct WorkspaceSidebarCommands: Commands {
         CommandGroup(after: .newItem) {
             Button("Add Project…") { model.openFolder() }
                 .keyboardShortcut("o")
-                .disabled(model.startupFailure != nil || model.operationsInProgress || model.showingCommandPalette)
+                .accessibilityIdentifier("add-project-menu")
+                .disabled(model.startupFailure != nil || model.operationsInProgress || model.showingCommandPalette
+                          || model.showingSettings || model.projectPicker != nil)
             Button("New Thread") { model.sidebarCommand.send(.newThread) }
                 .keyboardShortcut("n")
                 .disabled(!workspaceOpen || model.operationsInProgress)

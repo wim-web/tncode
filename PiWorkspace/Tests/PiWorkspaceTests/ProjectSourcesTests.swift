@@ -6,6 +6,79 @@ import XCTest
 
 @MainActor
 final class ProjectSourcesTests: XCTestCase {
+    func testProjectStartPreferenceAndWelcomePreserveWorkspaceSelection() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let alphaFolder = root.appendingPathComponent("Alpha")
+        let betaFolder = root.appendingPathComponent("Beta")
+        let startFolder = root.appendingPathComponent("Project Fixtures")
+        for folder in [alphaFolder, betaFolder, startFolder] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        }
+
+        let alphaID: UUID
+        let betaID: UUID
+        let betaThread: UUID
+        do {
+            let model = workspace(in: root)
+            XCTAssertTrue(model.showingWelcome)
+            model.openFolder()
+            XCTAssertEqual(model.projectPicker?.initialPath, "~/")
+            model.projectPicker = nil
+            XCTAssertTrue(model.showingWelcome)
+            XCTAssertTrue(model.projects.isEmpty)
+            try model.updateAddProjectBaseDirectory(startFolder.path)
+            model.openFolder()
+            XCTAssertEqual(model.projectPicker?.initialPath, startFolder.path + "/")
+            model.projectPicker = nil
+            model.finishWelcome()
+            XCTAssertFalse(model.showingWelcome)
+
+            try model.openProject(alphaFolder)
+            alphaID = try XCTUnwrap(model.project?.id)
+            model.draft = "Alpha's draft"
+            try model.openProject(betaFolder)
+            betaID = try XCTUnwrap(model.project?.id)
+            betaThread = try XCTUnwrap(model.conversation?.id)
+            model.draft = "Beta's unfinished message"
+
+            model.openWelcome()
+            XCTAssertTrue(model.showingWelcome)
+            model.openFolder()
+            XCTAssertEqual(model.projectPicker?.initialPath, startFolder.path + "/")
+            XCTAssertEqual(model.projectPicker?.basePath, betaFolder.path)
+            model.projectPicker = nil
+            model.finishWelcome()
+            XCTAssertFalse(model.showingWelcome)
+            XCTAssertEqual(model.workspace.selectedProject, betaID)
+            XCTAssertEqual(model.conversation?.id, betaThread)
+            XCTAssertEqual(model.draft, "Beta's unfinished message")
+            XCTAssertTrue(model.terminate())
+        }
+
+        let restored = workspace(in: root)
+        restored.start()
+        XCTAssertFalse(restored.showingWelcome)
+        XCTAssertEqual(restored.workspace.addProjectBaseDirectory, startFolder.path)
+        XCTAssertEqual(restored.workspace.selectedProject, betaID)
+        XCTAssertEqual(restored.conversation?.id, betaThread)
+        XCTAssertEqual(restored.draft, "Beta's unfinished message")
+        restored.selectProject(alphaID)
+        restored.openFolder()
+        XCTAssertEqual(restored.projectPicker?.initialPath, startFolder.path + "/")
+        XCTAssertEqual(restored.projectPicker?.basePath, alphaFolder.path)
+        XCTAssertEqual(restored.draft, "Alpha's draft")
+        restored.projectPicker = nil
+
+        restored.openFolder(relinking: betaID)
+        XCTAssertEqual(restored.projectPicker?.initialPath, betaFolder.path)
+        restored.projectPicker = nil
+        try restored.updateAddProjectBaseDirectory("  ")
+        restored.openFolder()
+        XCTAssertEqual(restored.projectPicker?.initialPath, "~/")
+        XCTAssertEqual(restored.workspace.selectedProject, alphaID)
+    }
+
     func testDiscardOnlyRemovesTheOwnedEmptyScratchDirectory() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = try WorkspaceStore(root: root)

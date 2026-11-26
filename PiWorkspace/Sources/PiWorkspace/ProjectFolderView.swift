@@ -347,6 +347,7 @@ struct ProjectFolderView: View {
             return folder.deletingLastPathComponent()
         }
         return request.basePath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
     }
 
     private func show(_ page: Page) {
@@ -385,10 +386,7 @@ struct ProjectFolderView: View {
             if page == .cloneURL {
                 let remote = try enteredRemote()
                 show(.cloneDestination)
-                if !remote.suggestedName.isEmpty {
-                    path = FileManager.default.homeDirectoryForCurrentUser
-                        .appendingPathComponent(remote.suggestedName, isDirectory: true).path
-                }
+                path = request.initialPath + remote.suggestedName
                 return
             }
             let folder = try enteredFolder()

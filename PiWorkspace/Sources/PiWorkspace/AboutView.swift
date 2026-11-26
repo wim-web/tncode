@@ -6,6 +6,8 @@ struct AboutView: View {
 
     @Binding var showingLicenses: Bool
     var settingsFocus: FocusState<SettingsFocus?>.Binding? = nil
+    var openWelcome: (() -> Void)? = nil
+    var welcomeEnabled = false
     @State private var notices = DependencyNotice.load()
     private let info = AboutInfo()
 
@@ -60,6 +62,15 @@ struct AboutView: View {
                                id: "about-providers")
             }
             .frame(width: 450)
+            if let openWelcome, let settingsFocus {
+                LabeledContent("Welcome page") {
+                    Button("Open", action: openWelcome)
+                        .accessibilityLabel("Open Welcome page")
+                        .settingsTarget(.welcomePage, focus: settingsFocus)
+                        .disabled(!welcomeEnabled)
+                }
+                .frame(width: 450)
+            }
             Button("Open source licenses…") {
                 notices = DependencyNotice.load()
                 showingLicenses = true

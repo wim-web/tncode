@@ -249,6 +249,15 @@ struct ProjectCloneRemote: Sendable {
 }
 
 enum ProjectFolder {
+    static func addProjectInitialPath(_ directory: String?) -> String {
+        let path = directory ?? ""
+        if path.isEmpty || path == "~" { return "~/" }
+        let anchored = path.hasPrefix("/") || path.hasPrefix("~/") || path == "." || path == ".." ||
+            path.hasPrefix("./") || path.hasPrefix("../")
+        let start = anchored ? path : "~/" + path
+        return start.hasSuffix("/") ? start : start + "/"
+    }
+
     static func resolve(_ input: String, relativeTo basePath: String?) throws -> URL {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.utf8.contains(0) else {
@@ -331,6 +340,7 @@ struct Workspace: Codable {
     var selectedProject: UUID?
     var model = ModelSettings()
     var welcomeCompleted: Bool?
+    var addProjectBaseDirectory: String?
 }
 
 struct PendingConversationFork: Codable {
