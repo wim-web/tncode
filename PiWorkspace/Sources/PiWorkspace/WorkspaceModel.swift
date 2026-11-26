@@ -640,6 +640,10 @@ final class WorkspaceModel: ObservableObject {
 
     private func persist(_ updated: Workspace) throws {
         guard let store else { throw WorkspaceError("Could not open the workspace.") }
+        if queueEdit != nil, updated.selectedProject != workspace.selectedProject ||
+            updated.activeProject?.selectedConversation != conversation?.id {
+            throw WorkspaceError("Update or cancel the queued message edit before switching threads.")
+        }
         try store.save(updated)
         composerSave?.cancel()
         composerSave = nil
@@ -1249,7 +1253,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func canChangeArchive(for id: UUID) -> Bool {
-        conversation?.id != id || !operationsInProgress
+        conversation?.id != id || (!operationsInProgress && queueEdit == nil)
     }
 
     func archiveConversation(_ id: UUID, in projectID: UUID, archived: Bool) {

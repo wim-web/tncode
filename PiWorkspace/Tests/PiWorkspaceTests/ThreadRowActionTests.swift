@@ -338,67 +338,72 @@ final class ThreadRowActionTests: XCTestCase {
         let fixture = try Fixture(queuedMessages: [item])
         let id = fixture.local.id
         let projectID = fixture.project.id
-        let model = fixture.open()
-        model.connect()
-        let board = NSPasteboard.withUniqueName()
-        defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
-        defer { host.close() }
+        let draftFile: ComposerAttachment
+        let editedFile: ComposerAttachment
+        do {
+            let model = fixture.open()
+            model.connect()
 
-        XCTAssertTrue(model.attach([.pastedText("Draft file")], to: model.attachmentTarget(for: id)))
-        let draftFile = try XCTUnwrap(model.composerAttachments.first)
-        model.editQueuedMessage(item.id)
-        model.draft = "Edited queued text"
-        XCTAssertTrue(model.attach([.pastedText("Queue file")], to: model.attachmentTarget(for: id)))
-        let editedFile = try XCTUnwrap(model.composerAttachments.first)
+            XCTAssertTrue(model.attach([.pastedText("Draft file")], to: model.attachmentTarget(for: id)))
+            draftFile = try XCTUnwrap(model.composerAttachments.first)
+            model.editQueuedMessage(item.id)
+            model.draft = "Edited queued text"
+            XCTAssertTrue(model.attach([.pastedText("Queue file")], to: model.attachmentTarget(for: id)))
+            editedFile = try XCTUnwrap(model.composerAttachments.first)
 
-        let other = fixture.linked.id
-        XCTAssertTrue(model.canChangeArchive(for: other))
-        model.archiveConversation(other, in: projectID, archived: true)
-        XCTAssertEqual(model.project?.conversations.first { $0.id == other }?.archived, true)
-        model.archiveConversation(other, in: projectID, archived: false)
+            let other = fixture.linked.id
+            XCTAssertTrue(model.canChangeArchive(for: other))
+            model.archiveConversation(other, in: projectID, archived: true)
+            XCTAssertEqual(model.project?.conversations.first { $0.id == other }?.archived, true)
+            model.archiveConversation(other, in: projectID, archived: false)
 
-        XCTAssertFalse(model.canChangeArchive(for: id))
-        model.archiveConversation(id, in: projectID, archived: true)
-        XCTAssertEqual(model.conversation?.id, id)
-        XCTAssertEqual(model.draft, "Edited queued text")
-        XCTAssertEqual(model.composerAttachments, [editedFile])
-        let editingID = try XCTUnwrap(model.editingQueuedMessageID)
-        XCTAssertEqual(editingID, item.id)
+            XCTAssertFalse(model.canChangeArchive(for: id))
+            model.archiveConversation(id, in: projectID, archived: true)
+            XCTAssertEqual(model.conversation?.id, id)
+            XCTAssertEqual(model.draft, "Edited queued text")
+            XCTAssertEqual(model.composerAttachments, [editedFile])
+            let editingID = try XCTUnwrap(model.editingQueuedMessageID)
+            XCTAssertEqual(editingID, item.id)
 
-        let backup = fixture.workspace.appendingPathComponent("workspace.previous.json")
-        try FileManager.default.removeItem(at: backup)
-        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
-        try Data().write(to: backup.appendingPathComponent("obstruction"))
-        try await host.press("queue-update")
-        XCTAssertNotNil(model.error)
-        XCTAssertFalse(model.canChangeArchive(for: id))
-        XCTAssertEqual(model.queuedMessages, [item])
-        XCTAssertEqual(model.draft, "Edited queued text")
-        XCTAssertEqual(model.composerAttachments, [editedFile])
+            let backup = fixture.workspace.appendingPathComponent("workspace.previous.json")
+            try FileManager.default.removeItem(at: backup)
+            try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+            try Data().write(to: backup.appendingPathComponent("obstruction"))
+            model.updateQueuedMessage()
+            XCTAssertNotNil(model.error)
+            XCTAssertFalse(model.canChangeArchive(for: id))
+            XCTAssertEqual(model.queuedMessages, [item])
+            XCTAssertEqual(model.draft, "Edited queued text")
+            XCTAssertEqual(model.composerAttachments, [editedFile])
 
-        try FileManager.default.removeItem(at: backup)
-        try await host.press("queue-update")
-        XCTAssertNil(model.editingQueuedMessageID)
-        XCTAssertTrue(model.canChangeArchive(for: id))
-        XCTAssertEqual(model.draft, "Other draft")
-        XCTAssertEqual(model.composerAttachments, [draftFile])
-        model.archiveConversation(id, in: projectID, archived: true)
-        XCTAssertNotEqual(model.conversation?.id, id)
-        XCTAssertTrue(model.terminate())
+            try FileManager.default.removeItem(at: backup)
+            model.updateQueuedMessage()
+            XCTAssertNil(model.editingQueuedMessageID)
+            XCTAssertTrue(model.canChangeArchive(for: id))
+            XCTAssertEqual(model.draft, "Other draft")
+            XCTAssertEqual(model.composerAttachments, [draftFile])
+            model.archiveConversation(id, in: projectID, archived: true)
+            XCTAssertNotEqual(model.conversation?.id, id)
+            XCTAssertTrue(model.terminate())
+        }
 
         let reopened = fixture.open()
         defer { reopened.terminate() }
+        XCTAssertNil(reopened.startupFailure)
         reopened.selectConversation(id, in: projectID)
         XCTAssertEqual(reopened.conversation?.archived, true)
-        reopened.archiveConversation(id, in: projectID, archived: false)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: reopened, pasteboard: board)
+        defer { host.close() }
+        try await host.press("restore-open-thread")
         XCTAssertEqual(reopened.draft, "Other draft")
         XCTAssertEqual(reopened.composerAttachments, [draftFile])
         reopened.editQueuedMessage(item.id)
         XCTAssertEqual(reopened.draft, "Edited queued text")
         XCTAssertEqual(reopened.composerAttachments, [editedFile])
         reopened.draft = "Discard this edit"
-        reopened.cancelQueuedMessageEdit()
+        try await host.press("queue-cancel-edit")
         XCTAssertTrue(reopened.canChangeArchive(for: id))
         XCTAssertEqual(reopened.queuedMessages.first?.text, "Edited queued text")
     }
