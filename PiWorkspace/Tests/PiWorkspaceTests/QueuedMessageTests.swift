@@ -189,6 +189,128 @@ final class QueuedMessageTests: XCTestCase {
     }
 
     @MainActor
+    func testSubmittedThreadKeepsAccountAfterStopAndFailedReopen() async throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        var owner: ModelSettings
+        do {
+            let model = fixture.open()
+            let scope = try XCTUnwrap(model.draftProjectScope)
+            let inherited = try XCTUnwrap(model.composerModelOptions().first)
+            owner = inherited.settings
+            owner.endpoint += "/other-account"
+            let explicit = ComposerModelOption(settings: owner, name: "Owner", unavailableReason: nil)
+            XCTAssertTrue(model.chooseComposerModel(explicit, in: scope))
+            let worker = fixture.worker
+            worker.emit(.ready([]))
+            let active = try worker.start("Owner's history", in: model)
+            fixture.append(["After Stop"], in: model)
+            XCTAssertFalse(model.chooseComposerModel(inherited, in: scope))
+            XCTAssertFalse(model.chooseComposerModel(nil, in: scope))
+            model.cancel()
+            worker.finish(active)
+            XCTAssertTrue(model.queuePaused)
+            XCTAssertFalse(model.canUseInheritedComposerModel)
+            XCTAssertFalse(model.chooseComposerModel(inherited, in: scope))
+            XCTAssertFalse(model.chooseComposerModel(nil, in: scope))
+            XCTAssertEqual(model.effectiveModel, owner)
+            model.shutdown()
+        }
+
+        // Fail before ready, when a fresh model has not received any history.
+        let reopened = WorkspaceModel(root: fixture.root, keychainService: "fixture", credentialExists: { _ in true },
+                                      readCredential: { _ in fixture.key }, makeProcess: { _, _ in
+            throw WorkspaceError("Fixture could not open the worker.")
+        })
+        reopened.connect()
+        XCTAssertEqual(reopened.phase, .closed)
+        XCTAssertTrue(reopened.messages.isEmpty)
+        let scope = try XCTUnwrap(reopened.draftProjectScope)
+        XCTAssertFalse(reopened.canUseInheritedComposerModel)
+        XCTAssertFalse(reopened.chooseComposerModel(nil, in: scope))
+        let inherited = try XCTUnwrap(reopened.composerModelOptions().first { $0.settings.account != owner.account })
+        XCTAssertNotNil(inherited.unavailableReason)
+        XCTAssertFalse(reopened.chooseComposerModel(inherited, in: scope))
+        XCTAssertEqual(reopened.conversation?.modelSelection, owner)
+        XCTAssertEqual(reopened.queuedMessages.map(\.text), ["After Stop"])
+
+        var sameAccount = owner
+        sameAccount.model = "replacement-model"
+        let replacement = ComposerModelOption(settings: sameAccount, name: sameAccount.model, unavailableReason: nil)
+        XCTAssertTrue(reopened.chooseComposerModel(replacement, in: scope))
+        XCTAssertEqual(reopened.conversation?.modelSelection, sameAccount)
+        XCTAssertFalse(reopened.chooseComposerModel(nil, in: scope))
+    }
+
+    @MainActor
+    func testCompactionReopensChosenModelAndKeepsSelectedRowAcrossFailure() async throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.open()
+        defer { model.shutdown() }
+        let first = fixture.worker
+        let active = try first.start("Active", in: model)
+        fixture.append(["Wait", "Selected"], in: model)
+        let items = model.queuedMessages
+        var next = model.effectiveModel
+        next.model = "next-model"
+        let choice = ComposerModelOption(settings: next, name: next.model, unavailableReason: nil)
+        XCTAssertTrue(model.chooseComposerModel(choice, in: try XCTUnwrap(model.draftProjectScope)))
+        first.emit(.inputMode(turnID: active.turnID, .compacting))
+        model.sendQueuedMessageNow(items[1].id)
+        first.emit(.compactionSkipped(turnID: active.turnID, queuedID: items[1].id))
+        first.finish(active)
+        XCTAssertEqual(first.prompts.map(\.text), ["Active"])
+        XCTAssertEqual(model.phase, .connecting)
+        fixture.worker.onClose?()
+        XCTAssertTrue(model.queuePaused)
+        XCTAssertEqual(model.queuedMessages.map(\.id), items.map(\.id))
+        model.connect()
+        let reopened = fixture.worker
+        XCTAssertEqual(reopened.commands.compactMap { $0 as? OpenConversation }.first?.config, next)
+        reopened.emit(.ready(model.messages))
+        XCTAssertTrue(reopened.prompts.isEmpty)
+        model.sendQueuedMessageNow(items[1].id)
+        let selected = try XCTUnwrap(reopened.prompts.first)
+        XCTAssertEqual(selected.queuedID, items[1].id)
+        XCTAssertEqual(selected.skipCompaction, true)
+        model.cancel()
+        reopened.finish(selected)
+        XCTAssertTrue(model.queuePaused)
+        XCTAssertEqual(reopened.prompts.count, 1)
+        XCTAssertEqual(model.queuedMessages.map(\.id), [items[0].id])
+        XCTAssertEqual(model.messages.filter { $0.queuedID == items[1].id }.count, 1)
+    }
+
+    @MainActor
+    func testStopAfterSkipAcknowledgementKeepsQueuePausedOnNewModel() async throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.open()
+        defer { model.shutdown() }
+        let worker = fixture.worker
+        let first = try worker.start("Active", in: model)
+        fixture.append(["First", "Selected"], in: model)
+        let ids = model.queuedMessages.map(\.id)
+        let selected = try XCTUnwrap(ids.last)
+        var b = model.effectiveModel
+        b.model = "model-b"
+        XCTAssertTrue(model.chooseComposerModel(.init(settings: b, name: b.model, unavailableReason: nil),
+                                                in: try XCTUnwrap(model.draftProjectScope)))
+        worker.emit(.inputMode(turnID: first.turnID, .compacting))
+        model.sendQueuedMessageNow(selected)
+        worker.emit(.compactionSkipped(turnID: first.turnID, queuedID: selected))
+        model.cancel()
+        worker.finish(first)
+        XCTAssertEqual(model.phase, .connecting)
+        fixture.worker.emit(.ready(model.messages))
+        XCTAssertTrue(model.queuePaused)
+        XCTAssertEqual(model.queuedMessages.map(\.id), ids)
+        XCTAssertEqual(worker.prompts.count, 1)
+        XCTAssertTrue(fixture.worker.prompts.isEmpty)
+    }
+
+    @MainActor
     func testRejectedSteerAndCredentialTextStayOutOfTheModel() async throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }
@@ -249,7 +371,7 @@ private final class QueueFixture {
 
     func open(history: [ChatMessage] = [], restart: Bool = false) -> WorkspaceModel {
         let model = WorkspaceModel(root: root, keychainService: "dev.piworkspace.queue.fixture",
-                                   readCredential: { _ in self.key }, makeProcess: { _, _ in
+                                   credentialExists: { _ in true }, readCredential: { _ in self.key }, makeProcess: { _, _ in
             self.worker = QueueWorker()
             return self.worker
         })
