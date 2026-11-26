@@ -5,6 +5,21 @@ import XCTest
 
 @MainActor
 final class ProjectSourcesTests: XCTestCase {
+    func testDiscardOnlyRemovesTheOwnedEmptyScratchDirectory() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = try WorkspaceStore(root: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let scratch = try store.makeScratchProject(for: Conversation(id: UUID(), title: "New thread"))
+        let other = root.appendingPathComponent("unrelated")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: false)
+        var stale = scratch
+        stale.path = other.path
+        store.discardEmptyScratchFolder(stale)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
+        store.discardEmptyScratchFolder(scratch)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: scratch.path))
+    }
+
     func testRelativeFolderAndDropReuseTheSameProject() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

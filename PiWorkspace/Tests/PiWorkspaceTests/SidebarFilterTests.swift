@@ -1,10 +1,9 @@
-import Foundation
+import XCTest
+@testable import PiWorkspace
 
-// From PiWorkspace: swiftc Sources/PiWorkspace/{Workspace,WorkspaceModel,SidebarFilter,GitWorkspace,KeyVault,PiProcess}.swift scripts/verify-sidebar.swift -o /tmp/verify-sidebar
-@main
-@MainActor
-struct VerifySidebar {
-    static func main() throws {
+final class SidebarFilterTests: XCTestCase {
+    @MainActor
+    func testProjectScopeSearchArchiveAndPins() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let alphaThread = thread("Alpha build", at: 3)
         let betaPinned = thread("Beta build pin", at: 2, shelf: .pinned)
@@ -75,21 +74,20 @@ struct VerifySidebar {
         try expect(reopened.project?.pinned == false, "Unpin updates the open project.")
         reopened.setProjectPinned(gamma.id, pinned: true)
         try expect(reopened.project?.pinned == true, "A project can be pinned again.")
-        print("Passed sidebar fixture checks for project scope, search, archive, drafts, and pins.")
     }
 
-    private static func thread(_ title: String, at time: TimeInterval, shelf: ThreadShelf? = nil,
+    private func thread(_ title: String, at time: TimeInterval, shelf: ThreadShelf? = nil,
                                archived: Bool = false) -> Conversation {
         Conversation(id: UUID(), title: title, archived: archived,
                      lastActiveAt: Date(timeIntervalSince1970: time), shelf: shelf)
     }
 
-    private static func project(_ title: String, in root: URL, threads: [Conversation]) -> Project {
+    private func project(_ title: String, in root: URL, threads: [Conversation]) -> Project {
         Project(id: UUID(), path: root.appendingPathComponent(title).path,
                 title: title, conversations: threads)
     }
 
-    private static func expect(_ condition: Bool, _ description: String) throws {
+    private func expect(_ condition: Bool, _ description: String) throws {
         guard condition else { throw WorkspaceError(description) }
     }
 }

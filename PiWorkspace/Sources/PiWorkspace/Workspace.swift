@@ -321,7 +321,12 @@ final class WorkspaceStore {
     }
 
     func discardEmptyScratchFolder(_ project: Project) {
-        if project.isScratch { _ = Darwin.rmdir(project.path) }
+        let parent = root.resolvingSymlinksInPath().standardizedFileURL.appendingPathComponent("scratch", isDirectory: true)
+        guard project.isScratch, project.path == parent.appendingPathComponent(project.id.uuidString).path else { return }
+        let directory = Darwin.open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard directory >= 0 else { return }
+        defer { Darwin.close(directory) }
+        _ = unlinkat(directory, project.id.uuidString, AT_REMOVEDIR)
     }
 
     func worktree(project: UUID, conversation: UUID) throws -> URL {

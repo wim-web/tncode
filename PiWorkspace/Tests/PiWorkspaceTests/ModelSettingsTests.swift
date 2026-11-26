@@ -1,10 +1,9 @@
-import Foundation
+import XCTest
+@testable import PiWorkspace
 
-// swiftc Sources/PiWorkspace/{Workspace,WorkspaceModel,GitWorkspace,KeyVault,PiProcess}.swift scripts/verify-model-settings.swift -o /tmp/verify-model-settings
-@main
-struct VerifyModelSettings {
+final class ModelSettingsTests: XCTestCase {
     @MainActor
-    static func main() throws {
+    func testLegacySettingsProjectOverrideAndReset() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -77,10 +76,9 @@ struct VerifyModelSettings {
         let reopened = WorkspaceModel(root: root, keychainService: keychainService)
         try expect(reopened.project?.id == a && reopened.project?.modelOverride == nil &&
                    reopened.effectiveModel.thinkingLevel == .high, "Reset survives reloading")
-        print("PASS legacy workspace, A override, B inheritance, provider accounts, reload, and reset")
     }
 
-    private static func expect(_ pass: @autoclosure () throws -> Bool, _ message: String) throws {
+    private func expect(_ pass: @autoclosure () throws -> Bool, _ message: String) throws {
         guard try pass() else { throw WorkspaceError(message) }
     }
 }
