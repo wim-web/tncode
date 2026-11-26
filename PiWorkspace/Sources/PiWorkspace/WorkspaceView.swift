@@ -1886,6 +1886,7 @@ struct WorkspaceView: View {
 
     private func toggleTerminal() {
         guard let activeTerminal else { return }
+        if !terminalIsVisible { focusedComposer = nil }
         if let index = openTerminals.firstIndex(where: { $0.id == activeTerminal }) {
             openTerminals[index].isOpen.toggle()
         } else {
@@ -2575,7 +2576,7 @@ struct WorkspaceView: View {
                     await Task.yield()
                     if !Task.isCancelled && model.conversation?.id == threadID &&
                         !model.showingWelcome && model.projectPicker == nil && draftProjectPicker == nil &&
-                        rightPanels[threadID]?.visibleTerminal == nil &&
+                        !terminalIsVisible && rightPanels[threadID]?.visibleTerminal == nil &&
                         !model.showingSettings && !model.showingCommandPalette && model.activeThreadFind == nil {
                         focusedComposer = threadID
                     }
