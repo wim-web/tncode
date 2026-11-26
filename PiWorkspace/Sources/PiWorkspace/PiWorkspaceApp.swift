@@ -67,7 +67,7 @@ struct PiWorkspaceApp: App {
         Window("Pi Workspace", id: "workspace") {
             Group {
                 if let failure = model.startupFailure {
-                    WorkspaceStartupRecoveryView(model: model, failure: failure)
+                    WorkspaceStartupRecoveryView(model: model, failure: failure, pasteboard: workspacePasteboard)
                 } else {
                     WorkspaceView(model: model, chatWidthMode: appearance.chatWidth, browserDefaults: browserDefaults, workspacePasteboard: workspacePasteboard)
                         .onAppear(perform: launchWorkspace)

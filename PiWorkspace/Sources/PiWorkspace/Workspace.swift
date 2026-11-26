@@ -396,12 +396,12 @@ struct WorkspaceError: LocalizedError {
 }
 
 enum WorkspaceStoreError: LocalizedError {
-    case inUse
+    case inUse(URL, Int32)
     case access(URL, Error)
-    case invalidIndex(missing: Bool, canRestore: Bool)
+    case invalidIndex(missing: Bool, canRestore: Bool, previousReadError: Error?)
 
     var canRestore: Bool {
-        if case .invalidIndex(_, let canRestore) = self { return canRestore }
+        if case .invalidIndex(_, let canRestore, _) = self { return canRestore }
         return false
     }
 
@@ -411,14 +411,55 @@ enum WorkspaceStoreError: LocalizedError {
             "This workspace is open in another Pi Workspace process."
         case let .access(file, error):
             "Could not access \(file.lastPathComponent). \(error.localizedDescription)"
-        case let .invalidIndex(missing, canRestore):
+        case let .invalidIndex(missing, canRestore, _):
             (missing ? "The workspace index is missing." : "The workspace index is damaged.")
                 + (canRestore ? "" : " A readable, valid previous index is unavailable.")
+        }
+    }
+
+    func diagnosticLines(root: URL) -> [String] {
+        switch self {
+        case let .inUse(file, code):
+            [localizedDescription, "Lock: \(file.path)"]
+                + Self.accessDetails(NSError(domain: NSPOSIXErrorDomain, code: Int(code)))
+        case let .access(file, error):
+            ["Could not access \(file.lastPathComponent).", "Path: \(file.path)"] + Self.accessDetails(error)
+        case let .invalidIndex(_, _, previousReadError):
+            [localizedDescription,
+             "Index: \(root.appendingPathComponent(WorkspaceStore.indexName).path)",
+             "Previous index: \(root.appendingPathComponent(WorkspaceStore.previousIndexName).path)"]
+                + (previousReadError.map(Self.accessDetails) ?? [])
+        }
+    }
+
+    private static func accessDetails(_ error: Error) -> [String] {
+        if let error = error as? WorkspaceStoreFileError { return [error.localizedDescription] }
+        let reported = error as NSError
+        let underlying = reported.userInfo[NSUnderlyingErrorKey] as? NSError
+        // Error userInfo can contain input from the workspace. Use system descriptions for the codes only.
+        return ([reported] + (underlying.map { [$0] } ?? [])).compactMap { error in
+            guard error.domain == NSPOSIXErrorDomain || error.domain == NSCocoaErrorDomain else { return nil }
+            let systemError = NSError(domain: error.domain, code: error.code)
+            return "\(systemError.domain) \(systemError.code): \(systemError.localizedDescription)"
+        }
+    }
+}
+
+private enum WorkspaceStoreFileError: LocalizedError {
+    case notRegularFile, archiveMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .notRegularFile: "Expected a regular file."
+        case .archiveMismatch: "The archive already contains different data."
         }
     }
 }
 
 final class WorkspaceStore {
+    static let indexName = "workspace.json"
+    static let previousIndexName = "workspace.previous.json"
+
     let root: URL
     private let lock: Int32
 
@@ -436,7 +477,7 @@ final class WorkspaceStore {
         guard flock(lock, LOCK_EX | LOCK_NB) == 0 else {
             let code = errno
             Darwin.close(lock)
-            if code == EWOULDBLOCK { throw WorkspaceStoreError.inUse }
+            if code == EWOULDBLOCK { throw WorkspaceStoreError.inUse(file, code) }
             throw Self.accessError(file, code)
         }
         self.lock = lock
@@ -444,8 +485,8 @@ final class WorkspaceStore {
 
     deinit { Darwin.close(lock) }
 
-    private var index: URL { root.appendingPathComponent("workspace.json") }
-    private var previousIndex: URL { root.appendingPathComponent("workspace.previous.json") }
+    private var index: URL { root.appendingPathComponent(Self.indexName) }
+    private var previousIndex: URL { root.appendingPathComponent(Self.previousIndexName) }
     private var pendingFork: URL { root.appendingPathComponent(".pending-fork.json") }
     var config: URL { root.appendingPathComponent("pi-config", isDirectory: true) }
 
@@ -456,15 +497,19 @@ final class WorkspaceStore {
         }
 
         let previous: Data?
-        if current == nil {
+        let previousReadError: Error?
+        do {
             previous = try read(previousIndex)
-            if previous == nil && !restoringPrevious { return Workspace() }
-        } else {
-            previous = try? read(previousIndex)
+            previousReadError = nil
+        } catch WorkspaceStoreError.access(_, let error) where current != nil {
+            previous = nil
+            previousReadError = error
         }
+        if current == nil && previous == nil && !restoringPrevious { return Workspace() }
         let workspace = previous.flatMap { try? JSONDecoder().decode(Workspace.self, from: $0) }
         guard restoringPrevious, let previous, let workspace else {
-            throw WorkspaceStoreError.invalidIndex(missing: current == nil, canRestore: workspace != nil)
+            throw WorkspaceStoreError.invalidIndex(missing: current == nil, canRestore: workspace != nil,
+                                                   previousReadError: previousReadError)
         }
 
         if let current { try ensureCorruptIndexArchived(current) }
@@ -494,7 +539,7 @@ final class WorkspaceStore {
         let archive = root.appendingPathComponent("workspace.corrupt-\(digest).json")
         if let saved = try read(archive) {
             guard saved == data else {
-                throw WorkspaceStoreError.access(archive, WorkspaceError("The archive already contains different data."))
+                throw WorkspaceStoreError.access(archive, WorkspaceStoreFileError.archiveMismatch)
             }
         } else {
             try write(data, to: archive)
@@ -512,7 +557,7 @@ final class WorkspaceStore {
         var info = stat()
         guard fstat(fd, &info) == 0 else { throw Self.accessError(file, errno) }
         guard info.st_mode & S_IFMT == S_IFREG else {
-            throw WorkspaceStoreError.access(file, WorkspaceError("Expected a regular file."))
+            throw WorkspaceStoreError.access(file, WorkspaceStoreFileError.notRegularFile)
         }
         do {
             return try handle.readToEnd() ?? Data()
@@ -530,7 +575,7 @@ final class WorkspaceStore {
     }
 
     private static func accessError(_ file: URL, _ code: Int32) -> WorkspaceStoreError {
-        .access(file, POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO))
+        .access(file, NSError(domain: NSPOSIXErrorDomain, code: Int(code)))
     }
 
     func history(project: UUID, conversation: UUID) -> URL {

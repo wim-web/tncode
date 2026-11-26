@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceStartupRecoveryView: View {
     let model: WorkspaceModel
     let failure: WorkspaceStoreError
+    let pasteboard: NSPasteboard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -47,10 +48,20 @@ struct WorkspaceStartupRecoveryView: View {
     }
 
     private func copyDetails() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let details = ["Pi Workspace \(version)", model.root.path, failure.localizedDescription]
-            .joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(details, forType: .string)
+        let info = AboutInfo()
+        let product = [info.name, info.version].compactMap { $0 }.joined(separator: " ")
+        #if arch(arm64)
+        let architecture = "arm64"
+        #elseif arch(x86_64)
+        let architecture = "x86_64"
+        #else
+        let architecture = "unknown architecture"
+        #endif
+        let system = ProcessInfo.processInfo.operatingSystemVersion
+        let platform = "macOS \(system.majorVersion).\(system.minorVersion).\(system.patchVersion) \(architecture)"
+        let details = ["\(product) (\(platform)) could not open its workspace.", "Workspace: \(model.root.path)"]
+            + failure.diagnosticLines(root: model.root)
+        pasteboard.clearContents()
+        pasteboard.setString(details.joined(separator: "\n"), forType: .string)
     }
 }

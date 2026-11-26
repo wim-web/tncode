@@ -1,5 +1,7 @@
+import AppKit
 import Darwin
 import Foundation
+import SwiftUI
 import XCTest
 @testable import PiWorkspace
 
@@ -148,7 +150,7 @@ final class WorkspaceRecoveryTests: XCTestCase {
         _ = try fixture.seedBackup(for: Project(id: UUID(), path: "/fixture", title: "Previous"))
         try FileManager.default.removeItem(at: fixture.index)
         let model = fixture.open()
-        guard case .invalidIndex(missing: true, canRestore: true)? = model.startupFailure else {
+        guard case .invalidIndex(missing: true, canRestore: true, _)? = model.startupFailure else {
             return XCTFail("Expected a missing index with a recoverable backup")
         }
 
@@ -208,9 +210,205 @@ final class WorkspaceRecoveryTests: XCTestCase {
         XCTAssertEqual(second.workspace.model.model, "owned workspace")
     }
 
+    func testCopyDetailsAndQuitInIsolatedApp() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        if let path = environment["PI_WORKSPACE_RECOVERY_FIXTURE"] {
+            let root = URL(fileURLWithPath: path, isDirectory: true)
+            let scenario = try XCTUnwrap(environment["PI_WORKSPACE_RECOVERY_SCENARIO"])
+            let board = try XCTUnwrap(environment["PI_WORKSPACE_RECOVERY_PASTEBOARD"])
+            try await exerciseRecovery(in: root, scenario: scenario, pasteboard: NSPasteboard(name: .init(board)))
+            return
+        }
+
+        for scenario in ["corrupt", "missing", "locked", "access", "corrupt-with-unreadable-backup"] {
+            let fixture = try Fixture()
+            let projectPath = fixture.root.appendingPathComponent("Project", isDirectory: true)
+            try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: false)
+            let project = Project(id: UUID(), path: projectPath.path, title: "Earlier project")
+            _ = try fixture.seedBackup(for: project)
+            let validIndex = try Data(contentsOf: fixture.index)
+            let validPrevious = try Data(contentsOf: fixture.previous)
+            let target = fixture.root.appendingPathComponent("fixture-private-symlink-target")
+            var owner: WorkspaceStore?
+            switch scenario {
+            case "missing": try FileManager.default.removeItem(at: fixture.index)
+            case "locked": owner = try WorkspaceStore(root: fixture.root)
+            case "access", "corrupt-with-unreadable-backup":
+                let inaccessible = scenario == "access" ? fixture.index : fixture.previous
+                try FileManager.default.moveItem(at: inaccessible, to: target)
+                try FileManager.default.createSymbolicLink(at: inaccessible, withDestinationURL: target)
+            default: break
+            }
+            if scenario.hasPrefix("corrupt") {
+                try Data("{fixture-private-index-bytes".utf8).write(to: fixture.index)
+            }
+
+            let before = try storageSnapshot(fixture.root)
+            let board = NSPasteboard(name: .init("dev.piworkspace.verification.\(UUID())"))
+            defer { board.releaseGlobally() }
+            let terminated = fixture.root.appendingPathExtension("terminated")
+            defer { try? FileManager.default.removeItem(at: terminated) }
+            try runRecoveryHost(root: fixture.root, scenario: scenario, pasteboard: board)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: terminated.path), "Quit did not terminate AppKit for \(scenario)")
+            let details = try XCTUnwrap(board.string(forType: .string), scenario)
+            assertCopiedDetails(details, scenario: scenario, root: fixture.root)
+            XCTAssertEqual(try storageSnapshot(fixture.root), before, "Copy or Quit changed storage for \(scenario)")
+
+            withExtendedLifetime(owner) {}
+            owner = nil
+            if scenario == "access" || scenario == "corrupt-with-unreadable-backup" {
+                try FileManager.default.removeItem(at: scenario == "access" ? fixture.index : fixture.previous)
+                try FileManager.default.removeItem(at: target)
+            }
+            try validIndex.write(to: fixture.index)
+            try validPrevious.write(to: fixture.previous)
+            let repaired = try storageSnapshot(fixture.root)
+            try runRecoveryHost(root: fixture.root, scenario: "relaunch", pasteboard: board)
+            XCTAssertEqual(try storageSnapshot(fixture.root), repaired, "Opening the repaired workspace changed storage")
+        }
+    }
+
+    private func runRecoveryHost(root: URL, scenario: String, pasteboard: NSPasteboard) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["xctest", "-XCTest", "PiWorkspaceTests.WorkspaceRecoveryTests/testCopyDetailsAndQuitInIsolatedApp",
+                             Bundle(for: Self.self).bundlePath]
+        var environment = ProcessInfo.processInfo.environment
+        environment["XCTestSessionIdentifier"] = nil
+        environment["PI_WORKSPACE_RECOVERY_FIXTURE"] = root.path
+        environment["PI_WORKSPACE_RECOVERY_SCENARIO"] = scenario
+        environment["PI_WORKSPACE_RECOVERY_PASTEBOARD"] = pasteboard.name.rawValue
+        process.environment = environment
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationReason, .exit, scenario)
+        XCTAssertEqual(process.terminationStatus, 0, scenario)
+    }
+
+    private func exerciseRecovery(in root: URL, scenario: String, pasteboard: NSPasteboard) async throws {
+        let model = WorkspaceModel(root: root, keychainService: "dev.piworkspace.recovery-fixture", readCredential: { _ in
+            throw WorkspaceError("Model credentials are unavailable in the recovery fixture.")
+        })
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        guard app.activationPolicy() == .prohibited else { throw WorkspaceError("The native host could not disable activation.") }
+        let delegate = WorkspaceApplicationDelegate()
+        delegate.model = model
+        app.delegate = delegate
+        defer { app.delegate = nil }
+        app.finishLaunching()
+        let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 1200, y: 0)
+        let panel = NSPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 800, height: 540)),
+                            styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        let host: NSView
+        if scenario == "relaunch" {
+            XCTAssertNil(model.startupFailure)
+            XCTAssertEqual(model.project?.title, "Current project")
+            XCTAssertEqual(model.conversation?.title, "Conversation")
+            host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable, workspacePasteboard: pasteboard))
+        } else {
+            let failure = try XCTUnwrap(model.startupFailure)
+            host = NSHostingView(rootView: WorkspaceStartupRecoveryView(model: model, failure: failure, pasteboard: pasteboard))
+        }
+        panel.contentView = host
+        panel.setFrameOrigin(origin)
+        guard NSScreen.screens.allSatisfy({ !$0.frame.intersects(panel.frame) }) else {
+            throw WorkspaceError("The recovery panel must stay offscreen.")
+        }
+        panel.orderBack(nil)
+        defer { panel.close() }
+
+        if scenario == "relaunch" {
+            _ = try await element("sidebar-home", in: host)
+            return
+        }
+
+        pasteboard.clearContents()
+        try await press("workspace-startup-copy-details", in: host)
+        let terminated = root.appendingPathExtension("terminated")
+        let observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                                              object: app, queue: nil) { _ in
+            try? Data().write(to: terminated)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        try await press("workspace-startup-quit", in: host)
+        try await Task.sleep(for: .seconds(2))
+        XCTFail("Quit did not exit the recovery host")
+    }
+
+    private func assertCopiedDetails(_ details: String, scenario: String, root: URL) {
+        let info = AboutInfo()
+        let product = [info.name, info.version].compactMap { $0 }.joined(separator: " ")
+        XCTAssertTrue(details.hasPrefix("\(product) (macOS "))
+        #if arch(arm64)
+        XCTAssertTrue(details.contains(" arm64)"))
+        #elseif arch(x86_64)
+        XCTAssertTrue(details.contains(" x86_64)"))
+        #endif
+        XCTAssertTrue(details.contains("\nWorkspace: \(root.path)\n"))
+        XCTAssertFalse(details.contains("fixture-private-"))
+        XCTAssertFalse(details.contains("fixture session"))
+        XCTAssertFalse(details.contains("Current project"))
+        switch scenario {
+        case "locked":
+            XCTAssertTrue(details.contains("This workspace is open in another Pi Workspace process."))
+            XCTAssertTrue(details.contains("Lock: \(root.path)/.lock"))
+            XCTAssertTrue(details.contains("NSPOSIXErrorDomain \(EWOULDBLOCK):"))
+        case "access":
+            XCTAssertTrue(details.contains("Could not access workspace.json."))
+            XCTAssertTrue(details.contains("Path: \(root.path)/workspace.json"))
+            XCTAssertTrue(details.contains("NSPOSIXErrorDomain \(ELOOP):"))
+        default:
+            XCTAssertTrue(details.contains(scenario == "missing" ? "The workspace index is missing." : "The workspace index is damaged."))
+            XCTAssertTrue(details.contains("\nIndex: \(root.path)/workspace.json\nPrevious index: \(root.path)/workspace.previous.json"))
+            if scenario == "corrupt-with-unreadable-backup" {
+                XCTAssertTrue(details.contains("A readable, valid previous index is unavailable."))
+                XCTAssertTrue(details.contains("NSPOSIXErrorDomain \(ELOOP):"))
+            }
+        }
+    }
+
+    private func press(_ id: String, in host: NSView) async throws {
+        let button = try await element(id, in: host)
+        guard button.accessibilityPerformPress?() == true else { throw WorkspaceError("Could not AXPress \(id)") }
+    }
+
+    private func element(_ id: String, in host: NSView) async throws -> AnyObject {
+        for _ in 0..<150 {
+            host.layoutSubtreeIfNeeded()
+            var visited = Set<ObjectIdentifier>()
+            func find(_ element: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(element)).inserted else { return nil }
+                if element.accessibilityIdentifier?() == id { return element }
+                for child in element.accessibilityChildren?() ?? [] {
+                    if let found = find(child as AnyObject) { return found }
+                }
+                return nil
+            }
+            if let element = find(host) { return element }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw WorkspaceError("Missing AX element \(id)")
+    }
+
+    private func storageSnapshot(_ root: URL) throws -> [String: Data] {
+        let fs = FileManager.default
+        var snapshot: [String: Data] = [:]
+        for path in try fs.subpathsOfDirectory(atPath: root.path) {
+            let file = root.appendingPathComponent(path)
+            switch try fs.attributesOfItem(atPath: file.path)[.type] as? FileAttributeType {
+            case .typeDirectory: snapshot[path + "/"] = Data()
+            case .typeSymbolicLink: snapshot[path] = Data(try fs.destinationOfSymbolicLink(atPath: file.path).utf8)
+            default: snapshot[path] = try Data(contentsOf: file)
+            }
+        }
+        return snapshot
+    }
+
     private func assertInvalidIndex(_ model: WorkspaceModel, canRestore expected: Bool,
                                     file: StaticString = #filePath, line: UInt = #line) {
-        guard case let .invalidIndex(missing, canRestore)? = model.startupFailure else {
+        guard case let .invalidIndex(missing, canRestore, _)? = model.startupFailure else {
             return XCTFail("Expected a damaged index", file: file, line: line)
         }
         XCTAssertFalse(missing, file: file, line: line)
