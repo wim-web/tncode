@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
+import { restoreAppearance, verifyAbout, verifyAppearance } from "./verify-settings-panels.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
@@ -190,6 +191,7 @@ const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
 const press = (id) => drive("press", [id]);
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings,
+  value: id => drive("get", [id, "--values"]),
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", [name]),
@@ -587,10 +589,34 @@ async function verifySidebar(savedID) {
   }
   const [first, second, last] = index().projects;
   const requestCount = targets.length;
-  await quit();
+  const thirdText = "Draft for Third Project with a final edit";
+  const lastDraft = () => index().projects.find(p => p.id === last.id).conversations.find(t => t.id === last.selectedConversation);
+  await until(() => lastDraft().composerText === "Draft for Third Project", "baseline draft saved");
+  const backup = join(workspace, "workspace.previous.json");
+  const held = join(directory, "held-workspace-index");
+  const blocker = join(backup, "fixture-obstruction");
+  renameSync(backup, held);
+  mkdirSync(backup);
+  writeFileSync(blocker, "blocked");
+  try {
+    await typePrompt(thirdText);
+    await until(() => visible("retry-saving-draft"), "failed autosave is visible");
+    press("terminate:");
+    await until(() => visible("retry-save-and-quit"), "quit deferred while the draft cannot be saved");
+    process.kill(appPID, 0);
+    assert.equal(lastDraft().composerText, "Draft for Third Project");
+  } finally {
+    unlinkSync(blocker);
+    rmdirSync(backup);
+    renameSync(held, backup);
+  }
+  press("retry-save-and-quit");
+  await waitForExit(appPID);
+  appPID = undefined;
   await launch();
   const composerHas = text => drive("get", ["composer", "--values"]).includes("value=" + JSON.stringify(text));
-  await until(() => index().selectedProject === last.id && composerHas("Draft for Third Project"), "restore selected unfinished draft on launch");
+  await until(() => index().selectedProject === last.id && composerHas(thirdText), "restore selected unfinished draft on launch");
+  record("Quit was cancelled while the draft backup was unwritable. Retry and Quit after repair saved the final edit, and the app reopened it in the same thread.");
   press("thread-row-" + second.selectedConversation);
   await until(() => composerHas("Draft for Second Project"), "restore the other unfinished draft");
   assert.equal(targets.length, requestCount);
@@ -634,7 +660,7 @@ async function verifySidebar(savedID) {
   record("Invoking the menu command registered for Command-F focused search. AXConfirm reopened the matching draft with its text.");
   record("Searching an older assistant reply opened its stored message ID in the original thread.");
   press("thread-row-" + last.selectedConversation);
-  await until(() => composerHas("Draft for Third Project"), "third draft before Discard");
+  await until(() => composerHas(thirdText), "third draft before Discard");
   await openDraftActions();
   press("discard-draft");
   await until(() => !index().projects.find(p => p.id === last.id).conversations.some(t => t.id === last.selectedConversation), "discard selected draft");
@@ -718,6 +744,8 @@ try {
   await until(() => visible("remove-api-key"), "saved Keychain entry");
   await closeSettings();
   await openProject();
+  await verifyAbout(panelDriver, app);
+  record("Both About entry points matched the bundle version and build. The searchable offline SwiftTerm notice matched its packaged LICENSE.");
   record("Cancelling and an invalid path left the index empty. Registration focused the draft. Browse returned the same folder and kept its project and draft IDs.");
   record("Welcome completed through " + startTitle + ". The configured model has a Keychain item.");
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
@@ -805,6 +833,8 @@ try {
     record("Zoom changed the rendered width of a 100 CSS-pixel button. Refresh fetched a new revision, Stop cancelled an outstanding GET, and the error view showed details and reloaded the repaired local server.");
     record("Browser Settings rejected a custom URL missing %s. Enter navigated a bare loopback host and sent the exact search term to the chosen local engine. An unsupported address kept the page.");
     await setProjectModel(panelDriver, "fixture-project-model");
+    const widths = await verifyAppearance(panelDriver);
+    record("Light, Dark and all three width choices were reachable. Composer widths in points were " + JSON.stringify(widths) + "; the draft kept its text.");
   }
 
   await quit();
@@ -814,6 +844,8 @@ try {
   const landing = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   assert.equal(landing.selectedProject, previous.selectedProject);
   if (fixtureModel) {
+    await restoreAppearance(panelDriver);
+    record("Relaunch restored Dark and Wide. Restore Defaults returned to System and Comfortable.");
     assert.equal(landing.projects[0].selectedConversation, threadID);
     await until(() => drive("get", ["composer", "--values"]).includes("Keep this text while previewing."), "unsent text in the selected conversation after relaunch");
   } else {
@@ -928,8 +960,11 @@ try {
   server.close();
   execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
   if (fixtureModel) {
-    const domain = "dev.piworkspace.browser." + createHash("sha256").update(workspace).digest("hex");
-    const result = spawnSync("/usr/bin/defaults", ["read", domain, "browserSearchSettings"], { stdio: "ignore" });
-    if (result.status === 0) execFileSync("/usr/bin/defaults", ["delete", domain], { stdio: "ignore" });
+    const scope = createHash("sha256").update(workspace).digest("hex");
+    for (const [feature, key] of [["browser", "browserSearchSettings"], ["appearance", "appearance.colorScheme"]]) {
+      const domain = "dev.piworkspace." + feature + "." + scope;
+      const result = spawnSync("/usr/bin/defaults", ["read", domain, key], { stdio: "ignore" });
+      if (result.status === 0) execFileSync("/usr/bin/defaults", ["delete", domain], { stdio: "ignore" });
+    }
   }
 }

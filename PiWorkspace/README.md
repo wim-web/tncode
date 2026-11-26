@@ -13,6 +13,8 @@ open "dist/Pi Workspace.app"
 
 The app bundles Node.js and Pi. The build uses the current Mac's architecture and ad-hoc signing.
 
+**Pi Workspace → About Pi Workspace** shows the bundled version, build, and runtime versions. Select **Open source licenses…** to search the notices included in that build.
+
 ## Start a conversation
 
 1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
@@ -34,6 +36,8 @@ The macOS app keeps API keys in Keychain. The workspace index and Pi conversatio
 In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
 
 If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
+
+**Pi Workspace → Appearance Settings…** changes the color scheme and conversation width across projects. **Restore Defaults** returns to the system appearance and Comfortable width.
 
 ## Work in a Git checkout
 
