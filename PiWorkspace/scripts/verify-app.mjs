@@ -329,6 +329,7 @@ function makeRepository() {
 if [ -t 0 ]; then
   pwd -P > tty-proof.txt
   printf '%s\n' "$$" > retained-shell.txt
+  printf '%s\n' 'Fixture terminal ready.'
 fi
 exec /bin/sh -i
 `, { mode: 0o700 });
@@ -386,6 +387,7 @@ async function verifyCheckout(checkout) {
   await delay(300);
   assert.equal(Number(readFileSync(shellProof, "utf8")), shellPID);
   process.kill(shellPID, 0);
+  await until(() => drive("get", ["thread-terminal", "--values"]).includes("Fixture terminal ready."), "reopened terminal output");
   press("close-terminal");
   await until(() => {
     try { process.kill(shellPID, 0); } catch { return true; }
@@ -402,6 +404,7 @@ async function verifyCheckout(checkout) {
   press("git-file-tty-proof.txt");
   await until(() => tree().includes("+") && tree().includes(checkout), "file contents in the diff");
   const subject = "Verify the in-app commit";
+  assert(visible("git-commit").includes("enabled=false"), "A blank commit message must disable Commit.");
   drive("type", ["git-commit-message"], subject);
   await until(() => drive("get", ["git-commit-message", "--values"]).includes("value=" + JSON.stringify(subject)),
               "typed commit message");
@@ -442,6 +445,14 @@ async function verifyApprovals(cwd) {
 }
 
 async function verifySidebar(savedID) {
+  async function focusSearch() {
+    await until(() => {
+      if (visible("thread-search").includes("focused=true")) return true;
+      drive("activate", []);
+      drive("menu-command", ["f"]);
+      return visible("thread-search").includes("focused=true");
+    }, "registered Command-F menu action focuses search");
+  }
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const third = join(directory, "Third Project");
   mkdirSync(third);
@@ -468,15 +479,13 @@ async function verifySidebar(savedID) {
   press("close-thread-filters");
   await until(() => visible("thread-row-" + last.selectedConversation), "All Projects restores third draft");
   record("The project filter showed both checked projects, excluded the third, and restored all three on reset.");
-  drive("activate", []);
-  drive("menu-command", ["f"]);
-  await until(() => visible("thread-search").includes("focused=true"), "registered Command-F menu action focuses search");
+  await focusSearch();
   await setField("thread-search", "Second Project");
   await until(() => !tree().includes(row(savedID)) && visible("thread-row-" + second.selectedConversation), "matching project in search");
   drive("confirm", ["thread-search"]);
   await until(() => index().selectedProject === second.id && drive("get", ["composer", "--values"]).includes("Draft for Second Project"),
               "confirming the search opens the selected draft with its text");
-  drive("menu-command", ["f"]);
+  await focusSearch();
   await setField("thread-search", "Partial reply before Stop.");
   const match = await until(() => tree().match(new RegExp('id="(message-search-result-' + savedID + '-([^"]+))"')), "match in a previous message");
   press(match[1]);
@@ -495,7 +504,7 @@ async function verifyScratch(originalThread) {
     const data = index();
     return data.projects.find(p => p.kind === "scratch" && p.id === data.selectedProject);
   }, "scratch workspace");
-  assert.equal(scratch.path, join(workspace, "scratch", scratch.id));
+  assert.equal(realpathSync(scratch.path), realpathSync(join(workspace, "scratch", scratch.id)));
   await send("Verify the scratch thread and its history.");
   await until(() => visible("send-message") && tree().includes("Verify the scratch thread and its history."), "scratch turn completed");
   const history = join(workspace, "sessions", scratch.id, scratch.selectedConversation);
@@ -566,6 +575,7 @@ try {
   const draftID = index().projects[0].selectedConversation;
   if (worktreeTest) {
     await chooseNewWorktree("main");
+    assert.equal(index().projects[0].conversations.find(t => t.id === draftID).location.newWorktree.base, "main");
     await typePrompt(firstPrompt);
     await until(() => !tree().includes("Opening thread…"), "draft helper ready");
     press("send-message");
@@ -576,6 +586,7 @@ try {
     writeFileSync(obstruction, "fixture", { flag: "wx" });
     press("retry-worktree");
     await until(() => visible("worktree-launch-error") && visible("retry-worktree"), "worktree failure and Retry");
+    assert.equal(index().projects[0].conversations.find(t => t.id === draftID).worktreeLaunch.stage, "createCheckout");
     assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
     assert.equal(index().projects[0].selectedConversation, draftID);
     assert.equal(targets.length, 0);

@@ -88,34 +88,19 @@ struct PiWorkspaceApp: App {
     }
 }
 
-struct WorkspaceSidebarActions {
-    let newThread: (() -> Void)?
-    let searchThreads: () -> Void
-}
-
-private struct WorkspaceSidebarActionsKey: FocusedValueKey {
-    typealias Value = WorkspaceSidebarActions
-}
-
-extension FocusedValues {
-    var sidebarActions: WorkspaceSidebarActions? {
-        get { self[WorkspaceSidebarActionsKey.self] }
-        set { self[WorkspaceSidebarActionsKey.self] = newValue }
-    }
-}
-
 private struct WorkspaceSidebarCommands: Commands {
     @ObservedObject var model: WorkspaceModel
-    @FocusedValue(\.sidebarActions) private var actions
+
+    private var workspaceOpen: Bool { model.startupFailure == nil && !model.showingWelcome }
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Add Project…") { model.openFolder() }
                 .keyboardShortcut("o")
                 .disabled(model.startupFailure != nil || model.operationsInProgress)
-            Button("New Thread") { actions?.newThread?() }
+            Button("New Thread") { model.sidebarCommand.send(.newThread) }
                 .keyboardShortcut("n")
-                .disabled(actions?.newThread == nil)
+                .disabled(!workspaceOpen || model.operationsInProgress)
             if model.canStartScratchThread {
                 Button("New Thread Without a Project", action: model.startScratchThread)
                     .keyboardShortcut("n", modifiers: [.command, .option])
@@ -123,9 +108,9 @@ private struct WorkspaceSidebarCommands: Commands {
             }
         }
         CommandGroup(after: .pasteboard) {
-            Button("Search Threads") { actions?.searchThreads() }
+            Button("Search Threads") { model.sidebarCommand.send(.search) }
                 .keyboardShortcut("f")
-                .disabled(actions == nil)
+                .disabled(!workspaceOpen)
         }
     }
 }

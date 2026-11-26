@@ -1,8 +1,12 @@
 import AppKit
+import Combine
 import Foundation
 
 @MainActor
 final class WorkspaceModel: ObservableObject {
+    enum SidebarCommand { case newThread, search }
+    let sidebarCommand = PassthroughSubject<SidebarCommand, Never>()
+
     enum Phase: Equatable {
         case closed, connecting, ready, running, stopping
 

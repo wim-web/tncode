@@ -25,6 +25,8 @@ If a project folder moves, use **Relink Folder** in its context menu to point th
 
 Choose **Start without a project** on the empty home screen to work in a private folder. The thread menu's **Turn into project** action registers that folder and keeps the conversation history.
 
+Unsent composer text stays in memory while you switch threads. A worktree preparation failure saves the submitted prompt so you can retry after relaunch.
+
 Pi can read files with models that support tools. Choose **Supervised** to approve or decline individual shell and edit requests. **Shell and edits** enables those tools for the project. They use the permissions of your macOS user.
 
 The macOS app keeps API keys in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/Pi Workspace`. **Model Settings** removes or replaces a saved key.

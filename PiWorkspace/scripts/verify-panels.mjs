@@ -19,6 +19,10 @@ export async function verifyPreview({ press, visible, tree, setField, until }, b
   press("toggle-browser");
   await until(() => !tree().includes('id="browser-address"'), "hidden preview");
   assert(tree().includes("Keep this text while previewing."));
+  press("toggle-browser");
+  await until(() => tree().includes("Local preview two") && tree().includes("110%"), "reopened thread preview");
+  press("toggle-browser");
+  await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
 }
 
 export async function verifyPullRequests({ press, visible, tree, until }, stateFile, logFile, checkout) {

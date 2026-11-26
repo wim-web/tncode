@@ -70,6 +70,12 @@ struct WorkspaceView: View {
         let latestMessageID: String?
     }
 
+    private struct SearchRow: Identifiable {
+        let thread: SidebarThread
+        let match: SidebarMessageSearch.Match?
+        var id: String { thread.id.uuidString + "/" + (match?.messageID ?? "") }
+    }
+
     private struct MessageJump: Equatable {
         let requestID = UUID()
         let projectID: UUID
@@ -119,10 +125,13 @@ struct WorkspaceView: View {
             if model.showingWelcome { welcome }
         }
         .tint(accent)
-        .focusedSceneValue(\.sidebarActions, model.showingWelcome ? nil : WorkspaceSidebarActions(
-            newThread: model.operationsInProgress ? nil : newThread,
-            searchThreads: { searchFocused = true }
-        ))
+        .onReceive(model.sidebarCommand) { command in
+            guard !model.showingWelcome, NSApp.mainWindow?.attachedSheet == nil else { return }
+            switch command {
+            case .newThread: newThread()
+            case .search: searchFocused = true
+            }
+        }
         .onChange(of: model.projects.map(\.id)) { _, ids in projectFilter.retainProjects(ids) }
         .overlay(alignment: .topTrailing) {
             if let createdProject {
@@ -160,15 +169,36 @@ struct WorkspaceView: View {
         } message: {
             Text("Workspace changes require a new terminal in the selected folder.")
         }
-        .confirmationDialog("Start a thread in", isPresented: $choosingThreadProject, titleVisibility: .visible) {
-            ForEach(filteredProjects) { project in
-                Button(project.title) { startThread(in: project.id) }
-                    .accessibilityIdentifier("new-thread-project-\(project.id)")
-            }
-            if model.canStartScratchThread {
-                Button("No project", action: startScratchThread)
+        .sheet(isPresented: $choosingThreadProject) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Start a thread in").font(.headline)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(filteredProjects) { project in
+                            Button(project.title) {
+                                choosingThreadProject = false
+                                startThread(in: project.id)
+                            }
+                            .accessibilityIdentifier("new-thread-project-\(project.id)")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: min(240, CGFloat(filteredProjects.count) * 32))
+                if model.canStartScratchThread {
+                    Button("No project") {
+                        choosingThreadProject = false
+                        startScratchThread()
+                    }
                     .accessibilityIdentifier("new-thread-no-project")
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { choosingThreadProject = false }
+                }
             }
+            .padding(20)
+            .frame(width: 340)
         }
         .sheet(item: $model.projectPicker, onDismiss: {
             if focusAfterPicker { focusedComposer = model.conversation?.id }
@@ -234,7 +264,10 @@ struct WorkspaceView: View {
             latestMessageID: searchTerm.isEmpty ? nil : model.messages.last?.id
         )
         let messageMatches = messageSearchResult?.key == key ? messageSearchResult?.matches : nil
-        let visibleThreads = titleMatches + messageCandidates.filter { messageMatches?[$0.id] != nil }
+        let searchRows = titleMatches.map { SearchRow(thread: $0, match: nil) } + messageCandidates.compactMap { link in
+            messageMatches?[link.id].map { SearchRow(thread: link, match: $0) }
+        }
+        let visibleThreads = searchRows.map(\.thread)
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
@@ -282,32 +315,47 @@ struct WorkspaceView: View {
 
             ScrollViewReader { reader in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 3) {
-                        if searchTerm.isEmpty {
-                            threadShelves(visibleThreads)
-                        } else if visibleThreads.isEmpty {
-                            Text(messageMatches == nil && !messageCandidates.isEmpty
-                                 ? "Searching thread messages…" : "No matching threads")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(7)
-                                .accessibilityIdentifier("thread-search-status")
-                        } else {
-                            ForEach(visibleThreads) { link in
-                                threadRow(link, showProject: true,
-                                          highlighted: link.id == highlightedID,
-                                          messageMatch: messageMatches?[link.id])
+                    if searchTerm.isEmpty {
+                        LazyVStack(alignment: .leading, spacing: 3) { threadShelves(visibleThreads) }
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
+                    } else if searchRows.isEmpty {
+                        Text(messageMatches == nil && !messageCandidates.isEmpty ? "Searching thread messages…" : "No matching threads")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(7)
+                            .accessibilityIdentifier("thread-search-status")
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 3) {
+                            ForEach(searchRows) { result in
+                                if let match = result.match {
+                                    Button { openThread(result.thread, messageMatch: match) } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(result.thread.project.title).font(.caption).foregroundStyle(.secondary)
+                                            Text(result.thread.thread.title).font(.callout).lineLimit(1)
+                                            Text(verbatim: match.excerpt).font(.caption).lineLimit(2)
+                                        }
+                                        .padding(8)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(result.thread.id == highlightedID ? accent.opacity(0.18) : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 7))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(model.operationsInProgress && model.conversation?.id != result.thread.id)
+                                    .accessibilityIdentifier("message-search-result-\(result.thread.id)-\(match.messageID)")
+                                } else {
+                                    threadRow(result.thread, showProject: true, highlighted: result.thread.id == highlightedID)
+                                }
                             }
                         }
+                        .padding(.horizontal, 8)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
                 }
                 .onChange(of: highlightedSearchThread) { _, id in
-                    if let id { reader.scrollTo(id) }
+                    if let row = searchRows.first(where: { $0.thread.id == id }) { reader.scrollTo(row.id) }
                 }
                 .onChange(of: searchTerm) { _, term in
-                    if !term.isEmpty, let id = visibleThreads.first?.id { reader.scrollTo(id, anchor: .top) }
+                    if !term.isEmpty, let row = searchRows.first { reader.scrollTo(row.id, anchor: .top) }
                 }
             }
 
@@ -541,12 +589,11 @@ struct WorkspaceView: View {
         }
     }
 
-    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false,
-                           messageMatch: SidebarMessageSearch.Match? = nil) -> some View {
+    private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
         return Button {
-            openThread(link, messageMatch: messageMatch)
+            openThread(link)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 if showProject {
@@ -562,12 +609,6 @@ struct WorkspaceView: View {
                 Text(link.thread.title)
                     .font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
-                if let messageMatch {
-                    Label(messageMatch.excerpt, systemImage: "text.bubble")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 9)
@@ -577,8 +618,7 @@ struct WorkspaceView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier(messageMatch.map { "message-search-result-\(link.id)-\($0.messageID)" }
-                                 ?? "thread-row-\(link.id)")
+        .accessibilityIdentifier("thread-row-\(link.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project) }

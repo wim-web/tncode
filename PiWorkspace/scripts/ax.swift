@@ -304,7 +304,14 @@ private func run(_ arguments: [String]) throws {
             Thread.sleep(forTimeInterval: 0.01)
         }
         if replace {
-            try postKey(0, to: pid, flags: .maskCommand)
+            var selected = false
+            if let current = attribute(kAXValueAttribute, on: target) as? String {
+                var range = CFRange(location: 0, length: current.utf16.count)
+                if let value = AXValueCreate(.cfRange, &range) {
+                    selected = AXUIElementSetAttributeValue(target, kAXSelectedTextRangeAttribute as CFString, value) == .success
+                }
+            }
+            if !selected { try postKey(0, to: pid, flags: .maskCommand) }
         }
         var units: [UInt16] = []
         for scalar in text.unicodeScalars {
