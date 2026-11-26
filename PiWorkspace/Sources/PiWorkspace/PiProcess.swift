@@ -94,6 +94,12 @@ enum PiEvent: Decodable {
 }
 
 struct OpenConversation: Encodable, Equatable {
+    struct SideChatSource: Encodable, Equatable {
+        let threadID: UUID
+        let sessionDir: String
+        let cutoff: String?
+    }
+
     var type = "open"
     let cwd: String
     let sessionDir: String
@@ -102,6 +108,7 @@ struct OpenConversation: Encodable, Equatable {
     let toolPermission: ToolPermission
     var forkMessageID: String?
     var requireHistory = false
+    var sideChatSource: SideChatSource?
 }
 
 struct ForkConversation: Encodable {
@@ -125,6 +132,7 @@ struct SendPrompt: Encodable {
     var skipCompaction: Bool?
     var submissionID: UUID?
     var attachments: [ComposerAttachment]?
+    var sideChatContext: String?
 }
 struct SendQueuedInput: Encodable {
     enum Kind: String, Encodable { case steer, skipCompaction }

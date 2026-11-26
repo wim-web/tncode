@@ -100,6 +100,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var quitFileSaveError: String?
     @Published private(set) var snoozeClock: Date
     @Published private(set) var snoozeUndoCount = 0
+    @Published private(set) var sideChatToOpen: SideChatOpenRequest?
+    @Published private var sideChatSessions: [SideChatScope: SideChatSession] = [:]
     let fileSaves = WorkspaceFileSaves()
     private let now: () -> Date
     private var snoozeTimer: Timer?
@@ -173,6 +175,22 @@ final class WorkspaceModel: ObservableObject {
             return true
         }
         workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
+        for session in sideChatSessions.values where session.scope.parentID == threadID {
+            session.emptySlash = nil
+        }
+        if let sideChats = workspace.projects[p].conversations[t].sideChats,
+           sideChats.contains(where: { $0.sourceDraft != nil }) {
+            workspace.projects[p].conversations[t].sideChats = sideChats.map {
+                var child = $0
+                child.sourceDraft = nil
+                return child
+            }
+        }
+        scheduleComposerSave()
+        return true
+    }
+
+    private func scheduleComposerSave() {
         composerDirty = true
         composerSave?.cancel()
         composerSave = Task { [weak self] in
@@ -180,7 +198,6 @@ final class WorkspaceModel: ObservableObject {
             catch { return }
             self?.savePendingComposer()
         }
-        return true
     }
 
     func canAddFileMention(from location: WorkspaceFilesLocation) -> Bool {
@@ -519,10 +536,12 @@ final class WorkspaceModel: ObservableObject {
     var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
     var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
     var canQueueDraft: Bool {
-        canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil &&
+        sideChatCommand == nil && canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil &&
             (phase == .running || (canStartQueuedMessage && !queuedMessages.isEmpty))
     }
-    var canUpdateQueuedMessage: Bool { queueEdit != nil && hasPrompt && attachmentSendError == nil }
+    var canUpdateQueuedMessage: Bool {
+        queueEdit != nil && sideChatCommand == nil && hasPrompt && attachmentSendError == nil
+    }
     private var canUseQueue: Bool {
         conversation?.archived == false && conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil
     }
@@ -683,7 +702,8 @@ final class WorkspaceModel: ObservableObject {
         }
     }
     var canSend: Bool {
-        phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil
+        if sideChatCommand != nil { return canStartSideChat && queueEdit == nil && pendingAgentQuestion == nil }
+        return phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil && hasPrompt && attachmentSendError == nil
     }
     var canRetryWorktree: Bool {
         guard !operationsInProgress, let conversation, !conversation.archived,
@@ -702,6 +722,7 @@ final class WorkspaceModel: ObservableObject {
         guard !showingWelcome, process == nil, failedStartupDraftProject == nil else { return }
         if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasDraftContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
+            !(conversation.sideChats ?? []).isEmpty ||
             (conversation.isDraft == true && conversation.workingLocation != .project) ||
             !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
@@ -777,6 +798,8 @@ final class WorkspaceModel: ObservableObject {
         snoozeTimer = nil
         nextSnoozeUpdate = nil
         shutdown()
+        for session in sideChatSessions.values { session.disconnect() }
+        sideChatSessions.removeAll()
         return true
     }
 
@@ -820,6 +843,7 @@ final class WorkspaceModel: ObservableObject {
         composerCredential = nil
         let previousScope = pullRequestScope
         let previousDraft = draft
+        let previousThreadID = conversation?.id
         recordNavigation(to: updated, change: navigation)
         if let target = failedStartupDraftProject,
            updated.selectedProject != workspace.selectedProject ||
@@ -828,6 +852,11 @@ final class WorkspaceModel: ObservableObject {
             failedStartupDraftProject = nil
         }
         workspace = updated
+        if previousThreadID != conversation?.id {
+            for session in Array(sideChatSessions.values) where session.scope.parentID == previousThreadID {
+                releaseSideChat(session)
+            }
+        }
         if pullRequestScope != previousScope || !draft.utf8.elementsEqual(previousDraft.utf8) { composerRevision += 1 }
         if pullRequestScope != previousScope { threadSelectionRevision += 1 }
         refreshSnoozes()
@@ -2127,6 +2156,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func send() {
+        if let question = sideChatCommand, canSend, let parentID = conversation?.id {
+            startSideChat(in: parentID, question: question)
+            return
+        }
         guard canSend, let process, let conversation else { return }
         let text = promptText
         let attachments = conversation.composerAttachments
@@ -2857,6 +2890,452 @@ final class WorkspaceModel: ObservableObject {
             }
         case let .fatal(error):
             connectionFailed(error)
+        }
+    }
+}
+
+extension WorkspaceModel {
+    var sideChatCommand: String? { SideChat.command(in: draft) }
+
+    var canStartSideChat: Bool {
+        guard !gitMutationInProgress, !preparingWorktree, let parent = conversation, !parent.archived,
+              parent.worktreeLaunch == nil, !parent.workingLocation.needsWorktree else { return false }
+        return messages.contains { $0.role == .user }
+    }
+
+    func sideChat(_ scope: SideChatScope) -> SideChat? {
+        workspace.projects.first { $0.id == scope.projectID }?.conversations
+            .first { $0.id == scope.parentID }?.sideChats?.first { $0.id == scope.id }
+    }
+
+    func sideChatSession(_ scope: SideChatScope) -> SideChatSession? {
+        sideChatSessions[scope]
+    }
+
+    func startSideChat(in parentID: UUID, question: String? = nil) {
+        guard canStartSideChat, let project, let parent = conversation, parent.id == parentID, let store else { return }
+        do {
+            let config = try effectiveModel.validated()
+            let fromSlash = question != nil
+            if fromSlash, let prior = parent.sideChats?.first(where: { $0.sourceDraft == draft }) {
+                let scope = SideChatScope(projectID: project.id, parentID: parentID, id: prior.id)
+                openSideChat(scope, sendDraft: !prior.hasStarted)
+                retrySideChat(scope)
+                return
+            }
+            if question?.isEmpty == true, let pending = sideChatSessions.values.first(where: {
+                $0.scope.parentID == parentID && $0.emptySlash == draft
+            }) {
+                openSideChat(pending.scope)
+                retrySideChat(pending.scope)
+                return
+            }
+            // A thread reference was added for the parent. A slash question can carry the ordinary files.
+            let attachments = fromSlash ? (parent.composerAttachments ?? []).filter { $0.sideChatReference != true } : []
+            if fromSlash && isImportingComposerAttachments {
+                throw WorkspaceError("Wait for attachments to finish pasting, then try again.")
+            }
+            if let reason = attachmentSendError(for: attachments) { throw WorkspaceError(reason) }
+            let sends = !(question ?? "").isEmpty || !attachments.isEmpty
+            let child = SideChat(id: UUID(), cutoff: messages.last(where: { $0.canFork == true })?.id,
+                                 model: config, draft: question ?? "", attachments: attachments.isEmpty ? nil : attachments,
+                                 sourceDraft: fromSlash && sends ? draft : nil)
+            let scope = SideChatScope(projectID: project.id, parentID: parentID, id: child.id)
+            let directory = try store.sideChatHistory(scope)
+            guard !FileManager.default.fileExists(atPath: directory.path) else {
+                throw WorkspaceError("A history folder already exists for this side chat. Try again.")
+            }
+            try saveThread(parentID) {
+                $0.sideChats = ($0.sideChats ?? []) + [child]
+            }
+            openSideChat(scope, sendDraft: sends, emptySlash: fromSlash && !sends ? draft : nil)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func openSideChat(_ scope: SideChatScope, sendDraft: Bool = false, emptySlash: String? = nil) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID, sideChat(scope) != nil else { return }
+        loadSideChat(scope)
+        guard let session = sideChatSessions[scope] else { return }
+        sideChatToOpen = SideChatOpenRequest(scope: scope)
+        if let emptySlash { session.emptySlash = emptySlash }
+        if sendDraft, session.phase == .ready {
+            sendSideChat(scope)
+        } else if sendDraft {
+            session.sendWhenReady = true
+        }
+    }
+
+    func loadSideChat(_ scope: SideChatScope) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID, sideChat(scope) != nil else { return }
+        let session = sideChatSessions[scope] ?? SideChatSession(scope: scope)
+        let isNew = sideChatSessions[scope] == nil
+        sideChatSessions[scope] = session
+        session.releaseWhenIdle = false
+        session.discardWhenIdle = false
+        if isNew { connectSideChat(session) }
+    }
+
+    func retrySideChat(_ scope: SideChatScope) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID,
+              let session = sideChatSessions[scope], session.phase == .closed else { return }
+        connectSideChat(session)
+    }
+
+    private func connectSideChat(_ session: SideChatSession) {
+        let scope = session.scope
+        guard let project, project.id == scope.projectID, let parent = conversation, parent.id == scope.parentID,
+              let child = sideChat(scope), let store else { return }
+        do {
+            let directory = try store.sideChatHistory(scope)
+            let staging = try sideChatDeletionDirectory(directory)
+            if FileManager.default.fileExists(atPath: staging.path) {
+                try FileManager.default.moveItem(at: staging, to: directory)
+            }
+            let cwd = parent.workingLocation.directory(in: project)
+            let config = try child.model.validated()
+            let source = OpenConversation.SideChatSource(
+                threadID: parent.id, sessionDir: store.history(project: project.id, conversation: parent.id).path,
+                cutoff: child.cutoff
+            )
+            let worker = try makeProcess(store.config, cwd)
+            session.process = worker
+            session.error = nil
+            session.phase = .connecting
+            worker.onEvent = { [weak self, weak session, weak worker] event in
+                guard let self, let session, let worker, session.process === worker else { return }
+                self.receiveSideChat(event, session: session, worker: worker, account: config.account)
+            }
+            worker.onClose = { [weak self, weak session, weak worker] in
+                guard let self, let session, let worker, session.process === worker else { return }
+                self.sideChatFailed(session, "The Pi helper exited. Reconnect to this side chat.")
+            }
+            try worker.send(OpenConversation(cwd: cwd, sessionDir: directory.path, threadID: child.id.uuidString,
+                                             config: config, toolPermission: project.toolPermission,
+                                             requireHistory: child.hasStarted, sideChatSource: source))
+        } catch {
+            sideChatFailed(session, error.localizedDescription)
+        }
+    }
+
+    func editSideChat(_ text: String, in scope: SideChatScope) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID,
+              conversation?.archived == false, let child = sideChat(scope),
+              child.submissionID == nil, child.draft != text, let session = sideChatSessions[scope] else { return }
+        do {
+            if let key = try readCredential(child.model.account), !key.isEmpty, text.contains(key) {
+                throw WorkspaceError("Enter your API key in Model Settings.")
+            }
+            if let (project, thread, index) = sideChatIndices(scope, in: workspace) {
+                workspace.projects[project].conversations[thread].sideChats?[index].draft = text
+                scheduleComposerSave()
+            }
+        } catch {
+            session.error = error.localizedDescription
+        }
+    }
+
+    func removeSideChatFile(_ id: UUID, in scope: SideChatScope) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID,
+              conversation?.archived == false, let child = sideChat(scope),
+              child.submissionID == nil, let session = sideChatSessions[scope] else { return }
+        do {
+            try saveSideChat(scope) { child in child.attachments?.removeAll { $0.id == id } }
+        } catch {
+            session.error = error.localizedDescription
+        }
+    }
+
+    func sendSideChat(_ scope: SideChatScope) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID,
+              conversation?.archived == false, let child = sideChat(scope),
+              child.submissionID == nil, let session = sideChatSessions[scope], session.phase == .ready,
+              let worker = session.process else { return }
+        let attachments = child.attachments ?? []
+        guard !child.prompt.isEmpty || !attachments.isEmpty else { return }
+        do {
+            guard SideChat.command(in: child.prompt) == nil else {
+                throw WorkspaceError("Side chats cannot start side chats.")
+            }
+            guard let key = try readCredential(child.model.account) else {
+                throw WorkspaceError("Save an API key for this provider in Model Settings.")
+            }
+            guard key.isEmpty || !child.prompt.contains(key) else {
+                throw WorkspaceError("Enter your API key in Model Settings.")
+            }
+            for attachment in attachments {
+                guard let payload = attachment.payload else {
+                    throw WorkspaceError("Remove unavailable attachments before sending.")
+                }
+                guard !payload.isImage || session.supportsImages else {
+                    throw WorkspaceError("This model does not support image input.")
+                }
+                try Self.validateAttachment(payload, key: key, alongside: [])
+                guard key.isEmpty || !attachment.name.contains(key) else {
+                    throw WorkspaceError("Remove the attachment that contains your API key.")
+                }
+            }
+            let id = UUID()
+            try saveSideChat(scope) { $0.submissionID = id }
+            let context = child.hasStarted ? nil : SideChat.context(after: child.cutoff, in: messages)
+            do {
+                try worker.send(SendPrompt(turnID: id, text: child.prompt, submissionID: id,
+                                           attachments: child.attachments, sideChatContext: context))
+            } catch {
+                sideChatFailed(session, "Pi is unavailable. Reconnect to this side chat.")
+                return
+            }
+            session.turnID = id
+            session.error = nil
+            session.phase = .running
+        } catch {
+            session.error = error.localizedDescription
+        }
+    }
+
+    func stopSideChat(_ scope: SideChatScope) {
+        guard let session = sideChatSessions[scope], session.phase.canStop, let id = session.turnID,
+              let worker = session.process else { return }
+        do {
+            try worker.send(CancelPrompt(turnID: id))
+            session.phase = .stopping
+            session.approval = nil
+            session.question = nil
+            Task { [weak session, weak worker] in
+                try? await Task.sleep(for: .seconds(10))
+                guard let session, let worker, session.process === worker, session.turnID == id,
+                      session.phase == .stopping else { return }
+                session.phase = .stopTimedOut
+            }
+        } catch {
+            sideChatFailed(session, "Pi disconnected while stopping the side chat.")
+        }
+    }
+
+    func approveSideChatTool(_ approval: ToolApproval, in scope: SideChatScope, decision: ToolApprovalDecision) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID, let session = sideChatSessions[scope],
+              session.approval?.requestID == approval.requestID, session.turnID == approval.turnID,
+              approval.threadID == scope.id, let worker = session.process else { return }
+        session.approval = nil
+        do {
+            try worker.send(ToolApprovalResult(approval, decision: decision))
+        } catch {
+            sideChatFailed(session, "The Pi helper disconnected while sending the tool decision.")
+        }
+    }
+
+    func answerSideChatQuestion(_ request: AgentQuestionScope, in scope: SideChatScope, decision: AgentQuestionReply.Decision) {
+        guard project?.id == scope.projectID, conversation?.id == scope.parentID, let session = sideChatSessions[scope],
+              session.question?.request.scope == request, session.question?.submitting == false,
+              request.turnID == session.turnID, request.threadID == scope.id,
+              let worker = session.process, let child = sideChat(scope) else { return }
+        do {
+            if case .answer(let answers) = decision, let key = try readCredential(child.model.account), !key.isEmpty {
+                let containsKey = answers.contains {
+                    guard case .text(let text) = $0.value else { return false }
+                    return text.contains(key)
+                }
+                if containsKey { throw WorkspaceError("Remove the API key from your answer.") }
+            }
+        } catch {
+            session.question?.error = error.localizedDescription
+            return
+        }
+        session.question?.error = nil
+        session.question?.submitting = true
+        do {
+            try worker.send(AgentQuestionReply(scope: request, decision: decision))
+        } catch {
+            sideChatFailed(session, "The Pi helper disconnected while sending the question response.")
+        }
+    }
+
+    func canAddSideChatToParent(_ scope: SideChatScope) -> Bool {
+        project?.id == scope.projectID && conversation?.id == scope.parentID && canUseQueue &&
+            sideChatSessions[scope]?.messages.contains(where: { $0.role == .user }) == true
+    }
+
+    func addSideChatToParent(_ scope: SideChatScope) {
+        guard canAddSideChatToParent(scope), let child = sideChat(scope), let session = sideChatSessions[scope] else { return }
+        let reference = child.reference(to: session.messages)
+        let target = ComposerAttachmentTarget(threadID: scope.parentID, draftGeneration: composerDraftGenerations[scope.parentID])
+        _ = editAttachments(in: target) { attachments, settings in
+            let index = attachments.firstIndex { $0.id == child.id }
+            guard index != nil || attachments.count < ComposerAttachment.maxCount else {
+                throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
+            }
+            let key = try readCredential(settings.validated().account)
+            guard key.map({ $0.isEmpty || !reference.name.contains($0) }) != false else {
+                throw WorkspaceError("The side chat title contains your API key.")
+            }
+            try Self.validateAttachment(reference.payload, key: key, alongside: attachments.filter { $0.id != child.id })
+            if let index { attachments[index] = reference } else { attachments.append(reference) }
+        }
+    }
+
+    func closeSideChat(_ scope: SideChatScope) {
+        guard let session = sideChatSessions[scope] else { return }
+        let unused = sideChat(scope)?.hasStarted == false && sideChat(scope)?.submissionID == nil
+        if session.phase == .connecting {
+            session.discardWhenIdle = unused && !session.sendWhenReady
+        } else if !session.phase.isRunning && unused {
+            deleteSideChat(scope)
+            return
+        }
+        releaseSideChat(session)
+    }
+
+    func deleteSideChat(_ scope: SideChatScope) {
+        guard let store, let (project, thread, index) = sideChatIndices(scope, in: workspace),
+              let session = sideChatSessions[scope], session.phase != .connecting, !session.phase.isRunning else { return }
+        session.disconnect()
+        do {
+            let directory = try store.sideChatHistory(scope)
+            let staging = try sideChatDeletionDirectory(directory)
+            let files = FileManager.default
+            if files.fileExists(atPath: directory.path) { try files.moveItem(at: directory, to: staging) }
+            var updated = workspace
+            updated.projects[project].conversations[thread].sideChats?.remove(at: index)
+            do {
+                try persist(updated)
+            } catch {
+                if files.fileExists(atPath: staging.path) { try files.moveItem(at: staging, to: directory) }
+                throw error
+            }
+            if files.fileExists(atPath: staging.path) { try files.removeItem(at: staging) }
+            sideChatSessions.removeValue(forKey: scope)
+        } catch {
+            session.error = "Could not delete the side chat. \(error.localizedDescription)"
+            if sideChat(scope) == nil { self.error = session.error }
+        }
+    }
+
+    private func sideChatDeletionDirectory(_ directory: URL) throws -> URL {
+        let staging = directory.deletingLastPathComponent().appendingPathComponent(directory.lastPathComponent + ".deleting")
+        guard staging.resolvingSymlinksInPath().path == staging.path else {
+            throw WorkspaceError("The side chat deletion folder must be inside this workspace.")
+        }
+        return staging
+    }
+
+    private func sideChatIndices(_ scope: SideChatScope, in state: Workspace) -> (Int, Int, Int)? {
+        guard let project = state.projects.firstIndex(where: { $0.id == scope.projectID }),
+              let thread = state.projects[project].conversations.firstIndex(where: { $0.id == scope.parentID }),
+              let child = state.projects[project].conversations[thread].sideChats?.firstIndex(where: { $0.id == scope.id })
+        else { return nil }
+        return (project, thread, child)
+    }
+
+    private func saveSideChat(_ scope: SideChatScope, _ edit: (inout SideChat) -> Void) throws {
+        var updated = workspace
+        guard let (project, thread, child) = sideChatIndices(scope, in: updated),
+              var chats = updated.projects[project].conversations[thread].sideChats else {
+            throw WorkspaceError("This side chat is no longer available.")
+        }
+        edit(&chats[child])
+        updated.projects[project].conversations[thread].sideChats = chats
+        try persist(updated)
+    }
+
+    private func releaseSideChat(_ session: SideChatSession) {
+        if session.phase == .connecting || session.phase.isRunning {
+            session.releaseWhenIdle = true
+        } else {
+            session.disconnect()
+            sideChatSessions.removeValue(forKey: session.scope)
+        }
+    }
+
+    private func sideChatFailed(_ session: SideChatSession, _ message: String) {
+        session.disconnect()
+        session.error = message
+        if session.discardWhenIdle { deleteSideChat(session.scope) }
+        if session.releaseWhenIdle { releaseSideChat(session) }
+    }
+
+    private func finishSideChatSubmission(_ session: SideChatSession, successful: Bool) {
+        let scope = session.scope
+        guard let child = sideChat(scope), child.submissionID != nil || session.emptySlash != nil,
+              let (project, thread, index) = sideChatIndices(scope, in: workspace) else { return }
+        var updated = workspace
+        var saved = child
+        let recorded = child.submissionID.flatMap { id in session.messages.firstIndex { $0.submissionID == id && $0.role == .user } }
+        if let recorded {
+            saved.draft = ""
+            saved.attachments = nil
+            saved.hasStarted = true
+            if child.title == "Side chat", !session.messages[recorded].text.isEmpty {
+                let text = session.messages[recorded].text
+                saved.title = String((text.split(whereSeparator: \.isNewline).first ?? Substring(text)).prefix(54))
+            }
+        }
+        let original = session.emptySlash ?? child.sourceDraft
+        let completed = recorded.map { index in
+            successful && session.messages.dropFirst(index + 1).contains { $0.role == .assistant && $0.incompleteReply != .interrupted }
+        } ?? (session.emptySlash != nil)
+        if completed, let original, updated.projects[project].conversations[thread].composerText == original {
+            updated.projects[project].conversations[thread].composerText = nil
+            saved.sourceDraft = nil
+        }
+        saved.submissionID = nil
+        updated.projects[project].conversations[thread].sideChats?[index] = saved
+        do {
+            try persist(updated)
+            session.emptySlash = nil
+        } catch {
+            session.error = error.localizedDescription
+        }
+    }
+
+    private func receiveSideChat(_ event: PiEvent, session: SideChatSession, worker: any PiConnection, account: String) {
+        let scope = session.scope
+        switch event {
+        case let .credential(id, read):
+            do { try replyToCredential(id, read: read, account: account, worker: worker) }
+            catch { sideChatFailed(session, "The Pi helper disconnected during Keychain access.") }
+        case let .ready(history, supportsImages):
+            session.supportsImages = supportsImages
+            session.messages = history
+            session.phase = .ready
+            if session.discardWhenIdle {
+                deleteSideChat(scope)
+                return
+            }
+            finishSideChatSubmission(session, successful: true)
+            if session.sendWhenReady {
+                session.sendWhenReady = false
+                sendSideChat(scope)
+            }
+            if session.releaseWhenIdle { releaseSideChat(session) }
+        case let .history(history):
+            session.messages = history
+            session.partial = ""
+        case let .partial(text):
+            session.partial = text
+        case let .toolApproval(approval) where approval.threadID == scope.id && approval.turnID == session.turnID:
+            session.approval = approval
+        case let .agentQuestion(question) where question.scope.threadID == scope.id && question.scope.turnID == session.turnID:
+            session.question = PendingAgentQuestion(request: question)
+        case let .agentQuestionEnded(end) where session.question?.request.scope == end.scope:
+            session.question = nil
+        case let .agentQuestionRejected(request) where session.question?.request.scope == request:
+            session.question?.submitting = false
+            session.question?.error = "Pi rejected the response. Review your answers and try again."
+        case let .finished(id, history, error) where id == session.turnID:
+            session.messages = history
+            session.partial = ""
+            session.approval = nil
+            session.question = nil
+            session.turnID = nil
+            session.error = error
+            session.phase = .ready
+            finishSideChatSubmission(session, successful: error == nil)
+            if session.releaseWhenIdle { releaseSideChat(session) }
+        case let .fatal(error):
+            sideChatFailed(session, error)
+        default:
+            break
         }
     }
 }

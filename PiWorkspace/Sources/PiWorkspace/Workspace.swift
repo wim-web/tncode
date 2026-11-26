@@ -182,6 +182,7 @@ struct Conversation: Codable, Identifiable {
     var linkedPullRequests: [ThreadPullRequestLink]?
     var snoozedUntil: Date?
     var modelSelection: ModelSettings?
+    var sideChats: [SideChat]?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -601,6 +602,18 @@ final class WorkspaceStore {
         Self.historyComponents(project: project, conversation: conversation).reduce(root) {
             $0.appendingPathComponent($1, isDirectory: true)
         }
+    }
+
+    func sideChatHistory(_ scope: SideChatScope) throws -> URL {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        let folder = Self.historyComponents(project: scope.projectID, conversation: scope.parentID)
+            .reduce(root) { $0.appendingPathComponent($1, isDirectory: true) }
+            .appendingPathComponent("side-chats", isDirectory: true)
+            .appendingPathComponent(scope.id.uuidString, isDirectory: true)
+        guard folder.resolvingSymlinksInPath().path == folder.path else {
+            throw WorkspaceError("The side chat history must be inside this workspace.")
+        }
+        return folder
     }
 
     func prepareFork(_ fork: PendingConversationFork, in workspace: Workspace) throws {

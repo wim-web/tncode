@@ -19,6 +19,7 @@ struct ComposerTextField: NSViewRepresentable {
     let pasteboard: NSPasteboard
     let drop: AttachmentDropDestination
     let fileMentionRevision: Int?
+    var identifier = "composer"
     let foldPastedText: (String, Int) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -40,7 +41,7 @@ struct ComposerTextField: NSViewRepresentable {
         field.lineBreakMode = .byWordWrapping
         field.maximumNumberOfLines = 7
         field.registerForDraggedTypes(drop.dragTypes)
-        field.setAccessibilityIdentifier("composer")
+        field.setAccessibilityIdentifier(identifier)
         return field
     }
 

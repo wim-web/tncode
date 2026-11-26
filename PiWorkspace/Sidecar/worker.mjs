@@ -25,6 +25,7 @@ let nextRequest = 0;
 let credential;
 let session;
 let manager;
+let inheritedCutoff;
 let initializing = false;
 let connected = true;
 let active;
@@ -123,7 +124,9 @@ function readSentImage({ requestID, messageID, attachmentID }) {
 }
 
 function history() {
-  return manager.getBranch().flatMap((entry) => {
+  const branch = manager.getBranch();
+  const start = inheritedCutoff ? branch.findIndex(({ id }) => id === inheritedCutoff) + 1 : 0;
+  return branch.slice(start).flatMap((entry) => {
     if (entry.type !== "message") return [];
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
@@ -143,6 +146,35 @@ function history() {
   });
 }
 
+function savedBranchPrefix(sourceFile, sourceID, cutoff) {
+  const [header, ...saved] = parseSessionEntries(readFileSync(sourceFile, "utf8"));
+  if (header?.type !== "session" || header.id !== sourceID) throw new Error();
+  const byID = new Map(saved.map((entry) => [entry.id, entry]));
+  const prefix = [];
+  const visited = new Set();
+  for (let id = cutoff; id !== null;) {
+    const entry = byID.get(id);
+    if (!entry || visited.has(id)) throw new Error();
+    visited.add(id);
+    if (entry.type === "message") {
+      const { workspaceQueuedID, workspaceSubmissionID, ...message } = entry.message;
+      prefix.push({ ...entry, message });
+    } else {
+      prefix.push(entry);
+    }
+    id = entry.parentId;
+  }
+  if (forkReplyStatus(prefix[0]) !== "replayable") throw new Error();
+  return prefix.reverse();
+}
+
+function writeBranchedSession({ cwd, sourceFile, threadID, destination, prefix }) {
+  // Pi's createBranchedSession switches the active manager and chooses its own session ID.
+  const header = SessionManager.inMemory(cwd, { id: threadID, parentSession: sourceFile }).getHeader();
+  const contents = [header, ...prefix].map((entry) => JSON.stringify(entry) + "\n").join("");
+  writeFileSync(destination, contents, { flag: "wx", mode: 0o600, flush: true });
+}
+
 function forkConversation({ threadID, messageID }) {
   if (!validID(threadID) || typeof messageID !== "string") return;
   const finish = (error) => emit({ type: "forked", threadID, error });
@@ -155,27 +187,15 @@ function forkConversation({ threadID, messageID }) {
   const sourceFile = manager.getSessionFile();
   let prefix;
   try {
-    const [header, ...saved] = parseSessionEntries(readFileSync(sourceFile, "utf8"));
-    if (header?.type !== "session" || header.id !== manager.getSessionId()) throw new Error();
-    const byID = new Map(saved.map((entry) => [entry.id, entry]));
-    prefix = branch.slice(0, cutoff + 1).map(({ id, parentId }, index, path) => {
-      const entry = byID.get(id);
-      if (!entry || entry.parentId !== parentId || parentId !== (path[index - 1]?.id ?? null)) throw new Error();
-      if (entry.type !== "message") return entry;
-      const { workspaceQueuedID, workspaceSubmissionID, ...message } = entry.message;
-      return { ...entry, message };
-    });
-    if (forkReplyStatus(prefix.at(-1)) !== "replayable") throw new Error();
+    prefix = savedBranchPrefix(sourceFile, manager.getSessionId(), messageID);
+    if (prefix.length !== cutoff + 1 || prefix.some(({ id }, index) => branch[index].id !== id)) throw new Error();
   } catch {
     return finish("The source history is missing or incomplete. Reconnect before trying again.");
   }
 
   try {
-    // Pi's createBranchedSession switches the manager and assigns its own session ID.
-    const header = SessionManager.inMemory(manager.getCwd(), { id: threadID, parentSession: sourceFile }).getHeader();
     const destination = join(dirname(manager.getSessionDir()), threadID, threadID + ".jsonl");
-    const contents = [header, ...prefix].map((entry) => JSON.stringify(entry) + "\n").join("");
-    writeFileSync(destination, contents, { flag: "wx", mode: 0o600, flush: true });
+    writeBranchedSession({ cwd: manager.getCwd(), sourceFile, threadID, destination, prefix });
     finish();
   } catch {
     finish("Could not save the fork history. Try again.");
@@ -293,7 +313,7 @@ function hasForkHistory(manager, cutoffID) {
 }
 
 async function open(command) {
-  const { cwd, sessionDir, threadID, config, toolPermission, forkMessageID } = command;
+  const { cwd, sessionDir, threadID, config, toolPermission, forkMessageID, sideChatSource } = command;
   if (!/^[a-f0-9-]{36}$/i.test(threadID) ||
       !["local", "openai", "anthropic"].includes(config.provider) ||
       typeof config.model !== "string" || !config.model.trim() ||
@@ -332,7 +352,8 @@ async function open(command) {
   if (!model) throw new Error("This model is unavailable for the selected provider in the bundled Pi catalog.");
 
   const requireHistory = command.requireHistory || forkMessageID;
-  const missingHistory = forkMessageID ? "The fork history is missing." : "The linked thread’s history is missing.";
+  const missingHistory = sideChatSource ? "The side chat history is missing."
+    : forkMessageID ? "The fork history is missing." : "The linked thread’s history is missing.";
   if (requireHistory) {
     if (!existsSync(sessionDir)) throw new Error(missingHistory);
   } else {
@@ -340,9 +361,22 @@ async function open(command) {
   }
   const files = readdirSync(sessionDir).filter((name) => name.endsWith(".jsonl"));
   if (files.length > 1) throw new Error("This conversation has more than one history file.");
-  const historyFile = files[0] && join(sessionDir, files[0]);
+  let historyFile = files[0] && join(sessionDir, files[0]);
   if (requireHistory && (!historyFile || statSync(historyFile).size === 0)) {
     throw new Error(missingHistory);
+  }
+  inheritedCutoff = sideChatSource?.cutoff;
+  if (inheritedCutoff && !historyFile) {
+    try {
+      const sources = readdirSync(sideChatSource.sessionDir).filter((name) => name.endsWith(".jsonl"));
+      if (sources.length !== 1) throw new Error();
+      const sourceFile = join(sideChatSource.sessionDir, sources[0]);
+      const prefix = savedBranchPrefix(sourceFile, sideChatSource.threadID, inheritedCutoff);
+      historyFile = join(sessionDir, threadID + ".jsonl");
+      writeBranchedSession({ cwd, sourceFile, threadID, destination: historyFile, prefix });
+    } catch {
+      throw new Error("Could not branch from the parent’s saved history.");
+    }
   }
   manager = historyFile
     ? SessionManager.open(historyFile, sessionDir, cwd)
@@ -350,6 +384,9 @@ async function open(command) {
   if (manager.getSessionId() !== threadID) throw new Error("Conversation history does not match its ID.");
   if (forkMessageID && !hasForkHistory(manager, forkMessageID)) {
     throw new Error("The fork history is incomplete.");
+  }
+  if (inheritedCutoff && !hasForkHistory(manager, inheritedCutoff)) {
+    throw new Error("The side chat’s starting history is incomplete.");
   }
   const appendMessage = manager.appendMessage.bind(manager);
   manager.appendMessage = (message) => {
@@ -439,7 +476,7 @@ async function open(command) {
   emit({ type: "ready", messages: history(), supportsImages: supportsImages() });
 }
 
-async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, attachments }) {
+async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, attachments, sideChatContext }) {
   if (!session || active || !validID(turnID) || (queuedID !== undefined && !validID(queuedID)) ||
       (submissionID !== undefined && !validID(submissionID))) return;
   const run = { id: turnID, mode: "waiting", cancelled: false, started: false };
@@ -463,6 +500,10 @@ async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, at
       }
     }
     if (prepared && !run.cancelled) {
+      if (sideChatContext && typeof sideChatContext === "string" && sideChatContext.length <= 8000) {
+        prepared.prompt = redact(sideChatContext) + "\n\n" + prepared.prompt;
+        prepared.input ??= { text: redact(text) };
+      }
       run.receipt = { queuedID, submissionID, input: prepared.input };
       if (restoreCompaction) session.setAutoCompactionEnabled(false);
       await session.prompt(prepared.prompt, {

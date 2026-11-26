@@ -148,19 +148,22 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
     let id: UUID
     let name: String
     var payload: Payload?
+    let sideChatReference: Bool?
 
-    init(id: UUID = UUID(), name: String, payload: Payload?) {
+    init(id: UUID = UUID(), name: String, payload: Payload?, sideChatReference: Bool? = nil) {
         self.id = id
         self.name = name
         self.payload = payload
+        self.sideChatReference = sideChatReference
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, payload }
+    private enum CodingKeys: String, CodingKey { case id, name, payload, sideChatReference }
 
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         id = try fields.decode(UUID.self, forKey: .id)
         name = try fields.decode(String.self, forKey: .name)
+        sideChatReference = try fields.decodeIfPresent(Bool.self, forKey: .sideChatReference)
         if let saved = try? fields.decode(Payload.self, forKey: .payload),
            (try? Self.payload(for: saved.data))?.mimeType == saved.mimeType {
             payload = saved

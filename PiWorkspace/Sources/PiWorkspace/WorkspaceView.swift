@@ -41,6 +41,7 @@ struct WorkspaceView: View {
     @State private var rightPanels: [UUID: WorkspaceRightPanelState] = [:]
     @State private var addingPanelSurface: UUID?
     @State private var closingPanelTerminals: PanelTerminalClose?
+    @State private var deletingSideChat: SideChatDeletion?
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
     @State private var choosingWorkspace = false
     @State private var choosingBranch: WorkspaceModel.BranchPickerScope?
@@ -226,8 +227,8 @@ struct WorkspaceView: View {
                 }
             }
             .opacity(model.showingWelcome ? 0 : 1)
-            .accessibilityHidden(model.showingWelcome || imageIndex != nil)
-            .disabled(model.showingWelcome || imageIndex != nil)
+            .accessibilityHidden(model.showingWelcome || imageIndex != nil || deletingSideChat != nil)
+            .disabled(model.showingWelcome || imageIndex != nil || deletingSideChat != nil)
             if model.showingWelcome { welcome }
             if let imagePreview, let imageIndex {
                 ChatImagePreviewDialog(items: images, index: imageIndex, close: closeImagePreview,
@@ -238,6 +239,14 @@ struct WorkspaceView: View {
                     return item.payload
                 }, pasteboard: workspacePasteboard)
             }
+            if let request = deletingSideChat {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+                SideChatDeleteConfirmation(request: request) { confirmed in
+                    finishSideChatDeletion(request, confirmed: confirmed)
+                }
+            }
         }
         .onChange(of: imageIndex) { _, index in
             if index == nil { closeImagePreview() }
@@ -246,6 +255,14 @@ struct WorkspaceView: View {
         .background {
             WindowKeyMonitor { event, window in
                 guard imageIndex == nil else { return false }
+                if let request = deletingSideChat {
+                    let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                    if modifiers.isEmpty && event.keyCode == kVK_Escape {
+                        finishSideChatDeletion(request, confirmed: false)
+                        return true
+                    }
+                    return modifiers.contains(.command)
+                }
                 if showingComposerStash, event.keyCode == kVK_Escape,
                    event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
                    acceptsWorkspaceKeys(in: window),
@@ -261,6 +278,15 @@ struct WorkspaceView: View {
                 if handleNewThreadKey(event, in: window) { return true }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
                 if handleRightPanelKey(event, modifiers: modifiers, in: window) { return true }
+                if modifiers == .command, event.keyCode == kVK_Return, acceptsWorkspaceKeys(in: window),
+                   let editor = window.firstResponder as? ComposerTextField.Editor,
+                   let id = editor.owner?.composerTarget?.threadID, let parent = model.conversation?.id,
+                   rightPanels[parent]?.visibleTab == .sideChat(id), let project = model.project {
+                    if !editor.hasMarkedText() {
+                        model.sendSideChat(.init(projectID: project.id, parentID: parent, id: id))
+                    }
+                    return true
+                }
                 if modifiers == .command {
                     switch event.charactersIgnoringModifiers {
                     case "[": return navigate(.back, in: window)
@@ -306,7 +332,7 @@ struct WorkspaceView: View {
         let imageIndex = imagePreview?.index(in: images)
         return workspaceSurface(images: images, imageIndex: imageIndex)
         .onReceive(model.sidebarCommand) { command in
-            if imageIndex == nil { handleSidebarCommand(command) }
+            if imageIndex == nil && deletingSideChat == nil { handleSidebarCommand(command) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshSnoozes()
@@ -335,7 +361,15 @@ struct WorkspaceView: View {
             if composerModelPicker?.scope != scope { composerModelPicker = nil }
             showingComposerStash = false
         }
-        .onChange(of: model.conversation?.id) { _, _ in addingPanelSurface = nil }
+        .onChange(of: model.conversation?.id) { _, _ in
+            addingPanelSurface = nil
+            deletingSideChat = nil
+        }
+        .onChange(of: model.sideChatToOpen) { _, request in
+            if let scope = request?.scope, model.conversation?.id == scope.parentID {
+                rightPanels[scope.parentID, default: .init()].show(.sideChat(scope.id))
+            }
+        }
         .onChange(of: model.messages.last?.id) { _, _ in
             if model.activeThreadFind != nil { model.threadFind?.refresh() }
         }
@@ -518,6 +552,19 @@ struct WorkspaceView: View {
             }
         } message: { _ in
             Text("The folder and its threads stay on disk.")
+        }
+    }
+
+    private func finishSideChatDeletion(_ request: SideChatDeletion, confirmed: Bool) {
+        deletingSideChat = nil
+        let scope = request.scope
+        guard scope.parentID == model.conversation?.id, scope.projectID == model.project?.id else { return }
+        if confirmed { model.deleteSideChat(scope) }
+        if model.sideChat(scope) == nil {
+            rightPanels[scope.parentID]?.close([.sideChat(scope.id)])
+            focusedComposer = scope.parentID
+        } else {
+            focusedComposer = scope.id
         }
     }
 
@@ -1461,6 +1508,9 @@ struct WorkspaceView: View {
                 rightPanels[thread.id]?.move(tab, to: target)
             }, hide: {
                 rightPanels[thread.id]?.isOpen = false
+            }, titleForTab: { tab in
+                guard case .sideChat(let id) = tab else { return tab.title }
+                return thread.sideChats?.first { $0.id == id }?.title ?? tab.title
             }, addButton: {
                 addPanelSurfaceButton(thread)
             })
@@ -1484,12 +1534,39 @@ struct WorkspaceView: View {
                 if let group = panel.terminals[.terminal(number)] {
                     rightTerminalSurface(group, tab: .terminal(number), thread: thread.id)
                 }
+            case .sideChat(let id):
+                sideChatPanel(.init(projectID: project.id, parentID: thread.id, id: id), parent: thread)
             case nil:
                 Spacer()
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .transformAnchorPreference(key: RightPanelBounds.self, value: .bounds) { $0.panel = $1 }
+    }
+
+    @ViewBuilder
+    private func sideChatPanel(_ scope: SideChatScope, parent: Conversation) -> some View {
+        if let child = model.sideChat(scope) {
+            Group {
+                if let session = model.sideChatSession(scope) {
+                    SideChatPane(model: model, session: session, child: child, parentTitle: parent.title,
+                                 pasteboard: workspacePasteboard, focus: $focusedComposer, openParent: {
+                        if rightPanels[scope.parentID]?.visibleTab == .sideChat(scope.id) {
+                            rightPanels[scope.parentID]?.isOpen = false
+                            focusedComposer = scope.parentID
+                        }
+                    }, delete: {
+                        deletingSideChat = SideChatDeletion(scope: scope, title: child.title)
+                    }, close: {
+                        closeRightPanelTabs([.sideChat(scope.id)], in: scope.parentID)
+                    })
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .task(id: scope) { model.loadSideChat(scope) }
+            .id(scope.id)
+        }
     }
 
     private func browserPanel(for thread: UUID) -> Binding<ThreadBrowserPreview> {
@@ -1867,6 +1944,27 @@ struct WorkspaceView: View {
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("thread-model")
+            if let chats = thread.sideChats, !chats.isEmpty {
+                Divider()
+                Text("Side chats").font(.callout.weight(.medium))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(chats) { chat in
+                            Button {
+                                model.openSideChat(.init(projectID: project.id, parentID: thread.id, id: chat.id))
+                            } label: {
+                                Label(chat.title, systemImage: "bubble.left.and.bubble.right")
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Open side chat: \(chat.title)")
+                            .accessibilityIdentifier("open-side-chat-\(chat.id)")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 150)
+            }
         }
         .padding(15)
         .frame(width: width, alignment: .leading)
@@ -1939,6 +2037,19 @@ struct WorkspaceView: View {
             panelSurfaceButton(.files) { rightPanels[thread.id, default: .init()].show(.files) }
             panelSurfaceButton(.changes) { rightPanels[thread.id, default: .init()].show(.changes) }
                 .disabled(thread.workingLocation.needsWorktree)
+            Button {
+                addingPanelSurface = nil
+                model.startSideChat(in: thread.id)
+            } label: {
+                HStack {
+                    Label("Side chat", systemImage: "bubble.left.and.bubble.right")
+                    Spacer()
+                    Text("S").foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("add-panel-side-chat")
+            .disabled(!model.canStartSideChat)
         }
         .buttonStyle(.plain)
         .padding(10)
@@ -2046,6 +2157,12 @@ struct WorkspaceView: View {
     }
 
     private func closeRightPanelTabs(_ tabs: [WorkspacePanelTab], in thread: UUID) {
+        if let project = model.project, thread == model.conversation?.id {
+            for case .sideChat(let id) in tabs {
+                model.closeSideChat(.init(projectID: project.id, parentID: thread, id: id))
+                if focusedComposer == id { focusedComposer = thread }
+            }
+        }
         if tabs.contains(.browser), var browser = browserPanels[thread] {
             for tab in browser.tabs where tab.surface == .panel { browser.closeTab(tab.id) }
             browser.isVisible = false
@@ -2071,6 +2188,10 @@ struct WorkspaceView: View {
             case UInt16(kVK_ANSI_T) where activeTerminal?.thread == thread:
                 addingPanelSurface = nil
                 addRightTerminal(in: thread)
+                return true
+            case UInt16(kVK_ANSI_S) where model.canStartSideChat:
+                addingPanelSurface = nil
+                model.startSideChat(in: thread)
                 return true
             default: break
             }
@@ -2682,13 +2803,13 @@ struct WorkspaceView: View {
                         .accessibilityIdentifier("steer-message")
                         .disabled(!model.canQueueDraft)
                 }
-                if model.phase == .running {
+                if model.phase == .running && model.sideChatCommand == nil {
                     Button("Queue") { model.queueDraft() }
                         .help("Send after the current turn")
                         .keyboardShortcut(.return, modifiers: .command)
                         .accessibilityIdentifier("queue-message")
                         .disabled(!model.canQueueDraft)
-                } else if !model.phase.isRunning {
+                } else if !model.phase.isRunning || model.sideChatCommand != nil {
                     if model.canStartQueuedMessage && !model.queuedMessages.isEmpty {
                         Button("Queue") { model.queueDraft() }
                             .accessibilityIdentifier("queue-message")

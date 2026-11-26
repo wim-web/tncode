@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum WorkspacePanelTab: Hashable, Identifiable {
-    case browser, files, changes, terminal(Int)
+    case browser, files, changes, terminal(Int), sideChat(UUID)
 
     var id: String {
         switch self {
@@ -9,6 +9,7 @@ enum WorkspacePanelTab: Hashable, Identifiable {
         case .files: "files"
         case .changes: "changes"
         case .terminal(let number): "terminal-\(number)"
+        case .sideChat(let id): "side-chat-\(id)"
         }
     }
 
@@ -18,6 +19,7 @@ enum WorkspacePanelTab: Hashable, Identifiable {
         case .files: "Files"
         case .changes: "Changes"
         case .terminal(let number): "Terminal \(number)"
+        case .sideChat: "Side chat"
         }
     }
 
@@ -27,6 +29,7 @@ enum WorkspacePanelTab: Hashable, Identifiable {
         case .files: "folder"
         case .changes: "doc.text"
         case .terminal: "terminal"
+        case .sideChat: "bubble.left.and.bubble.right"
         }
     }
 }
@@ -187,6 +190,7 @@ struct WorkspacePanelTabs<AddButton: View>: View {
     let close: ([WorkspacePanelTab]) -> Void
     let move: (WorkspacePanelTab, WorkspacePanelTab) -> Void
     let hide: () -> Void
+    var titleForTab: (WorkspacePanelTab) -> String = { $0.title }
     @ViewBuilder let addButton: () -> AddButton
     @State private var tabFrames: [WorkspacePanelTab: CGRect] = [:]
     @Namespace private var tabStrip
@@ -220,7 +224,7 @@ struct WorkspacePanelTabs<AddButton: View>: View {
 
     private func tabButton(_ tab: WorkspacePanelTab) -> some View {
         let active = panel.selected == tab
-        let title = panel.terminals[tab].map { WorkspacePanelTab.terminal($0.selectedPane).title } ?? tab.title
+        let title = panel.terminals[tab].map { WorkspacePanelTab.terminal($0.selectedPane).title } ?? titleForTab(tab)
         let index = panel.tabs.firstIndex(of: tab) ?? 0
         let toRight = Array(panel.tabs.dropFirst(index + 1))
         return HStack(spacing: 2) {
