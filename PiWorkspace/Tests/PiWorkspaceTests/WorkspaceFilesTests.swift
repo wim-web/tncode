@@ -51,11 +51,13 @@ final class WorkspaceFilesTests: XCTestCase {
             // The preview limit lands inside a multi-byte character.
             let largePrefix = String(repeating: "a", count: WorkspaceFiles.textLimit - 1)
             try write(largePrefix + "é\nlast line", "large.txt", in: root)
-            guard case let .largeText(prefix, size) = try files.preview("large.txt") else {
+            guard case let .largeText(large) = try files.preview("large.txt") else {
                 return XCTFail("Expected a bounded text preview.")
             }
-            XCTAssertEqual(prefix, largePrefix)
-            XCTAssertEqual(size, Int64(WorkspaceFiles.textLimit + 11))
+            let page = try large.page(containing: 2)
+            XCTAssertEqual(page.lines, [String(largePrefix.prefix(WorkspaceLargeTextPage.lineByteLimit)), "last line"])
+            XCTAssertTrue(page.hasClippedLines)
+            XCTAssertEqual(large.size, Int64(WorkspaceFiles.textLimit + 11))
 
             let bytes = Data([0x50, 0x00, 0x80, 0xFF])
             try bytes.write(to: root.appendingPathComponent("binary.dat"))
@@ -65,6 +67,141 @@ final class WorkspaceFilesTests: XCTestCase {
             XCTAssertEqual(prefix, bytes)
             XCTAssertEqual(size, 4)
         }
+    }
+
+    func testLargeTextPagesKeepUTF8AndCRLFBoundaries() throws {
+        try withFixture { root in
+            let files = WorkspaceFiles(directory: root.path)
+            let limit = WorkspaceLargeTextPage.lineByteLimit
+            let prefix = String(repeating: "a", count: limit - 1)
+            // The UTF-8 scalar crosses the display limit and CRLF crosses the 64 KiB read boundary.
+            let longLine = prefix + "🙂" + String(repeating: "a", count: 65_535 - prefix.utf8.count - 4)
+            let laterLine = String(repeating: "界", count: WorkspaceFiles.textLimit / 3)
+            try write(longLine + "\r\n\rline 3\n" + String(repeating: "row\n", count: 28)
+                      + "line 32\r\n" + laterLine + "\r\u{FEFF}last 🙂", "large.txt", in: root)
+            guard case let .largeText(large) = try files.preview("large.txt") else {
+                return XCTFail("Expected a large text preview.")
+            }
+
+            let first = try large.page(containing: 1)
+            XCTAssertEqual(first.lines.prefix(3), [prefix, "", "line 3"])
+            XCTAssertEqual(first.lastLine, 32)
+            XCTAssertEqual(first.lines.last, "line 32")
+            XCTAssertTrue(first.hasNext)
+            XCTAssertTrue(first.hasClippedLines)
+            let next = try large.page(containing: 34, after: first)
+            XCTAssertEqual(next.firstLine, 33)
+            XCTAssertEqual(next.lines, [String(laterLine.prefix(limit / 3)), "\u{FEFF}last 🙂"])
+            XCTAssertEqual(try large.page(containing: 34).lines, next.lines)
+            XCTAssertTrue(next.hasClippedLines)
+            XCTAssertFalse(next.hasNext)
+            for line in [0, 35, Int64.max] {
+                XCTAssertThrowsError(try large.page(containing: line)) {
+                    XCTAssertEqual($0 as? WorkspaceLargeTextError, .lineNotFound)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testLargeTextGoToLineUsesTheOpenCheckoutAndReloadsOffscreen() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let local = try folder("local", in: root)
+        let linked = root.appendingPathComponent("linked", isDirectory: true)
+        let path = "trace.txt"
+        let line = 6_000
+        let padding = String(repeating: String(repeating: "α", count: 96) + "\r\n", count: line - 1)
+        let tail = String(repeating: "\nnext", count: 64)
+        let localMarker = "DEV-153 local marker 🙂"
+        let refreshedMarker = "DEV-153 refreshed marker 🙂"
+        let linkedMarker = "DEV-153 linked marker 🙂"
+        XCTAssertEqual(padding.utf8.count, 1_163_806)
+        let file = try write(padding + localMarker + tail, path, in: local)
+        _ = try git(local, ["init", "-q"])
+        _ = try git(local, ["add", "--", path])
+        _ = try git(local, ["commit", "-qm", "Large preview fixture"])
+        _ = try git(local, ["worktree", "add", "--detach", "--", linked.path, "HEAD"])
+        let linkedFile = try write(padding + linkedMarker + tail, path, in: linked)
+        let project = Project(id: UUID(), path: local.path, title: "Fixture")
+        var thread = Conversation(id: UUID(), title: "Fixture Thread")
+        let localLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: thread, project: project))
+        thread.location = .worktree(path: linked.path, base: "HEAD")
+        let linkedLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: thread, project: project))
+
+        let saves = WorkspaceFileSaves()
+        let panel = FilesPanelFixture(location: localLocation, selection: path, saves: saves)
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 700, height: 420),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: FilesPanelFixtureView(fixture: panel))
+        host.sizingOptions = []
+        window.contentView = host
+        defer { window.contentView = nil }
+
+        func contents() -> NSTextView? {
+            firstSubview(in: host) {
+                guard let view = $0 as? NSTextView, view.accessibilityIdentifier() == "files-contents" else { return nil }
+                return view
+            }
+        }
+        func jump() throws {
+            let field: NSTextField = try XCTUnwrap(firstSubview(in: host) {
+                guard let field = $0 as? NSTextField, field.placeholderString == "Go to Line" else { return nil }
+                return field
+            })
+            XCTAssertTrue(window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
+            editor.insertText(String(line), replacementRange: NSRange(location: NSNotFound, length: 0))
+            editor.insertNewline(nil)
+        }
+        func selectedText() -> String? {
+            contents().map { ($0.string as NSString).substring(with: $0.selectedRange()) }
+        }
+
+        try await waitFor { contents() != nil }
+        XCTAssertFalse(try XCTUnwrap(contents()).string.contains(localMarker))
+        try jump()
+        try await waitFor { selectedText() == localMarker }
+        let viewer = try XCTUnwrap(contents())
+        XCTAssertFalse(viewer.isEditable)
+        let layout = try XCTUnwrap(viewer.layoutManager)
+        let container = try XCTUnwrap(viewer.textContainer)
+        let start = NSRange(location: viewer.selectedRange().location, length: 1)
+        let glyphs = layout.glyphRange(forCharacterRange: start, actualCharacterRange: nil)
+        let bounds = layout.boundingRect(forGlyphRange: glyphs, in: container)
+        XCTAssertTrue(viewer.visibleRect.intersects(bounds.offsetBy(dx: viewer.textContainerOrigin.x,
+                                                                    dy: viewer.textContainerOrigin.y)))
+
+        // A stale page request detects an atomic replacement. Refresh keeps the requested line.
+        let session = saves.acquire(WorkspaceFileTarget(location: localLocation, path: path))
+        defer { saves.release(session) }
+        try Data((padding + refreshedMarker + tail).utf8).write(to: file, options: .atomic)
+        try jump()
+        try await waitFor { contents() == nil }
+        await session.refresh()
+        try await waitFor { selectedText() == refreshedMarker }
+
+        panel.selection = nil
+        try await waitFor { contents() == nil }
+        panel.selection = path
+        try await waitFor { contents() != nil }
+        XCTAssertFalse(try XCTUnwrap(contents()).string.contains(refreshedMarker))
+        try jump()
+        try await waitFor { selectedText() == refreshedMarker }
+
+        panel.location = linkedLocation
+        try await waitFor { contents()?.string.hasPrefix("α") == true && selectedText()?.isEmpty == true }
+        try jump()
+        try await waitFor { selectedText() == linkedMarker }
+        XCTAssertFalse(try XCTUnwrap(contents()).string.contains(refreshedMarker))
+
+        // Never reopen a previously approved path through a replacement symlink.
+        try FileManager.default.removeItem(at: linkedFile)
+        try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: file)
+        try jump()
+        try await waitFor { contents() == nil }
     }
 
     @MainActor
@@ -118,8 +255,8 @@ final class WorkspaceFilesTests: XCTestCase {
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 700, height: 420),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let panel = MediaPanelFixture(location: localLocation, selection: pdf.lastPathComponent, saves: saves)
-        let host = NSHostingView(rootView: MediaPanelFixtureView(fixture: panel))
+        let panel = FilesPanelFixture(location: localLocation, selection: pdf.lastPathComponent, saves: saves)
+        let host = NSHostingView(rootView: FilesPanelFixtureView(fixture: panel))
         host.sizingOptions = []
         window.contentView = host
         defer { window.contentView = nil }
@@ -588,7 +725,16 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     private func findPDFCanvas(in view: NSView) -> WorkspacePDFCanvas? {
-        (view as? WorkspacePDFCanvas) ?? view.subviews.lazy.compactMap { self.findPDFCanvas(in: $0) }.first
+        firstSubview(in: view) { $0 as? WorkspacePDFCanvas }
+    }
+
+    @MainActor
+    private func firstSubview<T>(in view: NSView, matching find: (NSView) -> T?) -> T? {
+        if let match = find(view) { return match }
+        for child in view.subviews {
+            if let match = firstSubview(in: child, matching: find) { return match }
+        }
+        return nil
     }
 
     private func git(_ directory: URL, _ arguments: [String]) throws -> String {
@@ -612,7 +758,7 @@ final class WorkspaceFilesTests: XCTestCase {
 }
 
 @MainActor @Observable
-private final class MediaPanelFixture {
+private final class FilesPanelFixture {
     var location: WorkspaceFilesLocation
     var selection: String?
     let saves: WorkspaceFileSaves
@@ -624,8 +770,8 @@ private final class MediaPanelFixture {
     }
 }
 
-private struct MediaPanelFixtureView: View {
-    @Bindable var fixture: MediaPanelFixture
+private struct FilesPanelFixtureView: View {
+    @Bindable var fixture: FilesPanelFixture
 
     var body: some View {
         WorkspaceFilesView(location: fixture.location, saves: fixture.saves, pasteboard: .general,

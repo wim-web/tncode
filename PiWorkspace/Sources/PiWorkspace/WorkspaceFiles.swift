@@ -67,10 +67,51 @@ struct WorkspaceFileText: Sendable {
 
 enum WorkspaceFilePreview: Sendable {
     case text(WorkspaceFileText)
-    case largeText(prefix: String, size: Int64)
+    case largeText(WorkspaceLargeTextFile)
     case binary(prefix: Data, size: Int64)
     case image(WorkspaceImageFile)
     case pdf(WorkspacePDFFile)
+}
+
+struct WorkspaceLargeTextFile: Sendable {
+    let id = UUID()
+    fileprivate let files: WorkspaceFiles
+    fileprivate let path: String
+    fileprivate let revision: FileRevision
+
+    var size: Int64 { revision.size }
+
+    func page(containing line: Int64, after previous: WorkspaceLargeTextPage? = nil) throws -> WorkspaceLargeTextPage {
+        try files.largeTextPage(self, containing: line, after: previous)
+    }
+}
+
+struct WorkspaceLargeTextPage: Sendable {
+    static let lineCount = 32
+    static let lineByteLimit = 16 * 1024
+
+    let firstLine: Int64
+    let lines: [String]
+    let hasClippedLines: Bool
+    fileprivate let fileID: UUID
+    fileprivate let nextOffset: Int64?
+
+    var lastLine: Int64 { firstLine + Int64(lines.count) - 1 }
+    var hasNext: Bool { nextOffset != nil }
+}
+
+enum WorkspaceLargeTextError: LocalizedError {
+    case changed
+    case invalidText
+    case lineNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .changed: "The file changed on disk. Retry to reopen it."
+        case .invalidText: "This part of the file is not valid UTF-8 text."
+        case .lineNotFound: "There is no line with that number."
+        }
+    }
 }
 
 struct WorkspaceFileDraft {
@@ -125,13 +166,95 @@ struct WorkspaceFiles: Sendable {
             let large = metadata.st_size > Self.textLimit || data.count > Self.textLimit
             let prefix = large ? Data(data.prefix(Self.textLimit)) : data
             if let text = decode(prefix, truncated: large) {
-                return large ? .largeText(prefix: text, size: metadata.st_size) : .text(
-                    WorkspaceFileText(text: text, writable: canWrite(in: folder, name: name),
-                                      revision: FileRevision(metadata), bytes: data)
-                )
+                let revision = FileRevision(metadata)
+                if large { return .largeText(WorkspaceLargeTextFile(files: self, path: path, revision: revision)) }
+                return .text(WorkspaceFileText(text: text, writable: canWrite(in: folder, name: name),
+                                               revision: revision, bytes: data))
             }
             return .binary(prefix: Data(data.prefix(4096)), size: metadata.st_size)
         }
+    }
+
+    fileprivate func largeTextPage(_ source: WorkspaceLargeTextFile, containing line: Int64,
+                                   after previous: WorkspaceLargeTextPage?) throws -> WorkspaceLargeTextPage {
+        guard line > 0 else { throw WorkspaceLargeTextError.lineNotFound }
+        let pageSize = Int64(WorkspaceLargeTextPage.lineCount)
+        let firstLine = line - (line - 1) % pageSize
+        let nextOffset: Int64?
+        if let previous, previous.fileID == source.id, previous.lastLine == firstLine - 1 {
+            nextOffset = previous.nextOffset
+        } else {
+            nextOffset = nil
+        }
+        return try withParent(of: source.path) { folder, name in
+            let file = try openFile(in: folder, name: name)
+            defer { close(file) }
+            guard FileRevision(try status(file)) == source.revision else { throw WorkspaceLargeTextError.changed }
+            let result = try readLargeTextPage(file, source: source, firstLine: firstLine, offset: nextOffset)
+            guard FileRevision(try status(file)) == source.revision else { throw WorkspaceLargeTextError.changed }
+            try withParent(of: source.path) { currentFolder, currentName in
+                let current = try openFile(in: currentFolder, name: currentName)
+                defer { close(current) }
+                guard FileRevision(try status(current)) == source.revision else { throw WorkspaceLargeTextError.changed }
+            }
+            guard line <= result.lastLine else { throw WorkspaceLargeTextError.lineNotFound }
+            return result
+        }
+    }
+
+    private func readLargeTextPage(_ file: Int32, source: WorkspaceLargeTextFile, firstLine: Int64,
+                                   offset: Int64?) throws -> WorkspaceLargeTextPage {
+        var position = offset ?? 0
+        var line = offset == nil ? 1 : firstLine
+        var lineStart = position
+        var afterCR = false
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        var bytes = [UInt8]()
+        var lines = [String]()
+        var clipped = false
+
+        func appendLine() throws {
+            let limit = WorkspaceLargeTextPage.lineByteLimit
+            let truncated = bytes.count > limit
+            guard let text = decode(Data(bytes.prefix(limit)), truncated: truncated, stripBOM: line == 1) else {
+                throw WorkspaceLargeTextError.invalidText
+            }
+            lines.append(text)
+            clipped = clipped || truncated
+            bytes.removeAll(keepingCapacity: true)
+        }
+
+        // After a CR, consume the optional LF before recording the next line's offset.
+        scan: while position < source.size {
+            try Task.checkCancellation()
+            let count = pread(file, &buffer, Int(min(Int64(buffer.count), source.size - position)), position)
+            if count < 0, errno == EINTR { continue }
+            guard count >= 0 else { throw fileError() }
+            guard count > 0 else { throw WorkspaceLargeTextError.changed }
+            for byte in buffer.prefix(count) {
+                if afterCR {
+                    afterCR = false
+                    if byte == 10 {
+                        position += 1
+                        lineStart = position
+                        continue
+                    }
+                }
+                if lines.count == WorkspaceLargeTextPage.lineCount { break scan }
+                position += 1
+                if byte == 10 || byte == 13 {
+                    if line >= firstLine { try appendLine() }
+                    line += 1
+                    lineStart = position
+                    afterCR = byte == 13
+                } else if line >= firstLine, bytes.count <= WorkspaceLargeTextPage.lineByteLimit {
+                    bytes.append(byte)
+                }
+            }
+        }
+        if line >= firstLine, position > lineStart { try appendLine() }
+        return WorkspaceLargeTextPage(firstLine: firstLine, lines: lines, hasClippedLines: clipped,
+                                      fileID: source.id, nextOffset: position < source.size ? position : nil)
     }
 
     fileprivate func save(_ draft: WorkspaceFileDraft) throws -> WorkspaceFileText {
@@ -327,11 +450,16 @@ struct WorkspaceFiles: Sendable {
         }
     }
 
-    private func decode(_ data: Data, truncated: Bool) -> String? {
-        let bytes = data.starts(with: [0xEF, 0xBB, 0xBF]) ? data.dropFirst(3) : data[...]
+    private func decode(_ data: Data, truncated: Bool, stripBOM: Bool = true) -> String? {
+        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        let bytes = stripBOM && data.starts(with: bom) ? data.dropFirst(3) : data[...]
         guard !bytes.contains(where: { $0 < 32 && !(9...13).contains($0) }) else { return nil }
         for trailing in 0...(truncated ? 3 : 0) {
-            if let text = String(bytes: bytes.dropLast(trailing), encoding: .utf8) { return text }
+            let input = bytes.dropLast(trailing)
+            if let text = String(bytes: input, encoding: .utf8) {
+                // Foundation strips a leading U+FEFF even when it is part of a later line.
+                return !stripBOM && input.starts(with: bom) ? "\u{FEFF}" + text : text
+            }
         }
         return nil
     }

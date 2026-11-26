@@ -419,16 +419,13 @@ private struct WorkspaceFilePreviewView: View {
                 ProgressView().controlSize(.small).padding(12)
             case .failure(let error):
                 status(error.localizedDescription, id: "files-preview-error")
-                if WorkspaceMediaFormat(fileName: pathComponents.last ?? target.path) != nil {
-                    Button("Retry") { reload += 1 }
-                        .padding(.horizontal, 8)
-                        .accessibilityIdentifier("files-preview-retry")
-                }
+                Button("Retry") { reload += 1 }
+                    .padding(.horizontal, 8)
+                    .accessibilityIdentifier("files-preview-retry")
             case .success(.text):
                 EmptyView()
-            case .success(.largeText(let prefix, let size)):
-                status("Large file (\(formattedSize(size))). Showing the first 1 MiB.", id: "files-large-preview")
-                FileTextView(text: prefix, editable: false, wraps: wraps, identifier: "files-contents")
+            case .success(.largeText(let file)):
+                WorkspaceLargeTextView(file: file, wraps: wraps, retry: { reload += 1 })
             case .success(.binary(let prefix, let size)):
                 status("Binary file (\(formattedSize(size))). Showing \(prefix.count) bytes.", id: "files-binary-preview")
                 FileTextView(text: hexadecimal(prefix), editable: false, wraps: false, identifier: "files-contents")
@@ -497,6 +494,125 @@ private struct WorkspaceFilePreviewView: View {
     }
 }
 
+private struct WorkspaceLargeTextView: View {
+    let file: WorkspaceLargeTextFile
+    let wraps: Bool
+    let retry: () -> Void
+
+    private struct Request: Equatable {
+        let id = UUID()
+        let line: Int64
+        let select: Bool
+    }
+
+    private struct Load: Equatable {
+        let fileID: UUID
+        let request: Request
+    }
+
+    private struct Display {
+        let id = UUID()
+        let load: Load
+        let page: WorkspaceLargeTextPage
+    }
+
+    @State private var request = Request(line: 1, select: false)
+    @State private var completed: Load?
+    @State private var display: Display?
+    @State private var lineInput = ""
+    @State private var lineError: String?
+    @State private var readError: String?
+
+    var body: some View {
+        let load = Load(fileID: file.id, request: request)
+        let visible = display.flatMap { $0.load.fileID == file.id ? $0 : nil }
+        let reading = load != completed
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Large file (\(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)))")
+                    .accessibilityIdentifier("files-large-preview")
+                HStack(spacing: 6) {
+                    fileButton("Previous Page", "chevron.left", id: "files-large-previous") {
+                        if let page = visible?.page {
+                            request = Request(line: page.firstLine - Int64(WorkspaceLargeTextPage.lineCount), select: false)
+                        }
+                    }
+                    .disabled(reading || (visible?.page.firstLine ?? 1) == 1)
+                    fileButton("Next Page", "chevron.right", id: "files-large-next") {
+                        if let page = visible?.page { request = Request(line: page.lastLine + 1, select: false) }
+                    }
+                    .disabled(reading || visible?.page.hasNext != true)
+                    TextField("Go to Line", text: $lineInput)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("files-large-line")
+                        .onSubmit(goToLine)
+                    Button("Go", action: goToLine)
+                        .accessibilityIdentifier("files-large-go")
+                }
+                if let page = visible?.page {
+                    Text("Lines \(page.firstLine.formatted())–\(page.lastLine.formatted())")
+                        .accessibilityIdentifier("files-large-range")
+                    if page.hasClippedLines { Text("Long lines show their first 16 KiB.") }
+                }
+                if let lineError {
+                    Text(lineError).accessibilityIdentifier("files-large-line-error")
+                }
+                if reading {
+                    ProgressView().controlSize(.small).accessibilityLabel("Loading lines")
+                } else if let readError {
+                    Text("Could not read file. \(readError)")
+                        .accessibilityIdentifier("files-large-error")
+                    Button("Retry", action: retry)
+                        .accessibilityIdentifier("files-preview-retry")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(8)
+            if let visible {
+                FileTextView(text: visible.page.lines.joined(separator: "\n"), editable: false, wraps: wraps,
+                             identifier: "files-contents", reveal: (visible.id, selection(in: visible)))
+            }
+        }
+        .task(id: load) { await read(load, after: visible?.page) }
+    }
+
+    private func goToLine() {
+        guard let line = Int64(lineInput.trimmingCharacters(in: .whitespaces)), line > 0 else {
+            lineError = "Enter a positive line number."
+            return
+        }
+        request = Request(line: line, select: true)
+    }
+
+    private func read(_ load: Load, after previous: WorkspaceLargeTextPage?) async {
+        lineError = nil
+        readError = nil
+        let file = file
+        do {
+            let page = try await loadWorkspaceFiles { try file.page(containing: load.request.line, after: previous) }
+            try Task.checkCancellation()
+            display = Display(load: load, page: page)
+        } catch WorkspaceLargeTextError.lineNotFound {
+            guard !Task.isCancelled else { return }
+            lineError = WorkspaceLargeTextError.lineNotFound.localizedDescription
+        } catch {
+            guard !Task.isCancelled else { return }
+            display = nil
+            readError = error.localizedDescription
+        }
+        completed = load
+    }
+
+    private func selection(in display: Display) -> NSRange {
+        guard display.load.request.select else { return NSRange(location: 0, length: 0) }
+        let page = display.page
+        let index = Int(display.load.request.line - page.firstLine)
+        let start = page.lines.prefix(index).reduce(0) { $0 + $1.utf16.count + 1 }
+        return NSRange(location: start, length: page.lines[index].utf16.count)
+    }
+}
+
 func fileButton(_ label: String, _ symbol: String, id: String,
                 action: @escaping () -> Void) -> some View {
     Button(action: action) { Image(systemName: symbol).frame(width: 18, height: 18) }
@@ -511,6 +627,7 @@ private struct FileTextView: NSViewRepresentable {
     let editable: Bool
     let wraps: Bool
     let identifier: String
+    var reveal: (id: UUID, range: NSRange)?
     var edit: ((String) -> Void)?
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -554,6 +671,11 @@ private struct FileTextView: NSViewRepresentable {
             container.widthTracksTextView = wraps
             if wraps { textView.setFrameSize(NSSize(width: scroll.contentSize.width, height: textView.frame.height)) }
         }
+        if let reveal, context.coordinator.revealed != reveal.id {
+            context.coordinator.revealed = reveal.id
+            textView.setSelectedRange(reveal.range)
+            textView.scrollRangeToVisible(NSRange(location: reveal.range.location, length: 0))
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -564,6 +686,7 @@ private struct FileTextView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var edit: ((String) -> Void)?
+        var revealed: UUID?
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
