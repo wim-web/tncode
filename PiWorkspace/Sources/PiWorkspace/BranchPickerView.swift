@@ -154,6 +154,10 @@ struct BranchPickerView: View {
         .accessibilityLabel(([ref.name] + badges).joined(separator: ", "))
         .accessibilityAddTraits(ref.id == selectedRef?.id ? .isSelected : [])
         .accessibilityIdentifier("git-branch-ref-\(ref.id)")
+        .contextMenu {
+            Button("Copy branch name") { copy(ref.name) }
+                .accessibilityIdentifier("git-copy-ref-\(ref.id)")
+        }
     }
 
     private func badges(for ref: GitBranchRef) -> [String] {
