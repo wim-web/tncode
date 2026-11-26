@@ -69,8 +69,12 @@ final class ComposerFieldDropTests: XCTestCase {
             return bytes
         }
 
-        for (placeholder, file) in [("Ask Pi anything", "red.png"), ("Edit queued message", "queue.png")] {
-            if file == "queue.png" { model.editQueuedMessage(queued.id) }
+        var droppedBytes: [String: Data] = [:]
+        let draftText = try XCTUnwrap(draft.composerText)
+        for (placeholder, file, original) in [("Ask Pi anything", "red.png", draftText),
+                                              ("Edit queued message", "queue.png", queued.text)] {
+            let editingQueue = file == "queue.png"
+            if editingQueue { model.editQueuedMessage(queued.id) }
             func field() -> NSTextField? {
                 descendant(in: host) { ($0 as? NSTextField)?.placeholderString == placeholder } as? NSTextField
             }
@@ -96,43 +100,64 @@ final class ComposerFieldDropTests: XCTestCase {
             XCTAssertTrue(window.makeFirstResponder(composer))
             let editor = try XCTUnwrap(composer.currentEditor() as? NSTextView)
             for fraction in [0.25, 0.5, 0.75] { assertAXHit("composer", in: composer, fraction: fraction) }
-            let original = editor.string
+            // Bridging a retained editor.string back to NSString can read its live text storage.
+            XCTAssertEqual(editor.string, original)
             let range = NSRange(location: 1, length: 2)
             editor.setSelectedRange(range)
             editor.setMarkedText("かな", selectedRange: NSRange(location: 2, length: 0), replacementRange: range)
             XCTAssertTrue(editor.hasMarkedText())
-            let text = editor.string
+            let markedText = (original as NSString).replacingCharacters(in: range, with: "かな")
+            XCTAssertEqual(editor.string, markedText)
             let selection = editor.selectedRange()
             let markedRange = editor.markedRange()
-            let draftBeforeDrop = model.draft
-            let bytes = try dropPNG(file, color: .red, onto: file == "queue.png" ? composer : editor)
+            XCTAssertEqual(markedRange, range)
+            XCTAssertEqual(model.draft, original)
+            let bytes = try dropPNG(file, color: editingQueue ? .green : .red, onto: editingQueue ? composer : editor)
+            droppedBytes[file] = bytes
             host.layoutSubtreeIfNeeded()
             XCTAssertTrue(window.firstResponder === editor)
             XCTAssertEqual(editor.selectedRange(), selection)
             XCTAssertEqual(editor.markedRange(), markedRange)
-            XCTAssertEqual(editor.string, text)
-            XCTAssertEqual(model.draft, draftBeforeDrop)
+            XCTAssertEqual(editor.string, markedText)
+            XCTAssertEqual(model.draft, original)
             editor.insertText((original as NSString).substring(with: range), replacementRange: markedRange)
+            XCTAssertFalse(editor.hasMarkedText())
             XCTAssertEqual(editor.string, original)
             XCTAssertEqual(model.draft, original)
+            // Withdraw an uncommitted insertion at the caret.
+            let current = NSRange(location: NSNotFound, length: 0)
+            editor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0), replacementRange: current)
+            XCTAssertTrue(editor.hasMarkedText())
+            editor.setMarkedText("", selectedRange: NSRange(location: 0, length: 0), replacementRange: current)
+            editor.unmarkText()
+            XCTAssertFalse(editor.hasMarkedText())
+            XCTAssertEqual(editor.string, original)
+            XCTAssertEqual(model.draft, original)
+
             board.clearContents()
             let pastedText = "/tmp/ordinary plain text.png"
             XCTAssertTrue(board.setString(pastedText, forType: .string))
             editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
             XCTAssertTrue(editor.readSelection(from: board, type: .string))
+            XCTAssertEqual(editor.string, pastedText)
             XCTAssertEqual(model.draft, pastedText)
             editor.insertText(original, replacementRange: NSRange(location: 0, length: pastedText.utf16.count))
+            XCTAssertEqual(editor.string, original)
             XCTAssertEqual(model.draft, original)
             XCTAssertEqual(model.composerAttachments.map(\.name), [file])
             XCTAssertEqual(model.composerAttachments.first?.payload?.data, bytes)
-            if file == "queue.png" {
+            if editingQueue {
                 board.clearContents()
                 XCTAssertTrue(board.setData(bytes, forType: .png))
                 XCTAssertTrue(editor.readSelection(from: board, type: .png))
                 XCTAssertEqual(model.composerAttachments.last?.name, "Pasted Image.png")
                 XCTAssertEqual(model.composerAttachments.last?.payload?.data, bytes)
+                XCTAssertEqual(editor.string, original)
                 XCTAssertEqual(model.draft, original)
             }
+            editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+            XCTAssertEqual(composer.stringValue, original)
+            XCTAssertEqual(model.draft, original)
         }
         // The sidebar row always owns the thread draft, including while its queue editor is open.
         let row = try XCTUnwrap(descendant(in: host) { view in
@@ -145,12 +170,17 @@ final class ComposerFieldDropTests: XCTestCase {
         model.updateQueuedMessage()
         let data = try Data(contentsOf: root.appendingPathComponent("workspace.json"))
         let saved = try XCTUnwrap(JSONDecoder().decode(Workspace.self, from: data).projects.first?.conversations.first)
-        XCTAssertEqual(saved.composerText, "Keep typing")
+        let red = try XCTUnwrap(droppedBytes["red.png"])
+        let green = try XCTUnwrap(droppedBytes["queue.png"])
+        XCTAssertEqual(saved.id, draft.id)
+        XCTAssertEqual(saved.composerText, draftText)
         XCTAssertEqual(saved.composerAttachments?.map(\.name), ["red.png", "blue.png"])
-        XCTAssertEqual(saved.composerAttachments?.last?.payload?.data, blue)
-        XCTAssertNotEqual(saved.composerAttachments?.first?.payload?.data, blue)
-        XCTAssertEqual(saved.queuedMessages?.first?.text, "Queued prompt")
-        XCTAssertEqual(saved.queuedMessages?.first?.attachments?.map(\.name), ["queue.png", "Pasted Image.png"])
+        XCTAssertEqual(saved.composerAttachments?.compactMap { $0.payload?.data }, [red, blue])
+        let savedQueue = try XCTUnwrap(saved.queuedMessages?.first)
+        XCTAssertEqual(savedQueue.id, queued.id)
+        XCTAssertEqual(savedQueue.text, queued.text)
+        XCTAssertEqual(savedQueue.attachments?.map(\.name), ["queue.png", "Pasted Image.png"])
+        XCTAssertEqual(savedQueue.attachments?.compactMap { $0.payload?.data }, [green, green])
 
         let folder = root.appendingPathComponent("Dropped Project", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
