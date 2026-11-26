@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export async function verifyUsage({ press, pick, segment, menuItem, visible, value, tree, until }, fixture, relaunch) {
+export async function verifyUsage({ press, pick, segment, menuItem, visible, value, tree, until, focus, keyFor }, fixture, relaunch) {
   const index = () => JSON.parse(readFileSync(fixture.workspaceFile, "utf8"));
   const before = index();
   const expected = (id, text) => value(id).includes("value=" + JSON.stringify(text));
@@ -11,6 +11,32 @@ export async function verifyUsage({ press, pick, segment, menuItem, visible, val
     pick("usage-project", name);
     await total(tokens);
   }
+  focus("composer");
+  keyFor("composer", 32, "cmd");
+  const heading = "settings-heading-usage";
+  await until(() => visible(heading).includes("focused=true") && expected("usage-total", "480 tokens + unreported"),
+              "Command-U opens the Usage controls");
+  for (const [code, tokens] of [[18, 310], [19, 350], [21, 720], [20, 480]]) {
+    keyFor(heading, code, "cmd", "shift");
+    await total(tokens + " tokens + unreported");
+  }
+  keyFor(heading, 8);
+  await until(() => value("usage-total").includes("0.0082 + unreported"), "C chooses cost");
+  keyFor(heading, 37);
+  await until(() => visible("usage-limits-unavailable"), "L chooses limits");
+  keyFor(heading, 18, "cmd", "shift");
+  keyFor(heading, 17);
+  await total("480 tokens + unreported");
+  keyFor(heading, 3, "cmd");
+  await until(() => visible("settings-search").includes("focused=true"), "focus the settings search field");
+  keyFor("settings-search", 8);
+  await until(() => expected("settings-search", "c") && expected("usage-total", "480 tokens + unreported"), "C edits a focused text field");
+  keyFor("settings-search", 53);
+  press("settings-nav-usage");
+  await until(() => visible(heading).includes("focused=true"), "return focus to usage");
+  keyFor(heading, 32, "cmd");
+  await until(() => !tree().includes('id="settings-search"') && expected("composer", "Preserve this usage fixture draft."),
+              "Command-U closes Usage");
   press("model-settings");
   await until(() => visible("settings-nav-usage"), "Usage in Settings navigation");
   press("settings-nav-usage");

@@ -123,6 +123,8 @@ export async function verifyWorkspaceControls(driver, fixture, git, record, rela
     assert(focused("thread-terminal"));
     assert(!/id="(?:git-branch-search|use-project-workspace)"/.test(tree()));
   }
+  keyFor("thread-terminal", 32, "cmd");
+  assert(focused("thread-terminal") && !tree().includes('id="settings-heading-usage"'));
   await closeTerminalPane(driver);
   await until(() => !tree().includes('id="thread-terminal"') && visible("composer-branch"), "terminal close returned to the draft");
   record("Command-Shift-X opened the workspace picker from the draft. The focused terminal retained both Command-Shift-X and Command-Shift-G.");

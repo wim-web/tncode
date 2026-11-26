@@ -1097,6 +1097,7 @@ try {
       await launch("model-settings", usageWorkspace);
     });
     await quit();
+    record("Command-U opened and closed Usage. C, T and L selected the metrics. Command-Shift-1 through 4 selected the periods. Typing C in Settings search edited the field.");
     record("Saved Pi usage matched 310, 350, 480 and 720 tokens. Refresh added the 23-token reply. Removing a saved fork flagged incomplete usage and removed its 60 tokens. Restoring it recovered 503. The selected seven-day cost and unfinished draft survived relaunch.");
   }
   if (controlsOnly || (fixtureModel && worktreeTest)) {

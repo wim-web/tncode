@@ -1,9 +1,11 @@
 import Charts
+import Carbon.HIToolbox
 import SwiftUI
 
 struct UsageSettingsView: View {
     let root: URL
     let projects: [Project]
+    @Environment(\.dismiss) private var dismiss
 
     @AppStorage("usagePeriod") private var period = UsagePeriod.month
     @AppStorage("usageMetric") private var metric = UsageMetric.tokens
@@ -64,6 +66,11 @@ struct UsageSettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            WindowKeyMonitor(handle: handleShortcut)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .task(id: refresh) {
             refreshing = true
             scanFailed = false
@@ -76,6 +83,38 @@ struct UsageSettingsView: View {
             }
             refreshing = false
         }
+    }
+
+    private func handleShortcut(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard !event.isARepeat, window.attachedSheet == nil,
+              !(window.firstResponder is NSText), !(window.firstResponder is NSTextField),
+              !(window.firstResponder is NSPopUpButton) else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        if modifiers == .command, key == "u" {
+            dismiss()
+            return true
+        }
+        if modifiers == [.command, .shift] {
+            let selected: UsagePeriod
+            switch Int(event.keyCode) {
+            case kVK_ANSI_1: selected = .pastDay
+            case kVK_ANSI_2: selected = .week
+            case kVK_ANSI_3: selected = .month
+            case kVK_ANSI_4: selected = .quarter
+            default: return false
+            }
+            if metric != .limits { period = selected }
+            return true
+        }
+        guard modifiers.isEmpty else { return false }
+        switch key {
+        case "c": metric = .cost
+        case "t": metric = .tokens
+        case "l": metric = .limits
+        default: return false
+        }
+        return true
     }
 
     private var filters: some View {

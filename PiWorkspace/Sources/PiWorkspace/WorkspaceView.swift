@@ -146,8 +146,13 @@ struct WorkspaceView: View {
                 if case .toggle? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window)
                 }
-                guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift],
-                      acceptsWorkspaceCommands(in: window) else { return false }
+                let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "u",
+                   acceptsWorkspaceCommands(in: window) {
+                    model.openSettings(.usage)
+                    return true
+                }
+                guard modifiers == [.command, .shift], acceptsWorkspaceCommands(in: window) else { return false }
                 switch event.charactersIgnoringModifiers?.lowercased() {
                 case "x" where model.canChangeWorkspace:
                     chooseWorkspace()

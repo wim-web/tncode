@@ -105,7 +105,7 @@ struct SettingsView: View {
                         if let anchor = jump?.anchor {
                             reader.scrollTo(anchor)
                         } else {
-                            focus = jump == nil ? .search : .heading
+                            focus = jump == nil && page != .usage ? .search : .heading
                         }
                     }
                 }
