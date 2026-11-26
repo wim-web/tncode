@@ -341,6 +341,7 @@ struct Workspace: Codable {
     var model = ModelSettings()
     var welcomeCompleted: Bool?
     var addProjectBaseDirectory: String?
+    var worktreesDirectory: String?
 }
 
 struct PendingConversationFork: Codable {
@@ -573,14 +574,28 @@ final class WorkspaceStore {
         _ = unlinkat(directory, project.id.uuidString, AT_REMOVEDIR)
     }
 
-    func worktree(project: UUID, conversation: UUID) throws -> URL {
-        let workspace = root.resolvingSymlinksInPath().standardizedFileURL
-        let parent = workspace.appendingPathComponent("worktrees", isDirectory: true)
-            .appendingPathComponent(project.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
+    func worktree(project: UUID, conversation: UUID, directory: String?) throws -> URL {
+        let files = FileManager.default
+        let worktrees: URL
+        if let directory, !directory.isEmpty {
+            let requested = try WorktreeDirectory.resolve(directory).resolvingSymlinksInPath()
+            guard requested.path != "/" else { throw WorktreeDirectory.invalid }
+            try files.createDirectory(at: requested, withIntermediateDirectories: true,
+                                      attributes: [.posixPermissions: 0o700])
+            worktrees = requested.resolvingSymlinksInPath()
+            guard worktrees.path != "/" else { throw WorktreeDirectory.invalid }
+        } else {
+            worktrees = root.resolvingSymlinksInPath().standardizedFileURL
+                .appendingPathComponent("worktrees", isDirectory: true)
+        }
+        let parent = worktrees.appendingPathComponent(project.uuidString, isDirectory: true)
+        let escaped = WorkspaceError("The project’s worktree folder must be inside the worktree location.")
+        guard worktrees.resolvingSymlinksInPath().path == worktrees.path,
+              parent.resolvingSymlinksInPath().path == parent.path else { throw escaped }
+        try files.createDirectory(at: parent, withIntermediateDirectories: true,
+                                  attributes: [.posixPermissions: 0o700])
         guard parent.resolvingSymlinksInPath().path == parent.path else {
-            throw WorkspaceError("The worktree folder must be inside this workspace.")
+            throw escaped
         }
         return parent.appendingPathComponent(conversation.uuidString, isDirectory: true)
     }

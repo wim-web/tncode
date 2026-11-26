@@ -116,6 +116,85 @@ final class WorktreeLaunchTests: XCTestCase {
         XCTAssertFalse(try fixture.branches().contains("topic"))
     }
 
+    func testWorktreeLocationPersistsAndResetKeepsExistingAndPinnedCheckouts() async throws {
+        let fixture = try await Fixture()
+        let custom = fixture.root.appendingPathComponent("Custom Worktree Storage")
+        let alternate = fixture.root.appendingPathComponent("Unused Worktree Storage")
+        let projectID: UUID
+        let firstThreadID: UUID
+        let target: URL
+        let obstruction = Data("keep this occupied path".utf8)
+        do {
+            let model = try await draft(in: fixture)
+            defer { model.terminate() }
+            projectID = try XCTUnwrap(model.project?.id)
+            firstThreadID = try XCTUnwrap(model.conversation?.id)
+            try model.updateWorktreesDirectory("  \(custom.path)\n")
+            target = try fixture.target(in: custom)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try obstruction.write(to: target)
+            model.send()
+            await failed(model)
+            XCTAssertEqual(try fixture.savedThread().worktreeLaunch?.checkout?.path, target.path)
+            XCTAssertEqual(try fixture.savedThread().worktreeLaunch?.prompt, Fixture.prompt)
+            XCTAssertEqual(try fixture.savedThread().worktreeLaunch?.stage, .createCheckout)
+            XCTAssertEqual(try Data(contentsOf: target), obstruction)
+            XCTAssertEqual(try fixture.prompts(), [])
+            try await fixture.assertCheckouts([fixture.repo.path])
+        }
+
+        do {
+            let model = fixture.open()
+            defer { model.terminate() }
+            model.start()
+            XCTAssertEqual(model.workspace.worktreesDirectory, custom.path)
+            XCTAssertEqual(model.conversation?.id, firstThreadID)
+            XCTAssertTrue(model.canRetryWorktree)
+            XCTAssertEqual(try fixture.prompts(), [])
+            try await fixture.assertCheckouts([fixture.repo.path])
+            try model.updateWorktreesDirectory(alternate.path)
+            let previous = try Data(contentsOf: fixture.workspace.appendingPathComponent("workspace.previous.json"))
+            XCTAssertEqual(try JSONDecoder().decode(Workspace.self, from: previous).worktreesDirectory, custom.path)
+            try FileManager.default.removeItem(at: target)
+            model.retryWorktree()
+            await recorded(model)
+            model.retryWorktree()
+            XCTAssertEqual(model.workingDirectory, target.path)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: alternate.path))
+            XCTAssertEqual(try fixture.prompts(), [.init(cwd: target.path, text: Fixture.prompt)])
+            try await fixture.assertCheckouts([fixture.repo.path, target.path])
+
+            try Data("custom checkout edit\n".utf8).write(to: target.appendingPathComponent("README.md"))
+            try model.updateWorktreesDirectory(" ")
+            XCTAssertNil(model.workspace.worktreesDirectory)
+            XCTAssertEqual(model.workingDirectory, target.path)
+        }
+
+        let reopened = fixture.open()
+        defer { reopened.terminate() }
+        XCTAssertNil(reopened.workspace.worktreesDirectory)
+        reopened.start()
+        reopened.selectConversation(firstThreadID, in: projectID)
+        await ready(reopened)
+        XCTAssertEqual(reopened.workingDirectory, target.path)
+        XCTAssertEqual(try fixture.prompts(), [.init(cwd: target.path, text: Fixture.prompt)])
+        reopened.addConversation(in: projectID)
+        try await reopened.changeThreadLocation(.create(branch: "after-reset", base: "HEAD"))
+        await ready(reopened)
+        reopened.draft = Fixture.draft
+        reopened.send()
+        await recorded(reopened)
+        let defaultTarget = try fixture.target()
+        XCTAssertEqual(reopened.workingDirectory, defaultTarget.path)
+        XCTAssertEqual(try fixture.prompts(), [target, defaultTarget].map { .init(cwd: $0.path, text: Fixture.prompt) })
+        try await fixture.assertCheckouts([fixture.repo.path, target.path, defaultTarget.path])
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("README.md"), encoding: .utf8),
+                       "custom checkout edit\n")
+        XCTAssertEqual(try String(contentsOf: fixture.repo.appendingPathComponent("README.md"), encoding: .utf8),
+                       "original edit\n")
+    }
+
     func testRelaunchDoesNotResendAnUnconfirmedLocalFallback() async throws {
         let fixture = try await Fixture()
         try fixture.mark("fail-pi")
@@ -272,10 +351,11 @@ final class WorktreeLaunchTests: XCTestCase {
             return try XCTUnwrap(JSONDecoder().decode(Workspace.self, from: data).activeProject?.conversations.first)
         }
 
-        func target() throws -> URL {
+        func target(in directory: URL? = nil) throws -> URL {
             let data = try Data(contentsOf: workspace.appendingPathComponent("workspace.json"))
             let project = try XCTUnwrap(JSONDecoder().decode(Workspace.self, from: data).activeProject)
-            return try workspace.appendingPathComponent("worktrees").appendingPathComponent(project.id.uuidString)
+            let root = directory ?? workspace.appendingPathComponent("worktrees")
+            return try root.appendingPathComponent(project.id.uuidString)
                 .appendingPathComponent(XCTUnwrap(project.selectedConversation).uuidString)
         }
 

@@ -17,6 +17,8 @@ struct SettingsView: View {
     @State private var browserDraft: BrowserSearchSettings
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
+    @State private var worktreeDirectory: String
+    @State private var worktreeDirectoryError: String?
     @State private var showingLicenses = false
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
@@ -31,6 +33,7 @@ struct SettingsView: View {
         _modelDraft = State(initialValue: ModelSettingsDraft(workspace: model.workspace.model, project: project))
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
         _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
+        _worktreeDirectory = State(initialValue: model.workspace.worktreesDirectory ?? "")
     }
 
     private var results: [SettingsSearchResult] {
@@ -71,7 +74,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if page == .general || page == .about || page == .usage {
+                    if page == .general || page == .worktrees || page == .about || page == .usage {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
@@ -116,6 +119,7 @@ struct SettingsView: View {
         .background { WindowKeyMonitor(handle: handleKey) }
         .onChange(of: focus) { previous, _ in
             if previous == .anchor(.addProjectStartsIn) { commitProjectBaseDirectory() }
+            if previous == .anchor(.worktreeLocation) { commitWorktreeDirectory(worktreeDirectory) }
         }
     }
 
@@ -217,6 +221,8 @@ struct SettingsView: View {
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
         case .model:
             ModelSettingsView(model: model, draft: $modelDraft, settingsFocus: $focus)
+        case .worktrees:
+            worktreeDirectorySetting
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
         case .about, .usage:
@@ -267,8 +273,53 @@ struct SettingsView: View {
         }
     }
 
+    private var worktreeDirectorySetting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Worktree location")
+                .font(.callout.weight(.medium))
+            Text("Folder where new worktrees are created on this Mac. Leave empty to use the workspace’s worktrees folder.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                TextField("Worktree location", text: Binding(get: { worktreeDirectory }, set: { value in
+                    worktreeDirectory = WorktreeDirectory.replacingPastedPath(previous: worktreeDirectory, next: value)
+                }), prompt: Text("Default"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Worktree location")
+                    .settingsTarget(.worktreeLocation, focus: $focus)
+                if model.workspace.worktreesDirectory?.isEmpty == false {
+                    Button("Reset") { commitWorktreeDirectory("") }
+                        .accessibilityLabel("Reset worktree location to default")
+                        .accessibilityIdentifier("reset-worktree-location")
+                }
+            }
+            if let worktreeDirectoryError {
+                Text(worktreeDirectoryError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("worktree-location-error")
+            }
+        }
+    }
+
+    @discardableResult
+    private func commitWorktreeDirectory(_ input: String) -> Bool {
+        do {
+            try model.updateWorktreesDirectory(input)
+            worktreeDirectory = model.workspace.worktreesDirectory ?? ""
+            worktreeDirectoryError = nil
+            return true
+        } catch {
+            worktreeDirectoryError = error.localizedDescription
+            return false
+        }
+    }
+
     private func closeSettings() {
-        if page != .general || commitProjectBaseDirectory() { dismiss() }
+        if page == .general, !commitProjectBaseDirectory() { return }
+        if page == .worktrees, !commitWorktreeDirectory(worktreeDirectory) { return }
+        dismiss()
     }
 
     private func navigate(to page: SettingsPage, anchor: SettingsAnchor? = nil) {
@@ -309,6 +360,11 @@ struct SettingsView: View {
         if focus == .anchor(.addProjectStartsIn), editor?.isFieldEditor == true,
            key == kVK_Return || key == kVK_ANSI_KeypadEnter {
             if !event.isARepeat, commitProjectBaseDirectory() { focus = .heading }
+            return true
+        }
+        if focus == .anchor(.worktreeLocation), editor?.isFieldEditor == true,
+           key == kVK_Return || key == kVK_ANSI_KeypadEnter {
+            if !event.isARepeat, commitWorktreeDirectory(worktreeDirectory) { focus = .heading }
             return true
         }
         guard focus == .search, editor?.isFieldEditor == true else { return false }

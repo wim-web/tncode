@@ -455,6 +455,16 @@ final class WorkspaceModel: ObservableObject {
         try persist(updated)
     }
 
+    func updateWorktreesDirectory(_ input: String) throws {
+        let path = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.utf8.contains(0) else { throw WorktreeDirectory.invalid }
+        let preference = path.isEmpty ? nil : path
+        guard preference != workspace.worktreesDirectory else { return }
+        var updated = workspace
+        updated.worktreesDirectory = preference
+        try persist(updated)
+    }
+
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false) {
         guard !operationsInProgress else { return }
         let initialPath = if let id {
@@ -1328,6 +1338,8 @@ final class WorkspaceModel: ObservableObject {
 
     private func startWorktreeLaunch(_ launch: WorktreeLaunch, in thread: Conversation) {
         guard let store, let project else { return }
+        // Older launches without an ID may already have created a checkout under the default root.
+        let worktreesDirectory = launch.id == nil ? nil : workspace.worktreesDirectory
         shutdown()
         preparingWorktree = true
         error = nil
@@ -1344,7 +1356,8 @@ final class WorkspaceModel: ObservableObject {
                         if let pinned = launch.checkout {
                             checkout = pinned
                         } else {
-                            let target = try store.worktree(project: project.id, conversation: thread.id)
+                            let target = try store.worktree(project: project.id, conversation: thread.id,
+                                                            directory: worktreesDirectory)
                             checkout = try await git.pinWorktree(at: target.path, branch: branch, base: base,
                                                                 owner: launch.id ?? thread.id, legacy: launch.id == nil)
                             try Task.checkCancellation()

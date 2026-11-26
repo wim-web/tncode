@@ -68,6 +68,33 @@ final class GitWorktreeTests: XCTestCase {
         XCTAssertTrue(state.branches.contains("topic"))
     }
 
+    func testRetryDoesNotFollowAReplacedStorageAncestor() async throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        try files.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? files.removeItem(at: root) }
+        let repo = try await GitWorkspace.createRepository(named: "original", in: root)
+        try git(repo, ["commit", "--allow-empty", "-m", "Base"])
+        let workspace = GitWorkspace(path: repo.path)
+        let storage = root.appendingPathComponent("storage")
+        let parent = storage.appendingPathComponent("project")
+        try files.createDirectory(at: parent, withIntermediateDirectories: true)
+        let target = parent.appendingPathComponent("checkout")
+        let pending = try await workspace.pinWorktree(at: target.path, branch: "topic", base: "HEAD", owner: UUID())
+        let outside = root.appendingPathComponent("unowned")
+        try files.createDirectory(at: outside, withIntermediateDirectories: false)
+        try files.removeItem(at: storage)
+        try files.createSymbolicLink(at: storage, withDestinationURL: outside)
+        do {
+            _ = try await workspace.createWorktree(pending)
+            XCTFail("Retry followed the replaced storage folder.")
+        } catch {
+            XCTAssertEqual(try files.contentsOfDirectory(atPath: outside.path), [])
+        }
+        let checkouts = try await workspace.worktrees()
+        XCTAssertEqual(checkouts.map(\.path), [repo.path])
+    }
+
     private func git(_ directory: URL, _ arguments: [String]) throws {
         let command = Process()
         command.executableURL = URL(fileURLWithPath: "/usr/bin/git")

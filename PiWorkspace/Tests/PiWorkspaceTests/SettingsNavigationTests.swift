@@ -38,6 +38,9 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(search.results(available: availability).first?.anchor, .licenses)
         search.query = "onboarding"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .welcomePage)
+        search.query = "external disk"
+        XCTAssertEqual(search.results(available: availability).first?.page, .worktrees)
+        XCTAssertEqual(search.results(available: availability).first?.anchor, .worktreeLocation)
     }
 
     func testResultSelectionWrapsAndNewQuerySelectsFirstMatch() {

@@ -475,7 +475,13 @@ struct GitWorkspace: Sendable {
     }
 
     private static func isCanonicalWorktree(_ target: String) -> Bool {
-        target.hasPrefix("/") && canonicalCheckoutPath(target) == target
+        guard target.hasPrefix("/"), canonicalCheckoutPath(target) == target else { return false }
+        // A missing checkout can hide a symlink in a parent folder replaced since the path was saved.
+        var ancestor = URL(fileURLWithPath: target, isDirectory: true)
+        while ancestor.path != "/", !FileManager.default.fileExists(atPath: ancestor.path) {
+            ancestor.deleteLastPathComponent()
+        }
+        return canonicalCheckoutPath(ancestor.path) == ancestor.path
     }
 
     static func canonicalCheckoutPath(_ path: String) -> String {
