@@ -235,8 +235,8 @@ final class ThreadTerminalTests: XCTestCase {
         try await waitFor("180-point minimum") { self.drawerHeight(in: host) == 180 && terminal.bounds.height == 149 }
         divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: 1_000)))
         try await waitFor("75-percent viewport cap") { self.drawerHeight(in: host) == 540 && terminal.bounds.height == 509 }
-        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: 120)))
-        try await waitFor("live 400-point drawer") { self.drawerHeight(in: host) == 400 && terminal.bounds.height == 369 }
+        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: 80)))
+        try await waitFor("live 360-point drawer") { self.drawerHeight(in: host) == 360 && terminal.bounds.height == 329 }
         XCTAssertNil(defaults.object(forKey: key))
         divider.mouseUp(with: try mouse(.leftMouseUp, in: window, at: start.offsetBy(dy: 120)))
         try await waitFor("drawer height saved on release") { defaults.double(forKey: key) == 400 }

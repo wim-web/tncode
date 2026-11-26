@@ -273,7 +273,10 @@ final class TerminalDrawerDividerView: NSView {
     private struct Drag {
         let startY: CGFloat
         let startHeight: CGFloat
-        var height: CGFloat
+
+        func height(at event: NSEvent, within limits: TerminalDrawerHeight) -> CGFloat {
+            limits.clamp(startHeight + event.locationInWindow.y - startY)
+        }
     }
 
     private var height: CGFloat = TerminalDrawerHeight.defaultHeight
@@ -299,9 +302,6 @@ final class TerminalDrawerDividerView: NSView {
                 onResize: @escaping (CGFloat) -> Void) {
         let changed = self.height != height
         self.height = height
-        if let drag, self.limits.maximum != limits.maximum {
-            self.drag?.height = limits.clamp(drag.height)
-        }
         self.limits = limits
         self.onDrag = onDrag
         self.onResize = onResize
@@ -319,21 +319,19 @@ final class TerminalDrawerDividerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        drag = Drag(startY: event.locationInWindow.y, startHeight: height, height: height)
+        drag = Drag(startY: event.locationInWindow.y, startHeight: height)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard var drag else { return }
-        drag.height = limits.clamp(drag.startHeight + event.locationInWindow.y - drag.startY)
-        self.drag = drag
-        onDrag?(drag.height)
+        guard let drag else { return }
+        onDrag?(drag.height(at: event, within: limits))
     }
 
     override func mouseUp(with event: NSEvent) {
         guard let drag else { return }
         self.drag = nil
         onDrag?(nil)
-        let end = limits.clamp(drag.height)
+        let end = drag.height(at: event, within: limits)
         if end > 0, end != limits.clamp(drag.startHeight) { onResize?(end) }
     }
 
