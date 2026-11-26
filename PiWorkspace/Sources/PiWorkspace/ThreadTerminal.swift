@@ -31,13 +31,21 @@ struct ThreadTerminal: View {
         }
 
         static func dismantleNSView(_ terminal: TerminalSessionView, coordinator: ()) {
-            terminal.terminate()
+            terminal.closeSession()
         }
     }
 }
 
 private final class TerminalSessionView: LocalProcessTerminalView {
     private var presented = false
+
+    func closeSession() {
+        if case let .success(descriptor?) = process.duplicatePrimaryDescriptor() {
+            _ = ioctl(descriptor, TIOCSIG, SIGHUP)
+            Darwin.close(descriptor)
+        }
+        terminate()
+    }
 
     func setPresented(_ presented: Bool) {
         guard self.presented != presented else { return }
