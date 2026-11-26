@@ -29,6 +29,12 @@ During a turn, choose **Queue** or press ⌘Return to send a follow-up after Pi 
 
 Use **Attach Files** to add PNG, JPEG, or UTF-8 text files to a draft. You can also paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local model that accepts images, enable image input in **Model Settings**.
 
+Pasting at least 32 KiB of UTF-8 text creates a text attachment when it fits. Press ⌘⇧V or choose **Edit → Paste and Match Style** to paste text inline. If a normal paste exceeds the 64 KiB text attachment limit, it stays inline when the resulting draft fits within 120,000 UTF-16 units.
+
+With the composer focused, press ⌘S to stash its text and attachments. Select the stash count to restore an entry into the current draft or delete it. If the composer is empty and the stash has one entry, ⌘S restores it.
+
+For a submitted conversation, right-click its sidebar row and choose **Copy → Thread**. **Edit → Open Thread Link from Clipboard** and macOS can open this link in the same local workspace. If you move the workspace itself, copy a new link.
+
 Choose **Fork from this response** on a completed reply to start a separate conversation with the messages through that reply. **Open source conversation** and **Open fork** take you between the two histories.
 
 Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
@@ -55,6 +61,8 @@ Open **Settings** from the sidebar or press ⌘, to search the available control
 
 **Settings → Usage** shows token counts and USD costs recorded in local Pi conversation histories. Select a period, filter by project or provider, and select a model to inspect input, output and cache tokens. **Refresh usage** includes newly recorded replies. A total marked **+ unreported** includes only messages with a recorded value.
 
+Press ⌘U to open Usage from the workspace. With focus on the report, C selects Cost, T selects Tokens, and L selects Limits. Press ⌘U again to close it.
+
 If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
 
 **Pi Workspace → Appearance Settings…** changes the color scheme and conversation width across projects. **Restore Defaults** returns to the system appearance and Comfortable width.
@@ -68,6 +76,8 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Use **New Terminal** for another tab or split a tab horizontally or vertically. Press ⌘⇧[ or ⌘⇧] to move between panes. Drag the top edge to adjust the drawer height for that thread. Hiding the drawer keeps its height and shells. Confirm **Close Terminal** to end the selected shell.
 
 Use the branch button or ⌘⇧G to search local and cached remote refs. **New Branch** creates a branch at the base you choose. Selecting a branch that already has a linked checkout moves the thread to that checkout.
+
+For a new worktree, **Start from remote** defaults to on. On the first send, Pi Workspace fetches the selected branch's upstream, or the same branch on `origin`. If the remote has no such branch, the app uses the local ref. Turn the option off to start at the selected local or cached ref. **Settings → Worktrees** changes the default for future drafts.
 
 Open **Files** to search or browse the selected checkout. Small text files save after a short pause in typing. **Save** writes immediately. A read-only file keeps pending edits until write access returns. If another program replaces or edits the file, copy your pending text or choose **Discard Edits** to reload the disk version.
 
@@ -89,6 +99,8 @@ In the PR list, **Author** and **Labels** let you search the repository's availa
 
 In **Linked items**, choose **Link pull request** and enter a PR number or URL for the checkout's GitHub repository. The link stays with the selected thread across relaunch. Its menu can copy the URL or number, open GitHub, or unlink the PR from that thread.
 
+For a failed GitHub Actions check, choose **View log** to read up to the last 200 lines and 96 KiB of the selected job. **Retry** fetches it again after access is restored.
+
 Pull Requests uses the GitHub CLI (`gh`) on the app's PATH or in a standard Homebrew or MacPorts location. Sign in to GitHub CLI from Terminal before opening the list. The app uses the checkout's GitHub.com `origin` fetch remote or its sole GitHub.com fetch repository.
 
 To open a specific folder when launching a new instance, run:
@@ -109,11 +121,16 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model --worktree
 node scripts/verify-app.mjs "$PWD/.build/ax" --usage-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --workspace-controls-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --conversation-controls-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --project-flows-only
+node scripts/verify-native-paste.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
+node scripts/verify-app.mjs "$PWD/.build/ax" --thread-actions-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --sidebar-and-checks-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --image-preview-only
 node scripts/verify-file-drops.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-attachments.mjs --release-suite "dist/Pi Workspace.app"
 ```
 
-The app verifier writes its report under `dist/verification-*/logs`. Model turns use an isolated workspace and a disposable Keychain item. The worktree run checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. The file-drop verifier moves the pointer across a disposable source window and the app. The release suite supplies loopback providers for both the attachment and question tests. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
+The app verifier writes its report under `dist/verification-*/logs`. The neighboring `fixture` link points to the test data in a temporary folder outside the source checkout. Model turns use a disposable Keychain item. The worktree run checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. The file-drop verifier moves the pointer across a disposable source window and the app. The release suite supplies loopback providers for both the attachment and question tests. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
 
 To test which network connections the packaged Pi helper attempts during startup, idle time, an explicit local turn, and shutdown, run `node scripts/verify-default-telemetry.mjs`. It checks the Node network and child-process APIs against a loopback receiver and applies a macOS process sandbox. Native app and WebKit traffic require separate observation.
 
