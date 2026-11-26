@@ -17,6 +17,7 @@ enum ComposerAttachmentInput: Transferable {
     private static let imageInputTypes: [UTType] = [.png, .jpeg, .tiff]
     static let contentTypes: [UTType] = [.fileURL] + imageInputTypes
     static let pastedTextThreshold = 32 * 1024
+    static let inlinePasteUTF16Limit = 120_000
 
     static func readAttachments(from items: [NSPasteboardItem]) -> [Self] {
         Array(items.lazy.compactMap(Self.init(pasteboardItem:)).prefix(ComposerAttachment.maxCount + 1))

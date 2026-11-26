@@ -153,6 +153,24 @@ final class WorkspaceModel: ObservableObject {
         return nil
     }
 
+    // Return false to let the field editor replace its selection using AppKit.
+    func foldPastedText(_ text: String, inlineLength: Int, in target: ComposerAttachmentTarget) -> Bool {
+        guard conversation?.id == target.threadID, attachmentTarget(for: target.threadID) == target,
+              canEditAttachments else { return true }
+        guard !text.isEmpty else { return false }
+        if inlineLength <= ComposerAttachmentInput.inlinePasteUTF16Limit {
+            let bytes = text.utf8.count
+            let attachments = composerAttachments
+            guard bytes >= ComposerAttachmentInput.pastedTextThreshold, bytes <= ComposerAttachment.maxTextBytes,
+                  attachments.count < ComposerAttachment.maxCount, !text.utf8.contains(0),
+                  attachments.reduce(bytes, { $0 + ($1.payload?.data.count ?? 0) }) <= ComposerAttachment.maxBytes else {
+                return false
+            }
+        }
+        _ = attach([.pastedText(text)], to: target)
+        return true
+    }
+
     @discardableResult
     func attach(_ inputs: [ComposerAttachmentInput], to target: ComposerAttachmentTarget,
                 replacing attachmentID: UUID? = nil) -> Bool {

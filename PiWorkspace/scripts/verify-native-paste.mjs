@@ -105,6 +105,14 @@ try {
   commandKey(6);
   await expectDraft(seed, [textAttachment], "Undo restored the seeded draft and kept its original attachment.");
 
+  const overFileLimit = boundary + boundary + "x";
+  execFileSync(writer, [board, "text"], { input: overFileLimit });
+  focus();
+  menu("Paste");
+  await expectDraft(overFileLimit, [textAttachment], "Edit > Paste fell back inline at 65,537 bytes.");
+  commandKey(6);
+  await expectDraft(seed, [textAttachment], "Undo restored the draft after automatic inline fallback.");
+
   const alternative = "Plain text for the red image";
   execFileSync(writer, [board, "png", alternative], { input: Buffer.from(images.red, "base64") });
   commandKey(9);

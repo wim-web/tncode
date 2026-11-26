@@ -1550,8 +1550,8 @@ struct WorkspaceView: View {
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
                 set: { if ownsComposer() { model.editDraft($0, in: threadID) } }
-            ), pasteboard: workspacePasteboard, drop: drop) { text in
-                if ownsComposer(), model.canEditAttachments { model.attach([.pastedText(text)], to: target) }
+            ), pasteboard: workspacePasteboard, drop: drop) { text, inlineLength in
+                model.foldPastedText(text, inlineLength: inlineLength, in: target)
             }
                 .id(threadID)
                 .focused($focusedComposer, equals: threadID)

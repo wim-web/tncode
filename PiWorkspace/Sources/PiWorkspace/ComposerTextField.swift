@@ -7,7 +7,7 @@ struct ComposerTextField: NSViewRepresentable {
     @Binding var text: String
     let pasteboard: NSPasteboard
     let drop: AttachmentDropDestination
-    let attachPastedText: (String) -> Void
+    let foldPastedText: (String, Int) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -26,6 +26,7 @@ struct ComposerTextField: NSViewRepresentable {
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.lineBreakMode = .byWordWrapping
+        field.maximumNumberOfLines = 7
         field.registerForDraggedTypes(AttachmentDropDestination.types)
         field.setAccessibilityIdentifier("composer")
         return field
@@ -36,7 +37,7 @@ struct ComposerTextField: NSViewRepresentable {
         field.composerTarget = target
         field.pasteboardOverride = pasteboard.name == .general ? nil : pasteboard
         field.drop = drop
-        field.attachPastedText = attachPastedText
+        field.foldPastedText = foldPastedText
         field.isEnabled = context.environment.isEnabled
         field.placeholderString = placeholder
         if field.stringValue != text, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true {
@@ -47,8 +48,9 @@ struct ComposerTextField: NSViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: Field, context: Context) -> CGSize? {
         guard let width = proposal.width, width.isFinite, let cell = field.cell, let font = field.font else { return nil }
         let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
-        let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 7 * lineHeight))
-        return CGSize(width: width, height: min(7 * lineHeight, max(2 * lineHeight, size.height)))
+        let maxHeight = CGFloat(field.maximumNumberOfLines) * lineHeight
+        let size = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: maxHeight))
+        return CGSize(width: width, height: min(maxHeight, max(2 * lineHeight, size.height)))
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -120,7 +122,7 @@ struct ComposerTextField: NSViewRepresentable {
         var selectionOnFocus: (() -> NSRange?)?
         var pasteboardOverride: NSPasteboard?
         var drop: AttachmentDropDestination?
-        var attachPastedText: ((String) -> Void)?
+        var foldPastedText: ((String, Int) -> Bool)?
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
             drop?.operation(for: sender) ?? super.draggingEntered(sender)
@@ -208,12 +210,9 @@ struct ComposerTextField: NSViewRepresentable {
                 _ = drop.receiveItems(from: pasteboard)
                 return true
             }
-            if let attach = owner?.attachPastedText, let text = pasteboard.string(forType: .string),
-               text.utf8.count >= ComposerAttachmentInput.pastedTextThreshold {
-                attach(text)
-                return true
-            }
-            return false
+            guard let fold = owner?.foldPastedText, let text = pasteboard.string(forType: .string) else { return false }
+            let inlineLength = string.utf16.count - selectedRange().length + text.utf16.count
+            return fold(text, inlineLength)
         }
 
         override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
