@@ -2538,7 +2538,7 @@ struct WorkspaceView: View {
             return !attachments.isEmpty && ownsComposer() && model.canEditAttachments && model.attach(attachments, to: target)
         }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments },
             fileMentionDrop: .init(accepts: { id in
-                showingFiles.contains(threadID) && model.canDropFileMention(id, in: target)
+                rightPanels[threadID]?.visibleTab == .files && model.canDropFileMention(id, in: target)
             }, receive: { id in
                 guard model.dropFileMention(id, in: target) else { return false }
                 focusComposerAfterFileMention(in: threadID)
