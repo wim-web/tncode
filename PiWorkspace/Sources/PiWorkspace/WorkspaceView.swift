@@ -154,8 +154,10 @@ struct WorkspaceView: View {
             .filter { $0.project.isScratch || model.showsInSidebar($0.thread) }
     }
 
-    private var rail: Color { colorScheme == .dark ? Color(white: 0.082) : Color(white: 0.955) }
-    private var canvas: Color { colorScheme == .dark ? Color(white: 0.065) : Color(nsColor: .textBackgroundColor) }
+    private var rail: Color { colorScheme == .dark ? Color(white: 3 / 255) : Color(white: 0.955) }
+    private var canvas: Color { colorScheme == .dark ? .black : Color(nsColor: .textBackgroundColor) }
+    private var workspaceEdge: Color? { colorScheme == .dark ? Color(white: 20 / 255) : nil }
+    private var emptyStateForeground: Color { Color(white: colorScheme == .dark ? 0.63 : 0.41) }
     private var surface: Color { colorScheme == .dark ? Color.white.opacity(0.065) : Color.black.opacity(0.042) }
     private let accent = Color(red: 0.24, green: 0.48, blue: 0.70)
 
@@ -171,7 +173,8 @@ struct WorkspaceView: View {
                 HStack(spacing: 0) {
                     sidebar
                         .frame(width: width)
-                    WorkspaceDivider(label: "Resize sidebar", width: width, drag: $sidebarDrag) { translation in
+                    WorkspaceDivider(label: "Resize sidebar", width: width, drag: $sidebarDrag,
+                                     color: workspaceEdge) { translation in
                         sidebarWidth = WorkspaceLayout.sidebarWidth(
                             in: viewportWidth, preferred: sidebarWidth, drag: translation)
                     }
@@ -539,7 +542,9 @@ struct WorkspaceView: View {
 
             ScrollViewReader { reader in
                 ScrollView {
-                    if searchTerm.isEmpty {
+                    if searchTerm.isEmpty && !model.showArchive && model.projects.isEmpty && visibleThreads.isEmpty {
+                        sidebarEmptyState
+                    } else if searchTerm.isEmpty {
                         LazyVStack(alignment: .leading, spacing: 3) {
                             threadShelves(visibleThreads)
                             if visibleThreads.isEmpty && !projectFilter.selection.isEmpty {
@@ -554,8 +559,8 @@ struct WorkspaceView: View {
                                 .padding(7)
                             }
                         }
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 8)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                     } else if searchRows.isEmpty {
                         Text(messageMatches == nil && !messageCandidates.isEmpty ? "Searching thread messages…" : "No matching threads")
                             .font(.caption)
@@ -620,6 +625,9 @@ struct WorkspaceView: View {
             .accessibilityIdentifier("model-settings")
             .padding(13)
         }
+        .background(alignment: .top) {
+            if colorScheme == .dark { sidebarHeaderBackdrop }
+        }
         .background(rail)
         .task(id: key) {
             guard !key.search.term.text.isEmpty else { return }
@@ -669,6 +677,57 @@ struct WorkspaceView: View {
         .accessibilityLabel(label)
         .accessibilityIdentifier(back ? "workspace-history-back" : "workspace-history-forward")
         .disabled(!model.canNavigate(direction))
+    }
+
+    private var sidebarHeaderBackdrop: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color(red: 57 / 255, green: 77 / 255, blue: 153 / 255), location: 0),
+                .init(color: Color(red: 17 / 255, green: 34 / 255, blue: 114 / 255), location: 0.15),
+                .init(color: Color(red: 48 / 255, green: 84 / 255, blue: 168 / 255), location: 0.50),
+                .init(color: Color(red: 115 / 255, green: 153 / 255, blue: 211 / 255), location: 0.72),
+                .init(color: Color(red: 64 / 255, green: 106 / 255, blue: 190 / 255), location: 1)
+            ],
+            startPoint: .leading, endPoint: .trailing
+        )
+        .mask {
+            LinearGradient(stops: [
+                .init(color: .black, location: 0.38),
+                .init(color: .black.opacity(0.72), location: 0.58),
+                .init(color: .black.opacity(0.28), location: 0.78),
+                .init(color: .clear, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        .frame(height: 66)
+        .accessibilityHidden(true)
+    }
+
+    private var sidebarEmptyState: some View {
+        VStack(spacing: 8) {
+            Text("No projects yet")
+                .font(.system(size: 12))
+                .frame(minHeight: 16)
+            Button {
+                model.openFolder()
+            } label: {
+                Label("Add project", systemImage: "plus")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.16))
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sidebar-add-project")
+            .disabled(model.operationsInProgress)
+        }
+        .foregroundStyle(emptyStateForeground)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 32)
+        .padding(.bottom, 24)
     }
 
     private func openDroppedProjects(_ urls: [URL]) -> Bool {
@@ -1327,12 +1386,13 @@ struct WorkspaceView: View {
         }
     }
 
+    @ViewBuilder
     private var readyScreen: some View {
-        VStack(spacing: 12) {
-            if let error = model.error {
-                Text(error).foregroundStyle(.red)
-            }
-            if let project = model.project {
+        if let project = model.project {
+            VStack(spacing: 12) {
+                if let error = model.error {
+                    Text(error).foregroundStyle(.red)
+                }
                 Text(project.title).font(.system(size: 26, weight: .semibold)).lineLimit(1)
                 Button("New Thread") { newThread() }
                     .buttonStyle(.borderedProminent)
@@ -1340,19 +1400,84 @@ struct WorkspaceView: View {
                 Menu("Project Actions") { projectActions(project) }
                     .fixedSize()
                     .accessibilityIdentifier("project-actions")
-            } else {
-                Text("What should we work on?").font(.system(size: 26, weight: .semibold))
-                Button("Add Project") { model.openFolder() }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("empty-open-project")
-                if model.canStartScratchThread {
-                    Button("Start without a project", action: startScratchThread)
-                        .accessibilityIdentifier("start-without-project")
-                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            emptyHome
+                .padding(20)
+        }
+    }
+
+    private var emptyHome: some View {
+        let description: LocalizedStringKey = model.canStartScratchThread
+            ? "Add a project, or start without one."
+            : "Add a project to start your first thread."
+        return VStack(spacing: 4) {
+            Text("What should we work on?")
+                .font(.system(size: 30, weight: .semibold))
+                .frame(minHeight: 36)
+                .accessibilityAddTraits(.isHeader)
+            Text(description)
+                .foregroundStyle(emptyStateForeground)
+                .frame(minHeight: 20)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { emptyHomeActions }
+                    .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: 8) { emptyHomeActions }
+            }
+            .padding(.top, 20)
+            .disabled(model.operationsInProgress)
+            if let error = model.error {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .padding(.top, 8)
             }
         }
-        .padding(20)
+        .font(.system(size: 14))
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 448)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, WorkspaceLayout.headerHeight)
+    }
+
+    @ViewBuilder
+    private var emptyHomeActions: some View {
+        let addFill = colorScheme == .dark ? Color(red: 52 / 255, green: 107 / 255, blue: 241 / 255) : accent
+        Button {
+            model.openFolder()
+        } label: {
+            emptyHomeActionLabel("Add project", icon: "plus")
+                .foregroundStyle(.white)
+                .background(addFill, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("empty-open-project")
+        if model.canStartScratchThread {
+            Button(action: startScratchThread) {
+                emptyHomeActionLabel("Start without a project", icon: "message")
+                    .background(colorScheme == .dark ? Color(white: 9 / 255) : surface,
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.16))
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("start-without-project")
+        }
+    }
+
+    private func emptyHomeActionLabel(_ title: LocalizedStringKey, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            Text(title)
+        }
+        .font(.system(size: 14, weight: .medium))
+        .padding(.horizontal, 8)
+        .frame(minHeight: 28)
+        .contentShape(Rectangle())
     }
 
     private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool,
@@ -2586,10 +2711,17 @@ private struct WorkspaceDivider: View {
     let width: CGFloat
     let drag: GestureState<CGFloat>
     var expandsToRight = true
+    var color: Color?
     let onResize: (CGFloat) -> Void
 
     var body: some View {
-        Divider()
+        Group {
+            if let color {
+                color
+            } else {
+                Divider()
+            }
+        }
             .frame(width: WorkspaceLayout.dividerWidth)
             .overlay {
                 Color.clear
