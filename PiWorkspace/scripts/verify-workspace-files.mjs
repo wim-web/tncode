@@ -47,6 +47,7 @@ export async function verifyFiles(driver, checkout, project, git) {
   writeFileSync(join(checkout, fresh), "Fresh\n");
   await transition("files-refresh", () => visible(row(fresh)), "file created outside the app");
   await verifyMediaFiles(driver, checkout);
+  await verifyRenderedFiles(driver, checkout);
 
   press(row("sample.bin"));
   await until(() => visible("files-binary-preview") && value("files-contents").includes("00 41 FF 10"), "binary prefix in hex");
@@ -122,4 +123,47 @@ export async function verifyFiles(driver, checkout, project, git) {
   assert.equal(git(checkout, "show", ":" + relative), "Staged original");
   assert.equal(readFileSync(parentFile, "utf8"), "Parent checkout\n");
   press("toggle-files");
+}
+
+async function verifyRenderedFiles({ press, visible, value, until, setField }, checkout) {
+  const markdown = "# Checkout notes\n\nSee [the heading](#checkout-notes).\n";
+  const csv = 'Name,Note\r\nTokyo,"quoted, 日本語"\r\nOsaka,"two\nlines"\r\n';
+  const names = ["outline.md", "cities.csv", "cities.tsv"];
+  const sources = [markdown, csv, 'Name\tNote\nTokyo\t"quoted\tvalue"\n'];
+  for (const [i, name] of names.entries()) writeFileSync(join(checkout, name), sources[i]);
+  press("files-refresh");
+  const row = name => "files-row-" + name;
+  const displays = (id, text) => value(id).includes("value=" + JSON.stringify(text));
+  await until(() => names.every(name => visible(row(name))), "Markdown, CSV and TSV fixture files");
+  press(row(names[0]));
+  await until(() => displays("files-editor", markdown), "Markdown source");
+  const edited = markdown + "\nCurrent worktree text";
+  await setField("files-editor", edited);
+  press("files-toggle-rendered");
+  const rendered = () => {
+    const content = value("files-rendered-markdown");
+    return content.includes("Checkout notes") && content.includes("the heading") &&
+           content.includes("Current worktree text") && !content.includes("# Checkout notes") && !content.includes("](#");
+  };
+  await until(rendered, "rendered heading and link label from the edited Markdown");
+  press("files-close-preview");
+  press(row(names[0]));
+  await until(rendered, "remembered Markdown preview");
+  press("files-toggle-rendered");
+  await until(() => displays("files-editor", edited) && readFileSync(join(checkout, names[0]), "utf8") === edited,
+              "Markdown returned to its exact saved source");
+  press("files-close-preview");
+  press(row(names[1]));
+  await until(() => displays("files-table-cell-1-2", "quoted, 日本語") && displays("files-table-cell-2-2", "two\nlines"),
+              "quoted CSV values in separate rows");
+  press("files-toggle-rendered");
+  await until(() => displays("files-editor", csv), "original CSV source with CRLF");
+  press("files-close-preview");
+  press(row(names[2]));
+  await until(() => displays("files-editor", sources[2]), "remembered source mode on TSV");
+  press("files-toggle-rendered");
+  await until(() => displays("files-table-cell-1-2", "quoted\tvalue"), "TSV delimiter in a quoted cell");
+  press("files-close-preview");
+  assert.equal(readFileSync(join(checkout, names[1]), "utf8"), csv);
+  assert.equal(readFileSync(join(checkout, names[2]), "utf8"), sources[2]);
 }

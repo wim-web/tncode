@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { verifyMovedFileDraft } from "./verify-moved-file-draft.mjs";
@@ -9,7 +9,7 @@ export async function verifyProjectClone(driver, { directory, git, index, quit, 
   const source = join(directory, "Clone upstream");
   const remote = join(directory, "Sample remote.git");
   const occupied = join(directory, "Occupied clone");
-  const destination = join(directory, "Cloned project");
+  const destination = join(directory, "New parent", "New child", "Cloned project");
   for (const path of [source, occupied]) mkdirSync(path);
   writeFileSync(join(occupied, "keep.txt"), "Keep this directory\n");
   git(source, "init", "--template=", "-b", "fixture-main");
@@ -23,12 +23,26 @@ export async function verifyProjectClone(driver, { directory, git, index, quit, 
   const previous = index();
   const origin = previous.projects.find(p => p.id === previous.selectedProject);
   const count = requestCount();
-  press("open-project");
-  await until(() => visible("project-source-clone"), "Git URL project source");
-  press("project-source-clone");
-  await setField("project-clone-url", remoteURL);
-  press("confirm-project");
-  await until(() => value("project-clone-destination").includes("Sample remote"), "suggested clone name");
+  async function openCloneDialog() {
+    press("open-project");
+    await until(() => visible("project-source-clone"), "Git URL project source");
+    press("project-source-clone");
+    await until(() => visible("project-clone-url"), "Git URL field");
+    await setField("project-clone-url", remoteURL);
+    press("confirm-project");
+    await until(() => value("project-clone-destination").includes("Sample remote"), "suggested clone name");
+  }
+  async function finishClone(folder) {
+    await setField("project-clone-destination", folder);
+    press("confirm-project");
+    return until(() => {
+      const state = index();
+      const project = state.projects.find(p => p.id === state.selectedProject);
+      return project && realpathSync(project.path) === realpathSync(folder) &&
+             !tree().includes('id="project-clone-destination"') && visible("composer").includes("focused=true") && project;
+    }, "cloned project and focused draft");
+  }
+  await openCloneDialog();
   press("back-project-source");
   await until(() => value("project-clone-url").includes(remoteURL), "Back retains the repository URL");
   press("confirm-project");
@@ -38,14 +52,7 @@ export async function verifyProjectClone(driver, { directory, git, index, quit, 
   assert.equal(readFileSync(join(occupied, "keep.txt"), "utf8"), "Keep this directory\n");
   assert.equal(index().selectedProject, origin.id);
   assert.equal(index().projects.length, previous.projects.length);
-  await setField("project-clone-destination", destination);
-  press("confirm-project");
-  const added = await until(() => {
-    const state = index();
-    const project = state.projects.find(p => p.id === state.selectedProject);
-    return project && realpathSync(project.path) === realpathSync(destination) &&
-           !tree().includes('id="project-clone-destination"') && visible("composer").includes("focused=true") && project;
-  }, "cloned project and focused draft");
+  const added = await finishClone(destination);
   assert.equal(index().selectedProject, added.id);
   assert.equal(git(destination, "rev-parse", "HEAD"), expectedHead);
   assert.equal(git(destination, "branch", "--show-current"), "fixture-main");
@@ -67,6 +74,34 @@ export async function verifyProjectClone(driver, { directory, git, index, quit, 
     const conversation = () => index().projects.find(p => p.id === added.id).conversations.find(t => t.id === added.selectedConversation);
     await verifyMovedFileDraft(driver, { directory, repository: destination, git, conversation });
   }
+  const prepared = join(directory, "Already registered empty folder");
+  mkdirSync(prepared, { mode: 0o750 });
+  const before = statSync(prepared, { bigint: true });
+  press("open-project");
+  await until(() => visible("project-source-local"), "local registration of the empty folder");
+  press("project-source-local");
+  await until(() => visible("project-path"), "empty project path field");
+  await setField("project-path", prepared);
+  press("confirm-project");
+  const existing = await until(() => index().projects.find(p => realpathSync(p.path) === realpathSync(prepared)) &&
+                               visible("composer").includes("focused=true") && index().selectedProject, "registered empty project");
+  const earlier = "Existing project draft before cloning";
+  await setField("composer", earlier);
+  const priorID = await until(() => index().projects.find(p => p.id === existing).conversations.find(t => t.composerText === earlier)?.id,
+                              "draft of pre-existing empty folder");
+  assert.deepEqual(readdirSync(prepared), []);
+  press("thread-row-" + origin.selectedConversation);
+  await until(() => index().selectedProject === origin.id, "original project before cloning into another registered folder");
+  await openCloneDialog();
+  const reused = await finishClone(prepared);
+  assert.equal(reused.id, existing);
+  assert.equal(reused.conversations.find(t => t.id === priorID)?.composerText, earlier);
+  assert.equal(index().projects.length, previous.projects.length + 2);
+  assert.equal(statSync(prepared, { bigint: true }).ino, before.ino);
+  assert.equal(statSync(prepared, { bigint: true }).mode, before.mode);
+  assert.equal(git(prepared, "rev-parse", "HEAD"), expectedHead);
+  assert.equal(readFileSync(join(prepared, "README.md"), "utf8"), "Clone this exact revision.\n");
+  assert.equal(requestCount(), count);
   press("thread-row-" + origin.selectedConversation);
   await until(() => index().selectedProject === origin.id, "return to original project");
 }

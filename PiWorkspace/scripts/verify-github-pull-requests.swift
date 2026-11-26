@@ -537,6 +537,21 @@ struct VerifyGitHubPullRequests {
                 throw Failure(message: "No sample from the expected public repository")
             }
             let label = first.items.flatMap(\.labelNames).first { !$0.contains("\"") && !$0.contains("\\") } ?? "bug"
+            if kind == .pullRequests {
+                let labels = try await reader.pullRequestFilterOptions(.label, matching: label, in: first.repository)
+                try expect(labels.values.contains { $0.caseInsensitiveCompare(label) == .orderedSame }, "live label choice")
+                let authors = try await reader.pullRequestFilterOptions(.author, matching: "", in: first.repository)
+                try expect(!authors.values.isEmpty, "live repository author choices")
+                guard let author = first.items.reversed().compactMap(\.author?.login).first(where: { !$0.hasSuffix("[bot]") }) else {
+                    throw Failure(message: "No author available in the public PR sample")
+                }
+                let selection = GitHubPullRequestFilters(repository: first.repository, author: author)
+                let byAuthor = try await reader.list(.init(kind, .all, pullRequestFilters: selection))
+                try expect(!byAuthor.items.isEmpty && byAuthor.items.allSatisfy {
+                    $0.author?.login.caseInsensitiveCompare(author) == .orderedSame
+                }, "selected public PR author")
+                print("repo=\(first.repository.slug) searchedLabelChoices=\(labels.values.count) authorChoices=\(authors.values.count) selectedAuthorPRs=\(byAuthor.items.count)")
+            }
             let query = GitHubListQuery(kind, .all, text: "label:\"\(label)\"")
             let filtered = try await reader.list(query)
             try expect(!filtered.items.isEmpty && filtered.items.contains { $0.labelNames.contains(label) }, "live label search")

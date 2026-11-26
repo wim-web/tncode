@@ -59,6 +59,20 @@ export async function verifyTerminalPanes(driver, originalPID) {
   keyFor("thread-terminal", 40, "cmd");
   await delay(250);
   assert(focused(originalPID) && !driver.tree().includes('id="command-palette-search"'));
+  const handle = "terminal-drawer-resize-handle";
+  const drawerHeight = () => Number(value(handle).match(/value="?([\d.]+)/)?.[1]);
+  await until(() => drawerHeight() === 280, "reference default for the terminal drawer");
+  const initialPane = frame("thread-terminal")[3];
+  driver.drag(handle, 0.5, 0.5, 0, -80);
+  await until(() => Math.abs(drawerHeight() - 360) <= 1 && Math.abs(frame("thread-terminal")[3] - initialPane - 80) <= 1 &&
+                    focused(originalPID), "drag grows the existing focused shell by 80 points");
+  driver.dismiss("hide-terminal");
+  await until(() => !driver.tree().includes('id="thread-terminal"'), "hide the resized drawer");
+  press("toggle-terminal");
+  await until(() => Math.abs(drawerHeight() - 360) <= 1 && focused(originalPID), "reopened drawer keeps height and PID");
+  driver.drag(handle, 0.5, 0.5, 0, 80);
+  await until(() => Math.abs(drawerHeight() - 280) <= 1 && Math.abs(frame("thread-terminal")[3] - initialPane) <= 1,
+              "drag restores original pane size");
   const second = await add("new-terminal");
   const third = await add("split-terminal-horizontal");
   const [left, row, width] = frame("terminal-pane-2");
@@ -77,6 +91,13 @@ export async function verifyTerminalPanes(driver, originalPID) {
   keyFor("thread-terminal", 30, "cmd", "shift");
   await until(() => focused(fourth), "next pane shortcut");
   assert(!value("thread-terminal").includes("fff") && value("terminal-pane-3").includes("fff"));
+  const fifth = await add("split-terminal-vertical");
+  assert(visible("split-terminal-vertical").includes("enabled=false") &&
+         visible("split-terminal-horizontal").includes("enabled=false"));
+  await closeTerminalPane(driver);
+  await until(() => !alive(fifth) && focused(fourth) && visible("split-terminal-vertical").includes("enabled=true"),
+              "closing one pane under the four-pane limit re-enables splitting");
+  pids.pop();
   press("terminal-tab-1");
   await until(() => focused(originalPID), "original tab with its original shell and output");
   press("terminal-tab-2");
