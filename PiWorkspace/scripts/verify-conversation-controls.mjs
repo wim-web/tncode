@@ -6,8 +6,8 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { seedPaletteMessageHistory } from "./fixtures/palette-message-history.mjs";
 
-export async function verifyConversationControls(driver, { root, app, credential, key, launch, quit, record }) {
-  const { until, visible, value, tree, press, setField, focus, keyFor } = driver;
+export async function verifyConversationControls(driver, { root, app, credential, removeFixtureCredential, key, launch, quit, record }) {
+  const { until, visible, value, tree, press, setField, focus, keyFor, selection, typeText } = driver;
   const projectID = randomUUID().toUpperCase();
   const findThread = randomUUID().toUpperCase();
   const questionThread = randomUUID().toUpperCase();
@@ -17,7 +17,7 @@ export async function verifyConversationControls(driver, { root, app, credential
     env: { ...process.env, QUESTION_FIXTURE_KEY: key }, stdio: ["pipe", "ignore", "ignore"],
   });
   const closed = once(provider, "close");
-  let installed = false;
+  let installedAccount;
   const has = id => tree().includes('id="' + id + '"');
   const is = (id, text) => value(id).includes("value=" + JSON.stringify(text));
   const focusIs = id => visible(id).includes("focused=true");
@@ -37,7 +37,8 @@ export async function verifyConversationControls(driver, { root, app, credential
 
   try {
     const endpoint = await until(() => readFileSync(join(root, "endpoint"), "utf8") || false, "local question provider");
-    const draft = "Keep this draft when Find closes.";
+    const phrase = "選択👩🏽‍💻";
+    const draft = "Keep this draft. " + phrase;
     writeFileSync(join(root, "workspace.json"), JSON.stringify({ selectedProject: projectID, welcomeCompleted: true,
       projects: [{ id: projectID, path: project, title: "Find and questions", allowEdits: false,
         selectedConversation: findThread, conversations: [
@@ -48,10 +49,11 @@ export async function verifyConversationControls(driver, { root, app, credential
     const history = await seedPaletteMessageHistory({ sidecar: join(app, "Contents/Resources/Sidecar"), workspace: root,
       projectID, threadID: findThread, cwd: project, keyword: "orbital lantern", laterKeyword: "orbital lantern", paddingTurns: 30 });
     credential("--set-api-key-from-stdin", key, root);
-    installed = true;
+    installedAccount = "local:" + endpoint;
     await launch("model-settings", root);
     await until(() => visible("transcript-message-" + history.latestID) && is("composer", draft), "selected Pi history and unfinished text");
     focus("composer");
+    assert.deepEqual(selection("composer", 4, 0), [4, 0]);
     keyFor("composer", 3, "cmd");
     await until(() => focusIs("thread-find-query"), "Command-F opens thread Find");
     await setField("thread-find-query", "ORBITAL lantern");
@@ -75,6 +77,17 @@ export async function verifyConversationControls(driver, { root, app, credential
     focus("thread-find-query");
     keyFor("thread-find-query", 53);
     await until(() => !has("thread-find-query") && focusIs("composer") && is("composer", draft), "Escape restores the composer");
+    assert.deepEqual(selection("composer"), [4, 0]);
+    typeText("composer", "!");
+    const edited = draft.slice(0, 4) + "!" + draft.slice(4);
+    await until(() => is("composer", edited), "input after Find inserts at the original caret");
+    const range = [edited.indexOf(phrase), phrase.length];
+    assert.deepEqual(selection("composer", ...range), range);
+    keyFor("composer", 3, "cmd");
+    await until(() => focusIs("thread-find-query"), "reopen Find with an active Unicode selection");
+    press("thread-find-close");
+    await until(() => focusIs("composer"), "return from Find to the selected phrase");
+    assert.deepEqual(selection("composer"), range);
     press("conversation-title");
     await until(() => visible("find-in-thread"), "Find in the selected thread menu");
     press("find-in-thread");
@@ -82,7 +95,7 @@ export async function verifyConversationControls(driver, { root, app, credential
     await setField("thread-find-query", "orbital lantern");
     await until(() => is("thread-find-match-count", "1 of 2"), "same results after reopening Find");
     press("thread-find-close");
-    await until(() => !has("thread-find-query") && focusIs("composer") && is("composer", draft), "close Find via its button");
+    await until(() => !has("thread-find-query") && focusIs("composer") && is("composer", edited), "close Find via its button");
     record("Find opened with Command-F and from the thread menu. It found two messages thirty turns apart and wrapped in both directions, excluding the abandoned branch. Repair and Retry restored the query. Both Escape and Close returned to the unfinished draft.");
 
     press("thread-row-" + questionThread);
@@ -154,7 +167,7 @@ export async function verifyConversationControls(driver, { root, app, credential
     record("The question card retained North and West and the typed answer Night shift across pages. Pi received the exact answers and requested a separate write approval. Dismiss, Stop and relaunch cleared pending requests. The same thread continued once, without either pending write.");
   } finally {
     try {
-      if (installed) credential("--remove-api-key", undefined, root);
+      if (installedAccount) removeFixtureCredential(root, installedAccount);
     } finally {
       provider.stdin.end();
       const timeout = setTimeout(() => provider.kill("SIGTERM"), 3_000);

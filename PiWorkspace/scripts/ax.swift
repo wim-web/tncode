@@ -7,6 +7,7 @@ import os
 private let usage = """
 Usage:
   ax trust
+  ax workspace-path ABSOLUTE_PATH
   ax check-copy TEST_PASTEBOARD < expected.txt
   ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
@@ -16,6 +17,7 @@ Usage:
   ax dump PID [--values] [--no-labels] [--depth N]
   ax get PID IDENTIFIER [--values] [--no-labels]
   ax selected-text PID TEXT_AREA_IDENTIFIER
+  ax selection PID TEXT_IDENTIFIER [UTF16_OFFSET UTF16_LENGTH]
   ax frame PID IDENTIFIER [--popover]
   ax web-frame PID DOM_IDENTIFIER
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
@@ -79,6 +81,7 @@ private enum Operation {
     case dump(DisplayOptions)
     case get(String, DisplayOptions)
     case selectedText(String)
+    case selection(String, CFRange?)
     case frame(String, popover: Bool)
     case webFrame(String)
     case sizeWindow(String, CGSize)
@@ -112,6 +115,12 @@ private enum Operation {
             self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
         case ("selected-text", let id?) where arguments.count == 1:
             self = .selectedText(id)
+        case ("selection", let id?) where arguments.count == 1:
+            self = .selection(id, nil)
+        case ("selection", let id?) where arguments.count == 3:
+            let values = arguments.dropFirst().compactMap(Int.init)
+            guard values.count == 2, values.allSatisfy({ $0 >= 0 }) else { throw Failure("Expected a nonnegative text range.") }
+            self = .selection(id, CFRange(location: values[0], length: values[1]))
         case ("frame", let id?) where arguments.count == 1 || arguments.dropFirst().elementsEqual(["--popover"]):
             self = .frame(id, popover: arguments.count == 2)
         case ("web-frame", let id?) where arguments.count == 1:
@@ -671,6 +680,10 @@ private func run(_ arguments: [String]) throws {
         print("accessibility=\(AXIsProcessTrusted()) keyboard=\(CGPreflightPostEventAccess())")
         return
     }
+    if arguments.count == 2, arguments[0] == "workspace-path", arguments[1].hasPrefix("/") {
+        print(URL(fileURLWithPath: arguments[1], isDirectory: true).standardizedFileURL.path)
+        return
+    }
     if arguments.count == 2, ["check-copy", "release-test-pasteboard"].contains(arguments[0]) {
         guard arguments[1].hasPrefix("dev.piworkspace.verification.") else { throw Failure("A verification pasteboard is required.") }
         let board = NSPasteboard(name: .init(arguments[1]))
@@ -773,6 +786,26 @@ private func run(_ arguments: [String]) throws {
             throw Failure("The requested text area does not expose a selection.")
         }
         print(text, terminator: "")
+    case .selection(let id, let requested):
+        let target = try element(withID: id, in: app)
+        let role = attribute(kAXRoleAttribute, on: target) as? String
+        guard role == kAXTextAreaRole || role == kAXTextFieldRole,
+              attribute(kAXSubroleAttribute, on: target) as? String != kAXSecureTextFieldSubrole,
+              attribute(kAXFocusedAttribute, on: target) as? Bool == true else {
+            throw Failure("A focused non-secure text field is required.")
+        }
+        if var range = requested {
+            guard let text = attribute(kAXValueAttribute, on: target) as? String,
+                  range.location <= text.utf16.count, range.length <= text.utf16.count - range.location,
+                  let encoded = AXValueCreate(.cfRange, &range) else { throw Failure("The selection exceeds the field contents.") }
+            try requireSuccess(AXUIElementSetAttributeValue(target, kAXSelectedTextRangeAttribute as CFString, encoded), "Set selection")
+        }
+        var range = CFRange()
+        guard let raw = attribute(kAXSelectedTextRangeAttribute, on: target), CFGetTypeID(raw) == AXValueGetTypeID(),
+              AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cfRange, &range) else {
+            throw Failure("The field does not expose a text selection.")
+        }
+        print("\(range.location) \(range.length)")
     case .frame(let id, let popover):
         var target = try element(withID: id, in: app)
         if popover {

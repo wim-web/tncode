@@ -20,23 +20,32 @@ import { createUsageFixture } from "./fixtures/usage.mjs";
 import { verifyUsage } from "./verify-usage-ui.mjs";
 import { createWorkspaceControlsFixture, setWorktreeLocation, verifyWorkspaceControls } from "./verify-workspace-controls.mjs";
 import { verifyConversationControls } from "./verify-conversation-controls.mjs";
+import { verifyDraftProjects } from "./verify-draft-project-chooser.mjs";
+import { verifyWorktreeBases } from "./verify-worktree-bases.mjs";
 
 const app = resolve(import.meta.dirname, "../dist/Pi Workspace.app");
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), /accessibility=true keyboard=true/);
 
-const directory = mkdtempSync(resolve(import.meta.dirname, "../dist/verification-"));
+const workspacePath = path => execFileSync(ax, ["workspace-path", path], { encoding: "utf8" }).trimEnd();
+const directory = workspacePath(mkdtempSync("/private/tmp/pi-workspace-verification-"));
+assert.equal(spawnSync("/usr/bin/git", ["-C", directory, "rev-parse", "--show-toplevel"], { stdio: "ignore" }).status, 128,
+             "The disposable fixture must start outside an existing Git checkout.");
+const reportDirectory = mkdtempSync(resolve(import.meta.dirname, "../dist/verification-"));
+symlinkSync(directory, join(reportDirectory, "fixture"), "dir");
 const project = join(directory, "Sample Project");
 const worktreeTest = process.argv.includes("--worktree");
-const fixtureModel = process.argv.includes("--fixture-model");
+const basesOnly = process.argv.includes("--worktree-bases-only");
+const projectFlowsOnly = process.argv.includes("--project-flows-only") || basesOnly;
+const fixtureModel = process.argv.includes("--fixture-model") || projectFlowsOnly;
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
 const customWorktrees = join(directory, "Custom Worktrees");
 const forgeState = join(directory, "forge-state");
 const forgeLog = join(directory, "forge-calls.log");
 const pasteboard = "dev.piworkspace.verification." + randomBytes(16).toString("hex");
-const logs = join(directory, "logs");
+const logs = join(reportDirectory, "logs");
 const report = join(logs, "report.txt");
 for (const path of [project, workspace, logs]) mkdirSync(path, { mode: 0o700 });
 const secret = randomBytes(32).toString("hex");
@@ -197,6 +206,15 @@ function updateKey(argument, input, root = workspace) {
   });
 }
 
+const failedCredentialCleanup = new Set();
+function removeFixtureCredential(root, account) {
+  const service = "dev.piworkspace.model-key." + createHash("sha256").update(root).digest("hex");
+  const args = ["-s", service, "-a", account];
+  const remove = spawnSync("/usr/bin/security", ["delete-generic-password", ...args], { stdio: "ignore" });
+  const check = spawnSync("/usr/bin/security", ["find-generic-password", ...args], { stdio: "ignore" });
+  if ((remove.status !== 0 && remove.status !== 44) || check.status !== 44) failedCredentialCleanup.add(root);
+}
+
 async function until(check, label, timeout = 20_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -220,6 +238,8 @@ const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
   activate: () => drive("activate", []),
   focus: id => drive("type", [id], ""),
+  typeText: (id, text) => drive("type", [id], text),
+  selection: (id, ...range) => drive("selection", [id, ...range.map(String)]).trim().split(/\s+/).map(Number),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
@@ -797,7 +817,7 @@ async function verifyScratch(originalThread) {
 }
 
 function inspectFiles() {
-  const files = readdirSync(directory, { recursive: true, withFileTypes: true });
+  const files = [directory, logs].flatMap(root => readdirSync(root, { recursive: true, withFileTypes: true }));
   for (const entry of files) {
     assert.notEqual(entry.name, "auth.json");
     if (entry.isFile()) {
@@ -816,10 +836,12 @@ async function verifyConversations() {
   const endpoint = "http://127.0.0.1:" + server.address().port + "/v1";
   keyAccount = "local:" + endpoint;
   writeFileSync(join(workspace, "workspace.json"), JSON.stringify({
-    projects: [], model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel, localImages: fixtureModel },
+    projects: [], newWorktreesStartFromRemote: false,
+    model: { provider: "local", endpoint, model: "smollm2:135m", contextWindow: 8192, localTools: fixtureModel, localImages: fixtureModel },
   }), { mode: 0o600 });
 
-  record("Verification folder: " + directory);
+  record("Verification folder: " + reportDirectory);
+  record("Isolated fixture: " + directory);
   record(fixtureModel ? "Model endpoint: deterministic loopback fixture." : "Model endpoint: loopback Ollama.");
   if (worktreeTest) {
     updateKey("--set-api-key-from-stdin", secret);
@@ -1087,9 +1109,12 @@ try {
   const usageOnly = process.argv.includes("--usage-only");
   const controlsOnly = process.argv.includes("--workspace-controls-only");
   const conversationOnly = process.argv.includes("--conversation-controls-only");
-  if (usageOnly || controlsOnly || conversationOnly) record("Verification folder: " + directory);
-  else await verifyConversations();
-  if (usageOnly || (fixtureModel && !worktreeTest)) {
+  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly;
+  if (focused) {
+    record("Verification folder: " + reportDirectory);
+    record("Isolated fixture: " + directory);
+  } else await verifyConversations();
+  if (usageOnly || (!focused && fixtureModel && !worktreeTest)) {
     const fixture = await createUsageFixture(usageWorkspace, join(app, "Contents/Resources/Sidecar"));
     await launch("model-settings", usageWorkspace);
     await verifyUsage(panelDriver, fixture, async () => {
@@ -1100,7 +1125,7 @@ try {
     record("Command-U opened and closed Usage. C, T and L selected the metrics. Command-Shift-1 through 4 selected the periods. Typing C in Settings search edited the field.");
     record("Saved Pi usage matched 310, 350, 480 and 720 tokens. Refresh added the 23-token reply. Removing a saved fork flagged incomplete usage and removed its 60 tokens. Restoring it recovered 503. The selected seven-day cost and unfinished draft survived relaunch.");
   }
-  if (controlsOnly || (fixtureModel && worktreeTest)) {
+  if (controlsOnly || (!focused && fixtureModel && worktreeTest)) {
     const fixture = createWorkspaceControlsFixture(controlsWorkspace, git);
     const launchControls = () => launch("model-settings", controlsWorkspace, fixture.shell);
     await launchControls();
@@ -1113,10 +1138,24 @@ try {
   }
   if (conversationOnly) {
     await verifyConversationControls(panelDriver, {
-      root: join(directory, "find-and-questions"), app, key: secret, credential: updateKey, launch, quit, record,
+      root: join(directory, "find-and-questions"), app, key: secret, credential: updateKey, removeFixtureCredential, launch, quit, record,
     });
     assert.equal(inspectFiles().length, 2);
     record("The two Pi histories remained separate, with no plaintext fixture key or auth.json under the verification directory.");
+  }
+  if (projectFlowsOnly) {
+    if (!basesOnly) {
+      await verifyDraftProjects(panelDriver, { root: join(directory, "draft-projects"), launch, quit });
+      record("An empty draft opened the other project's populated draft. Moving it to a project and then No project preserved its ID, text and note bytes. Adding or cancelling a project returned to the same composer, including after relaunch.");
+    }
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    releaseFirst();
+    await verifyWorktreeBases(panelDriver, {
+      root: join(directory, "worktree-bases"), git, endpoint: "http://127.0.0.1:" + server.address().port + "/v1",
+      credential: updateKey, removeFixtureCredential, key: secret, launch, quit, send, targets, record,
+    });
+    assert.equal(inspectFiles().length, 3);
   }
 } catch (error) {
   let message = error.message.replaceAll(secret, "[redacted]");
@@ -1133,17 +1172,14 @@ try {
       }
     }
   }
-  if (keySaved) {
-    try { updateKey("--remove-api-key"); }
-    catch {
-      const service = "dev.piworkspace.model-key." + createHash("sha256").update(workspace).digest("hex");
-      try { execFileSync("/usr/bin/security", ["delete-generic-password", "-s", service, "-a", keyAccount], { stdio: "ignore" }); }
-      catch (cleanupError) { if (cleanupError.status !== 44) message += " (Keychain cleanup not confirmed)"; }
-    }
-  }
+  if (keySaved) removeFixtureCredential(workspace, keyAccount);
   record("FAIL: " + message);
   process.exitCode = 1;
 } finally {
+  if (failedCredentialCleanup.size) {
+    record("FAIL: Could not confirm Keychain cleanup for " + [...failedCredentialCleanup].join(", "));
+    process.exitCode = 1;
+  }
   releaseFirst();
   server.closeAllConnections();
   server.close();
