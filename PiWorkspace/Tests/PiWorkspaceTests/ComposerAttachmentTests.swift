@@ -7,6 +7,16 @@ import XCTest
 
 @MainActor
 final class ComposerAttachmentTests: XCTestCase {
+    func testImageCopyKeepsPNGBytesAndUsesTheFullOrientedJPEG() throws {
+        let original = try makeAttachmentImage(width: 7, height: 3, type: .png)
+        XCTAssertEqual(ComposerAttachment.pngForCopy(.init(mimeType: "image/png", data: original)), original)
+        let jpg = try makeAttachmentImage(width: 2_100, height: 12, type: .jpeg, orientation: 6)
+        let png = try XCTUnwrap(ComposerAttachment.pngForCopy(.init(mimeType: "image/jpeg", data: jpg)))
+        let raster = try XCTUnwrap(NSBitmapImageRep(data: png))
+        XCTAssertEqual(raster.pixelsWide, 12)
+        XCTAssertEqual(raster.pixelsHigh, 2_100)
+    }
+
     func testUnavailableAttachmentCanBeReplacedByIDAfterRelaunch() async throws {
         let fixture = try Fixture()
         let missing = fixture.root.appendingPathComponent("unavailable.txt")

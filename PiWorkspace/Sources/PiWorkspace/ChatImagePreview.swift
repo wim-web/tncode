@@ -179,7 +179,7 @@ private struct ChatImagePreviewContent: View {
         GeometryReader { geometry in
             let viewport = geometry.size
             Group {
-                if let raster = image.raster {
+                if case .loaded(let payload, let raster?) = image {
                     let fit = fitted(raster.size, in: viewport)
                     let scale = clampedZoom(zoom * magnification)
                     Image(nsImage: raster)
@@ -206,7 +206,7 @@ private struct ChatImagePreviewContent: View {
                         .accessibilityAction(named: "Toggle Zoom") {
                             updateZoom(zoom > 1 ? 1 : 2, fit: fit, viewport: viewport)
                         }
-                        .accessibilityAction(named: "Copy Image") { copy(raster) }
+                        .accessibilityAction(named: "Copy Image") { copy(payload) }
                 } else if case .loading = image {
                     ProgressView("Loading image…")
                         .accessibilityIdentifier("image-preview-loading")
@@ -221,7 +221,8 @@ private struct ChatImagePreviewContent: View {
                 if case .loaded(let payload, let raster) = image {
                     Button("Save Image…") { save(payload) }
                         .accessibilityIdentifier("save-preview-image")
-                    Button("Copy Image") { copy(raster) }
+                    Button("Copy Image") { copy(payload) }
+                        .disabled(raster == nil)
                         .accessibilityIdentifier("copy-preview-image")
                 }
             }
@@ -298,11 +299,9 @@ private struct ChatImagePreviewContent: View {
         return CGSize(width: min(max(offset.width, -x), x), height: min(max(offset.height, -y), y))
     }
 
-    private func copy(_ image: NSImage?) {
+    private func copy(_ payload: ComposerAttachment.Payload) {
         actionError = nil
-        guard let tiff = image?.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else {
+        guard let png = ComposerAttachment.pngForCopy(payload) else {
             actionError = "Could not copy image."
             return
         }

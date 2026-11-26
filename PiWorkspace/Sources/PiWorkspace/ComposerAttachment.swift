@@ -263,6 +263,13 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         return Self.preview(payload, maximumSize: maximumSize)
     }
 
+    static func pngForCopy(_ payload: Payload) -> Data? {
+        if payload.mimeType == "image/png" { return payload.data }
+        guard payload.mimeType == "image/jpeg", let source = imageSource(for: payload.data),
+              let edge = previewEdge(source), let image = thumbnail(source, maximumSize: edge) else { return nil }
+        return encode(image, as: .png, quality: 1)
+    }
+
     static func preview(_ payload: Payload, maximumSize: Int) -> NSImage? {
         guard let type = imageTypes.first(where: { $0.value == payload.mimeType })?.key,
               let source = CGImageSourceCreateWithData(payload.data as CFData, nil),
