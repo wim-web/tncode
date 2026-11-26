@@ -37,9 +37,10 @@ struct WorkspaceView: View {
     @FocusState private var findFocused: Bool
     @State private var findSelection: ComposerTextField.FindSelection?
     @State private var showingDetails = false
-    @State private var showingChanges = false
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
-    @State private var showingFiles: Set<UUID> = []
+    @State private var rightPanels: [UUID: WorkspaceRightPanelState] = [:]
+    @State private var addingPanelSurface: UUID?
+    @State private var closingPanelTerminals: PanelTerminalClose?
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
     @State private var choosingWorkspace = false
     @State private var choosingBranch: WorkspaceModel.BranchPickerScope?
@@ -82,6 +83,23 @@ struct WorkspaceView: View {
         static var defaultValue: Anchor<CGRect>? { nil }
         static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
             value = nextValue() ?? value
+        }
+    }
+
+    private struct PanelTerminalClose: Identifiable {
+        enum Target {
+            case tabs([WorkspacePanelTab])
+            case pane(WorkspacePanelTab, Int)
+        }
+
+        let id = UUID()
+        let thread: UUID
+        let target: Target
+        let panes: [Int]
+
+        var title: String {
+            if panes.count == 1, let pane = panes.first { return "Close Terminal \(pane)?" }
+            return "Close \(panes.count) Terminals?"
         }
     }
 
@@ -242,6 +260,7 @@ struct WorkspaceView: View {
                 }
                 if handleNewThreadKey(event, in: window) { return true }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                if handleRightPanelKey(event, modifiers: modifiers, in: window) { return true }
                 if modifiers == .command {
                     switch event.charactersIgnoringModifiers {
                     case "[": return navigate(.back, in: window)
@@ -332,6 +351,7 @@ struct WorkspaceView: View {
             if composerModelPicker?.scope != scope { composerModelPicker = nil }
             showingComposerStash = false
         }
+        .onChange(of: model.conversation?.id) { _, _ in addingPanelSurface = nil }
         .onChange(of: model.messages.last?.id) { _, _ in
             if model.activeThreadFind != nil { model.threadFind?.refresh() }
         }
@@ -396,10 +416,33 @@ struct WorkspaceView: View {
             Button("Close Terminal and Choose Workspace", role: .destructive) {
                 guard model.conversation?.id == thread else { return }
                 openTerminals.removeAll { $0.id.thread == thread }
+                closePanelTerminals(in: thread)
                 choosingWorkspace = true
             }
         } message: { _ in
             Text("Workspace changes require a new terminal in the selected folder.")
+        }
+        .sheet(item: $closingPanelTerminals) { request in
+            VStack(alignment: .leading, spacing: 14) {
+                Text(request.title).font(.headline)
+                Text("This stops the selected shells and clears their output.")
+                HStack {
+                    Spacer()
+                    Button("Cancel") { closingPanelTerminals = nil }
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("cancel-close-right-terminal")
+                    Button("Close", role: .destructive) {
+                        closingPanelTerminals = nil
+                        switch request.target {
+                        case .tabs(let tabs): closeRightPanelTabs(tabs, in: request.thread)
+                        case .pane(let tab, let pane): rightPanels[request.thread]?.closePane(pane, in: tab)
+                        }
+                    }
+                    .accessibilityIdentifier("confirm-close-right-terminal")
+                }
+            }
+            .padding(20)
+            .frame(width: 360)
         }
         .sheet(isPresented: $choosingThreadProject) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1295,30 +1338,44 @@ struct WorkspaceView: View {
         }
         .background(canvas)
         .onPreferenceChange(TerminalDrawerReservedHeight.self) { terminalDrawerReservedHeight = $0 }
+        .overlayPreferenceValue(RightPanelBounds.self) { bounds in
+            GeometryReader { geometry in
+                rightTerminalGroups(in: bounds.terminal.map { geometry[$0] })
+                if let panel = bounds.panel, let thread = model.conversation, addingPanelSurface == thread.id {
+                    let frame = geometry[panel]
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture { addingPanelSurface = nil }
+                            .accessibilityHidden(true)
+                        panelSurfaceMenu(thread)
+                            .frame(width: 160, alignment: .leading)
+                            .offset(x: frame.maxX - 168, y: frame.minY + 33)
+                    }
+                }
+            }
+        }
+        .onChange(of: activeTerminal) { _, location in
+            guard let thread = model.conversation?.id, let previous = rightPanels[thread]?.location,
+                  previous != location else { return }
+            closePanelTerminals(in: thread)
+        }
     }
 
     private func threadWorkspace(_ project: Project, _ thread: Conversation, viewportWidth: CGFloat, size: CGSize) -> some View {
-        let browser = Binding(
-            get: { browserPanels[thread.id] ?? ThreadBrowserPreview(searchDefaults: browserDefaults) },
-            set: { browserPanels[thread.id] = $0 }
-        )
-        let filesAreVisible = showingFiles.contains(thread.id)
-        let browserIsVisible = !filesAreVisible && browser.wrappedValue.isVisible
-        let changesDirectory = showingChanges && !thread.workingLocation.needsWorktree ? model.workingDirectory : nil
-        let hasRightPanel = filesAreVisible || browserIsVisible || changesDirectory != nil
+        let browser = browserPanel(for: thread.id)
+        let panel = rightPanels[thread.id] ?? WorkspaceRightPanelState()
         let preferredWidth = rightPanelWidths[thread.id] ?? WorkspaceLayout.defaultRightPanelWidth
         let layout = WorkspaceLayout(
             viewportWidth: viewportWidth,
             workspaceSize: size,
-            preferredRightPanelWidth: hasRightPanel ? preferredWidth : nil,
+            preferredRightPanelWidth: panel.isOpen ? preferredWidth : nil,
             rightPanelDrag: rightPanelDrag,
             showingDetails: showingDetails,
             miniPlayer: browser.wrappedValue.miniPlayer?.placement,
             chatWidthMode: chatWidthMode
         )
         return VStack(spacing: 0) {
-            header(project, thread, browserIsVisible: browserIsVisible, filesAreVisible: filesAreVisible,
-                   detailsFitInline: layout.detailsFitInline)
+            header(project, thread, panel: panel, detailsFitInline: layout.detailsFitInline)
                 .overlay(alignment: .bottom) { Divider() }
 
             // Keep the conversation in the same slot as the panel opens, closes, or overlays it.
@@ -1352,7 +1409,7 @@ struct WorkspaceView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .trailing) {
-                    if hasRightPanel {
+                    if panel.isOpen {
                         HStack(spacing: 0) {
                             if layout.rightPanelOverlaysChat {
                                 Divider().frame(width: WorkspaceLayout.dividerWidth)
@@ -1363,24 +1420,7 @@ struct WorkspaceView: View {
                                 }
                                 .zIndex(1)
                             }
-                            Group {
-                                if filesAreVisible {
-                                    filesPanel(project, thread)
-                                } else if browserIsVisible {
-                                    BrowserPreviewView(preview: browser)
-                                } else if let changesDirectory {
-                                    SourceControlView(directory: changesDirectory, model: model, openBranch: {
-                                        openBranchPicker()
-                                    }, copyBranch: copyBranch) { path in
-                                        guard let location = selectedFilesLocation,
-                                              location.threadID == thread.id, location.directory == changesDirectory
-                                        else { return }
-                                        selectedFiles[location] = path
-                                        showingFiles.insert(thread.id)
-                                    }
-                                        .id(changesDirectory)
-                                }
-                            }
+                            rightPanel(project, thread, panel: panel, browser: browser)
                             .frame(width: layout.rightPanelWidth - WorkspaceLayout.dividerWidth)
                             .frame(maxHeight: .infinity)
                             .clipped()
@@ -1403,6 +1443,62 @@ struct WorkspaceView: View {
         }
     }
 
+    private func rightPanel(_ project: Project, _ thread: Conversation, panel: WorkspaceRightPanelState,
+                            browser: Binding<ThreadBrowserPreview>) -> some View {
+        VStack(spacing: 0) {
+            WorkspacePanelTabs(panel: panel, select: { tab in
+                rightPanels[thread.id]?.show(tab)
+            }, close: { tabs in
+                requestRightPanelClose(tabs, in: thread.id)
+            }, move: { tab, target in
+                rightPanels[thread.id]?.move(tab, to: target)
+            }, hide: {
+                rightPanels[thread.id]?.isOpen = false
+            }, addButton: {
+                addPanelSurfaceButton(thread)
+            })
+            switch panel.selected {
+            case .files:
+                filesPanel(project, thread)
+            case .browser:
+                BrowserPreviewView(preview: browser)
+            case .changes:
+                if let directory = model.workingDirectory {
+                    SourceControlView(directory: directory, model: model, openBranch: {
+                        openBranchPicker()
+                    }, copyBranch: copyBranch) { path in
+                        guard let location = selectedFilesLocation, location.threadID == thread.id,
+                              location.directory == directory else { return }
+                        selectedFiles[location] = path
+                        rightPanels[thread.id]?.show(.files)
+                    }
+                    .id(directory)
+                }
+            case .terminal(let number):
+                if let group = panel.terminals[.terminal(number)] {
+                    rightTerminalSurface(group, tab: .terminal(number), thread: thread.id)
+                }
+            case nil:
+                Spacer()
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .transformAnchorPreference(key: RightPanelBounds.self, value: .bounds) { $0.panel = $1 }
+    }
+
+    private func browserPanel(for thread: UUID) -> Binding<ThreadBrowserPreview> {
+        Binding {
+            browserPanels[thread] ?? ThreadBrowserPreview(searchDefaults: browserDefaults)
+        } set: { preview in
+            let visibilityChanged = (browserPanels[thread]?.isVisible ?? false) != preview.isVisible
+            browserPanels[thread] = preview
+            if visibilityChanged {
+                if preview.isVisible { rightPanels[thread, default: .init()].show(.browser) }
+                else { rightPanels[thread]?.close([.browser]) }
+            }
+        }
+    }
+
     private var selectedFilesLocation: WorkspaceFilesLocation? {
         guard let project = model.project, let thread = model.conversation else { return nil }
         return WorkspaceFilesLocation(thread: thread, project: project)
@@ -1412,8 +1508,8 @@ struct WorkspaceView: View {
     private func filesPanel(_ project: Project, _ thread: Conversation) -> some View {
         if let location = WorkspaceFilesLocation(thread: thread, project: project) {
             WorkspaceFilesView(location: location, saves: model.fileSaves, pasteboard: workspacePasteboard,
-                               activeLocation: { showingFiles.contains(thread.id) ? selectedFilesLocation : nil },
-                               close: { showingFiles.remove(thread.id) },
+                               activeLocation: { rightPanels[thread.id]?.visibleTab == .files ? selectedFilesLocation : nil },
+                               close: { rightPanels[thread.id]?.close([.files]) },
                                canAddToComposer: model.canAddFileMention(from: location),
                                addToComposer: { target in
                                    if try model.addFileMention(target) {
@@ -1527,8 +1623,10 @@ struct WorkspaceView: View {
         .contentShape(Rectangle())
     }
 
-    private func header(_ project: Project, _ thread: Conversation, browserIsVisible: Bool,
-                        filesAreVisible: Bool, detailsFitInline: Bool) -> some View {
+    private func header(_ project: Project, _ thread: Conversation, panel: WorkspaceRightPanelState,
+                        detailsFitInline: Bool) -> some View {
+        let filesAreVisible = panel.visibleTab == .files
+        let browserIsVisible = panel.visibleTab == .browser
         return HStack(spacing: 8) {
             let canSwitchProject = canChooseDraftProject(thread.id)
             if !project.isScratch {
@@ -1593,14 +1691,13 @@ struct WorkspaceView: View {
                     .id(scope)
             }
             Button {
-                if showingFiles.remove(thread.id) != nil || browserIsVisible {
-                    browserPanels[thread.id]?.isVisible = false
-                    showingChanges = true
+                if panel.visibleTab == .changes {
+                    closeRightPanelTabs([.changes], in: thread.id)
                 } else {
-                    showingChanges.toggle()
+                    rightPanels[thread.id, default: .init()].show(.changes)
                 }
             } label: {
-                Image(systemName: showingChanges && !browserIsVisible && !filesAreVisible ? "doc.text.fill" : "doc.text")
+                Image(systemName: panel.visibleTab == .changes ? "doc.text.fill" : "doc.text")
             }
             .buttonStyle(.plain)
             .help("Changes")
@@ -1609,7 +1706,11 @@ struct WorkspaceView: View {
             .disabled(thread.workingLocation.needsWorktree)
 
             Button {
-                if showingFiles.remove(thread.id) == nil { showingFiles.insert(thread.id) }
+                if filesAreVisible {
+                    closeRightPanelTabs([.files], in: thread.id)
+                } else {
+                    rightPanels[thread.id, default: .init()].show(.files)
+                }
             } label: {
                 Image(systemName: filesAreVisible ? "folder.fill" : "folder")
             }
@@ -1620,9 +1721,10 @@ struct WorkspaceView: View {
             .accessibilityIdentifier("toggle-files")
 
             Button {
-                let wasShowingFiles = showingFiles.remove(thread.id) != nil
-                if !wasShowingFiles || browserPanels[thread.id]?.isVisible != true {
-                    browserPanels[thread.id, default: ThreadBrowserPreview(searchDefaults: browserDefaults)].togglePanel()
+                if browserIsVisible {
+                    browserPanel(for: thread.id).wrappedValue.isVisible = false
+                } else {
+                    showPanelBrowser(in: thread.id)
                 }
             } label: {
                 Image(systemName: "globe")
@@ -1642,6 +1744,14 @@ struct WorkspaceView: View {
             .accessibilityLabel("Terminal")
             .accessibilityIdentifier("toggle-terminal")
             .disabled(thread.workingLocation.needsWorktree)
+
+            if !panel.isOpen {
+                addPanelSurfaceButton(thread)
+            }
+            panelIcon(panel.isOpen ? "Hide Right Panel" : "Show Right Panel", icon: "sidebar.right",
+                      id: "toggle-right-panel") {
+                rightPanels[thread.id, default: .init()].isOpen.toggle()
+            }
 
             Button { showingDetails.toggle() } label: {
                 Image(systemName: "info.circle")
@@ -1758,8 +1868,9 @@ struct WorkspaceView: View {
     }
 
     private var activeTerminal: ThreadTerminalLocation? {
-        guard let thread = model.conversation?.id, let path = model.workingDirectory else { return nil }
-        return ThreadTerminalLocation(thread: thread, path: path)
+        guard let thread = model.conversation, !thread.workingLocation.needsWorktree,
+              let path = model.workingDirectory else { return nil }
+        return ThreadTerminalLocation(thread: thread.id, path: path)
     }
 
     private var terminalIsVisible: Bool {
@@ -1771,19 +1882,203 @@ struct WorkspaceView: View {
         if let index = openTerminals.firstIndex(where: { $0.id == activeTerminal }) {
             openTerminals[index].isOpen.toggle()
         } else {
-            openTerminals.append(ThreadTerminalDrawerState(id: activeTerminal))
+            openTerminals.append(ThreadTerminalDrawerState(id: activeTerminal, firstPane: nextTerminalNumber(at: activeTerminal)))
         }
+    }
+
+    private func nextTerminalNumber(at location: ThreadTerminalLocation) -> Int {
+        let drawer = openTerminals.first { $0.id == location }
+        return max(drawer?.nextNumber ?? 1, rightPanels[location.thread]?.nextNumber ?? 1)
     }
 
     private func terminalDrawer(limits: TerminalDrawerHeight) -> some View {
         VStack(spacing: 0) {
             ForEach($openTerminals) { $drawer in
                 let location = drawer.id
-                ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal, limits: limits) {
+                ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal, limits: limits,
+                                     allocateNumber: { nextTerminalNumber(at: location) }) {
                     openTerminals.removeAll { $0.id == location }
                 }
             }
         }
+    }
+
+    private func addPanelSurfaceButton(_ thread: Conversation) -> some View {
+        panelIcon("Add Panel Surface", icon: "plus", id: "add-panel-surface") {
+            rightPanels[thread.id, default: .init()].isOpen = true
+            addingPanelSurface = thread.id
+        }
+    }
+
+    private func panelSurfaceMenu(_ thread: Conversation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            panelSurfaceButton(.browser) {
+                browserPanel(for: thread.id).wrappedValue.addTab(profile: .standard)
+                rightPanels[thread.id, default: .init()].show(.browser)
+            }
+            Button {
+                addingPanelSurface = nil
+                addRightTerminal(in: thread.id)
+            } label: {
+                HStack {
+                    Label("Terminal", systemImage: "terminal")
+                    Spacer()
+                    Text("T").foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("add-panel-terminal")
+            .disabled(activeTerminal?.thread != thread.id)
+            panelSurfaceButton(.files) { rightPanels[thread.id, default: .init()].show(.files) }
+            panelSurfaceButton(.changes) { rightPanels[thread.id, default: .init()].show(.changes) }
+                .disabled(thread.workingLocation.needsWorktree)
+        }
+        .buttonStyle(.plain)
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary).allowsHitTesting(false) }
+        .shadow(radius: 6, y: 3)
+    }
+
+    private func panelSurfaceButton(_ tab: WorkspacePanelTab, action: @escaping () -> Void) -> some View {
+        Button {
+            addingPanelSurface = nil
+            action()
+        } label: {
+            Label(tab.title, systemImage: tab.icon)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .accessibilityIdentifier("add-panel-\(tab.id)")
+    }
+
+    private func showPanelBrowser(in thread: UUID) {
+        let browser = browserPanel(for: thread)
+        if browser.wrappedValue.isVisible {
+            rightPanels[thread, default: .init()].show(.browser)
+        } else {
+            browser.wrappedValue.togglePanel()
+        }
+    }
+
+    private func addRightTerminal(in thread: UUID) {
+        guard let location = activeTerminal, location.thread == thread else { return }
+        focusedComposer = nil
+        let number = nextTerminalNumber(at: location)
+        rightPanels[thread, default: .init()].addTerminal(number, at: location)
+    }
+
+    private func rightTerminalSurface(_ group: WorkspaceRightPanelState.TerminalGroup,
+                                      tab: WorkspacePanelTab, thread: UUID) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Spacer()
+                panelIcon("New Terminal", icon: "plus", id: "new-right-terminal") { addRightTerminal(in: thread) }
+                panelIcon("Split Terminal Horizontally", icon: "rectangle.split.2x1", id: "split-right-terminal-horizontal") {
+                    handleRightTerminalCommand(.split, tab: tab, thread: thread)
+                }
+                .disabled(!group.canSplit)
+                panelIcon("Split Terminal Vertically", icon: "rectangle.split.1x2", id: "split-right-terminal-vertical") {
+                    handleRightTerminalCommand(.splitVertical, tab: tab, thread: thread)
+                }
+                .disabled(!group.canSplit)
+                panelIcon("Close Terminal Pane", icon: "xmark", id: "close-right-terminal-pane") {
+                    handleRightTerminalCommand(.close, tab: tab, thread: thread)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: TerminalDrawerHeight.toolbar)
+            Divider()
+            Color.clear
+                .anchorPreference(key: RightPanelBounds.self, value: .bounds) { .init(terminal: $0) }
+        }
+    }
+
+    private func rightTerminalGroups(in bounds: CGRect?) -> some View {
+        ZStack {
+            // Keep the PTY views mounted when the panel or its thread is out of sight.
+            ForEach(rightPanels.keys.sorted(), id: \.self) { thread in
+                if let panel = rightPanels[thread], let location = panel.location {
+                    ForEach(panel.tabs) { tab in
+                        if let group = panel.terminals[tab] {
+                            let visible = location == activeTerminal && panel.visibleTab == tab
+                            WorkspaceTerminalGroupView(group: group, directory: location.path,
+                                                       bounds: visible ? bounds : nil, focusRequest: panel.focusRequest,
+                                                       select: { rightPanels[thread]?.selectPane($0, in: tab) },
+                                                       cycle: { rightPanels[thread]?.cycle(by: $0) ?? false },
+                                                       command: { handleRightTerminalCommand($0, tab: tab, thread: thread) })
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleRightTerminalCommand(_ command: ThreadTerminal.Command, tab: WorkspacePanelTab, thread: UUID) {
+        guard let location = activeTerminal, location.thread == thread, rightPanels[thread]?.visibleTab == tab,
+              let group = rightPanels[thread]?.terminals[tab] else { return }
+        switch command {
+        case .new:
+            addRightTerminal(in: thread)
+        case .split, .splitVertical:
+            let number = nextTerminalNumber(at: location)
+            rightPanels[thread]?.split(command == .split ? .horizontal : .vertical, allocating: number)
+        case .close:
+            closingPanelTerminals = PanelTerminalClose(thread: thread, target: .pane(tab, group.selectedPane),
+                                                       panes: [group.selectedPane])
+        }
+    }
+
+    private func requestRightPanelClose(_ tabs: [WorkspacePanelTab], in thread: UUID) {
+        let panes = tabs.flatMap { rightPanels[thread]?.terminals[$0]?.panes ?? [] }
+        if panes.isEmpty {
+            closeRightPanelTabs(tabs, in: thread)
+        } else {
+            closingPanelTerminals = PanelTerminalClose(thread: thread, target: .tabs(tabs), panes: panes)
+        }
+    }
+
+    private func closeRightPanelTabs(_ tabs: [WorkspacePanelTab], in thread: UUID) {
+        if tabs.contains(.browser), var browser = browserPanels[thread] {
+            for tab in browser.tabs where tab.surface == .panel { browser.closeTab(tab.id) }
+            browser.isVisible = false
+            browserPanels[thread] = browser
+        }
+        rightPanels[thread]?.close(tabs)
+    }
+
+    private func closePanelTerminals(in thread: UUID) {
+        guard let panel = rightPanels[thread] else { return }
+        rightPanels[thread]?.close(Array(panel.terminals.keys))
+    }
+
+    private func handleRightPanelKey(_ event: NSEvent, modifiers: NSEvent.ModifierFlags, in window: NSWindow) -> Bool {
+        guard let thread = model.conversation?.id, window.attachedSheet == nil, !model.showingSettings,
+              NSApp.modalWindow == nil, !model.showingWelcome, !model.showingCommandPalette,
+              model.projectPicker == nil else { return false }
+        if addingPanelSurface == thread, modifiers.isEmpty {
+            switch event.keyCode {
+            case UInt16(kVK_Escape):
+                addingPanelSurface = nil
+                return true
+            case UInt16(kVK_ANSI_T) where activeTerminal?.thread == thread:
+                addingPanelSurface = nil
+                addRightTerminal(in: thread)
+                return true
+            default: break
+            }
+        }
+        if modifiers == [.command, .option], event.keyCode == kVK_ANSI_B {
+            addingPanelSurface = nil
+            rightPanels[thread, default: .init()].isOpen.toggle()
+            return true
+        }
+        if modifiers == .command, event.keyCode == kVK_ANSI_T, rightPanels[thread]?.isOpen == true,
+           acceptsWorkspaceKeys(in: window) {
+            addingPanelSurface = thread
+            return true
+        }
+        return false
     }
 
     private func transcript(_ selection: ThreadFindSession.Selection?, project: Project, thread: Conversation) -> some View {
@@ -2275,6 +2570,7 @@ struct WorkspaceView: View {
                     await Task.yield()
                     if !Task.isCancelled && model.conversation?.id == threadID &&
                         !model.showingWelcome && model.projectPicker == nil && draftProjectPicker == nil &&
+                        rightPanels[threadID]?.visibleTerminal == nil &&
                         !model.showingSettings && !model.showingCommandPalette && model.activeThreadFind == nil {
                         focusedComposer = threadID
                     }
@@ -2652,7 +2948,8 @@ struct WorkspaceView: View {
     }
 
     private func chooseWorkspace() {
-        if let thread = model.conversation, openTerminals.contains(where: { $0.id.thread == thread.id }) {
+        if let thread = model.conversation, openTerminals.contains(where: { $0.id.thread == thread.id }) ||
+            rightPanels[thread.id]?.terminals.isEmpty == false {
             terminalWorkspaceChange = thread.id
         } else {
             choosingWorkspace = true
@@ -2738,7 +3035,8 @@ struct WorkspaceView: View {
     }
 
     private func canChooseDraftProject(_ threadID: UUID) -> Bool {
-        model.canSwitchDraftProject && !openTerminals.contains { $0.id.thread == threadID }
+        model.canSwitchDraftProject && !openTerminals.contains { $0.id.thread == threadID } &&
+            rightPanels[threadID]?.terminals.isEmpty != false
     }
 
     private func openDraftProjectPicker(for threadID: UUID) {

@@ -4,12 +4,18 @@ import SwiftTerm
 import SwiftUI
 
 struct ThreadTerminal: View {
+    static let maxPanesPerGroup = 4
+
+    enum Command { case new, split, splitVertical, close }
+
     let directory: String
     let number: Int
     let visible: Bool
     let focusRequest: Int?
     let onFocus: () -> Void
     let onCycle: (Int) -> Bool
+    var identifier: String? = nil
+    var onCommand: ((Command) -> Void)? = nil
 
     static func hasFocus(in window: NSWindow) -> Bool {
         window.firstResponder is TerminalSessionView
@@ -39,13 +45,16 @@ struct ThreadTerminal: View {
         func updateNSView(_ view: TerminalSessionView, context: Context) {
             view.onFocus = terminal.onFocus
             view.onCycle = terminal.onCycle
-            view.setAccessibilityIdentifier(terminal.focusRequest != nil ? "thread-terminal" : "terminal-pane-\(terminal.number)")
+            view.onCommand = terminal.onCommand
+            view.setAccessibilityIdentifier(terminal.identifier ??
+                (terminal.focusRequest != nil ? "thread-terminal" : "terminal-pane-\(terminal.number)"))
             view.setPresentation(terminal.visible, focusRequest: terminal.focusRequest)
         }
 
         static func dismantleNSView(_ terminal: TerminalSessionView, coordinator: ()) {
             terminal.onFocus = nil
             terminal.onCycle = nil
+            terminal.onCommand = nil
             terminal.setPresentation(false, focusRequest: nil)
             terminal.closeSession()
         }
@@ -62,7 +71,7 @@ struct ThreadTerminalKeyboard: NSViewRepresentable {
         context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak anchor] event in
             guard let window = anchor?.window, event.window === window,
                   let terminal = window.firstResponder as? TerminalSessionView,
-                  terminal.cycleFocus(for: event) else { return event }
+                  terminal.handleShortcut(event) else { return event }
             return nil
         }
         return anchor
@@ -78,6 +87,7 @@ struct ThreadTerminalKeyboard: NSViewRepresentable {
 final class TerminalSessionView: LocalProcessTerminalView {
     var onFocus: (() -> Void)?
     var onCycle: ((Int) -> Bool)?
+    var onCommand: ((ThreadTerminal.Command) -> Void)?
     private var presented = false
     private var focusRequest: Int?
 
@@ -135,6 +145,20 @@ final class TerminalSessionView: LocalProcessTerminalView {
         case "]", "}": return onCycle?(1) ?? false
         default: return false
         }
+    }
+
+    func handleShortcut(_ event: NSEvent) -> Bool {
+        if cycleFocus(for: event) { return true }
+        guard presented, window?.firstResponder === self, !event.isARepeat, let onCommand else { return false }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        switch (event.charactersIgnoringModifiers?.lowercased(), modifiers) {
+        case ("n", .command): onCommand(.new)
+        case ("d", .command): onCommand(.split)
+        case ("d", [.command, .shift]): onCommand(.splitVertical)
+        case ("w", .command): onCommand(.close)
+        default: return false
+        }
+        return true
     }
 
     override func isAccessibilityFocused() -> Bool {

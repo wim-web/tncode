@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import XCTest
 @testable import PiWorkspace
@@ -30,6 +31,273 @@ final class ThreadTerminalTests: XCTestCase {
         drawer.close(5)
         XCTAssertFalse(drawer.isOpen)
         XCTAssertTrue(drawer.groups.isEmpty)
+    }
+
+    @MainActor
+    func testRightPanelTerminalControlsKeepIndependentPTYs() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("right-terminal-\(UUID())")
+        let local = root.appendingPathComponent("local", isDirectory: true)
+        let checkout = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "Local file fixture\n".write(to: local.appendingPathComponent("fixture.txt"), atomically: true, encoding: .utf8)
+        try git(in: local, ["init", "-q"])
+        try git(in: local, ["add", "fixture.txt"])
+        try git(in: local, ["-c", "user.name=Terminal Fixture", "-c", "user.email=terminal@example.invalid",
+                            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "Fixture"])
+        try git(in: local, ["worktree", "add", "--detach", "--", checkout.path, "HEAD"])
+
+        let shell = root.appendingPathComponent("shell")
+        try """
+        #!/bin/sh
+        [ -t 0 ] || exit 1
+        printf 'READY-%s\\n' "$$"
+        exec /bin/sh -i
+        """.write(to: shell, atomically: true, encoding: .utf8)
+        XCTAssertEqual(chmod(shell.path, 0o700), 0)
+        let previousShell = ProcessInfo.processInfo.environment["SHELL"]
+        XCTAssertEqual(setenv("SHELL", shell.path, 1), 0)
+        defer {
+            if let previousShell { setenv("SHELL", previousShell, 1) }
+            else { unsetenv("SHELL") }
+        }
+
+        let first = Conversation(id: UUID(), title: "Local Checkout", isDraft: false)
+        let sameCheckout = Conversation(id: UUID(), title: "Another Thread", isDraft: false)
+        let second = Conversation(id: UUID(), title: "Linked Checkout",
+                                  location: .worktree(path: checkout.path, base: nil), isDraft: false)
+        let pending = Conversation(id: UUID(), title: "Pending Checkout",
+                                   location: .newWorktree(branch: "pending", base: "HEAD"), isDraft: false)
+        let unavailable = Conversation(id: UUID(), title: "Missing Checkout",
+                                       location: .worktree(path: root.appendingPathComponent("missing").path, base: nil),
+                                       isDraft: false)
+        let project = Project(id: UUID(), path: local.path, title: "Terminal Fixture",
+                              conversations: [first, sameCheckout, second, pending, unavailable], selectedConversation: first.id)
+        let state = root.appendingPathComponent("workspace", isDirectory: true)
+        do {
+            let store = try WorkspaceStore(root: state)
+            try store.save(Workspace(projects: [project], selectedProject: project.id,
+                                     model: ModelSettings(), welcomeCompleted: true))
+        }
+        let model = WorkspaceModel(root: state, keychainService: UUID().uuidString, readCredential: { _ in nil },
+                                   makeProcess: { _, _ in throw WorkspaceError("The terminal fixture runs without an agent.") })
+        XCTAssertNil(model.startupFailure)
+        XCTAssertEqual(model.conversation?.id, first.id)
+        defer { model.shutdown() }
+        let suite = "dev.piworkspace.right-terminal.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+        defer { app.setActivationPolicy(policy) }
+        let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 3200, y: 0)
+        let window = TerminalOffscreenPanel(contentRect: NSRect(origin: origin, size: CGSize(width: 1500, height: 820)),
+                                            styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
+        let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                        browserDefaults: defaults, workspacePasteboard: pasteboard)
+            .defaultAppStorage(defaults))
+        host.sizingOptions = []
+        window.contentView = host
+        window.setFrameOrigin(origin)
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        window.orderBack(nil)
+
+        func element(_ id: String) -> AnyObject? {
+            host.layoutSubtreeIfNeeded()
+            var visited = Set<ObjectIdentifier>()
+            func find(_ node: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let result = find(child as AnyObject) { return result }
+                }
+                return nil
+            }
+            let windows = [window as NSWindow] + (window.childWindows ?? []) + [window.attachedSheet].compactMap { $0 }
+            if let result = find(host) { return result }
+            for window in windows {
+                if let result = find(window) ?? window.contentView.flatMap({ find($0) }) { return result }
+            }
+            return nil
+        }
+        func press(_ id: String) async throws {
+            try await waitFor("AX control \(id)") { element(id) != nil }
+            XCTAssertTrue(element(id)?.accessibilityPerformPress?() == true, id)
+        }
+        func focused(_ id: String) async throws -> TerminalSessionView {
+            try await waitFor("focused \(id) in \(model.conversation?.title ?? "?")") {
+                host.layoutSubtreeIfNeeded()
+                guard let view = window.firstResponder as? TerminalSessionView else { return false }
+                return view.accessibilityIdentifier() == id && !view.isHidden && view.bounds.width > 100
+            }
+            return try XCTUnwrap(window.firstResponder as? TerminalSessionView)
+        }
+        func add(_ pane: Int, usingKey: Bool = false) async throws -> TerminalSessionView {
+            try await press("add-panel-surface")
+            if usingKey {
+                try await waitFor("open Add Panel Surface menu") { element("add-panel-terminal") != nil }
+                try key(kVK_ANSI_T, "t", modifiers: [])
+            } else {
+                try await press("add-panel-terminal")
+            }
+            return try await focused("right-terminal-pane-\(pane)")
+        }
+        func select(_ thread: Conversation) async throws {
+            try await press("thread-row-\(thread.id)")
+            try await waitFor(thread.title) { model.conversation?.id == thread.id }
+        }
+        func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags) throws {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                                                       timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                       characters: characters, charactersIgnoringModifiers: characters,
+                                                       isARepeat: false, keyCode: UInt16(code)))
+            app.sendEvent(event)
+        }
+        func tabFrame(_ id: String) throws -> CGRect {
+            try XCTUnwrap(element(id)?.accessibilityFrame?())
+        }
+        func dragTab(_ id: String, onto target: String) throws {
+            let from = try tabFrame(id)
+            let to = try tabFrame(target)
+            let start = window.convertPoint(fromScreen: CGPoint(x: from.midX, y: from.midY))
+            let end = window.convertPoint(fromScreen: CGPoint(x: to.midX, y: to.midY))
+            window.sendEvent(try mouse(.leftMouseDown, in: window, at: start))
+            window.sendEvent(try mouse(.leftMouseDragged, in: window, at: end))
+            window.sendEvent(try mouse(.leftMouseUp, in: window, at: end))
+        }
+
+        try await press("toggle-terminal")
+        let drawer = try await focused("thread-terminal")
+        let drawerPID = try await readyPID(of: drawer)
+        let drawerTTY = try await verifyDirectoryAndTTY(in: local, terminal: drawer, name: "drawer")
+        let right = try await add(2)
+        let rightPID = try await readyPID(of: right)
+        let rightTTY = try await verifyDirectoryAndTTY(in: local, terminal: right, name: "right")
+        XCTAssertNotEqual(rightTTY, drawerTTY)
+        XCTAssertNotEqual(rightPID, drawerPID)
+        XCTAssertFalse(drawer.isHidden)
+        XCTAssertGreaterThan(right.convert(right.bounds, to: nil).minY, drawer.convert(drawer.bounds, to: nil).minY)
+        let initialWidth = right.bounds.width
+        window.setContentSize(CGSize(width: 1100, height: 820))
+        try await waitFor("right terminal follows workspace resize") { right.bounds.width < initialWidth }
+        window.setContentSize(CGSize(width: 1500, height: 820))
+        try await waitFor("right terminal fits restored panel") { right.bounds.width == initialWidth }
+        XCTAssertEqual(right.process.shellPid, rightPID)
+        send("printf 'RIGHT-MARKER-%s\\n' \"$$\"\n", to: right)
+        try await waitFor("right marker") { self.output(of: right).contains("RIGHT-MARKER-\(rightPID)") }
+        XCTAssertFalse(output(of: drawer).contains("RIGHT-MARKER"))
+
+        send("/bin/sleep 60 & echo $! > right-background\n", to: right)
+        let background = try await readPID(at: local.appendingPathComponent("right-background"))
+        send("/bin/sh -c 'echo $$ > right-foreground; exec /bin/sleep 60'\n", to: right)
+        let foreground = try await readPID(at: local.appendingPathComponent("right-foreground"))
+
+        try await press("toggle-files")
+        try await waitFor("loaded Files surface") { element("files-row-fixture.txt") != nil && right.isHidden }
+        try await press("files-row-fixture.txt")
+        try await waitFor("opened file") { element("files-preview") != nil }
+        try key(kVK_ANSI_T, "t", modifiers: .command)
+        try await waitFor("Cmd+T opens Add Panel Surface") { element("add-panel-terminal") != nil }
+        try key(kVK_Escape, "\u{1B}", modifiers: [])
+        try await waitFor("Escape dismisses Add Panel Surface") { element("add-panel-terminal") == nil }
+        try await press("toggle-browser")
+        try await waitFor("Browser beside the terminal") { element("browser-address") != nil }
+        try await press("right-panel-tab-files")
+        try await waitFor("Files restores alongside Browser") { element("files-row-fixture.txt") != nil }
+        try await press("right-panel-tab-terminal-2")
+        let afterFiles = try await focused("right-terminal-pane-2")
+        XCTAssertTrue(afterFiles === right)
+        try dragTab("right-panel-tab-browser", onto: "right-panel-tab-terminal-2")
+        try await waitFor("tab drag reorders Browser before Terminal") {
+            guard let browser = try? tabFrame("right-panel-tab-browser"),
+                  let terminal = try? tabFrame("right-panel-tab-terminal-2") else { return false }
+            return browser.minX < terminal.minX
+        }
+        XCTAssertFalse(right.isHidden)
+
+        try await press("hide-right-panel")
+        try await waitFor("hidden right panel keeps the drawer") {
+            right.isHidden && !drawer.isHidden && element("right-panel-tab-terminal-2") == nil
+        }
+        try await press("toggle-right-panel")
+        let restored = try await focused("right-terminal-pane-2")
+        XCTAssertTrue(restored === right)
+        XCTAssertTrue(output(of: restored).contains("RIGHT-MARKER-\(rightPID)"))
+
+        try await select(sameCheckout)
+        try await waitFor("thread scope even in the same checkout") {
+            right.isHidden && drawer.isHidden && element("right-panel-tab-terminal-2") == nil
+        }
+        try await select(second)
+        let linked = try await add(1, usingKey: true)
+        let linkedPID = try await readyPID(of: linked)
+        let linkedTTY = try await verifyDirectoryAndTTY(in: checkout, terminal: linked, name: "linked")
+        XCTAssertEqual(Set([drawerTTY, rightTTY, linkedTTY]).count, 3)
+        XCTAssertEqual(Set([drawerPID, rightPID, linkedPID]).count, 3)
+        XCTAssertFalse(output(of: linked).contains("RIGHT-MARKER"))
+        try await select(first)
+        try await waitFor("restored local terminals") { !right.isHidden && !drawer.isHidden && linked.isHidden }
+        XCTAssertEqual(right.process.shellPid, rightPID)
+        for pid in [drawerPID, rightPID, linkedPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
+
+        try await press("split-right-terminal-horizontal")
+        let split = try await focused("right-terminal-pane-3")
+        let splitPID = try await readyPID(of: split)
+        XCTAssertLessThanOrEqual(right.convert(right.bounds, to: nil).maxX, split.convert(split.bounds, to: nil).minX)
+        try key(kVK_ANSI_LeftBracket, "[", modifiers: [.command, .shift])
+        let previous = try await focused("right-terminal-pane-2")
+        XCTAssertTrue(previous === right)
+        try key(kVK_ANSI_RightBracket, "]", modifiers: [.command, .shift])
+        let next = try await focused("right-terminal-pane-3")
+        XCTAssertTrue(next === split)
+        try await press("split-right-terminal-vertical")
+        let vertical = try await focused("right-terminal-pane-4")
+        let verticalPID = try await readyPID(of: vertical)
+        XCTAssertGreaterThanOrEqual(split.convert(split.bounds, to: nil).minY, vertical.convert(vertical.bounds, to: nil).maxY)
+        try await press("close-right-terminal-pane")
+        try await press("confirm-close-right-terminal")
+        try await waitFor("only the vertical pane closed") { kill(verticalPID, 0) == -1 }
+        for pid in [drawerPID, rightPID, linkedPID, splitPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
+
+        try await press("close-right-panel-terminal-2")
+        try await press("cancel-close-right-terminal")
+        try await waitFor("cancelled close") { window.attachedSheet == nil }
+        for pid in [drawerPID, rightPID, linkedPID, splitPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
+
+        try await press("close-right-panel-terminal-2")
+        try await press("confirm-close-right-terminal")
+        try await waitFor("panel tab, both shells and their jobs closed") {
+            [rightPID, splitPID, foreground, background].allSatisfy { kill($0, 0) == -1 }
+        }
+        XCTAssertEqual(kill(drawerPID, 0), 0)
+        XCTAssertEqual(kill(linkedPID, 0), 0)
+        try await waitFor("neighboring Files tab selected") { element("files-row-fixture.txt") != nil }
+        try await select(second)
+        let linkedRestored = try await focused("right-terminal-pane-1")
+        XCTAssertTrue(linkedRestored === linked)
+        try await press("close-right-panel-terminal-1")
+        try await press("confirm-close-right-terminal")
+        try await waitFor("last right panel terminal closes the panel") {
+            kill(linkedPID, 0) == -1 && element("hide-right-panel") == nil
+        }
+        try await select(pending)
+        try await press("add-panel-surface")
+        try await waitFor("pending checkout cannot launch a terminal") {
+            element("add-panel-terminal")?.isAccessibilityEnabled?() == false
+        }
+        try await select(unavailable)
+        let failedTerminal = try await add(1)
+        try await waitFor("missing checkout error in terminal") {
+            self.output(of: failedTerminal).contains("The workspace folder is unavailable.")
+        }
+        XCTAssertLessThanOrEqual(failedTerminal.process.shellPid, 0)
+        print("Right panel PTYs: drawer \(drawerPID) \(drawerTTY), right \(rightPID) \(rightTTY), linked \(linkedPID) \(linkedTTY), split \(splitPID) and \(verticalPID). Closed jobs \(foreground) and \(background).")
     }
 
     @MainActor
@@ -413,4 +681,10 @@ private struct DrawerFixtureView: View {
 
 private extension CGPoint {
     func offsetBy(dy: CGFloat) -> CGPoint { CGPoint(x: x, y: y + dy) }
+}
+
+private final class TerminalOffscreenPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

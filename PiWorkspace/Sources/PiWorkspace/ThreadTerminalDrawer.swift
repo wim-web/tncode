@@ -18,18 +18,22 @@ struct ThreadTerminalDrawerState: Identifiable {
 
     let id: ThreadTerminalLocation
     var isOpen = true
-    private(set) var groups = [Group(number: 1, panes: [1])]
-    private(set) var activePane = 1
+    private(set) var groups: [Group]
+    private(set) var activePane: Int
     private(set) var focusRequest = 0
-    private var nextPane = 2
+    private var nextPane: Int
 
-    init(id: ThreadTerminalLocation) {
+    init(id: ThreadTerminalLocation, firstPane: Int = 1) {
         self.id = id
+        groups = [Group(number: firstPane, panes: [firstPane])]
+        activePane = firstPane
+        nextPane = firstPane + 1
     }
 
     var activeGroup: Group? { groups.first { $0.panes.contains(activePane) } }
-    var canSplit: Bool { activeGroup.map { $0.panes.count < 4 } ?? false }
+    var canSplit: Bool { activeGroup.map { $0.panes.count < ThreadTerminal.maxPanesPerGroup } ?? false }
     var panes: [Int] { groups.flatMap(\.panes) }
+    var nextNumber: Int { nextPane }
 
     mutating func select(_ pane: Int) {
         guard panes.contains(pane) else { return }
@@ -44,19 +48,19 @@ struct ThreadTerminalDrawerState: Identifiable {
         return true
     }
 
-    mutating func newTab() {
-        let pane = nextPane
-        nextPane += 1
+    mutating func newTab(allocating number: Int? = nil) {
+        let pane = number ?? nextPane
+        nextPane = pane + 1
         groups.append(Group(number: pane, panes: [pane]))
         select(pane)
     }
 
-    mutating func split(_ direction: SplitDirection) {
+    mutating func split(_ direction: SplitDirection, allocating number: Int? = nil) {
         guard canSplit,
               let group = groups.firstIndex(where: { $0.panes.contains(activePane) }),
               let index = groups[group].panes.firstIndex(of: activePane) else { return }
-        let pane = nextPane
-        nextPane += 1
+        let pane = number ?? nextPane
+        nextPane = pane + 1
         groups[group].panes.insert(pane, at: index + 1)
         groups[group].direction = direction
         select(pane)
@@ -104,16 +108,19 @@ struct ThreadTerminalDrawer: View {
     @Binding var drawer: ThreadTerminalDrawerState
     let selected: Bool
     let limits: TerminalDrawerHeight
+    let allocateNumber: (() -> Int)?
     let removeDrawer: () -> Void
     @AppStorage private var preferredHeight: Double?
     @State private var closingPane: Int?
     @State private var dragHeight: CGFloat?
 
     init(drawer: Binding<ThreadTerminalDrawerState>, selected: Bool, limits: TerminalDrawerHeight,
+         allocateNumber: (() -> Int)? = nil,
          removeDrawer: @escaping () -> Void) {
         _drawer = drawer
         self.selected = selected
         self.limits = limits
+        self.allocateNumber = allocateNumber
         self.removeDrawer = removeDrawer
         _preferredHeight = AppStorage("terminal-drawer-height.\(drawer.wrappedValue.id.thread.uuidString)")
     }
@@ -210,13 +217,15 @@ struct ThreadTerminalDrawer: View {
                     }
                 }
                 .scrollIndicators(.hidden)
-                toolbarButton("New Terminal", icon: "plus", id: "new-terminal") { drawer.newTab() }
+                toolbarButton("New Terminal", icon: "plus", id: "new-terminal") {
+                    drawer.newTab(allocating: allocateNumber?())
+                }
                 toolbarButton("Split Terminal Horizontally", icon: "rectangle.split.2x1", id: "split-terminal-horizontal") {
-                    drawer.split(.horizontal)
+                    drawer.split(.horizontal, allocating: allocateNumber?())
                 }
                 .disabled(!drawer.canSplit)
                 toolbarButton("Split Terminal Vertically", icon: "rectangle.split.1x2", id: "split-terminal-vertical") {
-                    drawer.split(.vertical)
+                    drawer.split(.vertical, allocating: allocateNumber?())
                 }
                 .disabled(!drawer.canSplit)
                 toolbarButton("Hide Terminal", icon: "chevron.down", id: "hide-terminal") { drawer.isOpen = false }
