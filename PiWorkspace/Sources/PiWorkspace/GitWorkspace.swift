@@ -10,6 +10,8 @@ struct GitRepositoryState: Sendable {
 struct GitCheckout: Sendable {
     let path: String
     let branch: String?
+    let head: String?
+    let lockReason: String?
 }
 
 struct GitFileChange: Identifiable, Hashable, Sendable {
@@ -121,18 +123,27 @@ struct GitWorkspace: Sendable {
         var checkouts: [GitCheckout] = []
         var checkoutPath: String?
         var checkoutBranch: String?
+        var head: String?
+        var lockReason: String?
 
         for field in listing.output.bytes.split(separator: 0, omittingEmptySubsequences: false) {
             if field.isEmpty {
                 if let checkoutPath {
-                    checkouts.append(GitCheckout(path: checkoutPath, branch: checkoutBranch))
+                    let path = URL(fileURLWithPath: checkoutPath).resolvingSymlinksInPath().standardizedFileURL.path
+                    checkouts.append(GitCheckout(path: path, branch: checkoutBranch, head: head, lockReason: lockReason))
                 }
                 checkoutPath = nil
                 checkoutBranch = nil
+                head = nil
+                lockReason = nil
             } else if field.starts(with: pathPrefix) {
                 checkoutPath = try Self.decode(field.dropFirst(pathPrefix.count), command: "worktree list")
             } else if field.starts(with: branchPrefix) {
                 checkoutBranch = try Self.decode(field.dropFirst(branchPrefix.count), command: "worktree list")
+            } else if field.starts(with: "HEAD ".utf8) {
+                head = try Self.decode(field.dropFirst(5), command: "worktree list")
+            } else if field.starts(with: "locked".utf8) {
+                lockReason = try Self.decode(field.dropFirst(7), command: "worktree list")
             }
         }
 
@@ -170,10 +181,39 @@ struct GitWorkspace: Sendable {
         return result.output.truncated ? output + "\n[Diff truncated after 256 KiB]\n" : output
     }
 
-    func createWorktree(at path: String, branch: String, base: String) async throws -> String {
+    func createWorktree(at path: String, branch: String, base: String, for thread: UUID) async throws -> String {
         let root = try await repositoryRoot()
-        _ = try await run(["worktree", "add", "-b", branch, "--", path, base], in: root)
-        let target = path.hasPrefix("/") ? path : root + "/" + path
+        let absolute = path.hasPrefix("/") ? path : root + "/" + path
+        let target = URL(fileURLWithPath: absolute).resolvingSymlinksInPath().standardizedFileURL.path
+        let prepared = try await worktrees().first { $0.path == target }
+        let checked = try await run(["check-ref-format", "--branch", branch], in: root)
+        guard checked.output.bytes == Data((branch + "\n").utf8) else { throw WorkspaceError.invalidBranch }
+        let existingRef = try await run(["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
+                                        in: root, acceptedStatuses: [0, 1])
+        guard existingRef.status == 1 || prepared?.branch == branch else { throw WorkspaceError.branchExists(branch) }
+        let commit = try await revParse(["--verify", "--end-of-options", base + "^{commit}"], in: root)
+        let reason = "Pi Workspace preparing " + thread.uuidString
+        if let prepared {
+            guard prepared.head == commit, prepared.branch == nil || prepared.branch == branch,
+                  prepared.lockReason == nil || prepared.lockReason == reason else {
+                throw WorkspaceError.worktreeChanged
+            }
+        } else {
+            _ = try await run(["worktree", "add", "--detach", "--lock", "--reason", reason, "--", target, commit], in: root)
+        }
+        let admin = try await revParse(["--absolute-git-dir"], in: target)
+        let receipt = URL(fileURLWithPath: admin).appendingPathComponent("pi-workspace-owner")
+        let owner = Data((thread.uuidString + "\n" + commit + "\n").utf8)
+        let ownsLock = prepared == nil || prepared?.lockReason == reason
+        if ownsLock {
+            try owner.write(to: receipt, options: .atomic)
+        } else {
+            guard (try? Data(contentsOf: receipt)) == owner else { throw WorkspaceError.worktreeChanged }
+        }
+        if prepared?.branch != branch {
+            _ = try await run(["switch", "--no-guess", "-c", branch], in: target)
+        }
+        if ownsLock { _ = try await run(["worktree", "unlock", "--", target], in: root) }
         return try await repositoryRoot(in: target)
     }
 
@@ -203,7 +243,7 @@ struct GitWorkspace: Sendable {
     func commit(message: String, paths: Set<String>) async throws {
         guard !paths.isEmpty else { throw WorkspaceError.emptySelection }
         let root = try await repositoryRoot()
-        let indexPath = try await resolvePath(["--path-format=absolute", "--git-path", "index"], in: root)
+        let indexPath = try await revParse(["--path-format=absolute", "--git-path", "index"], in: root)
         let index = URL(fileURLWithPath: indexPath)
         let lockPath = indexPath + ".lock"
         let lock = open(lockPath, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o666)
@@ -231,7 +271,6 @@ struct GitWorkspace: Sendable {
         }
 
         // Git requires new paths to be in the index before `commit --only` can select them.
-        // Keep their intent-to-add entries private and publish the resulting index only after commit succeeds.
         let scratch = index.deletingLastPathComponent().appendingPathComponent("pi-commit-" + UUID().uuidString)
         let manager = FileManager.default
         try manager.createDirectory(at: scratch, withIntermediateDirectories: false,
@@ -282,10 +321,10 @@ struct GitWorkspace: Sendable {
     }
 
     private func repositoryRoot(in directory: String? = nil) async throws -> String {
-        try await resolvePath(["--show-toplevel"], in: directory)
+        try await revParse(["--show-toplevel"], in: directory)
     }
 
-    private func resolvePath(_ arguments: [String], in directory: String?) async throws -> String {
+    private func revParse(_ arguments: [String], in directory: String?) async throws -> String {
         let result = try await run(["rev-parse"] + arguments, in: directory)
         guard result.output.bytes.last == 10 else {
             throw WorkspaceError.invalidOutput(command: "rev-parse")
@@ -457,6 +496,9 @@ enum WorkspaceCommand {
 
 extension GitWorkspace {
     private enum WorkspaceError: LocalizedError {
+        case invalidBranch
+        case branchExists(String)
+        case worktreeChanged
         case emptyRepositoryPath
         case emptySelection
         case staleSelection
@@ -471,6 +513,9 @@ extension GitWorkspace {
 
         var errorDescription: String? {
             switch self {
+            case .invalidBranch: return "Enter a local branch name."
+            case .branchExists(let branch): return "A branch named '\(branch)' already exists."
+            case .worktreeChanged: return "The prepared worktree no longer matches the selected base. Choose an existing worktree to use it."
             case .emptyRepositoryPath:
                 return "The Git repository path is empty."
             case .emptySelection:

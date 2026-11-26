@@ -598,10 +598,7 @@ final class WorkspaceModel: ObservableObject {
                     let path = try await runGitMutation {
                         let destination = try store.worktree(project: project.id, conversation: thread.id)
                         let canonical = destination.resolvingSymlinksInPath().standardizedFileURL.path
-                        if let existing = try await git.worktrees().first(where: { $0.path == canonical && $0.branch == branch }) {
-                            return existing.path
-                        }
-                        return try await git.createWorktree(at: canonical, branch: branch, base: base)
+                        return try await git.createWorktree(at: canonical, branch: branch, base: base, for: thread.id)
                     }
                     location = .worktree(path: path, base: base)
                 }
