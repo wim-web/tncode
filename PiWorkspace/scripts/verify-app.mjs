@@ -218,6 +218,7 @@ function pressDismissal(id) {
 }
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
+  activate: () => drive("activate", []),
   focus: id => drive("type", [id], ""),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,

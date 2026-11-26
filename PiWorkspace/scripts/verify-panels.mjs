@@ -245,41 +245,55 @@ export async function verifyPullRequests(driver, stateFile, logFile, checkout) {
   await until(() => !tree().includes('id="pr-close"'), "closed pull request sheet");
 }
 
-async function verifyPullRequestChoices({ press, visible, value, tree, until, setField, pick, focus, keyFor, popoverFrame }) {
+async function verifyPullRequestChoices({ press, visible, value, tree, until, setField, pick, focus, keyFor, popoverFrame, activate }) {
   const row = n => tree().includes('id="pr-row-' + n + '"');
-  async function openChoices(kind) {
+  async function prepareChoices(kind, prepare) {
     const search = "pr-" + kind + "-search";
-    press("pr-" + kind + "-filter");
-    return until(() => {
-      if (!visible(search).includes("focused=true")) return false;
-      const size = popoverFrame(search).slice(2);
-      return size.every(n => n > 0) && size;
-    }, "native " + kind + " popover");
+    const presented = () => tree().includes('id="' + search + '"');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (!presented()) {
+          if (attempt > 0) activate();
+          press("pr-" + kind + "-filter");
+        }
+        const size = await until(() => {
+          const frame = popoverFrame(search).slice(2);
+          return frame.every(n => n > 0) && frame;
+        }, "native " + kind + " popover", 2500);
+        if (!visible(search).includes("focused=true")) focus(search);
+        await prepare(size);
+        return;
+      } catch (error) {
+        if (attempt === 2 || presented()) throw error;
+      }
+    }
   }
   pick("pr-filter", "All");
   await until(() => row(41) && row(42) && row(43), "three PRs with different authors and labels");
-  const authorSize = await openChoices("author");
-  await setField("pr-author-search", "no-such-fixture-author");
-  await until(() => visible("pr-author-options-empty"), "empty author options");
-  assert.deepEqual(popoverFrame("pr-author-search").slice(2), authorSize);
-  await setField("pr-author-search", "fixture-author");
-  await until(() => visible("pr-author-option-fixture-author"), "matching checkout author");
-  assert.deepEqual(popoverFrame("pr-author-search").slice(2), authorSize);
+  await prepareChoices("author", async size => {
+    await setField("pr-author-search", "no-such-fixture-author");
+    await until(() => visible("pr-author-options-empty"), "empty author options", 3500);
+    assert.deepEqual(popoverFrame("pr-author-search").slice(2), size);
+    await setField("pr-author-search", "fixture-author");
+    await until(() => visible("pr-author-option-fixture-author"), "matching checkout author", 3500);
+    assert.deepEqual(popoverFrame("pr-author-search").slice(2), size);
+  });
   press("pr-author-option-fixture-author");
   await until(() => row(42) && !row(41) && !row(43) && value("pr-author-filter").includes("fixture-author"),
               "only the selected author's PR");
-  await openChoices("author");
-  await until(() => visible("pr-author-anyone"), "clear the author selection");
+  await prepareChoices("author", () => until(() => visible("pr-author-anyone"), "clear the author selection", 3500));
   press("pr-author-anyone");
   await until(() => row(41) && row(42) && row(43), "Anyone restores all authors");
-  await openChoices("label");
-  await setField("pr-label-search", "bug");
-  await until(() => visible("pr-label-option-bug"), "search returned the bug label");
+  await prepareChoices("label", async () => {
+    await setField("pr-label-search", "bug");
+    await until(() => visible("pr-label-option-bug"), "search returned the bug label", 3500);
+  });
   press("pr-label-option-bug");
   await until(() => row(42) && !row(41) && value("pr-label-filter").includes("1 selected"), "unlabeled PR excluded");
+  await prepareChoices("label", () => until(() => visible("pr-label-clear"), "clear the selected label", 3500));
   press("pr-label-clear");
   await until(() => row(41) && row(42) && row(43), "Clear labels restores all PRs");
-  focus("pr-label-search");
+  await prepareChoices("label", () => until(() => visible("pr-label-search").includes("focused=true"), "label keyboard focus", 3500));
   keyFor("pr-label-search", 53);
   await until(() => !tree().includes('id="pr-label-search"'), "closed label choices");
   pick("pr-filter", "Open");

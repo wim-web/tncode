@@ -737,12 +737,12 @@ private func run(_ arguments: [String]) throws {
         guard matches.count == 1, let item = matches.first else { throw Failure("Expected exactly one enabled menu item matching the title.") }
         try requireSuccess(AXUIElementPerformAction(item, kAXPressAction as CFString), "Select menu item")
     case .pick(let id, let title):
-        try activateForInput(app, pid: pid)
         let popup = try element(withID: id, in: app)
         guard [kAXPopUpButtonRole, kAXMenuButtonRole].contains(attribute(kAXRoleAttribute, on: popup) as? String ?? "") else {
             throw Failure("The requested control is not a popup or menu button.")
         }
-        for _ in 0..<2 {
+        for attempt in 0..<2 {
+            if attempt > 0 { try activateForInput(app, pid: pid) }
             try requireSuccess(AXUIElementPerformAction(popup, kAXPressAction as CFString), "Open \(id)")
             let deadline = ProcessInfo.processInfo.systemUptime + 0.9
             repeat {

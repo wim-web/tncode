@@ -5,10 +5,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { images, note } from "./fixtures/attachments.mjs";
 
 const workspace = resolve(import.meta.dirname, "..");
-const app = process.argv[2] && resolve(process.argv[2], "Contents");
+const { values, positionals } = parseArgs({ options: { "release-suite": { type: "boolean" } }, allowPositionals: true });
+assert(positionals.length <= 1, "Pass at most one app bundle.");
+const app = positionals[0] && resolve(positionals[0], "Contents");
 const sidecar = app ? join(app, "Resources/Sidecar") : join(workspace, "Sidecar");
 const sdk = "node_modules/@earendil-works/pi-coding-agent";
 const lock = JSON.parse(readFileSync(join(workspace, "Sidecar/package-lock.json"), "utf8"));
@@ -54,12 +57,14 @@ try {
   writeFileSync(join(root, "note.txt"), note);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  const run = spawn("swift", ["test", "--disable-sandbox", "--filter", "ComposerAttachmentTests"], {
+  const tests = values["release-suite"] ? ["-c", "release"] : ["--filter", "ComposerAttachmentTests"];
+  const run = spawn("swift", ["test", "--disable-sandbox", ...tests], {
     cwd: workspace,
     env: {
       ...process.env,
       CLANG_MODULE_CACHE_PATH: join(workspace, ".build/local-clang-cache"),
       SWIFTPM_MODULECACHE_OVERRIDE: join(workspace, ".build/module-cache"),
+      PI_WORKSPACE_QUESTION_NODE: app ? join(app, "Helpers/node") : process.execPath,
       PI_ATTACHMENT_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/v1`,
       PI_ATTACHMENT_TEST_NODE: app ? join(app, "Helpers/node") : process.execPath,
       PI_ATTACHMENT_TEST_WORKER: join(sidecar, "worker.mjs"),
