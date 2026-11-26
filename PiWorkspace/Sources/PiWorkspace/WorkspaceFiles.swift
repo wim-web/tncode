@@ -298,7 +298,6 @@ struct WorkspaceFiles: Sendable {
             guard fsync(temporary) == 0 else { throw fileError() }
             let updated = FileRevision(try status(temporary))
 
-            // Reopen the path before replacement to catch directory moves as well as file edits.
             try withParent(of: draft.target.path, checkout: draft.original.checkout) { currentFolder, currentName in
                 guard WorkspaceFileIdentity(try status(folder)) == WorkspaceFileIdentity(try status(currentFolder)) else {
                     throw WorkspaceFileError.changed

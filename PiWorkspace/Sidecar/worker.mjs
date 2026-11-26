@@ -302,7 +302,6 @@ async function open(command) {
   manager.appendMessage = (message) => {
     const safeMessage = redactValue(message);
     if (message.role === "user") {
-      // Store the queue ID with the transcript entry so reopening can acknowledge it.
       const receipt = steeredMessages.get(message) ?? active?.receipt;
       if (receipt) {
         safeMessage.workspaceQueuedID = receipt.queuedID;

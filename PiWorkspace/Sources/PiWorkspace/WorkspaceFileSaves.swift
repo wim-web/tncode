@@ -79,7 +79,7 @@ final class WorkspaceFileSaves {
 final class WorkspaceFileSaveSession {
     struct EditorSource {
         fileprivate let original: WorkspaceFileText
-        fileprivate let generation: Int
+        fileprivate let diskRefreshCount: Int
 
         var text: String { original.text }
     }
@@ -88,7 +88,7 @@ final class WorkspaceFileSaveSession {
     private(set) var preview: Result<WorkspaceFilePreview, Error>?
     private(set) var draft: WorkspaceFileDraft?
     private(set) var saveError: Error?
-    private var editorGeneration = 0
+    private var diskRefreshCount = 0
     @ObservationIgnored fileprivate var leases = 0
     @ObservationIgnored private var readRequest: UUID?
     @ObservationIgnored private var pending: Task<Void, Never>?
@@ -105,7 +105,7 @@ final class WorkspaceFileSaveSession {
     }
 
     var editorSource: EditorSource? {
-        (draft?.original ?? diskText).map { EditorSource(original: $0, generation: editorGeneration) }
+        (draft?.original ?? diskText).map { EditorSource(original: $0, diskRefreshCount: diskRefreshCount) }
     }
 
     var isReadOnly: Bool {
@@ -139,16 +139,14 @@ final class WorkspaceFileSaveSession {
             result = .failure(error)
         }
         guard !Task.isCancelled, readRequest == request else { return }
-        if draft == nil { editorGeneration += 1 }
+        if draft == nil { diskRefreshCount += 1 }
         preview = result
         if saveError != nil, pending == nil { flush() }
     }
 
     func edit(_ text: String, from source: EditorSource) {
         guard leases > 0 else { return }
-        // A successful save advances the baseline even before SwiftUI updates the editor.
-        // A separate disk refresh must leave edits from the previous display based on that display.
-        let current = source.generation == editorGeneration ? diskText : nil
+        let current = source.diskRefreshCount == diskRefreshCount ? diskText : nil
         let edited = WorkspaceFileDraft(target: target, original: draft?.original ?? current ?? source.original, text: text)
         if edited.isEdited {
             draft = edited
