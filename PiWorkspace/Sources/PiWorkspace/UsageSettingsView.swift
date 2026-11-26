@@ -234,6 +234,7 @@ struct UsageSettingsView: View {
                         Divider()
                     }
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("usage-model-list")
             } else {
                 timelineRows(readout)
@@ -326,6 +327,7 @@ struct UsageSettingsView: View {
                 detailRow(date, value: metric.formatted(row.value), id: "usage-time-\(Int(row.key.timeIntervalSince1970))")
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("usage-time-list")
     }
 
