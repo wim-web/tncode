@@ -13,6 +13,18 @@ final class WorkspaceModel: ObservableObject {
         var isRunning: Bool { self == .running || self == .stopping }
     }
 
+    private struct QueueEdit {
+        let id: UUID
+        var text: String
+    }
+
+    private struct QueueDelivery {
+        var paused = true
+        var mode = PiInputMode.waiting
+        var inFlight: Set<UUID> = []
+        var skipAfterTurn: UUID?
+    }
+
     @Published private(set) var workspace = Workspace()
     @Published private(set) var phase: Phase = .closed
     @Published private(set) var messages: [ChatMessage] = []
@@ -29,8 +41,11 @@ final class WorkspaceModel: ObservableObject {
     private var composerSave: Task<Void, Never>?
     private var composerCredential: (account: String, key: String?)?
 
+    @Published private var queueEdit: QueueEdit?
+    @Published private var queueDelivery = QueueDelivery()
+
     var draft: String {
-        get { conversation?.composerText ?? "" }
+        get { queueEdit?.text ?? conversation?.composerText ?? "" }
         set {
             guard let id = conversation?.id else { return }
             editDraft(newValue, in: id)
@@ -58,6 +73,10 @@ final class WorkspaceModel: ObservableObject {
                 return
             }
         }
+        if queueEdit != nil {
+            queueEdit?.text = text
+            return
+        }
         workspace.projects[p].conversations[t].composerText = text.isEmpty ? nil : text
         composerDirty = true
         composerSave?.cancel()
@@ -80,6 +99,29 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    var editingQueuedMessageID: UUID? { queueEdit?.id }
+    var queuedMessages: [QueuedMessage] {
+        guard let queue = conversation?.queuedMessages, !queue.isEmpty else { return [] }
+        let recorded = Set(messages.compactMap(\.queuedID))
+        return queue.filter {
+            !recorded.contains($0.id) && !queueDelivery.inFlight.contains($0.id)
+        }
+    }
+    var queuePaused: Bool { queueDelivery.paused }
+    var canEditQueue: Bool { canUseQueue && phase != .connecting }
+    var canSteer: Bool { phase == .running && queueDelivery.mode == .steer }
+    var canSkipCompaction: Bool { phase == .running && queueDelivery.mode == .compacting }
+    var canStartQueuedMessage: Bool { phase == .ready && !operationsInProgress && canUseQueue }
+    var canQueueDraft: Bool {
+        canUseQueue && queueEdit == nil && !promptText.isEmpty &&
+            (phase == .running || (canStartQueuedMessage && !queuedMessages.isEmpty))
+    }
+    var canUpdateQueuedMessage: Bool { queueEdit != nil && !promptText.isEmpty }
+    private var canUseQueue: Bool {
+        conversation?.archived == false && conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil
+    }
+    private var promptText: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     func showsInSidebar(_ thread: Conversation) -> Bool {
         thread.isDraft != true || thread.composerText != nil || thread.worktreeLaunch != nil
     }
@@ -100,17 +142,17 @@ final class WorkspaceModel: ObservableObject {
     private var store: WorkspaceStore?
     private let vault: KeyVault
     private let readCredential: (String) throws -> String?
-    private let makeProcess: (URL, String) throws -> PiProcess
-    private var process: PiProcess?
+    private let makeProcess: (URL, String) throws -> any PiConnection
+    private var process: (any PiConnection)?
     private var activeTurnID: UUID?
 
     init(root: URL, keychainService: String, readCredential: ((String) throws -> String?)? = nil,
-         makeProcess: ((URL, String) throws -> PiProcess)? = nil) {
+         makeProcess: ((URL, String) throws -> any PiConnection)? = nil) {
         self.root = root
         let vault = KeyVault(service: keychainService)
         self.vault = vault
         self.readCredential = readCredential ?? vault.read
-        self.makeProcess = makeProcess ?? PiProcess.init(config:cwd:)
+        self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1) }
         openWorkspace()
     }
 
@@ -165,9 +207,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
     var canSend: Bool {
-        phase == .ready && !operationsInProgress && conversation?.archived == false &&
-        conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil &&
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        phase == .ready && !operationsInProgress && canUseQueue && queueEdit == nil && !promptText.isEmpty
     }
     var canRetryWorktree: Bool {
         guard !operationsInProgress, let conversation, !conversation.archived,
@@ -185,7 +225,7 @@ final class WorkspaceModel: ObservableObject {
     func start() {
         guard !showingWelcome, process == nil else { return }
         if let conversation, project?.isScratch == true || conversation.composerText != nil ||
-            conversation.worktreeLaunch != nil {
+            conversation.worktreeLaunch != nil || !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
             connect()
             return
@@ -208,6 +248,8 @@ final class WorkspaceModel: ObservableObject {
         process = nil
         activeTurnID = nil
         pendingToolApproval = nil
+        queueDelivery = QueueDelivery()
+        queueEdit = nil
         phase = .closed
     }
 
@@ -658,7 +700,7 @@ final class WorkspaceModel: ObservableObject {
 
     func send() {
         guard canSend, let process, let conversation else { return }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = promptText
         do {
             guard try canUsePrompt(text, fromComposer: true) else { return }
             if conversation.workingLocation.needsWorktree {
@@ -677,11 +719,147 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         do {
+            if queuedMessages.isEmpty { queueDelivery.paused = false }
             try beginTurn(text, using: process)
         } catch {
             self.error = "Pi is unavailable. Reconnect to send your message."
             shutdown()
         }
+    }
+
+    func queueDraft(steering: Bool = false) {
+        guard canQueueDraft, !steering || canSteer else { return }
+        do {
+            let text = promptText
+            guard try canUsePrompt(text, fromComposer: true) else { return }
+            let item = QueuedMessage(text: text)
+            guard let id = conversation?.id else { return }
+            try saveThread(id) { thread in
+                thread.queuedMessages = (thread.queuedMessages ?? []) + [item]
+                thread.composerText = nil
+            }
+            error = nil
+            if steering { sendQueuedMessageNow(item.id) }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func editQueuedMessage(_ id: UUID) {
+        guard canEditQueue, queueEdit == nil, let item = queuedMessages.first(where: { $0.id == id }) else { return }
+        queueEdit = QueueEdit(id: id, text: item.text)
+    }
+
+    func updateQueuedMessage() {
+        guard canUpdateQueuedMessage, let edit = queueEdit else { return }
+        do {
+            let text = promptText
+            guard try canUsePrompt(text, fromComposer: true) else { return }
+            try saveQueue { queue in
+                guard let index = queue.firstIndex(where: { $0.id == edit.id }) else { return }
+                queue[index].text = text
+            }
+            cancelQueuedMessageEdit()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func cancelQueuedMessageEdit() {
+        guard queueEdit != nil else { return }
+        queueEdit = nil
+        drainQueue()
+    }
+
+    func removeQueuedMessage(_ id: UUID) {
+        guard canEditQueue, queueEdit?.id != id, queuedMessages.contains(where: { $0.id == id }) else { return }
+        try? saveQueue { $0.removeAll { $0.id == id } }
+    }
+
+    func moveQueuedMessageToFront(_ id: UUID) {
+        guard canEditQueue, queueEdit?.id != id, queuedMessages.first?.id != id,
+              let item = queuedMessages.first(where: { $0.id == id }) else { return }
+        do {
+            try saveQueue { queue in
+                queue.removeAll { $0.id == id }
+                queue.insert(item, at: 0)
+            }
+            drainQueue()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func resumeQueuedMessages() {
+        guard queueDelivery.paused, canStartQueuedMessage, let item = queuedMessages.first,
+              queueEdit?.id != item.id else { return }
+        startQueuedMessage(item)
+    }
+
+    func sendQueuedMessageNow(_ id: UUID) {
+        guard canUseQueue, queueEdit?.id != id, let item = queuedMessages.first(where: { $0.id == id }) else { return }
+        if canStartQueuedMessage {
+            startQueuedMessage(item)
+            return
+        }
+        guard let process, let activeTurnID, canSteer || canSkipCompaction else { return }
+        guard validateQueuedPrompt(item) else { return }
+        do {
+            let skipping = canSkipCompaction
+            try process.send(SendQueuedInput(type: skipping ? .skipCompaction : .steer, turnID: activeTurnID,
+                                             queuedID: item.id, text: skipping ? nil : item.text))
+            queueDelivery.inFlight.insert(item.id)
+            if skipping { queueDelivery.mode = .waiting }
+        } catch {
+            connectionFailed("Pi disconnected while sending a queued message. Reconnect to try again.")
+        }
+    }
+
+    private func saveQueue(_ edit: (inout [QueuedMessage]) -> Void) throws {
+        guard let id = conversation?.id else { throw WorkspaceError("Select a thread first.") }
+        try saveThread(id) {
+            var queue = $0.queuedMessages ?? []
+            edit(&queue)
+            $0.queuedMessages = queue.isEmpty ? nil : queue
+        }
+    }
+
+    private func reconcileQueue(_ history: [ChatMessage]) {
+        let recorded = Set(history.compactMap(\.queuedID))
+        guard conversation?.queuedMessages?.contains(where: { recorded.contains($0.id) }) == true else { return }
+        do {
+            try saveQueue { $0.removeAll { recorded.contains($0.id) } }
+        } catch {
+            queueDelivery.paused = true
+        }
+    }
+
+    private func startQueuedMessage(_ item: QueuedMessage, skippingCompaction: Bool = false) {
+        guard canStartQueuedMessage, let process else { return }
+        queueDelivery.paused = true
+        guard validateQueuedPrompt(item) else { return }
+        do {
+            try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: skippingCompaction)
+            queueDelivery.inFlight.insert(item.id)
+            queueDelivery.paused = false
+        } catch {
+            connectionFailed("Could not send the queued message. Reconnect to try again.")
+        }
+    }
+
+    private func validateQueuedPrompt(_ item: QueuedMessage) -> Bool {
+        do {
+            return try canUsePrompt(item.text)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+
+    private func drainQueue() {
+        guard canStartQueuedMessage, !queueDelivery.paused,
+              let first = queuedMessages.first, queueEdit?.id != first.id else { return }
+        startQueuedMessage(first)
     }
 
     func retryWorktree() {
@@ -838,9 +1016,11 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func beginTurn(_ text: String, using process: PiProcess) throws {
+    private func beginTurn(_ text: String, using process: any PiConnection, queuedID: UUID? = nil,
+                           skippingCompaction: Bool = false) throws {
         let turnID = UUID()
-        try process.send(SendPrompt(turnID: turnID, text: text))
+        try process.send(SendPrompt(turnID: turnID, text: text, queuedID: queuedID,
+                                    skipCompaction: skippingCompaction ? true : nil))
         activeTurnID = turnID
         partial = ""
         activity = ""
@@ -851,6 +1031,8 @@ final class WorkspaceModel: ObservableObject {
     func cancel() {
         guard phase == .running, let process, let activeTurnID else { return }
         pendingToolApproval = nil
+        queueDelivery.paused = true
+        queueDelivery.skipAfterTurn = nil
         do {
             try process.send(CancelPrompt(turnID: activeTurnID))
             phase = .stopping
@@ -931,7 +1113,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func submitWorktreePrompt(using worker: PiProcess) {
+    private func submitWorktreePrompt(using worker: any PiConnection) {
         guard let conversation, let launch = conversation.worktreeLaunch,
               launch.stage == .openThread, launch.canInterrupt else { return }
         do {
@@ -946,6 +1128,7 @@ final class WorkspaceModel: ObservableObject {
         preparingWorktree = false
         do {
             try beginTurn(launch.prompt, using: worker)
+            queueDelivery.paused = false
         } catch {
             connectionFailed("Pi disconnected while sending the message. Reconnect to check its history.")
         }
@@ -989,7 +1172,7 @@ final class WorkspaceModel: ObservableObject {
         try? saveThread(conversation.id) { $0.worktreeLaunch = nil }
     }
 
-    private func receive(_ event: PiEvent, from worker: PiProcess, account: String) {
+    private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
         switch event {
         case let .credential(id, read):
             var result = CredentialResult(requestID: id)
@@ -1007,6 +1190,7 @@ final class WorkspaceModel: ObservableObject {
         case let .ready(history):
             guard phase == .connecting else { return }
             messages = history
+            reconcileQueue(history)
             phase = .ready
             reconcileComposerSubmission(in: history, ended: true)
             if !confirmWorktreePrompt(in: history), preparingWorktree {
@@ -1026,7 +1210,28 @@ final class WorkspaceModel: ObservableObject {
             guard phase == .running, approval.turnID == activeTurnID,
                   approval.threadID == conversation?.id else { return }
             pendingToolApproval = approval
-        case let .finished(history, error):
+        case let .inputMode(turnID, mode):
+            guard activeTurnID == turnID, phase == .running else { return }
+            queueDelivery.mode = mode
+        case let .queueRejected(turnID, queuedID):
+            guard activeTurnID == turnID, queueDelivery.inFlight.remove(queuedID) != nil else { return }
+            queueDelivery.paused = true
+            if phase == .running { error = "The turn reached a different stage. The message stayed in the queue." }
+        case let .compactionSkipped(turnID, queuedID):
+            guard activeTurnID == turnID, phase == .running, queueDelivery.inFlight.contains(queuedID) else { return }
+            queueDelivery.skipAfterTurn = queuedID
+        case let .finished(turnID, history, error):
+            guard activeTurnID == turnID else { return }
+            let skipped = queueDelivery.skipAfterTurn
+            let recorded = Set(history.compactMap(\.queuedID))
+            var undelivered = queueDelivery.inFlight.subtracting(recorded)
+            if let skipped { undelivered.remove(skipped) }
+            queueDelivery.inFlight.removeAll()
+            queueDelivery.skipAfterTurn = nil
+            queueDelivery.mode = .waiting
+            if error != nil || !undelivered.isEmpty { queueDelivery.paused = true }
+            if let error { self.error = error }
+            else if !undelivered.isEmpty && phase == .running { self.error = "The message stayed in the queue." }
             pendingToolApproval = nil
             activeTurnID = nil
             messages = history
@@ -1034,11 +1239,16 @@ final class WorkspaceModel: ObservableObject {
             activity = ""
             repositoryRevision += 1
             phase = .ready
-            self.error = error
             reconcileComposerSubmission(in: history, ended: true)
+            reconcileQueue(history)
             if !confirmWorktreePrompt(in: history), conversation?.worktreeLaunch?.awaitingHistory == true {
                 self.error = nil
                 failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")
+            }
+            if let skipped, let item = queuedMessages.first(where: { $0.id == skipped }) {
+                startQueuedMessage(item, skippingCompaction: true)
+            } else {
+                drainQueue()
             }
         case let .fatal(error):
             connectionFailed(error)

@@ -395,16 +395,17 @@ final class ComposerDraftTests: XCTestCase {
                         ;;
                     *'"type":"prompt"'*)
                         printf '%s\n' "$command" >> "$1"
+                        turn=$(printf '%s' "$command" | sed -En 's/.*"turnID":"([^"]+)".*/\1/p')
                         while [ -e hold-response ]; do sleep 0.02; done
                         if [ -f fixture-interrupt-before ]; then exit 0; fi
                         if [ -f fixture-reject ]; then
-                            printf '{"type":"finished","messages":%s,"error":"The fixture declined the prompt."}\n' "$history"
+                            printf '{"type":"finished","turnID":"%s","messages":%s,"error":"The fixture declined the prompt."}\n' "$turn" "$history"
                         else
                             history='[{"id":"fixture-message","role":"user","text":"Send this message"}]'
                             printf '%s' "$history" > fixture-history
                             if [ -f fixture-interrupt-after ]; then exit 0; fi
                             printf '{"type":"history","messages":%s}\n' "$history"
-                            printf '{"type":"finished","messages":%s}\n' "$history"
+                            printf '{"type":"finished","turnID":"%s","messages":%s}\n' "$turn" "$history"
                         fi
                         ;;
                 esac

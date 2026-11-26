@@ -367,7 +367,8 @@ final class WorktreeLaunchTests: XCTestCase {
                     *'"type":"prompt"'*)
                         printf '%s\t%s\n' "$cwd" "$command" >> "$root/prompts"
                         if [ -f "$root/disconnect-on-prompt" ]; then exit 0; fi
-                        printf '{"type":"finished","messages":[{"id":"fixture","role":"user","text":"Use the original prompt"}]}\n'
+                        turn=$(printf '%s' "$command" | sed -En 's/.*"turnID":"([^"]+)".*/\1/p')
+                        printf '{"type":"finished","turnID":"%s","messages":[{"id":"fixture","role":"user","text":"Use the original prompt"}]}\n' "$turn"
                         ;;
                 esac
             done

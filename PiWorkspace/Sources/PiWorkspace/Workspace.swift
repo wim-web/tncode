@@ -160,6 +160,7 @@ struct Conversation: Codable, Identifiable {
     var worktreeLaunch: WorktreeLaunch?
     var composerText: String?
     var composerSubmission: ComposerSubmission?
+    var queuedMessages: [QueuedMessage]?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }

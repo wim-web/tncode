@@ -6,6 +6,7 @@ struct ChatMessage: Decodable, Identifiable {
     let id: String
     let role: Role
     let text: String
+    var queuedID: UUID? = nil
 }
 
 enum PiEvent: Decodable {
@@ -15,16 +16,23 @@ enum PiEvent: Decodable {
     case partial(String)
     case activity(String)
     case toolApproval(ToolApproval)
-    case finished([ChatMessage], error: String?)
+    case inputMode(turnID: UUID, PiInputMode)
+    case queueRejected(turnID: UUID, queuedID: UUID)
+    case compactionSkipped(turnID: UUID, queuedID: UUID)
+    case finished(turnID: UUID, [ChatMessage], error: String?)
     case fatal(String)
 
-    private enum Field: String, CodingKey { case type, requestID, operation, messages, text, error }
-    private enum Kind: String, Decodable { case credential, ready, history, partial, activity, toolApproval, finished, fatal }
+    private enum Field: String, CodingKey { case type, requestID, operation, messages, text, error, turnID, queuedID, mode }
+    private enum Kind: String, Decodable {
+        case credential, ready, history, partial, activity, toolApproval, finished, fatal
+        case inputMode, queueRejected, compactionSkipped
+    }
     private enum Operation: String, Decodable { case exists, read }
 
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: Field.self)
-        switch try fields.decode(Kind.self, forKey: .type) {
+        let kind = try fields.decode(Kind.self, forKey: .type)
+        switch kind {
         case .credential:
             self = .credential(id: try fields.decode(String.self, forKey: .requestID),
                                read: try fields.decode(Operation.self, forKey: .operation) == .read)
@@ -33,8 +41,18 @@ enum PiEvent: Decodable {
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
         case .toolApproval: self = .toolApproval(try ToolApproval(from: decoder))
+        case .inputMode:
+            self = .inputMode(turnID: try fields.decode(UUID.self, forKey: .turnID),
+                              try fields.decode(PiInputMode.self, forKey: .mode))
+        case .queueRejected, .compactionSkipped:
+            let turnID = try fields.decode(UUID.self, forKey: .turnID)
+            let queuedID = try fields.decode(UUID.self, forKey: .queuedID)
+            self = kind == .queueRejected
+                ? .queueRejected(turnID: turnID, queuedID: queuedID)
+                : .compactionSkipped(turnID: turnID, queuedID: queuedID)
         case .finished:
-            self = .finished(try fields.decode([ChatMessage].self, forKey: .messages),
+            self = .finished(turnID: try fields.decode(UUID.self, forKey: .turnID),
+                             try fields.decode([ChatMessage].self, forKey: .messages),
                              error: try fields.decodeIfPresent(String.self, forKey: .error))
         case .fatal: self = .fatal(try fields.decode(String.self, forKey: .error))
         }
@@ -50,7 +68,20 @@ struct OpenConversation: Encodable {
     let toolPermission: ToolPermission
 }
 
-struct SendPrompt: Encodable { let type = "prompt"; let turnID: UUID; let text: String }
+struct SendPrompt: Encodable {
+    let type = "prompt"
+    let turnID: UUID
+    let text: String
+    var queuedID: UUID?
+    var skipCompaction: Bool?
+}
+struct SendQueuedInput: Encodable {
+    enum Kind: String, Encodable { case steer, skipCompaction }
+    let type: Kind
+    let turnID: UUID
+    let queuedID: UUID
+    var text: String?
+}
 struct CancelPrompt: Encodable { let type = "cancel"; let turnID: UUID }
 struct CredentialResult: Encodable {
     var type = "credentialResult"
@@ -61,7 +92,15 @@ struct CredentialResult: Encodable {
 }
 
 @MainActor
-final class PiProcess {
+protocol PiConnection: AnyObject {
+    var onEvent: ((PiEvent) -> Void)? { get set }
+    var onClose: (() -> Void)? { get set }
+    func send(_ command: any Encodable) throws
+    func close()
+}
+
+@MainActor
+final class PiProcess: PiConnection {
     private let child = Process()
     private let input = Pipe()
     private let output = Pipe()
@@ -119,7 +158,7 @@ final class PiProcess {
         }
     }
 
-    func send(_ command: some Encodable) throws {
+    func send(_ command: any Encodable) throws {
         var data = try JSONEncoder().encode(command)
         data.append(10)
         try input.fileHandleForWriting.write(contentsOf: data)

@@ -1186,6 +1186,8 @@ struct WorkspaceView: View {
                         model.respond(to: approval.requestID, with: $0)
                     }
                 }
+                QueuedMessagesView(model: model) { focusedComposer = thread.id }
+                    .id(thread.id)
                 inputCard(project, threadID: thread.id)
             }
             HStack {
@@ -1209,6 +1211,8 @@ struct WorkspaceView: View {
                 }
                 if model.pendingToolApproval != nil {
                     Text("Waiting for approval…")
+                } else if model.canSkipCompaction {
+                    Text("Compacting conversation…")
                 } else if model.phase == .running {
                     Text(model.activity.isEmpty ? "Pi is responding…" : "Running \(model.activity)…")
                 }
@@ -1225,7 +1229,7 @@ struct WorkspaceView: View {
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            TextField("Ask Pi anything", text: Binding(
+            TextField(model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { model.conversation?.id == threadID ? model.draft : "" },
                 set: { model.editDraft($0, in: threadID) }
             ), axis: .vertical)
@@ -1243,40 +1247,85 @@ struct WorkspaceView: View {
                 .frame(maxWidth: .infinity, minHeight: 53.5, alignment: .topLeading)
                 .accessibilityIdentifier("composer")
                 .disabled(model.conversation?.worktreeLaunch != nil || model.conversation?.composerSubmission != nil)
-            HStack(spacing: 13) {
-                if model.effectiveModel.supportsTools {
-                    Menu {
-                        ForEach(ToolPermission.allCases, id: \.self) { permission in
-                            Button(permission.title) { model.setToolPermission(permission) }
-                                .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
-                        }
-                    } label: {
-                        Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 13) {
+                    composerConfiguration(project)
+                    composerActions.fixedSize()
+                }
+                VStack(alignment: .trailing, spacing: 4) {
+                    composerConfiguration(project)
+                    composerActions
+                }
+            }
+            .font(.system(size: 12))
+            .frame(minHeight: 32)
+        }
+        .padding(WorkspaceLayout.editorInset)
+        .background(surface, in: RoundedRectangle(cornerRadius: 15))
+        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(.primary.opacity(0.11)).allowsHitTesting(false) }
+    }
+
+    private func composerConfiguration(_ project: Project) -> some View {
+        HStack(spacing: 13) {
+            if model.effectiveModel.supportsTools {
+                Menu {
+                    ForEach(ToolPermission.allCases, id: \.self) { permission in
+                        Button(permission.title) { model.setToolPermission(permission) }
+                            .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .disabled(model.operationsInProgress)
-                    .accessibilityIdentifier("tool-permissions")
-                }
-                Spacer()
-                Button {
-                    model.showingSettings = true
                 } label: {
-                    Label(model.effectiveModel.model, systemImage: "cpu")
-                        .lineLimit(1)
+                    Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
                 }
-                .accessibilityIdentifier("active-model")
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(model.phase.isRunning)
-                if model.phase.isRunning {
-                    Button(action: model.cancel) { Image(systemName: "stop.fill") }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.circle)
-                        .accessibilityLabel("Stop")
-                        .accessibilityIdentifier("stop-message")
-                        .disabled(model.phase == .stopping)
-                } else {
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(model.operationsInProgress)
+                .accessibilityIdentifier("tool-permissions")
+            }
+            Spacer()
+            Button {
+                model.showingSettings = true
+            } label: {
+                Label(model.effectiveModel.model, systemImage: "cpu")
+                    .lineLimit(1)
+            }
+            .accessibilityIdentifier("active-model")
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(model.phase.isRunning)
+        }
+    }
+
+    private var composerActions: some View {
+        HStack(spacing: 6) {
+            if model.editingQueuedMessageID != nil {
+                Button("Cancel", action: model.cancelQueuedMessageEdit)
+                    .accessibilityLabel("Cancel editing queued message")
+                    .accessibilityIdentifier("queue-cancel-edit")
+                Button("Update", action: model.updateQueuedMessage)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .accessibilityLabel("Update queued message")
+                    .accessibilityIdentifier("queue-update")
+                    .disabled(!model.canUpdateQueuedMessage)
+            } else {
+                if model.canSteer {
+                    Button("Steer") { model.queueDraft(steering: true) }
+                        .help("Send into the current turn")
+                        .accessibilityIdentifier("steer-message")
+                        .disabled(!model.canQueueDraft)
+                }
+                if model.phase == .running {
+                    Button("Queue") { model.queueDraft() }
+                        .help("Send after the current turn")
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .accessibilityIdentifier("queue-message")
+                        .disabled(!model.canQueueDraft)
+                } else if model.phase != .stopping {
+                    if model.canStartQueuedMessage && !model.queuedMessages.isEmpty {
+                        Button("Queue") { model.queueDraft() }
+                            .accessibilityIdentifier("queue-message")
+                            .disabled(!model.canQueueDraft)
+                    }
                     Button(action: model.send) { Image(systemName: "arrow.up") }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.circle)
@@ -1286,12 +1335,15 @@ struct WorkspaceView: View {
                         .disabled(!model.canSend)
                 }
             }
-            .font(.system(size: 12))
-            .frame(minHeight: 32)
+            if model.phase.isRunning {
+                Button(action: model.cancel) { Image(systemName: "stop.fill") }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel("Stop")
+                    .accessibilityIdentifier("stop-message")
+                    .disabled(model.phase == .stopping)
+            }
         }
-        .padding(WorkspaceLayout.editorInset)
-        .background(surface, in: RoundedRectangle(cornerRadius: 15))
-        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(.primary.opacity(0.11)).allowsHitTesting(false) }
     }
 
     private func newThread() {
