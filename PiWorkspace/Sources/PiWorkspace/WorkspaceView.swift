@@ -45,6 +45,7 @@ struct WorkspaceView: View {
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
     @State private var openTerminals: [ThreadTerminalDrawerState] = []
+    @State private var terminalDrawerReservedHeight: CGFloat = 0
     @State private var settledExpanded = false
     @State private var rename: RenameTarget?
     @State private var title = ""
@@ -119,7 +120,7 @@ struct WorkspaceView: View {
                             in: viewportWidth, preferred: sidebarWidth, drag: translation)
                     }
                     .zIndex(1)
-                    detail(viewportWidth: viewportWidth)
+                    detail(viewport: window.size)
                 }
             }
             .opacity(model.showingWelcome ? 0 : 1)
@@ -784,18 +785,21 @@ struct WorkspaceView: View {
         .disabled(model.operationsInProgress)
     }
 
-    private func detail(viewportWidth: CGFloat) -> some View {
-        VStack(spacing: 0) {
+    private func detail(viewport: CGSize) -> some View {
+        let limits = TerminalDrawerHeight(viewport: viewport.height,
+                                          reserved: WorkspaceLayout.headerHeight + terminalDrawerReservedHeight)
+        return VStack(spacing: 0) {
             GeometryReader { workspace in
                 if let project = model.project, let thread = model.conversation {
-                    threadWorkspace(project, thread, viewportWidth: viewportWidth, size: workspace.size)
+                    threadWorkspace(project, thread, viewportWidth: viewport.width, size: workspace.size)
                 } else {
                     readyScreen
                 }
             }
-            terminalDrawer
+            terminalDrawer(limits: limits)
         }
         .background(canvas)
+        .onPreferenceChange(TerminalDrawerReservedHeight.self) { terminalDrawerReservedHeight = $0 }
     }
 
     private func threadWorkspace(_ project: Project, _ thread: Conversation, viewportWidth: CGFloat, size: CGSize) -> some View {
@@ -1089,12 +1093,15 @@ struct WorkspaceView: View {
                     Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
                         .font(.system(size: 27, weight: .semibold))
                         .multilineTextAlignment(.center)
+                        .reservesRoomAboveTerminal(terminalIsVisible, inset: DraftComposerLayout.bottomInset)
                     composer(project, thread)
+                        .reservesRoomAboveTerminal(terminalIsVisible)
                 }
             } else {
                 if let jump, let find = jump.find { transcriptFind(jump, find: find) }
                 transcript(jump, project: project, thread: thread)
                 composer(project, thread).padding(.vertical, 12)
+                    .reservesRoomAboveTerminal(terminalIsVisible)
             }
         }
         .frame(width: layout.composerWidth)
@@ -1150,11 +1157,11 @@ struct WorkspaceView: View {
         }
     }
 
-    private var terminalDrawer: some View {
+    private func terminalDrawer(limits: TerminalDrawerHeight) -> some View {
         VStack(spacing: 0) {
             ForEach($openTerminals) { $drawer in
                 let location = drawer.id
-                ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal) {
+                ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal, limits: limits) {
                     openTerminals.removeAll { $0.id == location }
                 }
             }
@@ -1727,6 +1734,8 @@ struct WorkspaceView: View {
 }
 
 private struct DraftComposerLayout: Layout {
+    static let bottomInset: CGFloat = 20
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
     }
@@ -1736,14 +1745,32 @@ private struct DraftComposerLayout: Layout {
         let headline = subviews[0]
         let composer = subviews[1]
         let composerHeight = composer.sizeThatFits(lane).height
-        let bottomInset: CGFloat = 20
-        let freeHeight = max(0, bounds.height - composerHeight - bottomInset)
+        let freeHeight = max(0, bounds.height - composerHeight - Self.bottomInset)
         let headlineSize = headline.sizeThatFits(ProposedViewSize(width: bounds.width, height: freeHeight))
         let spacing = min(48, max(0, freeHeight - headlineSize.height))
         let composerTop = bounds.minY + max(freeHeight / 2, headlineSize.height + spacing)
         headline.place(at: CGPoint(x: bounds.midX, y: composerTop - spacing), anchor: .bottom,
                        proposal: ProposedViewSize(headlineSize))
         composer.place(at: CGPoint(x: bounds.midX, y: composerTop), anchor: .top, proposal: lane)
+    }
+}
+
+private struct TerminalDrawerReservedHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value += nextValue()
+    }
+}
+
+private extension View {
+    func reservesRoomAboveTerminal(_ terminalVisible: Bool, inset: CGFloat = 0) -> some View {
+        fixedSize(horizontal: false, vertical: terminalVisible)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: TerminalDrawerReservedHeight.self, value: geometry.size.height + inset)
+                }
+            }
     }
 }
 

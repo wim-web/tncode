@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ThreadTerminalLocation: Hashable {
@@ -78,17 +79,49 @@ struct ThreadTerminalDrawerState: Identifiable {
     }
 }
 
-struct ThreadTerminalDrawer: View {
-    static let contentHeight: CGFloat = 174
+struct TerminalDrawerHeight {
+    static let defaultHeight: CGFloat = 280
+    static let toolbar: CGFloat = 30
+    static let divider: CGFloat = 1
+    static let defaultContent = defaultHeight - toolbar - divider
+    private static let minimumHeight: CGFloat = 180
 
+    let maximum: CGFloat
+    var minimum: CGFloat { min(Self.minimumHeight, maximum) }
+
+    init(viewport: CGFloat, reserved: CGFloat) {
+        let windowCap = max(Self.minimumHeight, floor(viewport * 0.75))
+        maximum = min(windowCap, max(0, floor(viewport - reserved)))
+    }
+
+    func clamp(_ height: CGFloat) -> CGFloat {
+        let height = height.isFinite ? height.rounded() : Self.defaultHeight
+        return min(maximum, max(minimum, height))
+    }
+}
+
+struct ThreadTerminalDrawer: View {
     @Binding var drawer: ThreadTerminalDrawerState
     let selected: Bool
+    let limits: TerminalDrawerHeight
     let removeDrawer: () -> Void
+    @AppStorage private var preferredHeight: Double?
     @State private var closingPane: Int?
+    @State private var dragHeight: CGFloat?
+
+    init(drawer: Binding<ThreadTerminalDrawerState>, selected: Bool, limits: TerminalDrawerHeight,
+         removeDrawer: @escaping () -> Void) {
+        _drawer = drawer
+        self.selected = selected
+        self.limits = limits
+        self.removeDrawer = removeDrawer
+        _preferredHeight = AppStorage("terminal-drawer-height.\(drawer.wrappedValue.id.thread.uuidString)")
+    }
 
     private var visible: Bool { selected && drawer.isOpen }
 
     var body: some View {
+        let height = limits.clamp(dragHeight ?? preferredHeight.map { CGFloat($0) } ?? TerminalDrawerHeight.defaultHeight)
         VStack(spacing: 0) {
             if visible { toolbar }
             ZStack {
@@ -108,10 +141,32 @@ struct ThreadTerminalDrawer: View {
                     .allowsHitTesting(presented)
                 }
             }
-            .frame(height: Self.contentHeight)
+            .frame(height: max(0, height - TerminalDrawerHeight.toolbar - TerminalDrawerHeight.divider))
         }
-        .frame(height: visible ? nil : 0, alignment: .top)
+        .frame(height: visible ? height : 0, alignment: .top)
         .clipped()
+        .overlay(alignment: .top) {
+            if visible && height > 0 {
+                TerminalDrawerDivider(height: height, limits: limits, onDrag: { dragHeight = $0 }) {
+                    preferredHeight = Double($0)
+                }
+                .frame(height: min(6, height))
+            }
+        }
+        .onChange(of: visible) { _, visible in
+            if !visible { dragHeight = nil }
+        }
+        .onChange(of: limits.maximum) { _, maximum in
+            if let dragHeight {
+                self.dragHeight = maximum > 0 ? limits.clamp(dragHeight) : nil
+            }
+        }
+        .onChange(of: drawer.groups.isEmpty) { _, empty in
+            if empty {
+                preferredHeight = nil
+                removeDrawer()
+            }
+        }
         .alert("Close Terminal \(closingPane ?? drawer.activePane)?", isPresented: Binding(
             get: { closingPane != nil },
             set: { if !$0 { closingPane = nil } }
@@ -123,7 +178,6 @@ struct ThreadTerminalDrawer: View {
             .accessibilityIdentifier("cancel-close-terminal")
             Button("Close Terminal", role: .destructive) {
                 drawer.close(pane)
-                if drawer.groups.isEmpty { removeDrawer() }
             }
             .accessibilityIdentifier("confirm-close-terminal")
         } message: { _ in
@@ -133,7 +187,7 @@ struct ThreadTerminalDrawer: View {
 
     private var toolbar: some View {
         VStack(spacing: 0) {
-            Divider()
+            Divider().frame(height: TerminalDrawerHeight.divider)
             HStack(spacing: 8) {
                 ScrollView(.horizontal) {
                     HStack(spacing: 4) {
@@ -170,7 +224,7 @@ struct ThreadTerminalDrawer: View {
             }
             .font(.caption)
             .buttonStyle(.plain)
-            .frame(height: 30)
+            .frame(height: TerminalDrawerHeight.toolbar)
             .padding(.horizontal, 12)
         }
     }
@@ -197,5 +251,114 @@ struct ThreadTerminalDrawer: View {
         .help(title)
         .accessibilityLabel(title)
         .accessibilityIdentifier(id)
+    }
+}
+
+private struct TerminalDrawerDivider: NSViewRepresentable {
+    let height: CGFloat
+    let limits: TerminalDrawerHeight
+    let onDrag: (CGFloat?) -> Void
+    let onResize: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> TerminalDrawerDividerView {
+        TerminalDrawerDividerView()
+    }
+
+    func updateNSView(_ view: TerminalDrawerDividerView, context: Context) {
+        view.update(height: height, limits: limits, onDrag: onDrag, onResize: onResize)
+    }
+}
+
+final class TerminalDrawerDividerView: NSView {
+    private struct Drag {
+        let startY: CGFloat
+        let startHeight: CGFloat
+        var height: CGFloat
+    }
+
+    private var height: CGFloat = TerminalDrawerHeight.defaultHeight
+    private var limits = TerminalDrawerHeight(viewport: 0, reserved: 0)
+    private var onDrag: ((CGFloat?) -> Void)?
+    private var onResize: ((CGFloat) -> Void)?
+    private var drag: Drag?
+
+    init() {
+        super.init(frame: .zero)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.splitter)
+        setAccessibilityOrientation(.horizontal)
+        setAccessibilityLabel("Resize Terminal Drawer")
+        setAccessibilityIdentifier("terminal-drawer-resize-handle")
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    func update(height: CGFloat, limits: TerminalDrawerHeight, onDrag: @escaping (CGFloat?) -> Void,
+                onResize: @escaping (CGFloat) -> Void) {
+        let changed = self.height != height
+        self.height = height
+        if let drag, self.limits.maximum != limits.maximum {
+            self.drag?.height = limits.clamp(drag.height)
+        }
+        self.limits = limits
+        self.onDrag = onDrag
+        self.onResize = onResize
+        setAccessibilityMinValue(NSNumber(value: Double(limits.minimum)))
+        setAccessibilityMaxValue(NSNumber(value: Double(limits.maximum)))
+        if changed { NSAccessibility.post(element: self, notification: .valueChanged) }
+    }
+
+    override func resetCursorRects() {
+        if #available(macOS 15, *) {
+            addCursorRect(bounds, cursor: .rowResize(directions: .all))
+        } else {
+            addCursorRect(bounds, cursor: .resizeUpDown)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        drag = Drag(startY: event.locationInWindow.y, startHeight: height, height: height)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard var drag else { return }
+        drag.height = limits.clamp(drag.startHeight + event.locationInWindow.y - drag.startY)
+        self.drag = drag
+        onDrag?(drag.height)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let drag else { return }
+        self.drag = nil
+        onDrag?(nil)
+        let end = limits.clamp(drag.height)
+        if end > 0, end != limits.clamp(drag.startHeight) { onResize?(end) }
+    }
+
+    override func accessibilityValue() -> Any? {
+        NSNumber(value: Double(height))
+    }
+
+    override func setAccessibilityValue(_ value: Any?) {
+        guard let value = value as? NSNumber, value.doubleValue.isFinite else { return }
+        adjustHeight(to: CGFloat(value.doubleValue))
+    }
+
+    override func accessibilityPerformIncrement() -> Bool {
+        adjustHeight(to: height + 16)
+    }
+
+    override func accessibilityPerformDecrement() -> Bool {
+        adjustHeight(to: height - 16)
+    }
+
+    @discardableResult
+    private func adjustHeight(to proposed: CGFloat) -> Bool {
+        let end = limits.clamp(proposed)
+        guard drag == nil, end != height, end > 0, let onResize else { return false }
+        onResize(end)
+        return true
     }
 }

@@ -70,11 +70,14 @@ final class ThreadTerminalTests: XCTestCase {
         let localThread = ThreadTerminalLocation(thread: UUID(), path: local.path)
         let checkoutThread = ThreadTerminalLocation(thread: UUID(), path: checkout.path)
         let fixture = DrawerFixture(selected: localThread)
+        let suite = "dev.piworkspace.terminal-test.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 720),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: DrawerFixtureView(fixture: fixture))
+        let host = NSHostingView(rootView: DrawerFixtureView(fixture: fixture).defaultAppStorage(defaults))
         host.sizingOptions = []
         window.contentView = host
         defer { window.contentView = nil }
@@ -85,6 +88,11 @@ final class ThreadTerminalTests: XCTestCase {
         send("printf 'FIRST-%s\\n' \"$$\"\n", to: original)
         try await waitFor("original PTY output") { self.output(of: original).contains("FIRST-\(originalPID)") }
         send("cd nested\n", to: original)
+        try await verifyDrawerResize(in: window, terminal: original, defaults: defaults, thread: localThread, cwd: nested)
+        XCTAssertEqual(original.process.shellPid, originalPID)
+        let resizedTTY = try await verifyDirectoryAndTTY(in: nested, terminal: original, name: "resized")
+        XCTAssertEqual(resizedTTY, localTTY)
+        XCTAssertTrue(output(of: original).contains("FIRST-\(originalPID)"))
 
         fixture.drawers[0].newTab()
         let tab = try await focusedTerminal(in: window, labeled: "Terminal 2")
@@ -131,16 +139,19 @@ final class ThreadTerminalTests: XCTestCase {
 
         fixture.drawers[0].isOpen = false
         try await waitFor("hidden terminal releases focus") { original.isHidden && !ThreadTerminal.hasFocus(in: window) }
+        XCTAssertNil(resizeDivider(in: host))
         XCTAssertEqual(kill(originalPID, 0), 0)
         XCTAssertEqual(kill(rightPID, 0), 0)
         fixture.drawers[0].isOpen = true
         let restored = try await focusedTerminal(in: window, labeled: "Terminal 3")
         XCTAssertTrue(restored === right)
+        try await waitFor("reopened drawer height") { self.drawerHeight(in: host) == 400 }
 
         fixture.drawers.append(.init(id: checkoutThread))
         fixture.selected = checkoutThread
         try await waitFor("original thread hidden") { original.isHidden && right.isHidden }
         let worktree = try await focusedTerminal(in: window, labeled: "Terminal 1")
+        try await waitFor("other thread uses its own height") { self.drawerHeight(in: host) == 280 }
         let worktreePID = try await readyPID(of: worktree)
         let checkoutTTY = try await verifyDirectoryAndTTY(in: checkout, terminal: worktree, name: "checkout")
         XCTAssertNotEqual(checkoutTTY, localTTY)
@@ -148,6 +159,7 @@ final class ThreadTerminalTests: XCTestCase {
         fixture.selected = localThread
         let resumed = try await focusedTerminal(in: window, labeled: "Terminal 3")
         XCTAssertTrue(resumed === right)
+        try await waitFor("original thread restores its own height") { self.drawerHeight(in: host) == 400 }
         XCTAssertTrue(output(of: original).contains("FIRST-\(originalPID)"))
         XCTAssertTrue(output(of: right).contains("FOCUSED-\(rightPID)"))
         XCTAssertEqual(original.process.shellPid, originalPID)
@@ -180,11 +192,109 @@ final class ThreadTerminalTests: XCTestCase {
         fixture.selected = checkoutThread
         let untouched = try await focusedTerminal(in: window, labeled: "Terminal 1")
         XCTAssertTrue(untouched === worktree)
+
+        fixture.drawers.append(.init(id: localThread))
+        fixture.selected = localThread
+        _ = try await focusedTerminal(in: window, labeled: "Terminal 1")
+        try await waitFor("recreated drawer loads the saved height") { self.drawerHeight(in: host) == 400 }
+        fixture.drawers[1].close(1)
+        try await waitFor("last pane closes and resets its height") {
+            fixture.drawers.count == 1 && defaults.object(forKey: "terminal-drawer-height.\(localThread.thread.uuidString)") == nil
+        }
+        fixture.drawers.append(.init(id: localThread))
+        _ = try await focusedTerminal(in: window, labeled: "Terminal 1")
+        try await waitFor("reset drawer uses default height") { self.drawerHeight(in: host) == 280 }
+        fixture.drawers[1].close(1)
+        try await waitFor("reset drawer closes") { fixture.drawers.count == 1 }
+
         fixture.drawers[0].close(1)
         try await waitFor("worktree shell exits") { kill(worktreePID, 0) == -1 }
-        XCTAssertFalse(fixture.drawers[0].isOpen)
+        try await waitFor("all drawers closed") { fixture.drawers.isEmpty }
 
         print("PTY fixture local \(originalPID) \(localTTY), worktree \(worktreePID) \(checkoutTTY). Closed shell \(rightPID), foreground \(foreground), background \(background).")
+    }
+
+    @MainActor
+    private func verifyDrawerResize(in window: NSWindow, terminal: TerminalSessionView, defaults: UserDefaults,
+                                    thread: ThreadTerminalLocation, cwd: URL) async throws {
+        let host = try XCTUnwrap(window.contentView)
+        let key = "terminal-drawer-height.\(thread.thread.uuidString)"
+        try await waitFor("default 280-point drawer") { self.drawerHeight(in: host) == 280 && terminal.bounds.height == 249 }
+        let divider = try XCTUnwrap(resizeDivider(in: host))
+        XCTAssertEqual(divider.accessibilityIdentifier(), "terminal-drawer-resize-handle")
+        XCTAssertEqual(divider.accessibilityLabel(), "Resize Terminal Drawer")
+        XCTAssertEqual(divider.accessibilityRole(), .splitter)
+        XCTAssertEqual(divider.bounds.size, CGSize(width: 800, height: 6))
+        XCTAssertEqual(divider.convert(divider.bounds, to: nil).maxY, 280)
+        let originalGrid = try await shellGrid(in: cwd, terminal: terminal, name: "default")
+
+        let start = divider.convert(CGPoint(x: divider.bounds.midX, y: divider.bounds.midY), to: nil)
+        XCTAssertTrue(host.hitTest(start) === divider)
+        divider.mouseDown(with: try mouse(.leftMouseDown, in: window, at: start))
+        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: -300)))
+        try await waitFor("180-point minimum") { self.drawerHeight(in: host) == 180 && terminal.bounds.height == 149 }
+        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: 1_000)))
+        try await waitFor("75-percent viewport cap") { self.drawerHeight(in: host) == 540 && terminal.bounds.height == 509 }
+        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: start.offsetBy(dy: 120)))
+        try await waitFor("live 400-point drawer") { self.drawerHeight(in: host) == 400 && terminal.bounds.height == 369 }
+        XCTAssertNil(defaults.object(forKey: key))
+        divider.mouseUp(with: try mouse(.leftMouseUp, in: window, at: start.offsetBy(dy: 120)))
+        try await waitFor("drawer height saved on release") { defaults.double(forKey: key) == 400 }
+        XCTAssertTrue(window.firstResponder === terminal)
+
+        let resizedGrid = try await shellGrid(in: cwd, terminal: terminal, name: "large")
+        XCTAssertGreaterThan(resizedGrid[0], originalGrid[0])
+        XCTAssertEqual(resizedGrid[1], originalGrid[1])
+
+        XCTAssertTrue(divider.accessibilityPerformIncrement())
+        try await waitFor("accessibility increment") { self.drawerHeight(in: host) == 416 }
+        divider.setAccessibilityValue(NSNumber(value: 400))
+        try await waitFor("accessibility value set") { self.drawerHeight(in: host) == 400 }
+
+        window.setContentSize(NSSize(width: 800, height: 420))
+        try await waitFor("composer budget cap") { self.drawerHeight(in: host) == 260 && terminal.bounds.height == 229 }
+        let capped = divider.convert(CGPoint(x: divider.bounds.midX, y: divider.bounds.midY), to: nil)
+        divider.mouseDown(with: try mouse(.leftMouseDown, in: window, at: capped))
+        divider.mouseDragged(with: try mouse(.leftMouseDragged, in: window, at: capped.offsetBy(dy: 150)))
+        divider.mouseUp(with: try mouse(.leftMouseUp, in: window, at: capped.offsetBy(dy: 150)))
+        XCTAssertEqual(defaults.double(forKey: key), 400)
+        window.setContentSize(NSSize(width: 800, height: 300))
+        try await waitFor("available height below minimum") { self.drawerHeight(in: host) == 140 && terminal.bounds.height == 109 }
+        window.setContentSize(NSSize(width: 800, height: 720))
+        try await waitFor("restored preference after enlarging the host") {
+            self.drawerHeight(in: host) == 400 && terminal.bounds.height == 369
+        }
+        XCTAssertTrue(window.firstResponder === terminal)
+        print("Drawer fixture applied 280, 180, 540, 400, 416, 260 and 140 points. PTY grid \(originalGrid) → \(resizedGrid).")
+    }
+
+    @MainActor
+    private func resizeDivider(in view: NSView) -> TerminalDrawerDividerView? {
+        if let divider = view as? TerminalDrawerDividerView { return divider }
+        return view.subviews.lazy.compactMap { self.resizeDivider(in: $0) }.first
+    }
+
+    @MainActor
+    private func drawerHeight(in host: NSView) -> Int? {
+        (resizeDivider(in: host)?.accessibilityValue() as? NSNumber)?.intValue
+    }
+
+    private func mouse(_ type: NSEvent.EventType, in window: NSWindow, at location: CGPoint) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 0,
+                                       windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                       clickCount: 1, pressure: 1))
+    }
+
+    @MainActor
+    private func shellGrid(in cwd: URL, terminal: TerminalSessionView, name: String) async throws -> [Int] {
+        let proof = cwd.appendingPathComponent("\(name)-grid")
+        send("stty size > \(name)-grid\n", to: terminal)
+        var grid: [Int] = []
+        try await waitFor("shell grid in \(name)") {
+            grid = (try? String(contentsOf: proof, encoding: .utf8))?.split(whereSeparator: \.isWhitespace).compactMap { Int($0) } ?? []
+            return grid.count == 2
+        }
+        return grid
     }
 
     @MainActor
@@ -286,14 +396,21 @@ private struct DrawerFixtureView: View {
     @ObservedObject var fixture: DrawerFixture
 
     var body: some View {
-        VStack {
-            Spacer()
-            ForEach($fixture.drawers) { $drawer in
-                let location = drawer.id
-                ThreadTerminalDrawer(drawer: $drawer, selected: location == fixture.selected) {
-                    fixture.drawers.removeAll { $0.id == location }
+        GeometryReader { geometry in
+            let limits = TerminalDrawerHeight(viewport: geometry.size.height, reserved: 160)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ForEach($fixture.drawers) { $drawer in
+                    let location = drawer.id
+                    ThreadTerminalDrawer(drawer: $drawer, selected: location == fixture.selected, limits: limits) {
+                        fixture.drawers.removeAll { $0.id == location }
+                    }
                 }
             }
         }
     }
+}
+
+private extension CGPoint {
+    func offsetBy(dy: CGFloat) -> CGPoint { CGPoint(x: x, y: y + dy) }
 }

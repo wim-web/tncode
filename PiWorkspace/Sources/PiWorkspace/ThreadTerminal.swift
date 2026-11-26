@@ -23,7 +23,7 @@ struct ThreadTerminal: View {
         let terminal: ThreadTerminal
 
         func makeNSView(context: Context) -> TerminalSessionView {
-            let view = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 360, height: ThreadTerminalDrawer.contentHeight))
+            let view = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 360, height: TerminalDrawerHeight.defaultContent))
             view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             view.isHidden = true
             view.setAccessibilityRole(.textArea)
