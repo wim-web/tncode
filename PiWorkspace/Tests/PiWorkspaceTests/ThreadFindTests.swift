@@ -37,6 +37,131 @@ final class ThreadFindTests: XCTestCase {
         XCTAssertNil(find.selection)
     }
 
+    func testFindRestoresNativeComposerSelection() async throws {
+        let application = NSApplication.shared
+        let policy = application.activationPolicy()
+        application.setActivationPolicy(.prohibited)
+        defer { application.setActivationPolicy(policy) }
+        application.finishLaunching()
+        try XCTSkipIf(NSScreen.screens.isEmpty, "Native key events need a WindowServer display.")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = "Keep this draft."
+        let unicode = "前🌱 選択👩🏽‍💻 後"
+        let queued = QueuedMessage(text: unicode)
+        let first = Conversation(id: UUID(), title: "First", isDraft: false, composerText: original, queuedMessages: [queued])
+        let other = Conversation(id: UUID(), title: "Second", isDraft: false, composerText: unicode)
+        let project = Project(id: UUID(), path: root.path, title: "Find fixture",
+                              conversations: [first, other], selectedConversation: first.id)
+        try WorkspaceStore(root: root).save(Workspace(projects: [project], selectedProject: project.id, welcomeCompleted: true))
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil }) { _, _ in
+            throw WorkspaceError("No helper in this test.")
+        }
+        defer { model.terminate() }
+        let app = Hosted(WorkspaceView(model: model, chatWidthMode: .comfortable))
+        defer { app.close() }
+        let prompt = "Ask Pi anything"
+
+        func openFind(_ range: NSRange, in placeholder: String = "Ask Pi anything") async throws {
+            try await app.until("composer appeared") { app.field(placeholder) != nil }
+            let composer = try XCTUnwrap(app.field(placeholder) as? ComposerTextField.Field)
+            XCTAssertTrue(app.window.makeFirstResponder(composer))
+            let editor = try XCTUnwrap(composer.currentEditor() as? ComposerTextField.Editor)
+            editor.setSelectedRange(range)
+            XCTAssertEqual(editor.selectedRange(), range)
+            try await app.key(kVK_ANSI_F, "f", .command)
+            try await app.until("Find took focus") { app.isEditing("Find in thread") }
+            try app.type("needle")
+        }
+
+        func returnedSelection(in placeholder: String = "Ask Pi anything", line: Int = #line) async throws -> NSRange {
+            try await app.until("focus returned to \(placeholder) at line \(line)") { app.field("Find in thread") == nil && app.isEditing(placeholder) }
+            return try XCTUnwrap(app.window.firstResponder as? ComposerTextField.Editor).selectedRange()
+        }
+
+        func typeExclamation() throws {
+            let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift,
+                                                    timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
+                                                    characters: "!", charactersIgnoringModifiers: "!", isARepeat: false,
+                                                    keyCode: UInt16(kVK_ANSI_1)))
+            app.window.sendEvent(key)
+        }
+
+        let caret = NSRange(location: 4, length: 0)
+        try await openFind(caret)
+        try await app.key(kVK_Escape, "\u{1b}")
+        let restoredCaret = try await returnedSelection()
+        XCTAssertEqual(restoredCaret, caret)
+        try typeExclamation()
+        XCTAssertEqual(model.draft, "Keep! this draft.")
+
+        model.draft = unicode
+        try await app.until("Unicode draft appeared") { app.field(prompt)?.stringValue == unicode }
+        let selection = (unicode as NSString).range(of: "選択👩🏽‍💻")
+        try await openFind(selection)
+        try await app.key(kVK_ANSI_F, "f", .command)
+        try app.press("thread-find-close")
+        let restoredSelection = try await returnedSelection()
+        XCTAssertEqual(restoredSelection, selection)
+        try typeExclamation()
+        XCTAssertEqual(model.draft, "前🌱 ! 後")
+
+        let editor = try XCTUnwrap(app.window.firstResponder as? ComposerTextField.Editor)
+        editor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0), replacementRange: editor.selectedRange())
+        let composition = editor.markedRange()
+        XCTAssertTrue(editor.hasMarkedText())
+        try await app.key(kVK_ANSI_F, "f", .command)
+        XCTAssertNil(model.activeThreadFind)
+        XCTAssertTrue(app.window.firstResponder === editor)
+        XCTAssertEqual(editor.markedRange(), composition)
+        editor.insertText("", replacementRange: composition)
+
+        try await openFind(caret)
+        let beforeRevision = model.draft
+        model.draft = "Changed while Find was open"
+        model.draft = beforeRevision
+        try await app.key(kVK_Escape, "\u{1b}")
+        let changedRevision = try await returnedSelection()
+        XCTAssertNotEqual(changedRevision, caret)
+
+        model.editQueuedMessage(queued.id)
+        try await openFind(selection, in: "Edit queued message")
+        try await app.key(kVK_Escape, "\u{1b}")
+        let sameQueueSession = try await returnedSelection(in: "Edit queued message")
+        XCTAssertEqual(sameQueueSession, selection)
+
+        try await openFind(selection, in: "Edit queued message")
+        model.cancelQueuedMessageEdit()
+        model.editQueuedMessage(queued.id)
+        try await app.key(kVK_Escape, "\u{1b}")
+        let differentQueueSession = try await returnedSelection(in: "Edit queued message")
+        XCTAssertNotEqual(differentQueueSession, selection)
+        XCTAssertEqual(model.draft, unicode)
+
+        try await openFind(selection, in: "Edit queued message")
+        model.selectConversation(other.id, in: project.id)
+        let newThreadSelection = try await returnedSelection()
+        XCTAssertNotEqual(newThreadSelection, selection)
+        XCTAssertEqual(model.draft, unicode)
+
+        try await openFind(selection)
+        XCTAssertTrue(model.savePendingEditsForQuit())
+        let savedRoot = root.appendingPathComponent("relaunch")
+        try FileManager.default.createDirectory(at: savedRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: root.appendingPathComponent("workspace.json"),
+                                         to: savedRoot.appendingPathComponent("workspace.json"))
+        let reloaded = WorkspaceModel(root: savedRoot, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        XCTAssertNil(reloaded.startupFailure)
+        defer { reloaded.terminate() }
+        let reopened = Hosted(WorkspaceView(model: reloaded, chatWidthMode: .comfortable))
+        defer { reopened.close() }
+        try await reopened.until("reloaded composer appeared") { reopened.field(prompt) != nil }
+        XCTAssertTrue(reopened.window.makeFirstResponder(try XCTUnwrap(reopened.field(prompt))))
+        XCTAssertNil(reloaded.activeThreadFind)
+        XCTAssertEqual(reloaded.draft, unicode)
+        XCTAssertNotEqual(try XCTUnwrap(reopened.window.firstResponder as? ComposerTextField.Editor).selectedRange(), selection)
+    }
+
     func testFindKeysAndRetryWithFreshPiHistories() async throws {
         _ = NSApplication.shared
         try XCTSkipIf(NSScreen.screens.isEmpty, "Native key events need a WindowServer display.")
@@ -254,6 +379,21 @@ final class ThreadFindTests: XCTestCase {
         func isEditing(_ placeholder: String) -> Bool {
             guard let editor = field(placeholder)?.currentEditor() else { return false }
             return editor === window.firstResponder
+        }
+
+        func press(_ id: String) throws {
+            var visited = Set<ObjectIdentifier>()
+            func find(in node: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let match = find(in: child as AnyObject) { return match }
+                }
+                return nil
+            }
+            let host = try XCTUnwrap(window.contentView)
+            let button = try XCTUnwrap(find(in: host) ?? find(in: window), id)
+            XCTAssertTrue(button.accessibilityPerformPress?() == true)
         }
 
         func type(_ value: String) throws {

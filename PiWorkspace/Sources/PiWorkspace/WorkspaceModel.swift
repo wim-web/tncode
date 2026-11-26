@@ -60,7 +60,12 @@ final class WorkspaceModel: ObservableObject {
     private var composerCredential: (account: String, key: String?)?
     private var threadSelectionRevision = 0
 
-    @Published private var queueEdit: QueueEdit?
+    private(set) var composerRevision = 0
+    @Published private var queueEdit: QueueEdit? {
+        didSet {
+            if oldValue?.sessionID != queueEdit?.sessionID { composerRevision += 1 }
+        }
+    }
     @Published private var queueDelivery = QueueDelivery()
     @Published private var forkRequest: ForkRequest?
 
@@ -93,6 +98,7 @@ final class WorkspaceModel: ObservableObject {
                 return
             }
         }
+        composerRevision += 1
         if queueEdit != nil {
             queueEdit?.text = text
             return
@@ -469,7 +475,9 @@ final class WorkspaceModel: ObservableObject {
         composerSaveError = nil
         composerCredential = nil
         let previousScope = pullRequestScope
+        let previousDraft = draft
         workspace = updated
+        if pullRequestScope != previousScope || !draft.utf8.elementsEqual(previousDraft.utf8) { composerRevision += 1 }
         if pullRequestScope != previousScope { threadSelectionRevision += 1 }
     }
 

@@ -37,6 +37,7 @@ struct WorkspaceView: View {
     @State private var messageSearchResult: (key: MessageSearchKey, matches: [UUID: SidebarMessageSearch.Match])?
     @FocusState private var searchFocused: Bool
     @FocusState private var findFocused: Bool
+    @State private var findSelection: ComposerTextField.FindSelection?
     @State private var showingDetails = false
     @State private var showingChanges = false
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
@@ -200,6 +201,7 @@ struct WorkspaceView: View {
             }
         }
         .onChange(of: model.threadFindScope) { _, scope in
+            findSelection = nil
             if model.threadFind?.thread != scope { model.threadFind = nil }
         }
         .onChange(of: model.draftProjectScope) { _, scope in
@@ -1542,7 +1544,7 @@ struct WorkspaceView: View {
             ComposerAttachmentsView(model: model, threadID: threadID)
                 .id(threadID)
                 .padding(.bottom, 6)
-            ComposerTextField(placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
+            ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
                 set: { if ownsComposer() { model.editDraft($0, in: threadID) } }
             ), drop: drop) { text in
@@ -1745,7 +1747,7 @@ struct WorkspaceView: View {
             if editingOtherField, let editor {
                 editor.selectAll(nil)
             } else {
-                openFind(in: scope)
+                openFind(in: scope, window: window)
             }
             return true
         }
@@ -1777,8 +1779,10 @@ struct WorkspaceView: View {
     }
 
     private func openFind(in scope: SidebarMessageSearch.Thread, term: TranscriptSearchTerm? = nil,
-                          messageID: String? = nil) {
+                          messageID: String? = nil, window: NSWindow? = nil) {
         guard model.threadFindScope == scope else { return }
+        let selection = ComposerTextField.FindSelection(window: window ?? NSApp.keyWindow, model: model)
+        if model.activeThreadFind == nil || selection != nil { findSelection = selection }
         if model.threadFind?.thread == scope, term == nil {
             model.threadFind?.refocus()
         } else {
@@ -1789,7 +1793,11 @@ struct WorkspaceView: View {
     private func closeFind() {
         findFocused = false
         model.threadFind = nil
-        if model.conversation?.archived == false { focusCurrentComposer() }
+        if model.conversation?.archived == false {
+            findSelection?.restoreOnFocus(in: model)
+            focusCurrentComposer()
+        }
+        findSelection = nil
     }
 
     @discardableResult

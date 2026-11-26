@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ComposerTextField: NSViewRepresentable {
+    let target: ComposerAttachmentTarget
     let placeholder: String
     @Binding var text: String
     let drop: AttachmentDropDestination
@@ -30,6 +31,7 @@ struct ComposerTextField: NSViewRepresentable {
 
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
+        field.composerTarget = target
         field.drop = drop
         field.attachPastedText = attachPastedText
         field.isEnabled = context.environment.isEnabled
@@ -58,7 +60,41 @@ struct ComposerTextField: NSViewRepresentable {
         }
     }
 
+    @MainActor
+    struct FindSelection {
+        private weak var field: Field?
+        private let target: ComposerAttachmentTarget
+        private let revision: Int
+        private let range: NSRange
+
+        init?(window: NSWindow?, model: WorkspaceModel) {
+            guard let editor = window?.firstResponder as? Editor, !editor.hasMarkedText(),
+                  let field = editor.owner, field.currentEditor() === editor,
+                  let target = field.composerTarget, model.conversation?.id == target.threadID,
+                  target == model.attachmentTarget(for: target.threadID),
+                  editor.string.utf8.elementsEqual(model.draft.utf8) else { return nil }
+            self.field = field
+            self.target = target
+            revision = model.composerRevision
+            range = editor.selectedRange()
+        }
+
+        func restoreOnFocus(in model: WorkspaceModel) {
+            guard let field, field.currentEditor() == nil else { return }
+            field.selectionOnFocus = { [weak model, weak field] in
+                guard let model, let field, model.composerRevision == revision,
+                      model.conversation?.id == target.threadID, field.composerTarget == target,
+                      target == model.attachmentTarget(for: target.threadID),
+                      field.stringValue.utf8.elementsEqual(model.draft.utf8),
+                      NSMaxRange(range) <= field.stringValue.utf16.count else { return nil }
+                return range
+            }
+        }
+    }
+
     final class Field: NSTextField {
+        var composerTarget: ComposerAttachmentTarget?
+        var selectionOnFocus: (() -> NSRange?)?
         var drop: AttachmentDropDestination?
         var attachPastedText: ((String) -> Void)?
 
@@ -86,6 +122,16 @@ struct ComposerTextField: NSViewRepresentable {
 
     final class Cell: NSTextFieldCell {
         private let editor = Editor()
+
+        override func select(withFrame rect: NSRect, in controlView: NSView, editor: NSText, delegate: Any?,
+                             start: Int, length: Int) {
+            let field = controlView as? Field
+            let range = field?.selectionOnFocus?()
+            field?.selectionOnFocus = nil
+            super.select(withFrame: rect, in: controlView, editor: editor, delegate: delegate,
+                         start: range?.location ?? start, length: range?.length ?? length)
+        }
+
         override func fieldEditor(for controlView: NSView) -> NSTextView? {
             editor.owner = controlView as? Field
             editor.isFieldEditor = true
