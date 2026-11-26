@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -256,6 +256,7 @@ const panelDriver = {
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", [name]),
   openThreadLink: link => drive("open-thread-link", [link]),
+  escapeMenu: () => drive("key", ["53"]),
   showMenu: id => drive("show-menu", [id]),
   click: (id, ...flags) => drive("click", [id, ...flags]),
   pick: (id, title) => drive("pick", [id, title]),
@@ -275,6 +276,11 @@ function replyVisible(target) {
 }
 
 async function launch(expectedControl = "model-settings", root = workspace, shell = worktreeTest ? terminalFixture : "/bin/sh") {
+  const minimumIdle = Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS ?? 0);
+  assert(Number.isFinite(minimumIdle) && minimumIdle >= 0);
+  if (minimumIdle > 0) {
+    while (Number(execFileSync(ax, ["idle-seconds"], { encoding: "utf8" })) < minimumIdle) await delay(1000);
+  }
   launchNumber++;
   execFileSync("/usr/bin/open", [
     "-n", "-a", app, "--stdout", join(logs, launchNumber + ".out"),
@@ -1121,7 +1127,8 @@ try {
   const conversationOnly = process.argv.includes("--conversation-controls-only");
   const threadActionsOnly = process.argv.includes("--thread-actions-only");
   const sidebarOnly = process.argv.includes("--sidebar-and-checks-only");
-  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly || threadActionsOnly || sidebarOnly || imagesOnly;
+  const terminalOnly = process.argv.includes("--terminal-only");
+  const focused = usageOnly || controlsOnly || conversationOnly || projectFlowsOnly || threadActionsOnly || sidebarOnly || imagesOnly || terminalOnly;
   if (focused) {
     record("Verification folder: " + reportDirectory);
     record("Isolated fixture: " + directory);
@@ -1148,6 +1155,21 @@ try {
     await quit();
     record("The new Git branch started at the selected alternate commit. Choosing a branch already in use moved the same draft to its linked checkout and preserved the original checkout and index.");
   }
+  if (terminalOnly) {
+    makeRepository();
+    const projectID = randomUUID().toUpperCase(), threadID = randomUUID().toUpperCase();
+    writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ welcomeCompleted: true, selectedProject: projectID,
+      projects: [{ id: projectID, title: "Terminal fixture", path: project, allowEdits: false, selectedConversation: threadID,
+        conversations: [{ id: threadID, title: "Terminal", archived: false, isDraft: true, composerText: "Keep this draft." }] }],
+      model: { provider: "local", model: "terminal-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 },
+    }), { mode: 0o600 });
+    await launch("model-settings", workspace, terminalFixture);
+    press("toggle-terminal");
+    const pid = await until(() => Number(readFileSync(join(project, "retained-shell.txt"), "utf8")) || false, "test shell PID");
+    await verifyTerminalPanes(panelDriver, pid);
+    await quit();
+    record("The drawer grew from 280 to 360 points and returned to 280. Its original PTY survived resize, splits, hide and reopen. Closing individual panes terminated only their own shells.");
+  }
   if (imagesOnly) {
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -1166,7 +1188,7 @@ try {
     execFileSync("/bin/cp", ["-cR", packagedApp, app]);
     execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
     await verifyThreadActions(panelDriver, { root: join(directory, "thread-actions"), app, git, launch, quit, record });
-    assert.equal(inspectFiles().length, 2);
+    assert.equal(inspectFiles().length, 3);
   }
   if (conversationOnly) {
     await verifyConversationControls(panelDriver, {

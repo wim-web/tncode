@@ -2,11 +2,13 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import IOKit
 import os
 
 private let usage = """
 Usage:
   ax trust
+  ax idle-seconds
   ax workspace-path ABSOLUTE_PATH
   ax check-copy TEST_PASTEBOARD < expected.txt
   ax check-image TEST_PASTEBOARD < expected.png
@@ -382,6 +384,15 @@ private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to 
         }
         if CGEvent(source: nil)?.location == last { CGWarpMouseCursorPosition(savedPosition) }
     }
+    guard let approach = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) else {
+        throw Failure("Could not move to the drag handle.")
+    }
+    approach.post(tap: .cghidEventTap)
+    let arrival = ProcessInfo.processInfo.systemUptime + 0.5
+    while let cursor = CGEvent(source: nil)?.location, hypot(cursor.x - point.x, cursor.y - point.y) > 1 {
+        guard ProcessInfo.processInfo.systemUptime < arrival else { throw Failure("The cursor did not reach the drag handle.") }
+        Thread.sleep(forTimeInterval: 0.015)
+    }
     for (index, current) in points.enumerated() {
         guard targetOwns(current) else { throw Failure("The target window lost the drag.") }
         let type: CGEventType = index == 0 ? .leftMouseDown : .leftMouseDragged
@@ -392,7 +403,7 @@ private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to 
         event.post(tap: .cghidEventTap)
         pressed = true
         last = current
-        Thread.sleep(forTimeInterval: 0.025)
+        Thread.sleep(forTimeInterval: index == 0 || index == steps ? 0.12 : 0.04)
     }
 }
 
@@ -665,8 +676,21 @@ private func requireKeyboardAccess() throws {
     }
 }
 
+private func hardwareIdleSeconds() throws -> Double {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+    guard service != 0 else { throw Failure("Hardware idle time is unavailable.") }
+    defer { IOObjectRelease(service) }
+    guard let value = IORegistryEntryCreateCFProperty(service, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?
+        .takeRetainedValue() as? NSNumber else { throw Failure("Hardware idle time is unavailable.") }
+    return value.doubleValue / 1_000_000_000
+}
+
 private func activateForInput(_ app: AXUIElement, pid: pid_t) throws {
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier != pid else { return }
+    if let input = ProcessInfo.processInfo.environment["PI_WORKSPACE_VERIFY_IDLE_SECONDS"], let minimum = Double(input),
+       try hardwareIdleSeconds() < minimum {
+        throw Failure("Another application is receiving input on the shared desktop.")
+    }
     if let raw = attribute(kAXFocusedWindowAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() {
         _ = AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXRaiseAction as CFString)
     }
@@ -711,6 +735,10 @@ private func run(_ arguments: [String]) throws {
     }
     if arguments == ["trust"] {
         print("accessibility=\(AXIsProcessTrusted()) keyboard=\(CGPreflightPostEventAccess())")
+        return
+    }
+    if arguments == ["idle-seconds"] {
+        print(try hardwareIdleSeconds())
         return
     }
     if arguments.count == 2, arguments[0] == "workspace-path", arguments[1].hasPrefix("/") {

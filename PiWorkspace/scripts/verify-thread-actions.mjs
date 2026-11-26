@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { seedPaletteMessageHistory } from "./fixtures/palette-message-history.mjs";
 
@@ -18,13 +18,16 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   const uuid = () => randomUUID().toUpperCase();
   const projectID = uuid(), draftID = uuid(), mainID = uuid(), linkedID = uuid();
   const note = { id: uuid(), name: "notes.txt", payload: { data: Buffer.from("日本語のメモ\n").toString("base64"), mimeType: "text/plain" } };
+  const queuedNote = { id: uuid(), name: "queue.txt", payload: { data: Buffer.from("Queued bytes").toString("base64"), mimeType: "text/plain" } };
+  const queueID = uuid();
   const seed = "  First draft 🌱  ", prefix = "Waiting on review", joined = prefix + "\n\n" + seed.trim();
   const indexPath = join(root, "workspace.json");
   writeFileSync(indexPath, JSON.stringify({ selectedProject: projectID, welcomeCompleted: true,
     projects: [{ id: projectID, title: "Thread actions", path: project, allowEdits: false, selectedConversation: draftID, conversations: [
       { id: draftID, title: "Unsent draft", isDraft: true, archived: false, composerText: seed, composerAttachments: [note] },
       { id: mainID, title: "Main conversation", isDraft: false, archived: false },
-      { id: linkedID, title: "Linked conversation", isDraft: false, archived: false, location: { worktree: { path: checkout, base: "main" } } },
+      { id: linkedID, title: "Linked conversation", isDraft: false, archived: false, location: { worktree: { path: checkout, base: "main" } },
+        queuedMessages: [{ id: queueID, text: "Before editing", attachments: [queuedNote] }] },
     ] }], model: { provider: "local", model: "thread-action-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 },
   }), { mode: 0o600 });
   const seedHistory = (threadID, cwd) => seedPaletteMessageHistory({
@@ -164,9 +167,38 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   await until(() => visible("thread-link-error") && selected() === draftID && composer(joined), "unknown thread link kept the draft");
   driver.openThreadLink(link);
   await until(() => selected() === linkedID && visible("transcript-message-" + linkedHistory.latestID) && !has("thread-link-error"), "Launch Services reopened the matching Pi thread");
+  press("fork-from-response-" + linkedHistory.latestID);
+  const child = await until(() => {
+    const item = index().projects[0].conversations.find(t => t.forkOrigin?.threadID === linkedID && t.forkOrigin?.messageID === linkedHistory.latestID);
+    return item && selected() === item.id && visible("open-source-conversation") && item;
+  }, "real Pi fork of the selected response");
+  press("conversation-title");
+  await until(() => visible("thread-copy"), "copy link for the fork");
+  press("thread-copy");
+  await until(() => visible("thread-copy-reference"), "fork link in Copy submenu");
+  dismiss("thread-copy-reference");
+  await until(() => checkCopy(link.slice(0, -linkedID.length) + child.id), "fork link on the private clipboard");
+  press("open-source-conversation");
+  await until(() => selected() === linkedID && visible("composer"), "the fork's source conversation");
+  const dirty = "Keep this draft when opening an incomplete fork.";
+  await setField("composer", dirty);
+  const childDirectory = join(root, "sessions", projectID, child.id);
+  const histories = readdirSync(childDirectory).filter(name => name.endsWith(".jsonl"));
+  assert.equal(histories.length, 1);
+  const childPath = join(childDirectory, histories[0]), childBytes = readFileSync(childPath);
+  const firstLine = childBytes.indexOf(10);
+  assert(firstLine > 0 && firstLine < childBytes.length - 1);
+  try {
+    writeFileSync(childPath, childBytes.subarray(0, firstLine + 1));
+    driver.menuItem("Open Thread Link from Clipboard");
+    await until(() => value("thread-link-error").includes("fork history is incomplete") && selected() === linkedID && composer(dirty),
+                "invalid fork left the source and its draft selected");
+  } finally { writeFileSync(childPath, childBytes); }
+  driver.menuItem("Open Thread Link from Clipboard");
+  await until(() => selected() === child.id && visible("transcript-message-" + linkedHistory.latestID) && !has("thread-link-error"), "same link reopened the repaired fork");
   press(row(draftID));
   await until(() => composer(joined) && visible("remove-attachment-" + note.id), "original draft intact after both URL opens");
-  record("The private board pasted the linked thread URL. Edit and macOS Launch Services both reopened its original Pi message. An unknown thread ID showed an error and preserved the draft.");
+  record("Edit and macOS Launch Services reopened the copied URL at its original Pi message. Unknown IDs and a real fork truncated to its genuine header preserved the selected draft. Restoring the fork history made the very same link usable.");
   await openRename();
   await setField(titleField, "Cancel this rename");
   dismiss("cancel-rename");
@@ -180,6 +212,22 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   await until(() => visible("transcript-message-" + linkedHistory.latestID) && visible("conversation-title").includes("Renamed linked branch"), "renamed thread, same Pi history");
   const followUp = "Do another review on this checkout.";
   await setField("composer", followUp);
+  press("queue-item-actions-" + queueID);
+  await until(() => visible("queue-edit-" + queueID), "edit the paused queue item");
+  dismiss("queue-edit-" + queueID);
+  await until(() => composer("Before editing") && visible("remove-attachment-" + queuedNote.id), "editable queued text and file");
+  await setField("composer", "Updated queued follow-up");
+  press("conversation-title");
+  await until(() => visible("archive-thread").includes("enabled=false"), "active thread archive disabled while editing its queue");
+  driver.escapeMenu();
+  await until(() => !has("archive-thread") && composer("Updated queued follow-up"), "queue edit survived closing menu");
+  await context(mainID, "archive-thread");
+  assert(visible("archive-thread").includes("enabled=true"));
+  dismiss("archive-thread");
+  await until(() => thread(mainID).archived && selected() === linkedID && composer("Updated queued follow-up"), "archiving another thread preserved the active edit");
+  press("queue-update");
+  await until(() => composer(followUp) && thread(linkedID).queuedMessages[0].text === "Updated queued follow-up", "queue update preserved the ordinary draft");
+  assert.deepEqual(thread(linkedID).queuedMessages[0].attachments, [queuedNote]);
   press("conversation-title");
   await until(() => visible("archive-thread"), "archive open conversation");
   dismiss("archive-thread");
@@ -205,6 +253,7 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   assert.deepEqual(thread(draftID).composerAttachments, [note]);
   assert.equal(thread(draftID).composerText, joined);
   assert.equal(thread(mainID).title, "Main conversation");
+  assert.deepEqual(thread(linkedID).queuedMessages, [{ id: queueID, text: "Updated queued follow-up", attachments: [queuedNote] }]);
   assert(readFileSync(mainHistory.historyPath).equals(mainHistoryBytes), "The other thread's history changed.");
   await quit();
   record("Right-click Copy returned each row's own Git path and branch plus the linked thread ID while the draft stayed selected. Rename, archive, restore and relaunch preserved the original Pi record bytes, unsent follow-up, checkout and the other draft. Pi's first-open thinking-level record was the only permitted append.");
