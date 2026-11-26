@@ -1,0 +1,5 @@
+id	extracted	verified
+CHAT-064	apps/web/src/hooks/useNewProject.ts:75	apps/web/src/hooks/useNewProject.ts:81
+DEV-185	apps/web/src/components/preview/PreviewView.tsx:349	apps/web/src/components/preview/PreviewView.tsx:355
+HOST-072	apps/web/src/components/settings/SavedEnvironmentRows.tsx:699	apps/web/src/components/settings/SavedEnvironmentRows.tsx:700
+HOST-E0113	apps/web/src/components/settings/SavedEnvironmentRows.tsx:699	apps/web/src/components/settings/SavedEnvironmentRows.tsx:700

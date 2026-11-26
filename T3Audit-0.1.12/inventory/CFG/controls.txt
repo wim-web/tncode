@@ -1,0 +1,138 @@
+# page ^ UI label ^ keys ^ 操作 ^ 確認できる結果 ^ 条件 ^ 実装ソース
+general^Restore default settings?^^既定値への復元ボタンを押して、対象の一覧を確認して承認する^一覧に表示された設定が既定値に戻る^General。復元対象に変更がある^SettingsPanels.tsx:659|SettingsPanels.tsx:711|apps/web/src/routes/_chat.settings.tsx:32
+general^Project grouping override^client:sidebarProjectGroupingOverrides^サイドバーのプロジェクト個別メニューからグループ化を上書きする^選んだリポジトリだけ表示単位が変わる^同一リポジトリのチェックアウト^apps/web/src/components/Sidebar.tsx:1273
+appearance^Create theme^local:t3code:themes:v1^テーマ作成エディターを開いて名前と色を保存する^カスタムテーマが一覧に追加される^ローカルテーマライブラリに保存可能^ThemeSettings.tsx:909|ThemeEditorPanel.tsx:855
+appearance^Import^local:t3code:themes:v1^Import を開いて対応形式のテーマを取り込む^取り込んだテーマが選択できる^有効なテーマ定義^ThemeSettings.tsx:921
+appearance^Use advanced theme colors^local:t3code:themes:v1^テーマエディターの Advanced を切り替えて個別色を編集する^手動で指定したカラーが保存候補に反映される^テーマのエディターが開いている^ThemeEditorPanel.tsx:751|ThemeEditorPanel.tsx:1025
+appearance^Use light or dark half^local:t3code:theme-halves:v1^テーマカードから Light または Dark に割り当てる^選んだ外観だけ該当テーマを使う^割り当てる外観に適したテーマの配色^ThemeSettings.tsx:682|ThemeSettings.tsx:705
+appearance^Remove theme^local:t3code:themes:v1^カスタムテーマの削除を確認する^テーマが一覧から消える^カスタムテーマ。削除できる保存先^ThemeSettings.tsx:1052
+appearance^Monospace font^client:fontFamilyCode,client:fontFamilyTerminal,client:fontSizeCode,client:fontSizeTerminal^共通の等幅フォントとサイズを変更する^コードとターミナルの等幅書体が一緒に更新される^Separate fonts オフ^TypographySettings.tsx:332
+appearance^Reset thread details^client:threadDetailsItems,client:threadDetailsUsageEnabled^Thread details のリセットを押す^個別表示の上書きが空になり、Usage と Context が既定の非表示に戻る^カスタマイズ済み^apps/web/src/components/chat/threadDetailsItems.ts:73
+labs^Sign in^^Guest links 行の Sign in を押す^T3 Connect のサインインが開く^クラウド対応ビルド。サインアウト状態^LabsSettingsPanel.tsx:109|LabsSettingsPanel.tsx:124
+labs^Reset skipped runs kept to default^server:workflowSkippedRunsKept^Skipped runs kept のリセットを押す^対象値が 500 に戻る^Workflows オン。既定値以外または Mixed^LabsSettingsPanel.tsx:253|packages/contracts/src/settings.ts:1373
+voice^Translate to English^client:speechTranslateToEnglish^Translate to English を切り替える^対応文字起こしが英語に翻訳するか変わる^対応モデル^VoiceSettingsPanel.tsx:1737
+voice^Unload model^server:speechModelUnloadTimeout^Advanced でモデルをメモリから解放するタイミングを選ぶ^モデルが選んだアイドル時間に従って解放される^文字起こし先が環境のモデル。Advanced^VoiceSettingsPanel.tsx:879
+voice^Download transcription model^^モデル一覧でダウンロードを開始する^モデルがダウンロードされ使用可能になる^選択環境がモデルを利用可能。モデルファイルの置き場^VoiceSettingsPanel.tsx:1142
+voice^Cancel transcription model download^^進行中のダウンロードをキャンセルする^対象モデルの取得が中断される^キャンセル可能な進行中の取得^VoiceSettingsPanel.tsx:1154
+voice^Remove transcription model^^ダウンロード済みモデルを取り除く^モデルが削除され再度ダウンロード可能になる^対象環境にモデルがある^VoiceSettingsPanel.tsx:1158
+voice^Cleanup instructions^client:speechPostProcessingPrompt^Built-in または Custom を選びカスタム指示を確定する^文字起こし整形に選んだ指示が適用される^整形を利用できる環境^VoiceSettingsPanel.tsx:1838|VoiceSettingsPanel.tsx:1886
+voice^Cloud provider credentials^server:cloudSpeechCredentials^対応する接続先と API キーを設定する^選択したクラウドサービスで文字起こしを試せる^OpenAI、xAI、OpenRouter。対応環境と認証。OpenRouter はモデルも指定^CloudVoiceConfiguration.tsx:197|CloudVoiceConfiguration.tsx:233
+voice^Remove microphone^client:voiceMicrophones^マイク一覧から項目を除去する^除去されたマイクが優先順から消える^登録済みの入力^MicrophoneOrderList.tsx:79|VoiceSettingsPanel.tsx:1456
+browser^Custom search URL^client:browserCustomSearchUrl^検索 URL テンプレートを入力して確定する^検索語がカスタム URL へ渡る^Search engine が Custom^IntegrationsSettings.tsx:815|IntegrationsSettings.tsx:834
+browser^Rename browser profile^client:browserProfiles^プロファイルの名前を編集する^選択したプロファイルの名前が更新される^名前を変更できる既存プロファイル^IntegrationsSettings.tsx:1266
+browser^Clear cookies and cache^^プロファイルのデータ消去操作を選ぶ^対象の Cookie とキャッシュを消去したことを通知する^プレビューのブリッジと対象プロファイルに必要な接続^IntegrationsSettings.tsx:1278
+browser^Remove browser profile^client:browserProfiles,client:browserDefaultProfileId^プロファイルの削除を選び承認する^プロファイルとデータが消える。既定だった場合は既定 ID が戻る^必要な接続が利用可能。テスト用プロファイル^IntegrationsSettings.tsx:1305
+browser^Import browser data^client:browserProfiles^インポートウィザードでブラウザーと移行元、既存または新規の移行先を選ぶ^インポート結果が表示され対象プロファイルに反映される^Electron、対応するインストール済みブラウザー。macOS の権限が必要な場合あり^IntegrationsSettings.tsx:1349|IntegrationsSettings.tsx:1677
+browser^Rotate viewport^client:browserDefaultViewport^幅と高さのあるビューポートを回転する^ビューポートの向きが反転する^Advanced。サイズ指定のビューポート^IntegrationsSettings.tsx:485
+maintenance^Shared background policy^server:backgroundActivity.baseProfile,server:backgroundActivity.profile^Advanced ダイアログでカスタム設定のベースプロファイルを選ぶ^個別指定のない抑制条件が選んだプロファイルに従う^単一環境。Advanced^BackgroundActivitySettings.tsx:152
+maintenance^Provider health interval^server:backgroundActivity.overrides.providerHealthRefreshInterval,server:providerHealthRefreshInterval^Advanced でプロバイダーのヘルスチェック間隔を調整する^許可状態でのプローブ間隔が更新される^単一環境。Advanced^BackgroundActivitySettings.tsx:238
+maintenance^Active host power interval^server:backgroundActivity.overrides.hostPowerMonitorActiveInterval^稼働中の電源監視間隔を変更する^稼働時に使う監視頻度が変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:274
+maintenance^Idle host power interval^server:backgroundActivity.overrides.hostPowerMonitorIdleInterval^アイドル時の電源監視間隔を変更する^アイドル時に使う監視頻度が変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:310
+maintenance^Pause when host is locked^server:backgroundActivity.overrides.pauseWhenHostLocked^ホストがロックされた場合の抑制を切り替える^ホストロック時にプローブを抑制するか変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:69|BackgroundActivitySettings.tsx:327
+maintenance^Pause on host low power^server:backgroundActivity.overrides.pauseWhenHostLowPower^ホストの低電力時の抑制を切り替える^ホストの低電力時にプローブを抑制するか変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:70|BackgroundActivitySettings.tsx:327
+maintenance^Pause on client low power^server:backgroundActivity.overrides.pauseWhenClientLowPower^クライアントの低電力時の抑制を切り替える^クライアントの低電力時にプローブを抑制するか変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:71|BackgroundActivitySettings.tsx:327
+maintenance^Pause on battery^server:backgroundActivity.overrides.pauseWhenOnBattery^バッテリー駆動時の抑制を切り替える^電源状態に応じてプローブを抑制するか変わる^単一環境。Advanced^BackgroundActivitySettings.tsx:72|BackgroundActivitySettings.tsx:327
+maintenance^Reset background activity^server:backgroundActivity,server:backgroundActivityProfile^プロファイル設定のリセットを押す^カスタム値を解除して既定のプロファイルが表示される^既定と異なる設定^BackgroundActivitySettings.tsx:357|BackgroundActivitySettings.tsx:415
+maintenance^Delete old rotated logs^server:storageCleanup.logsAfterDays^ログ保持期間を入力するか削除を無効化する^保持期間を過ぎたローテーション済みログが整理対象になる^テストログのある保守可能な環境^StorageSettings.tsx:952|packages/contracts/src/settings.ts:1369
+worktrees^Delete worktrees with deleted threads^server:storageCleanup.worktreeOnDelete,server:worktreeCleanup.rules.worktreeOnDelete^削除連動を切り替える^スレッド削除時にローカル変更などの保護条件を満たす不要 worktree が整理される^検証用スレッドで確認。プロジェクトは Custom^StorageSettings.tsx:714|packages/contracts/src/settings.ts:1364
+worktrees^Delete merged worktrees^server:storageCleanup.worktreeOnMerge,server:worktreeCleanup.rules.worktreeOnMerge^マージ済みの自動削除を切り替える^PR がマージ済みでコミットが既定ブランチに入った場合に整理対象になる^検証用 PR。プロジェクトは Custom^StorageSettings.tsx:730|packages/contracts/src/settings.ts:1363
+worktrees^Delete inactive worktrees^server:storageCleanup.worktreeAfterDays,server:worktreeCleanup.rules.worktreeAfterDays^非アクティブ日数を指定するか無効化する^選んだ日数を過ぎた worktree が整理対象になる^検証用スレッド。プロジェクトは Custom^StorageSettings.tsx:746|packages/contracts/src/settings.ts:1359
+worktrees^Delete settled worktrees^server:storageCleanup.worktreeSettledAfterDays,server:worktreeCleanup.rules.worktreeSettledAfterDays^Settled からの日数を指定する。0 は次回処理^選んだ日数が経過した worktree が整理対象になる^Advanced。すべての接続済み対象に settledWorktreeCleanup capability^StorageSettings.tsx:767|packages/contracts/src/settings.ts:1360
+worktrees^Delete unchanged worktrees^server:storageCleanup.worktreeUnchanged,server:worktreeCleanup.rules.worktreeUnchanged^未変更の自動削除を切り替える^既定ブランチより先のコミットのない worktree が整理対象になる^Advanced。プロジェクトは Custom^StorageSettings.tsx:801|packages/contracts/src/settings.ts:1365
+worktrees^Static branch prefix^server:branchNamePrefix^静的モードでプレフィックスを入力する^新規 worktree の静的ブランチ名が指定値を使う^Static モード^BranchNamingSettings.tsx:42
+worktrees^Custom branch naming instructions^server:branchNameInstructions^カスタムモードで名前生成指示を確定する^新規 worktree の生成処理へ指示が渡る^Custom モード^BranchNamingSettings.tsx:42
+source-control^Custom writing instructions^server:sourceControlWritingStyle.customInstructions^Custom の文体指示を確定する^コミットと PR 本文の生成に指定指示が渡る^Custom モード^SourceControlWritingSettings.tsx:210|packages/contracts/src/settings.ts:1073
+source-control^Sign in to source control^^ホスト行のサインインを開始して認証を完了する^対応プロバイダーの認証状態が更新される^検出済みドライバー。ホスト、CLI または認証メソッドの利用条件^SourceControlSettings.tsx:268
+projects^Name^^Name を編集し確定する^対象プロジェクトの表示名が更新される^対象プロジェクトと書き込み権限^ProjectSettingsPanel.tsx:560
+projects^Project icon^^アイコンを選択するかファビコンを指定する^対象プロジェクトのアイコンが変わる^対象プロジェクトと書き込み権限。ファビコンはファイル^ProjectSettingsPanel.tsx:602|ProjectSettingsPanel.tsx:749
+projects^Pin^^Pin を切り替える^対象プロジェクトのピン留め状態が変わる^対象プロジェクト^ProjectSettingsPanel.tsx:650
+projects^Archive project^^プロジェクトの Archive を選ぶ^対象プロジェクトがアーカイブ状態になる^対象プロジェクトと書き込み権限。テスト用^ProjectSettingsPanel.tsx:667
+projects^Remove checkout^^Checkouts の行から除去を確認する^選択したチェックアウトがプロジェクトグループから消える^接続チェックアウトと書き込み権限。テスト用^ProjectSettingsPanel.tsx:454
+projects^Remove project^^Danger の除去ボタンから確認する^対象プロジェクトの登録が消える^対象プロジェクトと書き込み権限。テスト用^ProjectSettingsPanel.tsx:727
+projects^Import action from t3.json^server:defaultProjectScripts,server:projectScriptOverrides^ファイル由来の Action から Import を選ぶ^スクリプトが編集できるアクションとして追加される^有効な t3.json。スクリプト書き込み権限^ProjectActionsSettings.tsx:159
+projects^Track repository folder^^チェックアウト内のフォルダーを選び追跡に追加する^対象フォルダーが登録リポジトリに出る^書き込める単一チェックアウト^ProjectRepositoriesSettings.tsx:224
+projects^Untrack repository folder^^登録フォルダーの除去を押す^選択したパスが追跡一覧から消える^書き込める単一チェックアウト^ProjectRepositoriesSettings.tsx:192
+projects^Approve worktree layout command^file:t3.json.worktreeLayout^Create command または Remove command の承認を切り替える^該当コマンドの承認状態が変わる^単一チェックアウトに有効な宣言。スクリプト書き込み権限^ProjectWorktreeLayoutSettings.tsx:25|ProjectWorktreeLayoutSettings.tsx:171|packages/contracts/src/t3ProjectFile.ts:79
+threads^Clear project setting override^server:projectSettingsOverrides^個別設定の継承操作で上書きを解除する^現在のスコープの値が継承表示に戻る^プロジェクトまたはチェックアウトに上書きがある^useScopedSettings.ts:156|scopedSettings.ts:421
+threads^Clear project overrides^server:projectSettingsOverrides^プロジェクトの上書き解除を実行する^対象範囲の上書きが解除されて既定値を継承する^対象範囲に上書きがある^useScopedSettings.ts:165|scopedSettings.ts:469
+providers^Provider configuration^server:providerInstances.config^接続中のプロバイダーの設定フォームを編集して確定する^ドライバーに必要な設定が対象インスタンスに保存される^フィールドの有無と編集権限はドライバーと環境に依存^ProviderSettingsForm.tsx:286|ProviderSettingsForm.tsx:785
+providers^Provider display name and accent^server:providerInstances^インスタンスの表示名またはアクセント色を編集する^プロバイダーの表示が更新される^書き込めるインスタンス^ProviderInstanceCard.tsx:795
+providers^Provider environment variables^server:providerInstances^環境変数行を追加、編集、除去する^当該インスタンスの起動設定が更新される^書き込めるインスタンス。キーと値の検証^ProviderInstanceCard.tsx:460|ProviderInstanceCard.tsx:497
+providers^Enable provider^server:providerInstances.enabled,server:projectSettingsOverrides.providerInstances^インスタンスの有効状態を切り替える^選択範囲でプロバイダーが利用可能または無効になる^環境またはプロジェクト。管理ポリシー^ProviderInstanceCard.tsx:1240|packages/contracts/src/providerInstance.ts:80|packages/contracts/src/settings.ts:1225
+providers^Delete provider^server:providerInstances^対象インスタンスを削除する^一覧からインスタンスが消える^削除できるインスタンス。テスト用^ProviderInstanceCard.tsx:1280
+providers^Provider installation or update^^利用できる場合にプロバイダーのバージョン操作を選ぶ^対応するインストールまたは更新アクションが開始される^ドライバー固有のバージョン状態。許可が必要^ProviderInstanceCard.tsx:1112
+providers^Provider sign-in^^対象のプロバイダー認証を開始し案内された手順を完了する^プロバイダーの認証状態が更新される^ドライバー固有の認証メソッド^ProviderAuthenticationSection.tsx:238|ProviderAuthenticationSection.tsx:296
+providers^Import native session^^プロバイダーのセッションを読み込んで Import を押す^選んだネイティブセッションが取り込まれる^セッション一覧と import capability^AcpSessionManagementSection.tsx:469|AcpSessionManagementSection.tsx:510
+providers^Delete native session^^対応するセッションの削除を選ぶ^選んだネイティブセッションが消える^削除を提供するプロバイダー。テスト用^AcpSessionManagementSection.tsx:528
+providers^Disconnect ACP account^^プロバイダーからログアウトする^対象アカウントの認証状態が解除される^ログアウトを提供する ACP^AcpSessionManagementSection.tsx:432
+providers^Favorite model^server:favorites,client:favorites^モデルの星を切り替える^モデルがお気に入りに入るか外れる^モデル設定の書き込み権限^ProviderModelsSection.tsx:569
+providers^Hide model^server:providerModelPreferences,client:providerModelPreferences^組み込みのモデルを非表示または表示にする^モデルピッカーの対象モデルの可視性が変わる^モデル設定の書き込み権限^ProviderModelsSection.tsx:277|ProviderSettingsPanel.tsx:1478
+providers^Hide or show all built-in models^server:providerModelPreferences^一覧の一括表示切替を押す^組み込みモデルの状態が一括更新される^組み込みモデルがある^ProviderModelsSection.tsx:378
+providers^Reorder model^server:providerModelPreferences,client:providerModelPreferences^モデルの順序を上または下に移す^モデルの表示順が保存される^モデル設定の書き込み権限^ProviderModelsSection.tsx:626|ProviderModelsSection.tsx:644
+providers^Add custom model^server:providerInstances.config.customModels^カスタムモデルの識別子を入力して追加する^指定モデルを選択できる^カスタムモデルを提供するドライバー^ProviderModelsSection.tsx:410|ProviderModelsSection.tsx:496
+providers^Edit custom model^server:providerInstances.config.customModels^登録済みカスタムモデルを変更する^モデルの編集内容が保存される^該当モデルが編集可能^ProviderModelsSection.tsx:667
+providers^Remove custom model^server:providerInstances.config.customModels^登録済みカスタムモデルの削除を押す^対象モデルがカスタム一覧から消える^該当モデルが削除可能^ProviderModelsSection.tsx:685
+providers^Edit usage provider^server:usageLimitSources^既存の使用量取得元を開いて設定を保存する^指定した接続の項目が更新される^登録済み取得元。認証方法と接続先^UsageProviderSettings.tsx:114
+providers^Remove usage provider^server:usageLimitSources^使用量取得元の除去を承認する^対象の登録が消える^登録済み取得元^UsageProviderSettings.tsx:135
+providers^Edit text generator^server:textGenerators^既存サービスの編集フォームで保存する^接続先またはモデル構成が更新される^許可リストのない書き込める環境^TextGeneratorsSettings.tsx:155
+providers^Test text generator^^詳細の Test ボタンを押す^接続結果またはエラーが表示される^利用可能な認証とエンドポイント^TextGeneratorsSettings.tsx:627
+providers^Remove text generator^server:textGenerators^既存サービスの除去を確定する^生成サービスが設定一覧から消える^削除できる登録済みサービス^TextGeneratorsSettings.tsx:164|TextGeneratorsSettings.tsx:235
+devices^Add SSH device host^server:deviceHosts^Add の SSH 接続先を選びホスト設定を保存する^SSH デバイスホストが一覧に出る^対象環境が対応。到達できるホストと認証^DeviceSourcesSettings.tsx:577
+devices^Add EAS device host^server:easDeviceHosts^Add の EAS を選び接続情報を保存する^EAS デバイスソースが一覧に出る^対応する EAS 環境^DeviceSourcesSettings.tsx:589
+devices^Add Simlock device host^server:simlockDeviceHosts^Add の Simlock を選びプールの接続情報を保存する^Simlock デバイスソースが一覧に出る^Labs の Simlock と対応環境^DeviceSourcesSettings.tsx:604
+devices^Edit device source^server:deviceHosts,server:easDeviceHosts,server:simlockDeviceHosts^対象ソースの Edit で変更を確定する^対象ソースの接続設定が更新される^設定済みソース^DeviceSourcesSettings.tsx:366
+devices^Remove device source^server:deviceHosts,server:easDeviceHosts,server:simlockDeviceHosts^対象ソースの Remove を選ぶ^ソースが一覧から消える^設定済みソース^DeviceSourcesSettings.tsx:384
+devices^Test SSH^^SSH ホストのテストを実行する^SSH 接続の結果が表示される^SSH ソースと認証^DeviceSourcesSettings.tsx:483
+scheduled-tasks^Edit scheduled task^^タスクの Edit からトリガー、行き先、指示を更新する^タスクの設定と次回実行表示が更新される^既存タスクと書き込み権限^ScheduledTasksSettings.tsx:892|ScheduledTasksSettings.tsx:2373
+scheduled-tasks^Webhook deliveries^^対象タスクの配信履歴を開いて配信を選ぶ^Webhook のイベント結果と詳細が表示される^Webhook タスクと配信データ^ScheduledTasksSettings.tsx:897|ScheduledTasksSettings.tsx:1080
+scheduled-tasks^Run now^^対象タスクの実行を開始する^タスクの実行状態が更新される^手動実行を利用できるタスク。検証用^ScheduledTasksSettings.tsx:902
+scheduled-tasks^Delete scheduled task^^対象タスクを削除する^タスクがスケジュール一覧から消える^削除可能なテストタスク^ScheduledTasksSettings.tsx:908
+scheduled-tasks^Copy webhook URL^^保存済みの Webhook URL をコピーする^対象タスクの URL がクリップボードに入る^保存済みの Webhook タスク。検証用 URI^ScheduledTasksSettings.tsx:1214
+scheduled-tasks^Rotate webhook URL^^Webhook URL をローテーションする^新しい Webhook URL が表示される^保存済みの Webhook タスク。検証用^ScheduledTasksSettings.tsx:1224
+keybindings^Add shortcut^file:keybindings.json^Add の行でコマンドとキーを指定して保存する^新しいショートカットが対象環境に反映される^接続した対象環境すべてに AuthSettingsWriteScope^KeybindingsSettings.tsx:1436|KeybindingsSettings.tsx:1581
+keybindings^Edit shortcut^file:keybindings.json^既存キーの欄を編集して確定する^カスタム割り当てに新しい組み合わせが表示される^変更可能な行。対象環境への書き込み権限^KeybindingsSettings.tsx:802
+keybindings^When condition^file:keybindings.json^条件式ビルダーまたは式入力を使って確定する^条件に合う場面でだけ該当の割り当てが一致する^有効な式。警告対象の識別子あり^KeybindingsSettings.tsx:600|KeybindingsSettings.tsx:1658
+keybindings^Remove shortcut^file:keybindings.json^行メニューの削除操作を選ぶ^カスタムの割り当てが消える^書き込み権限。カスタム行^KeybindingsSettings.tsx:1625
+keybindings^Reset shortcut^file:keybindings.json^行メニューから既定への復元を選ぶ^対象の割り当てが既定値へ戻る^既定がある行と書き込み権限^KeybindingsSettings.tsx:1666
+secrets^Edit secret provider^server:secretProviders^登録済みのプロバイダーを編集して保存する^プロバイダー設定が更新される^secret_providers を広告する環境と権限^SecretsSettings.tsx:173
+secrets^Remove secret provider^server:secretProviders^削除するプロバイダーと利用箇所を確認して承認する^登録が消え、該当する設定の参照が解除される^テスト用のプロバイダー。関連設定の書き込み権限^SecretsSettings.tsx:238|packages/contracts/src/settings.ts:2078
+connections^Environment list or map^^表示を一覧またはマップに切り替える^同じ接続環境が選んだ形式で表示される^Environments の表示設定^ConnectionsSettings.tsx:1840
+connections^Load balancing weights^client:loadBalancingWeights^各環境の分配優先度を選ぶ^新規スレッドの振り分け候補が優先度を反映する^複数の候補環境^LoadBalancingSettings.tsx:32
+access^Create pairing link^^認証済みクライアント欄からリンクを作る^選択した接続先のリンクまたはコードを表示する^接続環境の認証管理権限と公開先^AuthorizedClientsSettings.tsx:841
+access^Revoke pairing link^^テスト用リンクを取り消す^対象リンクが一覧から消え、接続に使えなくなる^認証管理権限^AuthorizedClientsSettings.tsx:402
+access^Revoke client session^^該当クライアントのアクセスを取り消す^選んだセッションが失効する^認証管理権限。テスト用クライアント^AuthorizedClientsSettings.tsx:578
+access^Revoke other clients^^他のクライアントをまとめて取り消す^現在のデバイス以外の対象クライアントのアクセスを更新する^認証管理権限。テスト用クライアント^AuthorizedClientsSettings.tsx:688
+access^Use in another app (MCP)^^Use in another app (MCP) を開く^対象環境を接続する案内が開く^対応する接続環境と権限^AuthorizedClientsSettings.tsx:680
+diagnostics^Open logs folder^^Open logs folder を押す^ローカルのログフォルダーを開く^ローカルデスクトップブリッジ^DiagnosticsSettings.tsx:1165
+diagnostics^Refresh live processes^^Live Processes の再読み込みを押す^対象環境のプロセス情報が更新される^診断を取得できる対象環境^DiagnosticsSettings.tsx:1017
+diagnostics^Resource History^^対象期間を選択して再読み込みする^期間に対応するリソース履歴が表示される^診断を取得できる対象環境。履歴あり^DiagnosticsSettings.tsx:575|DiagnosticsSettings.tsx:1087
+diagnostics^Trace Diagnostics^^診断情報とトレースを更新して失敗やスパンを確認する^対象環境の当該トレース集計が表示される^対応サーバーの収集データ^DiagnosticsSettings.tsx:1149|DiagnosticsSettings.tsx:1179
+diagnostics^Test OpenTelemetry endpoint^^トレース、メトリクス、ログの該当行で Test を押す^検証結果が各行に表示される^有効な HTTP(S) エンドポイント^TelemetryExportSettings.tsx:268
+archived^Unarchive^^アーカイブ済みの行を選び Unarchive を押す^対象はアーカイブ一覧から外れて再び通常の一覧に出る^対象環境にアーカイブ済みスレッドと変更権限^ArchivedThreadsPanel.tsx:32|ArchivedThreadsPanel.tsx:258
+archived^Delete archived thread^^アーカイブ済みの行で Delete を選び確認する^対象スレッドがアーカイブ一覧から消える^対象環境の削除権限。検証用スレッド^ArchivedThreadsPanel.tsx:41|ArchivedThreadsPanel.tsx:258
+diagnostics^Traces endpoint^server:observability.otlpTracesUrl^トレースのエンドポイント URL を入力して Save する^設定値と実行中の有効な送信先が表示される^環境またはデスクトップ起動設定から強制された場合は編集不可^TelemetryExportSettings.tsx:23|TelemetryExportSettings.tsx:50|TelemetryExportSettings.tsx:325|packages/contracts/src/settings.ts:1056
+diagnostics^Metrics endpoint^server:observability.otlpMetricsUrl^メトリクスのエンドポイント URL を入力して Save する^設定値と実行中の有効な送信先が表示される^環境またはデスクトップ起動設定から強制された場合は編集不可^TelemetryExportSettings.tsx:30|TelemetryExportSettings.tsx:50|TelemetryExportSettings.tsx:325|packages/contracts/src/settings.ts:1057
+diagnostics^Logs endpoint^server:observability.otlpLogsUrl^ログのエンドポイント URL を入力して Save する^設定値と実行中の有効な送信先が表示される^環境またはデスクトップ起動設定から強制された場合は編集不可^TelemetryExportSettings.tsx:37|TelemetryExportSettings.tsx:50|TelemetryExportSettings.tsx:325|packages/contracts/src/settings.ts:1058
+diagnostics^Discard^^エンドポイントの未保存編集を Discard する^最後に保存した設定値が欄に戻る^未保存の編集あり^TelemetryExportSettings.tsx:312
+threads^Add snooze option^server:snoozePresets^Snooze options の追加ボタンを押す^新しい候補が一覧に加わり、Snooze メニューに表示される^書き込み可能な環境^SnoozePresetsSettings.tsx:235
+threads^Remove snooze option^server:snoozePresets^対象の Snooze プリセットを削除する^選んだ候補が Snooze メニューから消える^設定済みのプリセット^SnoozePresetsSettings.tsx:229|SnoozePresetsSettings.tsx:321
+threads^Reset snooze options to default^server:snoozePresets^既定のプリセットへリセットする^DEFAULT_SNOOZE_PRESETS の内容が表示される^既定と異なる値、または Mixed^SnoozePresetsSettings.tsx:209|packages/contracts/src/settings.ts:131
+snap-shot^Play Whoosh or Play Click^^Capture sound のメニューで音の横の再生を押す^選んだキャプチャ音を試聴できる^Capture sound のメニュー。SnapShots が有効^SnapShotSettings.tsx:527|SnapShotSettings.tsx:539
+snap-shot^Shortcut permissions^^Capture shortcut の Shortcut permissions を選ぶ^該当のシステム権限設定を開く^ショートカットの権限操作が提示される macOS^SnapShotSettings.tsx:482
+providers^Devices^^Providers ページの環境タブを切り替える^選んだ環境のインスタンスが出る。接続不可なら Device unavailable が出る^固定スコープ以外。唯一の環境が主環境なら非表示^ProviderSettingsPanel.tsx:399|ProviderSettingsPanel.tsx:405|ProviderSettingsPanel.tsx:457
+providers^Local ACP command arguments^server:providerInstances.config.commandArgs^ローカルの ACP コマンドの引数用行を編集する^当該インスタンスで使用する引数の配列が更新される^ACP source が local^ProviderSettingsForm.tsx:375|packages/provider-acp-registry/src/settings.ts:44
+source-control^Rescan server environment^^再スキャンボタンを押す^選択環境の Git とソース管理サービスの検出結果が更新される^接続済み環境^SourceControlSettings.tsx:483|SourceControlSettings.tsx:571
+source-control^Source control token^server:sourceControlHosts^対応するホストでトークン入力を確定する^対象ホストの認証用設定が保存される^ホストが settings または credentials を提供する^SourceControlSettings.tsx:530|SourceControlSettings.tsx:550
+source-control^Source control account^server:sourceControlHosts^対応ホストでアカウント設定を操作する^対象アカウントの認証設定と再スキャン結果を表示する^accounts を提供する definition と available 状態^SourceControlSettings.tsx:537
+about^Check for Updates^^Version の Check for Updates を押す^更新確認が開始され、更新状態か失敗通知が表示される^更新をサポートするデスクトップ。管理ポリシー^SettingsPanels.tsx:288|SettingsPanels.tsx:335
+about^Download update^^Version の Download を押す^更新のダウンロード状態が表示される^選択トラックに取得可能な新しい版。デスクトップ^SettingsPanels.tsx:320|SettingsPanels.tsx:327
+about^Install update^^Version の Install を押し確認する^ダウンロード済みの更新のインストールを開始する^インストール可能な更新。管理ポリシー^SettingsPanels.tsx:251|SettingsPanels.tsx:260
+about^Review^desktop:updateChannel^トラックが異なる接続マシンの Review を開く^切り替え候補と対象外の理由を確認できる^アプリと異なるトラックの接続マシン。実行中の更新なし^SettingsPanels.tsx:382|SettingsPanels.tsx:399
+voice^Reorder microphones^client:voiceMicrophones^入力一覧の優先順を入れ替える^次の録音で最初の接続済みマイクが選ばれる^複数の登録済み入力^MicrophoneOrderList.tsx:42|packages/contracts/src/settings.ts:584
+about^Uninstall t3 command^^インストール済みの t3 command でアンインストールを選ぶ^アプリが管理する CLI のインストール状態が解除される^アプリの CLI がインストール済み^CliCommandSettingsRow.tsx:112
+about^Add to PATH^^CLI 行の Add to PATH を押す^対応するシェルで t3 コマンドを解決できる^CLI をインストール済み。対応シェル^CliCommandSettingsRow.tsx:104
+projects^Edit action^server:defaultProjectScripts,server:projectScriptOverrides^一覧の Action の編集を開いて変更を確定する^選択したプロジェクトの Action の設定が更新される^編集できる Action。適切なスクリプトの書き込み権限^ProjectActionsSettings.tsx:197
+projects^Delete action^server:defaultProjectScripts,server:projectScriptOverrides^編集ダイアログで Action を削除する^対象範囲の編集可能な Action が一覧から消える^編集可能なテスト Action^ProjectActionsSettings.tsx:216
+voice^Refresh microphones^^マイクの再取得ボタンを押す^認識されたマイクの候補と接続状態が更新される^マイクの情報を取得できる環境^VoiceSettingsPanel.tsx:1468
+connections^Forget saved environment^file:saved-environments.json^保存済み環境の除去を選ぶ^環境がこのアプリの保存済み一覧から消える^登録済みの環境。検証用^SavedEnvironmentRows.tsx:468|apps/desktop/src/app/DesktopEnvironment.ts:203
+connections^Forget linked environment^^保存済みリンクを選んで解除する^解除した環境リンクが一覧から外れる^解除可能な既存リンク。検証用^LinkedEnvironmentsSettings.tsx:189

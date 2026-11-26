@@ -1,0 +1,4 @@
+[submodule "t3code"]
+	path = T3Audit-0.1.12/.source
+	url = https://github.com/pingdotgg/t3code.git
+	shallow = true

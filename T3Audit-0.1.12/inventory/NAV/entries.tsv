@@ -1,0 +1,791 @@
+id	kind	name	source	feature_id
+NAV-E0001	route-root	__root__	apps/web/src/routes/__root.tsx:66	NAV-001
+NAV-E0002	route	/	apps/web/src/routes/_chat.tsx:33|apps/web/src/routeTree.gen.ts:645	NAV-002
+NAV-E0003	route	/	apps/web/src/routes/_chat.index.tsx:124|apps/web/src/routeTree.gen.ts:652	NAV-003
+NAV-E0004	route	/welcome	apps/web/src/routes/welcome.tsx:14|apps/web/src/routeTree.gen.ts:603	NAV-004
+NAV-E0005	route	/pair	apps/web/src/routes/pair.tsx:9|apps/web/src/routeTree.gen.ts:610	NAV-005
+NAV-E0006	route	/guest	apps/web/src/routes/guest.tsx:5|apps/web/src/routeTree.gen.ts:617	NAV-006
+NAV-E0007	route	/connect	apps/web/src/routes/connect.tsx:6|apps/web/src/routeTree.gen.ts:631	NAV-007
+NAV-E0008	route	/connect-agent	apps/web/src/routes/connect-agent.tsx:5|apps/web/src/routeTree.gen.ts:624	NAV-008
+NAV-E0009	route	/approve-agent	apps/web/src/routes/approve-agent.tsx:7|apps/web/src/routeTree.gen.ts:638	NAV-009
+NAV-E0010	route	/projects/$projectKey	apps/web/src/routes/projects.$projectKey.tsx:3|apps/web/src/routeTree.gen.ts:659	NAV-010
+NAV-E0011	route	/$environmentId/$threadId	apps/web/src/routes/_chat.$environmentId.$threadId.tsx:4|apps/web/src/routeTree.gen.ts:911	NAV-011
+NAV-E0012	route	/threads/$environmentId/$threadId	apps/web/src/routes/threads.$environmentId.$threadId.tsx:4|apps/web/src/routeTree.gen.ts:708	NAV-012
+NAV-E0013	route	/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId	apps/web/src/routes/_chat.linked.$viaEnvironmentId.$linkedEnvironmentId.$linkedThreadId.tsx:8|apps/web/src/routeTree.gen.ts:918	NAV-013
+NAV-E0014	route	/draft/$draftId	apps/web/src/routes/_chat.draft.$draftId.tsx:4|apps/web/src/routeTree.gen.ts:904	NAV-014
+NAV-E0015	route	/new	apps/web/src/routes/_chat.new.tsx:30|apps/web/src/routeTree.gen.ts:694	NAV-015
+NAV-E0016	route	/issues	apps/web/src/routes/_chat.issues.tsx:6|apps/web/src/routeTree.gen.ts:701	NAV-016
+NAV-E0017	route	/pull-requests	apps/web/src/routes/_chat.pull-requests.tsx:35|apps/web/src/routeTree.gen.ts:687	NAV-017
+NAV-E0018	route	/workflows	apps/web/src/routes/_chat.workflows.tsx:9|apps/web/src/routeTree.gen.ts:666	NAV-018
+NAV-E0019	route	/usage	apps/web/src/routes/_chat.usage.tsx:5|apps/web/src/routeTree.gen.ts:673	NAV-019
+NAV-E0020	route	/settings	apps/web/src/routes/_chat.settings.tsx:209|apps/web/src/routeTree.gen.ts:680	NAV-020
+NAV-E0021	route	/settings/general	apps/web/src/routes/_chat.settings.general.tsx:9|apps/web/src/routeTree.gen.ts:820	NAV-021
+NAV-E0022	route	/settings/appearance	apps/web/src/routes/_chat.settings.appearance.tsx:9|apps/web/src/routeTree.gen.ts:883	NAV-022
+NAV-E0023	route	/settings/chat	apps/web/src/routes/_chat.settings.chat.tsx:4|apps/web/src/routeTree.gen.ts:855	NAV-023
+NAV-E0024	route	/settings/diffs	apps/web/src/routes/_chat.settings.diffs.tsx:4|apps/web/src/routeTree.gen.ts:827	NAV-024
+NAV-E0025	route	/settings/keybindings	apps/web/src/routes/_chat.settings.keybindings.tsx:5|apps/web/src/routeTree.gen.ts:806	NAV-025
+NAV-E0026	route	/settings/voice	apps/web/src/routes/_chat.settings.voice.tsx:5|apps/web/src/routeTree.gen.ts:722	NAV-026
+NAV-E0027	route	/settings/snap-shot	apps/web/src/routes/_chat.settings.snap-shot.tsx:9|apps/web/src/routeTree.gen.ts:750	NAV-027
+NAV-E0028	route	/settings/providers	apps/web/src/routes/_chat.settings.providers.tsx:37|apps/web/src/routeTree.gen.ts:771	NAV-028
+NAV-E0029	route	/settings/threads	apps/web/src/routes/_chat.settings.threads.tsx:4|apps/web/src/routeTree.gen.ts:729	NAV-029
+NAV-E0030	route	/settings/browser	apps/web/src/routes/_chat.settings.browser.tsx:4|apps/web/src/routeTree.gen.ts:862	NAV-030
+NAV-E0031	route	/settings/devices	apps/web/src/routes/_chat.settings.devices.tsx:4|apps/web/src/routeTree.gen.ts:841	NAV-031
+NAV-E0032	route	/settings/scheduled-tasks	apps/web/src/routes/_chat.settings.scheduled-tasks.tsx:11|apps/web/src/routeTree.gen.ts:764	NAV-032
+NAV-E0033	route	/settings/projects	apps/web/src/routes/_chat.settings.projects.tsx:4|apps/web/src/routeTree.gen.ts:778	NAV-033
+NAV-E0034	route	/settings/source-control	apps/web/src/routes/_chat.settings.source-control.tsx:5|apps/web/src/routeTree.gen.ts:743	NAV-034
+NAV-E0035	route	/settings/worktrees	apps/web/src/routes/_chat.settings.worktrees.tsx:4|apps/web/src/routeTree.gen.ts:715	NAV-035
+NAV-E0036	route	/settings/connections	apps/web/src/routes/_chat.settings.connections.tsx:8|apps/web/src/routeTree.gen.ts:848	NAV-036
+NAV-E0037	route	/settings/access	apps/web/src/routes/_chat.settings.access.tsx:8|apps/web/src/routeTree.gen.ts:890	NAV-037
+NAV-E0038	route	/settings/secrets	apps/web/src/routes/_chat.settings.secrets.tsx:7|apps/web/src/routeTree.gen.ts:757	NAV-038
+NAV-E0039	route	/settings/maintenance	apps/web/src/routes/_chat.settings.maintenance.tsx:4|apps/web/src/routeTree.gen.ts:792	NAV-039
+NAV-E0040	route	/settings/labs	apps/web/src/routes/_chat.settings.labs.tsx:4|apps/web/src/routeTree.gen.ts:799	NAV-040
+NAV-E0041	route	/settings/about	apps/web/src/routes/_chat.settings.about.tsx:4|apps/web/src/routeTree.gen.ts:897	NAV-041
+NAV-E0042	route	/settings/archived	apps/web/src/routes/_chat.settings.archived.tsx:5|apps/web/src/routeTree.gen.ts:876	NAV-042
+NAV-E0043	route	/settings/diagnostics	apps/web/src/routes/_chat.settings.diagnostics.tsx:5|apps/web/src/routeTree.gen.ts:834	NAV-043
+NAV-E0044	route	/settings/open-source-licenses	apps/web/src/routes/_chat.settings.open-source-licenses.tsx:5|apps/web/src/routeTree.gen.ts:785	NAV-044
+NAV-E0045	route	/settings/integrations	apps/web/src/routes/_chat.settings.integrations.tsx:4|apps/web/src/routeTree.gen.ts:813	NAV-045
+NAV-E0046	route	/settings/storage	apps/web/src/routes/_chat.settings.storage.tsx:4|apps/web/src/routeTree.gen.ts:736	NAV-046
+NAV-E0047	route	/settings/beta	apps/web/src/routes/_chat.settings.beta.tsx:4|apps/web/src/routeTree.gen.ts:869	NAV-047
+NAV-E0048	native-menu	{appName}	apps/desktop/src/window/DesktopApplicationMenu.ts:243	NAV-077
+NAV-E0049	native-menu	{appName} > About {appName}	apps/desktop/src/window/DesktopApplicationMenu.ts:245	NAV-048
+NAV-E0050	native-menu	{appName} > Check for Updates...	apps/desktop/src/window/DesktopApplicationMenu.ts:247	NAV-049
+NAV-E0051	native-menu	{appName} > Settings...	apps/desktop/src/window/DesktopApplicationMenu.ts:252	NAV-020
+NAV-E0052	native-menu	{appName} > Services	apps/desktop/src/window/DesktopApplicationMenu.ts:257	NAV-050
+NAV-E0053	native-menu	{appName} > Hide {appName}	apps/desktop/src/window/DesktopApplicationMenu.ts:259	NAV-051
+NAV-E0054	native-menu	{appName} > Hide Others	apps/desktop/src/window/DesktopApplicationMenu.ts:260	NAV-052
+NAV-E0055	native-menu	{appName} > Show All	apps/desktop/src/window/DesktopApplicationMenu.ts:263	NAV-053
+NAV-E0056	native-menu	{appName} > Quit {appName}	apps/desktop/src/window/DesktopApplicationMenu.ts:266	NAV-054
+NAV-E0057	native-menu	File	apps/desktop/src/window/DesktopApplicationMenu.ts:273	NAV-077
+NAV-E0058	native-menu	File > Settings...	apps/desktop/src/window/DesktopApplicationMenu.ts:279	NAV-020
+NAV-E0059	native-menu	File > Close Developer Tools	apps/desktop/src/window/DesktopApplicationMenu.ts:286	NAV-056
+NAV-E0060	native-menu	File > Close Window	apps/desktop/src/window/DesktopApplicationMenu.ts:298	NAV-055
+NAV-E0061	native-menu	File > Exit	apps/desktop/src/window/DesktopApplicationMenu.ts:303	NAV-054
+NAV-E0062	native-menu	File > Quit	apps/desktop/src/window/DesktopApplicationMenu.ts:304	NAV-054
+NAV-E0063	native-menu	Edit	apps/desktop/src/window/DesktopApplicationMenu.ts:309	NAV-077
+NAV-E0064	native-menu	Edit > Undo	apps/desktop/src/window/DesktopApplicationMenu.ts:311	NAV-057
+NAV-E0065	native-menu	Edit > Redo	apps/desktop/src/window/DesktopApplicationMenu.ts:312	NAV-058
+NAV-E0066	native-menu	Edit > Cut	apps/desktop/src/window/DesktopApplicationMenu.ts:314	NAV-059
+NAV-E0067	native-menu	Edit > Copy	apps/desktop/src/window/DesktopApplicationMenu.ts:315	NAV-060
+NAV-E0068	native-menu	Edit > Paste	apps/desktop/src/window/DesktopApplicationMenu.ts:316	NAV-061
+NAV-E0069	native-menu	Edit > Paste as Text	apps/desktop/src/window/DesktopApplicationMenu.ts:318	NAV-066
+NAV-E0070	native-menu	Edit > Delete	apps/desktop/src/window/DesktopApplicationMenu.ts:322	NAV-062
+NAV-E0071	native-menu	Edit > Select All	apps/desktop/src/window/DesktopApplicationMenu.ts:324	NAV-063
+NAV-E0072	native-menu	Edit > Speech	apps/desktop/src/window/DesktopApplicationMenu.ts:329	NAV-064
+NAV-E0073	native-menu	Edit > Speech > Start Speaking	apps/desktop/src/window/DesktopApplicationMenu.ts:331	NAV-064
+NAV-E0074	native-menu	Edit > Speech > Stop Speaking	apps/desktop/src/window/DesktopApplicationMenu.ts:332	NAV-065
+NAV-E0075	native-menu	View	apps/desktop/src/window/DesktopApplicationMenu.ts:340	NAV-077
+NAV-E0076	native-menu	View > Reload	apps/desktop/src/window/DesktopApplicationMenu.ts:344	NAV-067
+NAV-E0077	native-menu	View > Force Reload	apps/desktop/src/window/DesktopApplicationMenu.ts:349	NAV-068
+NAV-E0078	native-menu	View > Toggle Developer Tools	apps/desktop/src/window/DesktopApplicationMenu.ts:354	NAV-069
+NAV-E0079	native-menu	View > Actual Size	apps/desktop/src/window/DesktopApplicationMenu.ts:359	NAV-070
+NAV-E0080	native-menu	View > Zoom In	apps/desktop/src/window/DesktopApplicationMenu.ts:360	NAV-071
+NAV-E0081	native-menu	View > Zoom In	apps/desktop/src/window/DesktopApplicationMenu.ts:362	NAV-071
+NAV-E0082	native-menu	View > Zoom In	apps/desktop/src/window/DesktopApplicationMenu.ts:370	NAV-071
+NAV-E0083	native-menu	View > Zoom Out	apps/desktop/src/window/DesktopApplicationMenu.ts:377	NAV-072
+NAV-E0084	native-menu	View > Actual Size	apps/desktop/src/window/DesktopApplicationMenu.ts:380	NAV-070
+NAV-E0085	native-menu	View > Zoom In	apps/desktop/src/window/DesktopApplicationMenu.ts:386	NAV-071
+NAV-E0086	native-menu	View > Zoom Out	apps/desktop/src/window/DesktopApplicationMenu.ts:392	NAV-072
+NAV-E0087	native-menu	View > Toggle Full Screen	apps/desktop/src/window/DesktopApplicationMenu.ts:398	NAV-073
+NAV-E0088	native-menu	Window	apps/desktop/src/window/DesktopApplicationMenu.ts:404	NAV-077
+NAV-E0089	native-menu	Window > Minimize	apps/desktop/src/window/DesktopApplicationMenu.ts:406	NAV-074
+NAV-E0090	native-menu	Window > Zoom	apps/desktop/src/window/DesktopApplicationMenu.ts:409	NAV-075
+NAV-E0091	native-menu	Window > Bring All to Front	apps/desktop/src/window/DesktopApplicationMenu.ts:414	NAV-076
+NAV-E0092	native-menu	Help	apps/desktop/src/window/DesktopApplicationMenu.ts:421	NAV-077
+NAV-E0093	native-menu	Help > Check for Updates...	apps/desktop/src/window/DesktopApplicationMenu.ts:424	NAV-049
+NAV-E0094	native-accelerator	CmdOrCtrl+, (macOS)	apps/desktop/src/window/DesktopApplicationMenu.ts:253	NAV-020
+NAV-E0095	native-accelerator	CmdOrCtrl+, (非 macOS)	apps/desktop/src/window/DesktopApplicationMenu.ts:280	NAV-020
+NAV-E0096	native-accelerator	CmdOrCtrl+W (非表示項目。フォーカス中の DevTools)	apps/desktop/src/window/DesktopApplicationMenu.ts:287	NAV-056
+NAV-E0097	native-accelerator	CmdOrCtrl+Shift+V	apps/desktop/src/window/DesktopApplicationMenu.ts:319	NAV-066
+NAV-E0098	native-accelerator	CmdOrCtrl+R	apps/desktop/src/window/DesktopApplicationMenu.ts:345	NAV-067
+NAV-E0099	native-accelerator	Shift+CmdOrCtrl+R	apps/desktop/src/window/DesktopApplicationMenu.ts:350	NAV-068
+NAV-E0100	native-accelerator	Alt+Command+I (macOS)	apps/desktop/src/window/DesktopApplicationMenu.ts:355	NAV-069
+NAV-E0101	native-accelerator	Ctrl+Shift+I (非 macOS)	apps/desktop/src/window/DesktopApplicationMenu.ts:355	NAV-069
+NAV-E0102	native-accelerator	CmdOrCtrl+0	apps/desktop/src/window/DesktopApplicationMenu.ts:359	NAV-070
+NAV-E0103	native-accelerator	CmdOrCtrl+=	apps/desktop/src/window/DesktopApplicationMenu.ts:360	NAV-071
+NAV-E0104	native-accelerator	CmdOrCtrl+Plus (非表示項目)	apps/desktop/src/window/DesktopApplicationMenu.ts:363	NAV-071
+NAV-E0105	native-accelerator	CmdOrCtrl+Shift+= (macOS の非表示項目)	apps/desktop/src/window/DesktopApplicationMenu.ts:371	NAV-071
+NAV-E0106	native-accelerator	CmdOrCtrl+-	apps/desktop/src/window/DesktopApplicationMenu.ts:377	NAV-072
+NAV-E0107	native-accelerator	CmdOrCtrl+num0 (非表示項目)	apps/desktop/src/window/DesktopApplicationMenu.ts:381	NAV-070
+NAV-E0108	native-accelerator	CmdOrCtrl+numadd (非表示項目)	apps/desktop/src/window/DesktopApplicationMenu.ts:387	NAV-071
+NAV-E0109	native-accelerator	CmdOrCtrl+numsub (非表示項目)	apps/desktop/src/window/DesktopApplicationMenu.ts:393	NAV-072
+NAV-E0110	native-context-menu	Reload	apps/desktop/src/window/DesktopWindow.ts:682	NAV-078
+NAV-E0111	native-context-menu	${suggestion}	apps/desktop/src/window/DesktopWindow.ts:694	NAV-079
+NAV-E0112	native-context-menu	No suggestions	apps/desktop/src/window/DesktopWindow.ts:701	NAV-080
+NAV-E0113	native-context-menu	Copy Link	apps/desktop/src/window/DesktopWindow.ts:709	NAV-081
+NAV-E0114	native-context-menu	Copy Email Address	apps/desktop/src/window/DesktopWindow.ts:722	NAV-082
+NAV-E0115	native-context-menu	Copy Image	apps/desktop/src/window/DesktopWindow.ts:733	NAV-083
+NAV-E0116	native-context-menu	Cut	apps/desktop/src/window/DesktopWindow.ts:749	NAV-059
+NAV-E0117	native-context-menu	Copy	apps/desktop/src/window/DesktopWindow.ts:754	NAV-060
+NAV-E0118	native-context-menu	Paste	apps/desktop/src/window/DesktopWindow.ts:759	NAV-061
+NAV-E0119	native-context-menu	Select All	apps/desktop/src/window/DesktopWindow.ts:764	NAV-063
+NAV-E0120	native-menu-action	open-settings	apps/desktop/src/window/DesktopApplicationMenu.ts:216	NAV-020
+NAV-E0121	native-menu-action	paste-as-text	apps/desktop/src/window/DesktopApplicationMenu.ts:231	NAV-066
+NAV-E0122	native-menu-action	check-for-updates	apps/desktop/src/window/DesktopApplicationMenu.ts:213	NAV-049
+NAV-E0123	native-menu-action	reload	apps/desktop/src/window/DesktopApplicationMenu.ts:346	NAV-067
+NAV-E0124	native-menu-action	forceReload	apps/desktop/src/window/DesktopApplicationMenu.ts:351	NAV-068
+NAV-E0125	native-menu-action	toggleDevTools	apps/desktop/src/window/DesktopApplicationMenu.ts:356	NAV-069
+NAV-E0126	command-id	thread.jump.1	packages/contracts/src/keybindings.ts:11	NAV-156
+NAV-E0127	command-id	thread.jump.2	packages/contracts/src/keybindings.ts:12	NAV-156
+NAV-E0128	command-id	thread.jump.3	packages/contracts/src/keybindings.ts:13	NAV-156
+NAV-E0129	command-id	thread.jump.4	packages/contracts/src/keybindings.ts:14	NAV-156
+NAV-E0130	command-id	thread.jump.5	packages/contracts/src/keybindings.ts:15	NAV-156
+NAV-E0131	command-id	thread.jump.6	packages/contracts/src/keybindings.ts:16	NAV-156
+NAV-E0132	command-id	thread.jump.7	packages/contracts/src/keybindings.ts:17	NAV-156
+NAV-E0133	command-id	thread.jump.8	packages/contracts/src/keybindings.ts:18	NAV-156
+NAV-E0134	command-id	thread.jump.9	packages/contracts/src/keybindings.ts:19	NAV-156
+NAV-E0135	command-id	modelPicker.jump.1	packages/contracts/src/keybindings.ts:24	NAV-157
+NAV-E0136	command-id	modelPicker.jump.2	packages/contracts/src/keybindings.ts:25	NAV-157
+NAV-E0137	command-id	modelPicker.jump.3	packages/contracts/src/keybindings.ts:26	NAV-157
+NAV-E0138	command-id	modelPicker.jump.4	packages/contracts/src/keybindings.ts:27	NAV-157
+NAV-E0139	command-id	modelPicker.jump.5	packages/contracts/src/keybindings.ts:28	NAV-157
+NAV-E0140	command-id	modelPicker.jump.6	packages/contracts/src/keybindings.ts:29	NAV-157
+NAV-E0141	command-id	modelPicker.jump.7	packages/contracts/src/keybindings.ts:30	NAV-157
+NAV-E0142	command-id	modelPicker.jump.8	packages/contracts/src/keybindings.ts:31	NAV-157
+NAV-E0143	command-id	modelPicker.jump.9	packages/contracts/src/keybindings.ts:32	NAV-157
+NAV-E0144	command-id	thread.stop	packages/contracts/src/keybindings.ts:38	NAV-136
+NAV-E0145	command-id	thread.steerQueuedMessage	packages/contracts/src/keybindings.ts:39	NAV-137
+NAV-E0146	command-id	thread.editQueuedMessage	packages/contracts/src/keybindings.ts:40	NAV-138
+NAV-E0147	command-id	thread.previous	packages/contracts/src/keybindings.ts:41	NAV-139
+NAV-E0148	command-id	thread.next	packages/contracts/src/keybindings.ts:42	NAV-140
+NAV-E0149	command-id	thread.copyReference	packages/contracts/src/keybindings.ts:43	NAV-141
+NAV-E0150	command-id	thread.settle	packages/contracts/src/keybindings.ts:44	NAV-142
+NAV-E0151	command-id	thread.pin	packages/contracts/src/keybindings.ts:45	NAV-143
+NAV-E0152	command-id	thread.regenerateTitle	packages/contracts/src/keybindings.ts:46	NAV-144
+NAV-E0153	command-id	thread.undo	packages/contracts/src/keybindings.ts:47	NAV-145
+NAV-E0154	command-id	modelPicker.toggle	packages/contracts/src/keybindings.ts:52	NAV-146
+NAV-E0155	command-id	modelPicker.previousProvider	packages/contracts/src/keybindings.ts:53	NAV-147
+NAV-E0156	command-id	modelPicker.nextProvider	packages/contracts/src/keybindings.ts:54	NAV-148
+NAV-E0157	command-id	workspace.focusNext	packages/contracts/src/keybindings.ts:59	NAV-084
+NAV-E0158	command-id	workspace.focusPrevious	packages/contracts/src/keybindings.ts:60	NAV-085
+NAV-E0159	command-id	sidebar.toggle	packages/contracts/src/keybindings.ts:61	NAV-086
+NAV-E0160	command-id	navigation.back	packages/contracts/src/keybindings.ts:62	NAV-087
+NAV-E0161	command-id	navigation.forward	packages/contracts/src/keybindings.ts:63	NAV-088
+NAV-E0162	command-id	terminal.toggle	packages/contracts/src/keybindings.ts:64	NAV-089
+NAV-E0163	command-id	terminal.split	packages/contracts/src/keybindings.ts:65	NAV-090
+NAV-E0164	command-id	terminal.splitVertical	packages/contracts/src/keybindings.ts:66	NAV-091
+NAV-E0165	command-id	terminal.new	packages/contracts/src/keybindings.ts:67	NAV-092
+NAV-E0166	command-id	terminal.close	packages/contracts/src/keybindings.ts:68	NAV-093
+NAV-E0167	command-id	terminal.previous	packages/contracts/src/keybindings.ts:69	NAV-094
+NAV-E0168	command-id	terminal.next	packages/contracts/src/keybindings.ts:70	NAV-095
+NAV-E0169	command-id	rightPanel.toggle	packages/contracts/src/keybindings.ts:71	NAV-096
+NAV-E0170	command-id	rightPanel.new	packages/contracts/src/keybindings.ts:72	NAV-097
+NAV-E0171	command-id	threadPanel.toggle	packages/contracts/src/keybindings.ts:73	NAV-098
+NAV-E0172	command-id	rightPanel.toggleMaximized	packages/contracts/src/keybindings.ts:74	NAV-099
+NAV-E0173	command-id	rightPanel.close	packages/contracts/src/keybindings.ts:75	NAV-100
+NAV-E0174	command-id	view.reopenClosed	packages/contracts/src/keybindings.ts:76	NAV-101
+NAV-E0175	command-id	pullRequest.copyNumber	packages/contracts/src/keybindings.ts:77	NAV-102
+NAV-E0176	command-id	diff.toggle	packages/contracts/src/keybindings.ts:78	NAV-103
+NAV-E0177	command-id	preview.toggle	packages/contracts/src/keybindings.ts:79	NAV-104
+NAV-E0178	command-id	preview.refresh	packages/contracts/src/keybindings.ts:80	NAV-105
+NAV-E0179	command-id	preview.focusUrl	packages/contracts/src/keybindings.ts:81	NAV-106
+NAV-E0180	command-id	preview.zoomIn	packages/contracts/src/keybindings.ts:82	NAV-107
+NAV-E0181	command-id	preview.zoomOut	packages/contracts/src/keybindings.ts:83	NAV-108
+NAV-E0182	command-id	preview.resetZoom	packages/contracts/src/keybindings.ts:84	NAV-109
+NAV-E0183	command-id	preview.find	packages/contracts/src/keybindings.ts:85	NAV-110
+NAV-E0184	command-id	commandPalette.toggle	packages/contracts/src/keybindings.ts:86	NAV-111
+NAV-E0185	command-id	filePicker.toggle	packages/contracts/src/keybindings.ts:87	NAV-112
+NAV-E0186	command-id	projectSearch.toggle	packages/contracts/src/keybindings.ts:88	NAV-113
+NAV-E0187	command-id	usage.open	packages/contracts/src/keybindings.ts:89	NAV-019
+NAV-E0188	command-id	theme.select	packages/contracts/src/keybindings.ts:90	NAV-114
+NAV-E0189	command-id	appearance.cycle	packages/contracts/src/keybindings.ts:91	NAV-115
+NAV-E0190	command-id	themeEditor.toggle	packages/contracts/src/keybindings.ts:92	NAV-116
+NAV-E0191	command-id	composer.stash	packages/contracts/src/keybindings.ts:93	NAV-117
+NAV-E0192	command-id	composer.sendAlternate	packages/contracts/src/keybindings.ts:94	NAV-118
+NAV-E0193	command-id	composer.sendBackground	packages/contracts/src/keybindings.ts:95	NAV-119
+NAV-E0194	command-id	composer.sendAndNewThread	packages/contracts/src/keybindings.ts:96	NAV-120
+NAV-E0195	command-id	composer.dictation	packages/contracts/src/keybindings.ts:97	NAV-121
+NAV-E0196	command-id	composer.host	packages/contracts/src/keybindings.ts:98	NAV-122
+NAV-E0197	command-id	composer.cycleHost	packages/contracts/src/keybindings.ts:99	NAV-123
+NAV-E0198	command-id	composer.effort	packages/contracts/src/keybindings.ts:100	NAV-124
+NAV-E0199	command-id	composer.increaseEffort	packages/contracts/src/keybindings.ts:101	NAV-125
+NAV-E0200	command-id	composer.decreaseEffort	packages/contracts/src/keybindings.ts:102	NAV-126
+NAV-E0201	command-id	composer.mode	packages/contracts/src/keybindings.ts:103	NAV-127
+NAV-E0202	command-id	composer.workspace	packages/contracts/src/keybindings.ts:104	NAV-128
+NAV-E0203	command-id	composer.previousWorktree	packages/contracts/src/keybindings.ts:105	NAV-130
+NAV-E0204	command-id	composer.branch	packages/contracts/src/keybindings.ts:106	NAV-129
+NAV-E0205	command-id	chat.new	packages/contracts/src/keybindings.ts:107	NAV-131
+NAV-E0206	command-id	chat.newLocal	packages/contracts/src/keybindings.ts:108	NAV-132
+NAV-E0207	command-id	chat.newWithoutProject	packages/contracts/src/keybindings.ts:109	NAV-133
+NAV-E0208	command-id	chat.find	packages/contracts/src/keybindings.ts:110	NAV-134
+NAV-E0209	command-id	editor.openFavorite	packages/contracts/src/keybindings.ts:111	NAV-135
+NAV-E0210	command-id	usage.cost	packages/contracts/src/keybindings.ts:112	NAV-149
+NAV-E0211	command-id	usage.tokens	packages/contracts/src/keybindings.ts:113	NAV-150
+NAV-E0212	command-id	usage.limits	packages/contracts/src/keybindings.ts:114	NAV-151
+NAV-E0213	command-id	usage.period.day	packages/contracts/src/keybindings.ts:115	NAV-152
+NAV-E0214	command-id	usage.period.week	packages/contracts/src/keybindings.ts:116	NAV-153
+NAV-E0215	command-id	usage.period.month	packages/contracts/src/keybindings.ts:117	NAV-154
+NAV-E0216	command-id	usage.period.quarter	packages/contracts/src/keybindings.ts:118	NAV-155
+NAV-E0217	command-pattern	script.<id>.run	packages/contracts/src/keybindings.ts:123|packages/contracts/src/keybindings.ts:7	NAV-158
+NAV-E0218	default-binding	mod+b → sidebar.toggle	packages/shared/src/keybindings.ts:59	NAV-086
+NAV-E0219	default-binding	f6 → workspace.focusNext	packages/shared/src/keybindings.ts:60	NAV-084
+NAV-E0220	default-binding	shift+f6 → workspace.focusPrevious	packages/shared/src/keybindings.ts:61	NAV-085
+NAV-E0221	default-binding	mod+f6 → workspace.focusNext	packages/shared/src/keybindings.ts:63	NAV-084
+NAV-E0222	default-binding	mod+shift+f6 → workspace.focusPrevious	packages/shared/src/keybindings.ts:64	NAV-085
+NAV-E0223	default-binding	mod+[ → navigation.back when !terminalFocus	packages/shared/src/keybindings.ts:65	NAV-087
+NAV-E0224	default-binding	mod+] → navigation.forward when !terminalFocus	packages/shared/src/keybindings.ts:66	NAV-088
+NAV-E0225	default-binding	mod+j → terminal.toggle	packages/shared/src/keybindings.ts:67	NAV-089
+NAV-E0226	default-binding	mod+alt+b → rightPanel.toggle	packages/shared/src/keybindings.ts:68	NAV-096
+NAV-E0227	default-binding	mod+shift+b → threadPanel.toggle when !terminalFocus	packages/shared/src/keybindings.ts:69	NAV-098
+NAV-E0228	default-binding	mod+t → rightPanel.new when rightPanelOpen && !terminalFocus	packages/shared/src/keybindings.ts:70	NAV-097
+NAV-E0229	default-binding	mod+d → terminal.split when terminalFocus	packages/shared/src/keybindings.ts:71	NAV-090
+NAV-E0230	default-binding	mod+shift+d → terminal.splitVertical when terminalFocus	packages/shared/src/keybindings.ts:72	NAV-091
+NAV-E0231	default-binding	mod+shift+d → composer.dictation when !terminalFocus	packages/shared/src/keybindings.ts:73	NAV-121
+NAV-E0232	default-binding	mod+n → terminal.new when terminalFocus	packages/shared/src/keybindings.ts:74	NAV-092
+NAV-E0233	default-binding	mod+w → terminal.close when terminalFocus	packages/shared/src/keybindings.ts:75	NAV-093
+NAV-E0234	default-binding	ctrl+alt+[ → terminal.previous when terminalFocus && !isMac	packages/shared/src/keybindings.ts:76	NAV-094
+NAV-E0235	default-binding	ctrl+alt+] → terminal.next when terminalFocus && !isMac	packages/shared/src/keybindings.ts:77	NAV-095
+NAV-E0236	default-binding	mod+w → rightPanel.close when !terminalFocus	packages/shared/src/keybindings.ts:78	NAV-100
+NAV-E0237	default-binding	mod+shift+t → view.reopenClosed	packages/shared/src/keybindings.ts:79	NAV-101
+NAV-E0238	default-binding	mod+d → diff.toggle when !terminalFocus	packages/shared/src/keybindings.ts:80	NAV-103
+NAV-E0239	default-binding	mod+shift+j → preview.toggle	packages/shared/src/keybindings.ts:81	NAV-104
+NAV-E0240	default-binding	mod+r → preview.refresh when previewFocus	packages/shared/src/keybindings.ts:82	NAV-105
+NAV-E0241	default-binding	mod+l → preview.focusUrl when previewFocus	packages/shared/src/keybindings.ts:83	NAV-106
+NAV-E0242	default-binding	mod+= → preview.zoomIn when previewFocus	packages/shared/src/keybindings.ts:84	NAV-107
+NAV-E0243	default-binding	mod++ → preview.zoomIn when previewFocus	packages/shared/src/keybindings.ts:85	NAV-107
+NAV-E0244	default-binding	mod+- → preview.zoomOut when previewFocus	packages/shared/src/keybindings.ts:86	NAV-108
+NAV-E0245	default-binding	mod+0 → preview.resetZoom when previewFocus	packages/shared/src/keybindings.ts:87	NAV-109
+NAV-E0246	default-binding	mod+f → preview.find when previewFocus	packages/shared/src/keybindings.ts:88	NAV-110
+NAV-E0247	default-binding	mod+k → commandPalette.toggle when !terminalFocus	packages/shared/src/keybindings.ts:89	NAV-111
+NAV-E0248	default-binding	mod+p → filePicker.toggle when !terminalFocus	packages/shared/src/keybindings.ts:90	NAV-112
+NAV-E0249	default-binding	mod+shift+f → projectSearch.toggle when !terminalFocus	packages/shared/src/keybindings.ts:91	NAV-113
+NAV-E0250	default-binding	mod+u → usage.open when !terminalFocus	packages/shared/src/keybindings.ts:92	NAV-019
+NAV-E0251	default-binding	mod+alt+a → theme.select when !terminalFocus	packages/shared/src/keybindings.ts:93	NAV-114
+NAV-E0252	default-binding	mod+alt+shift+a → appearance.cycle when !terminalFocus	packages/shared/src/keybindings.ts:94	NAV-115
+NAV-E0253	default-binding	mod+alt+shift+t → themeEditor.toggle	packages/shared/src/keybindings.ts:95	NAV-116
+NAV-E0254	default-binding	mod+s → composer.stash when !terminalFocus	packages/shared/src/keybindings.ts:96	NAV-117
+NAV-E0255	default-binding	mod+shift+enter → thread.steerQueuedMessage when !terminalFocus	packages/shared/src/keybindings.ts:97	NAV-137
+NAV-E0256	default-binding	alt+arrowup → thread.editQueuedMessage when composerFocus	packages/shared/src/keybindings.ts:98	NAV-138
+NAV-E0257	default-binding	mod+enter → composer.sendAlternate when composerFocus && turnRunning	packages/shared/src/keybindings.ts:99	NAV-118
+NAV-E0258	default-binding	mod+enter → composer.sendBackground when composerFocus && draftThreadRoute	packages/shared/src/keybindings.ts:101	NAV-119
+NAV-E0259	default-binding	mod+alt+enter → composer.sendBackground when composerFocus && draftThreadRoute	packages/shared/src/keybindings.ts:106	NAV-119
+NAV-E0260	default-binding	mod+alt+enter → composer.sendAndNewThread when composerFocus && !draftThreadRoute	packages/shared/src/keybindings.ts:111	NAV-120
+NAV-E0261	default-binding	mod+n → chat.new when !terminalFocus	packages/shared/src/keybindings.ts:115	NAV-131
+NAV-E0262	default-binding	mod+shift+o → chat.new when !terminalFocus	packages/shared/src/keybindings.ts:116	NAV-131
+NAV-E0263	default-binding	mod+shift+n → chat.newLocal when !terminalFocus	packages/shared/src/keybindings.ts:117	NAV-132
+NAV-E0264	default-binding	mod+alt+n → chat.newWithoutProject when !terminalFocus	packages/shared/src/keybindings.ts:118	NAV-133
+NAV-E0265	default-binding	mod+f → chat.find when !terminalFocus && !previewFocus	packages/shared/src/keybindings.ts:119	NAV-134
+NAV-E0266	default-binding	mod+shift+m → modelPicker.toggle when !terminalFocus	packages/shared/src/keybindings.ts:120	NAV-146
+NAV-E0267	default-binding	mod+shift+h → composer.host when !terminalFocus	packages/shared/src/keybindings.ts:121	NAV-122
+NAV-E0268	default-binding	mod+shift+e → composer.effort when !terminalFocus	packages/shared/src/keybindings.ts:122	NAV-124
+NAV-E0269	default-binding	mod+shift+a → composer.mode when !terminalFocus	packages/shared/src/keybindings.ts:123	NAV-127
+NAV-E0270	default-binding	mod+shift+x → composer.workspace when !terminalFocus	packages/shared/src/keybindings.ts:124	NAV-128
+NAV-E0271	default-binding	mod+shift+g → composer.branch when !terminalFocus	packages/shared/src/keybindings.ts:125	NAV-129
+NAV-E0272	default-binding	mod+shift+l → composer.previousWorktree when !terminalFocus	packages/shared/src/keybindings.ts:126	NAV-130
+NAV-E0273	default-binding	mod+shift+k → pullRequest.copyNumber when !terminalFocus	packages/shared/src/keybindings.ts:127	NAV-102
+NAV-E0274	default-binding	mod+shift+arrowup → modelPicker.previousProvider when modelPickerOpen	packages/shared/src/keybindings.ts:128	NAV-147
+NAV-E0275	default-binding	mod+shift+arrowdown → modelPicker.nextProvider when modelPickerOpen	packages/shared/src/keybindings.ts:129	NAV-148
+NAV-E0276	default-binding	mod+o → editor.openFavorite	packages/shared/src/keybindings.ts:130	NAV-135
+NAV-E0277	default-binding	mod+shift+[ → thread.previous	packages/shared/src/keybindings.ts:131	NAV-139
+NAV-E0278	default-binding	mod+shift+] → thread.next	packages/shared/src/keybindings.ts:132	NAV-140
+NAV-E0279	default-binding	cmd+shift+[ → terminal.previous when terminalFocus && isMac	packages/shared/src/keybindings.ts:133	NAV-094
+NAV-E0280	default-binding	cmd+shift+] → terminal.next when terminalFocus && isMac	packages/shared/src/keybindings.ts:134	NAV-095
+NAV-E0281	default-binding	mod+shift+c → thread.copyReference when !terminalFocus	packages/shared/src/keybindings.ts:135	NAV-141
+NAV-E0282	default-binding	mod+shift+s → thread.settle when !terminalFocus	packages/shared/src/keybindings.ts:136	NAV-142
+NAV-E0283	default-binding	mod+shift+p → thread.pin when !terminalFocus	packages/shared/src/keybindings.ts:137	NAV-143
+NAV-E0284	default-binding	mod+z → thread.undo when !terminalFocus && !editableFocus	packages/shared/src/keybindings.ts:138	NAV-145
+NAV-E0285	default-binding	c → usage.cost when usagePageOpen	packages/shared/src/keybindings.ts:149	NAV-149
+NAV-E0286	default-binding	t → usage.tokens when usagePageOpen	packages/shared/src/keybindings.ts:150	NAV-150
+NAV-E0287	default-binding	l → usage.limits when usagePageOpen	packages/shared/src/keybindings.ts:151	NAV-151
+NAV-E0288	default-binding	mod+shift+1 → usage.period.day when usagePageOpen	packages/shared/src/keybindings.ts:152	NAV-152
+NAV-E0289	default-binding	mod+shift+2 → usage.period.week when usagePageOpen	packages/shared/src/keybindings.ts:153	NAV-153
+NAV-E0290	default-binding	mod+shift+3 → usage.period.month when usagePageOpen	packages/shared/src/keybindings.ts:154	NAV-154
+NAV-E0291	default-binding	mod+shift+4 → usage.period.quarter when usagePageOpen	packages/shared/src/keybindings.ts:155	NAV-155
+NAV-E0292	default-binding	mod+1 → thread.jump.1 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:11	NAV-156
+NAV-E0293	default-binding	mod+2 → thread.jump.2 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:12	NAV-156
+NAV-E0294	default-binding	mod+3 → thread.jump.3 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:13	NAV-156
+NAV-E0295	default-binding	mod+4 → thread.jump.4 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:14	NAV-156
+NAV-E0296	default-binding	mod+5 → thread.jump.5 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:15	NAV-156
+NAV-E0297	default-binding	mod+6 → thread.jump.6 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:16	NAV-156
+NAV-E0298	default-binding	mod+7 → thread.jump.7 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:17	NAV-156
+NAV-E0299	default-binding	mod+8 → thread.jump.8 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:18	NAV-156
+NAV-E0300	default-binding	mod+9 → thread.jump.9 when !modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:140|packages/contracts/src/keybindings.ts:19	NAV-156
+NAV-E0301	default-binding	mod+1 → modelPicker.jump.1 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:24	NAV-157
+NAV-E0302	default-binding	mod+2 → modelPicker.jump.2 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:25	NAV-157
+NAV-E0303	default-binding	mod+3 → modelPicker.jump.3 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:26	NAV-157
+NAV-E0304	default-binding	mod+4 → modelPicker.jump.4 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:27	NAV-157
+NAV-E0305	default-binding	mod+5 → modelPicker.jump.5 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:28	NAV-157
+NAV-E0306	default-binding	mod+6 → modelPicker.jump.6 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:29	NAV-157
+NAV-E0307	default-binding	mod+7 → modelPicker.jump.7 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:30	NAV-157
+NAV-E0308	default-binding	mod+8 → modelPicker.jump.8 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:31	NAV-157
+NAV-E0309	default-binding	mod+9 → modelPicker.jump.9 when modelPickerOpen && isDesktop	packages/shared/src/keybindings.ts:145|packages/contracts/src/keybindings.ts:32	NAV-157
+NAV-E0310	migrated-binding	mod+enter → composer.sendBackground when composerFocus && draftThreadRoute	apps/server/src/keybindings.ts:109	NAV-119
+NAV-E0311	palette-item	new-thread-in:no-project	apps/web/src/components/CommandPalette.tsx:950	NAV-133
+NAV-E0312	palette-pattern	action:add-project:${environmentId}:local	apps/web/src/components/CommandPalette.tsx:1109	NAV-169
+NAV-E0313	palette-pattern	action:add-project:${environmentId}:new	apps/web/src/components/CommandPalette.tsx:1124	NAV-167
+NAV-E0314	palette-pattern	action:add-project:${environmentId}:${source}:not-ready	apps/web/src/components/CommandPalette.tsx:1181	NAV-171
+NAV-E0315	palette-pattern	action:add-project:${environmentId}:${source}	apps/web/src/components/CommandPalette.tsx:1195	NAV-170
+NAV-E0316	palette-pattern	action:add-project:environment:${option.environmentId}	apps/web/src/components/CommandPalette.tsx:1263	NAV-168
+NAV-E0317	palette-item	action:add-project:connect-environment	apps/web/src/components/CommandPalette.tsx:1317	NAV-036
+NAV-E0318	palette-item	action:new-thread	apps/web/src/components/CommandPalette.tsx:1361	NAV-132
+NAV-E0319	palette-item	action:new-thread-in	apps/web/src/components/CommandPalette.tsx:1387	NAV-159
+NAV-E0320	palette-item	action:new-thread-without-project	apps/web/src/components/CommandPalette.tsx:1399	NAV-133
+NAV-E0321	palette-item	action:triage	apps/web/src/components/CommandPalette.tsx:1411	NAV-160
+NAV-E0322	palette-item	find-current-thread	apps/web/src/components/CommandPalette.tsx:1423	NAV-134
+NAV-E0323	palette-item	find-in-browser-page	apps/web/src/components/CommandPalette.tsx:1437	NAV-110
+NAV-E0324	palette-item	action:copy-prompt-link	apps/web/src/components/CommandPalette.tsx:1479	NAV-161
+NAV-E0325	palette-item	action:copy-prompt-link-with-context	apps/web/src/components/CommandPalette.tsx:1490	NAV-162
+NAV-E0326	palette-item	action:copy-thread-reference	apps/web/src/components/CommandPalette.tsx:1503	NAV-141
+NAV-E0327	palette-item	action:link-pull-request	apps/web/src/components/CommandPalette.tsx:1526	NAV-163
+NAV-E0328	palette-item	action:open-thread-pull-requests	apps/web/src/components/CommandPalette.tsx:1536	NAV-164
+NAV-E0329	palette-item	action:share-thread-with-guest	apps/web/src/components/CommandPalette.tsx:1553	NAV-165
+NAV-E0330	palette-item	action:restart-agent-session	apps/web/src/components/CommandPalette.tsx:1567	NAV-166
+NAV-E0331	palette-item	action:open-file-picker	apps/web/src/components/CommandPalette.tsx:1604	NAV-112
+NAV-E0332	palette-item	action:search-project-contents	apps/web/src/components/CommandPalette.tsx:1617	NAV-113
+NAV-E0333	palette-item	action:new-project	apps/web/src/components/CommandPalette.tsx:1631	NAV-167
+NAV-E0334	palette-item	action:add-project	apps/web/src/components/CommandPalette.tsx:1644	NAV-168
+NAV-E0335	palette-item	action:add-project:wsl-folder	apps/web/src/components/CommandPalette.tsx:1676	NAV-172
+NAV-E0336	palette-item	action:pull-requests	apps/web/src/components/CommandPalette.tsx:1696	NAV-017
+NAV-E0337	palette-item	action:issues	apps/web/src/components/CommandPalette.tsx:1728	NAV-016
+NAV-E0338	palette-item	action:use-in-another-app	apps/web/src/components/CommandPalette.tsx:1740	NAV-173
+NAV-E0339	palette-item	action:workflows	apps/web/src/components/CommandPalette.tsx:1769	NAV-018
+NAV-E0340	palette-item	action:usage	apps/web/src/components/CommandPalette.tsx:1781	NAV-019
+NAV-E0341	palette-item	action:workspace-focus:1	apps/web/src/components/CommandPalette.tsx:1796	NAV-084
+NAV-E0342	palette-item	action:workspace-focus:-1	apps/web/src/components/CommandPalette.tsx:1796	NAV-085
+NAV-E0343	palette-item	action:settings	apps/web/src/components/CommandPalette.tsx:1809	NAV-020
+NAV-E0344	palette-item	action:project-pin	apps/web/src/components/CommandPalette.tsx:1832	NAV-174
+NAV-E0345	palette-item	action:project-settings	apps/web/src/components/CommandPalette.tsx:1848	NAV-175
+NAV-E0346	palette-pattern	setting:${item.id}	apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0347	palette-pattern	new-project:environment:${option.environmentId}	apps/web/src/components/CommandPalette.tsx:2502	NAV-167
+NAV-E0348	palette-item	new-project:existing	apps/web/src/components/CommandPalette.tsx:2524	NAV-195
+NAV-E0349	palette-item	new-project:publish	apps/web/src/components/CommandPalette.tsx:2549	NAV-194
+NAV-E0350	palette-item	action:change-theme	apps/web/src/components/CommandPaletteThemeItems.tsx:74	NAV-114
+NAV-E0351	palette-item	theme:standard	apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0352	palette-pattern	theme:palette:${id}	apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0353	palette-item	action:change-appearance	apps/web/src/components/CommandPaletteThemeItems.tsx:129	NAV-188
+NAV-E0354	palette-item	appearance:system	apps/web/src/components/CommandPaletteThemeItems.tsx:141	NAV-188
+NAV-E0355	palette-item	appearance:light	apps/web/src/components/CommandPaletteThemeItems.tsx:141	NAV-188
+NAV-E0356	palette-item	appearance:dark	apps/web/src/components/CommandPaletteThemeItems.tsx:141	NAV-188
+NAV-E0357	palette-item	action:theme-editor	apps/web/src/components/CommandPaletteThemeItems.tsx:161	NAV-116
+NAV-E0358	palette-pattern	port-forward:${forward.environmentId}:${forward.remotePort}	apps/web/src/components/CommandPalettePortForwardItems.tsx:97	NAV-189
+NAV-E0359	palette-item	port-forward:open	apps/web/src/components/CommandPalettePortForwardItems.tsx:110	NAV-191
+NAV-E0360	palette-item	port-forward:copy	apps/web/src/components/CommandPalettePortForwardItems.tsx:120	NAV-192
+NAV-E0361	palette-item	port-forward:stop	apps/web/src/components/CommandPalettePortForwardItems.tsx:130	NAV-193
+NAV-E0362	palette-pattern	port-forward:start:${environmentId}:${server.port}	apps/web/src/components/CommandPalettePortForwardItems.tsx:149	NAV-190
+NAV-E0363	palette-pattern	port-forward:start:${environment.environmentId}:${typedPort}	apps/web/src/components/CommandPalettePortForwardItems.tsx:167	NAV-190
+NAV-E0364	palette-item	port-forward:hint	apps/web/src/components/CommandPalettePortForwardItems.tsx:190	NAV-189
+NAV-E0365	palette-item	action:port-forwards	apps/web/src/components/CommandPalettePortForwardItems.tsx:207	NAV-189
+NAV-E0366	palette-pattern	project:${project.environmentId}:${project.id}	apps/web/src/components/CommandPalette.logic.ts:397|apps/web/src/components/CommandPaletteProjectItems.tsx:44	NAV-176
+NAV-E0367	palette-pattern	new-thread-in:${project.environmentId}:${project.id}	apps/web/src/components/CommandPalette.logic.ts:397|apps/web/src/components/CommandPaletteProjectItems.tsx:83	NAV-159
+NAV-E0368	palette-pattern	thread:${thread.environmentId}:${thread.id}	apps/web/src/components/CommandPalette.logic.ts:496	NAV-177
+NAV-E0369	palette-pattern	thread:${input.environmentId}:${thread.id}	apps/web/src/components/CommandPalette.logic.ts:56	NAV-178
+NAV-E0370	palette-pattern	thread:${match.environmentId}:${match.threadId}	apps/web/src/components/CommandPaletteThreadItems.tsx:204|apps/web/src/components/CommandPaletteThreadItems.tsx:229	NAV-179
+NAV-E0371	palette-pattern	browse:${entry.fullPath}	apps/web/src/components/CommandPalette.logic.ts:763	NAV-169
+NAV-E0372	palette-pattern	setting:source-control-host-${kind}	apps/web/src/components/settings/settingsSearch.ts:214|apps/web/src/components/settings/settingsSearch.ts:224	NAV-180
+NAV-E0373	palette-item	browse:up	apps/web/src/components/CommandPalette.logic.ts:749	NAV-169
+NAV-E0374	palette-input	>	apps/web/src/components/CommandPalette.logic.ts:608	NAV-181
+NAV-E0375	palette-group	recent-threads	apps/web/src/components/CommandPalette.logic.ts:824	NAV-177
+NAV-E0376	palette-group	threads-search	apps/web/src/components/CommandPalette.logic.ts:640	NAV-177
+NAV-E0377	palette-group	projects-search	apps/web/src/components/CommandPalette.logic.ts:647	NAV-176
+NAV-E0378	palette-group	threads-messages	apps/web/src/components/CommandPalette.logic.ts:699	NAV-179
+NAV-E0379	palette-group	nested-search	apps/web/src/components/CommandPalette.logic.ts:633	NAV-182
+NAV-E0380	palette-group	settings-search	apps/web/src/components/CommandPalette.logic.ts:654	NAV-180
+NAV-E0381	palette-group	actions	apps/web/src/components/CommandPalette.logic.ts:820	NAV-181
+NAV-E0382	palette-group	directories	apps/web/src/components/CommandPalette.logic.ts:774	NAV-169
+NAV-E0383	palette-group	projects	apps/web/src/components/CommandPalette.tsx:301	NAV-159
+NAV-E0384	palette-group	environments	apps/web/src/components/CommandPalette.tsx:1273	NAV-168
+NAV-E0385	palette-group	new-project-machines	apps/web/src/components/CommandPalette.tsx:2497	NAV-167
+NAV-E0386	palette-group	new-project-existing	apps/web/src/components/CommandPalette.tsx:2519	NAV-195
+NAV-E0387	palette-group	new-project-options	apps/web/src/components/CommandPalette.tsx:2544	NAV-194
+NAV-E0388	palette-group	sources:${environmentId}	apps/web/src/components/CommandPalette.tsx:1208	NAV-168
+NAV-E0389	palette-group	themes	apps/web/src/components/CommandPaletteThemeItems.tsx:82	NAV-114
+NAV-E0390	palette-group	appearance	apps/web/src/components/CommandPaletteThemeItems.tsx:137	NAV-188
+NAV-E0391	palette-group	port-forward-actions	apps/web/src/components/CommandPalettePortForwardItems.tsx:105	NAV-189
+NAV-E0392	palette-group	port-forwards:forwarded	apps/web/src/components/CommandPalettePortForwardItems.tsx:182	NAV-189
+NAV-E0393	palette-group	port-forwards:start	apps/web/src/components/CommandPalettePortForwardItems.tsx:200	NAV-190
+NAV-E0394	palette-open-intent	add-project	apps/web/src/components/CommandPalette.tsx:309|apps/web/src/components/CommandPalette.logic.ts:164	NAV-168
+NAV-E0395	palette-open-intent	new-thread-in	apps/web/src/components/CommandPalette.tsx:314|apps/web/src/components/CommandPalette.logic.ts:166	NAV-159
+NAV-E0396	palette-open-intent	change-theme	apps/web/src/components/CommandPalette.tsx:319|apps/web/src/components/CommandPalette.logic.ts:168	NAV-114
+NAV-E0397	palette-open-intent	search	apps/web/src/components/CommandPalette.tsx:324|apps/web/src/components/CommandPalette.logic.ts:159	NAV-178
+NAV-E0398	palette-key	ArrowUp	apps/web/src/components/CommandPaletteContent.tsx:98	NAV-184
+NAV-E0399	palette-key	ArrowDown	apps/web/src/components/CommandPalette.tsx:2840	NAV-184
+NAV-E0400	palette-key	Enter	apps/web/src/components/CommandPalette.tsx:2858	NAV-184
+NAV-E0401	palette-key	Backspace	apps/web/src/components/CommandPalette.tsx:2803	NAV-182
+NAV-E0402	palette-key	Tab	apps/web/src/components/CommandPalette.tsx:2815	NAV-186
+NAV-E0403	palette-key	Escape	apps/web/src/shortcuts/commandPaletteCommands.ts:55	NAV-183
+NAV-E0404	palette-key	Escape	apps/web/src/components/CommandPaletteContent.tsx:122	NAV-185
+NAV-E0405	palette-key	Enter	apps/web/src/components/CommandPalette.tsx:2764	NAV-170
+NAV-E0406	palette-key	Enter / Mod+Enter	apps/web/src/components/CommandPalette.tsx:2772	NAV-167
+NAV-E0407	palette-key	Enter / Mod+Enter	apps/web/src/components/CommandPalette.tsx:2785	NAV-169
+NAV-E0408	palette-setting	setting:storage-worktree-keep-when	apps/web/src/components/settings/settingsSearch.ts:257|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0409	palette-setting	setting:storage-delete-now	apps/web/src/components/settings/settingsSearch.ts:269|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0410	palette-setting	setting:storage-worktrees	apps/web/src/components/settings/settingsSearch.ts:276|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0411	palette-setting	setting:storage-worktrees-location	apps/web/src/components/settings/settingsSearch.ts:287|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0412	palette-setting	setting:storage-artifacts	apps/web/src/components/settings/settingsSearch.ts:294|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0413	palette-setting	setting:project-defaults	apps/web/src/components/settings/settingsSearch.ts:305|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0414	palette-setting	setting:project-overview	apps/web/src/components/settings/settingsSearch.ts:312|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0415	palette-setting	setting:default-model	apps/web/src/components/settings/settingsSearch.ts:318|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0416	palette-setting	setting:fallback-model	apps/web/src/components/settings/settingsSearch.ts:325|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0417	palette-setting	setting:default-permissions	apps/web/src/components/settings/settingsSearch.ts:333|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0418	palette-setting	setting:color-scheme	apps/web/src/components/settings/settingsSearch.ts:342|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0419	palette-setting	setting:theme	apps/web/src/components/settings/settingsSearch.ts:349|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0420	palette-setting	setting:setting-appearance-contrast	apps/web/src/components/settings/settingsSearch.ts:357|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0421	palette-setting	setting:setting-glass-opacity	apps/web/src/components/settings/settingsSearch.ts:364|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0422	palette-setting	setting:diff-color-scheme	apps/web/src/components/settings/settingsSearch.ts:370|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0423	palette-setting	setting:chat-width	apps/web/src/components/settings/settingsSearch.ts:378|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0424	palette-setting	setting:html-preview-width	apps/web/src/components/settings/settingsSearch.ts:384|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0425	palette-setting	setting:thread-details-items	apps/web/src/components/settings/settingsSearch.ts:390|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0426	palette-setting	setting:effort-display	apps/web/src/components/settings/settingsSearch.ts:400|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0427	palette-setting	setting:math-rendering	apps/web/src/components/settings/settingsSearch.ts:406|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0428	palette-setting	setting:panel-animations	apps/web/src/components/settings/settingsSearch.ts:412|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0429	palette-setting	setting:environment-identification	apps/web/src/components/settings/settingsSearch.ts:417|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0430	palette-setting	setting:interface-font	apps/web/src/components/settings/settingsSearch.ts:424|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0431	palette-setting	setting:prompt-font	apps/web/src/components/settings/settingsSearch.ts:430|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0432	palette-setting	setting:code-font	apps/web/src/components/settings/settingsSearch.ts:436|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0433	palette-setting	setting:terminal-font	apps/web/src/components/settings/settingsSearch.ts:442|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0434	palette-setting	setting:separate-fonts	apps/web/src/components/settings/settingsSearch.ts:448|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0435	palette-setting	setting:font-smoothing	apps/web/src/components/settings/settingsSearch.ts:454|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0436	palette-setting	setting:word-wrap	apps/web/src/components/settings/settingsSearch.ts:461|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0437	palette-setting	setting:composer-context	apps/web/src/components/settings/settingsSearch.ts:467|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0438	palette-setting	setting:project-grouping	apps/web/src/components/settings/settingsSearch.ts:472|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0439	palette-setting	setting:project-order	apps/web/src/components/settings/settingsSearch.ts:478|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0440	palette-setting	setting:snooze-options	apps/web/src/components/settings/settingsSearch.ts:484|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0441	palette-setting	setting:snooze-limited-threads	apps/web/src/components/settings/settingsSearch.ts:492|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0442	palette-setting	setting:auto-resume-limited-threads	apps/web/src/components/settings/settingsSearch.ts:498|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0443	palette-setting	setting:working-shelf	apps/web/src/components/settings/settingsSearch.ts:504|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0444	palette-setting	setting:boring-sidebar	apps/web/src/components/settings/settingsSearch.ts:510|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0445	palette-setting	setting:boring-sidebar-multiline	apps/web/src/components/settings/settingsSearch.ts:516|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0446	palette-setting	setting:tool-call-visibility	apps/web/src/components/settings/settingsSearch.ts:525|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0447	palette-setting	setting:screen-reader-announcements	apps/web/src/components/settings/settingsSearch.ts:535|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0448	palette-setting	setting:screen-reader-window-title	apps/web/src/components/settings/settingsSearch.ts:545|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0449	palette-setting	setting:guest-links	apps/web/src/components/settings/settingsSearch.ts:555|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0450	palette-setting	setting:linked-environments-beta	apps/web/src/components/settings/settingsSearch.ts:562|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0451	palette-setting	setting:workflows-beta	apps/web/src/components/settings/settingsSearch.ts:569|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0452	palette-setting	setting:workflow-skipped-runs	apps/web/src/components/settings/settingsSearch.ts:576|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0453	palette-setting	setting:prompt-suggestions-beta	apps/web/src/components/settings/settingsSearch.ts:585|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0454	palette-setting	setting:simlock-hosts	apps/web/src/components/settings/settingsSearch.ts:592|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0455	palette-setting	setting:worktree-fast-checkout	apps/web/src/components/settings/settingsSearch.ts:601|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0456	palette-setting	setting:voice-transcription-destination	apps/web/src/components/settings/settingsSearch.ts:609|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0457	palette-setting	setting:voice-microphone	apps/web/src/components/settings/settingsSearch.ts:619|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0458	palette-setting	setting:dictation-shortcut-mode	apps/web/src/components/settings/settingsSearch.ts:625|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0459	palette-setting	setting:speech-language	apps/web/src/components/settings/settingsSearch.ts:631|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0460	palette-setting	setting:speech-dictionary	apps/web/src/components/settings/settingsSearch.ts:637|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0461	palette-setting	setting:speech-project-dictionary	apps/web/src/components/settings/settingsSearch.ts:643|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0462	palette-setting	setting:speech-post-processing-model	apps/web/src/components/settings/settingsSearch.ts:652|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0463	palette-setting	setting:speech-correction-word	apps/web/src/components/settings/settingsSearch.ts:659|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0464	palette-setting	setting:speech-silence-filtering	apps/web/src/components/settings/settingsSearch.ts:665|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0465	palette-setting	setting:remove-filler-words	apps/web/src/components/settings/settingsSearch.ts:671|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0466	palette-setting	setting:speech-post-processing	apps/web/src/components/settings/settingsSearch.ts:677|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0467	palette-setting	setting:speech-models	apps/web/src/components/settings/settingsSearch.ts:683|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0468	palette-setting	setting:speech-hardware	apps/web/src/components/settings/settingsSearch.ts:693|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0469	palette-setting	setting:speech-streaming	apps/web/src/components/settings/settingsSearch.ts:699|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0470	palette-setting	setting:microphone-test	apps/web/src/components/settings/settingsSearch.ts:707|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0471	palette-setting	setting:transcription-test	apps/web/src/components/settings/settingsSearch.ts:713|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0472	palette-setting	setting:auto-settle-inactive-threads	apps/web/src/components/settings/settingsSearch.ts:719|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0473	palette-setting	setting:compact-idle-threads	apps/web/src/components/settings/settingsSearch.ts:727|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0474	palette-setting	setting:auto-settle-merged-threads	apps/web/src/components/settings/settingsSearch.ts:734|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0475	palette-setting	setting:keep-threads-with-pull-requests	apps/web/src/components/settings/settingsSearch.ts:742|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0476	palette-setting	setting:days-before-auto-settle	apps/web/src/components/settings/settingsSearch.ts:751|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0477	palette-setting	setting:thread-notifications	apps/web/src/components/settings/settingsSearch.ts:760|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0478	palette-setting	setting:in-app-notifications	apps/web/src/components/settings/settingsSearch.ts:766|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0479	palette-setting	setting:language	apps/web/src/components/settings/settingsSearch.ts:772|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0480	palette-setting	setting:time-format	apps/web/src/components/settings/settingsSearch.ts:782|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0481	palette-setting	setting:response-streaming	apps/web/src/components/settings/settingsSearch.ts:788|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0482	palette-setting	setting:hide-whitespace-changes	apps/web/src/components/settings/settingsSearch.ts:795|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0483	palette-setting	setting:default-diff-file-state	apps/web/src/components/settings/settingsSearch.ts:801|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0484	palette-setting	setting:diff-layout	apps/web/src/components/settings/settingsSearch.ts:807|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0485	palette-setting	setting:proactive-panels	apps/web/src/components/settings/settingsSearch.ts:813|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0486	palette-setting	setting:skills-in-slash-menu	apps/web/src/components/settings/settingsSearch.ts:821|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0487	palette-setting	setting:composer-rich-text	apps/web/src/components/settings/settingsSearch.ts:827|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0488	palette-setting	setting:send-shortcut	apps/web/src/components/settings/settingsSearch.ts:833|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0489	palette-setting	setting:follow-up-behavior	apps/web/src/components/settings/settingsSearch.ts:839|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0490	palette-setting	setting:side-thread-open-target	apps/web/src/components/settings/settingsSearch.ts:845|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0491	palette-setting	setting:provider-update-checks	apps/web/src/components/settings/settingsSearch.ts:855|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0492	palette-setting	setting:continue-threads-after-server-update	apps/web/src/components/settings/settingsSearch.ts:864|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0493	palette-setting	setting:keep-awake-while-agents-work	apps/web/src/components/settings/settingsSearch.ts:875|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0494	palette-setting	setting:background-activity	apps/web/src/components/settings/settingsSearch.ts:882|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0495	palette-setting	setting:new-threads	apps/web/src/components/settings/settingsSearch.ts:893|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0496	palette-setting	setting:worktree-submodules	apps/web/src/components/settings/settingsSearch.ts:900|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0497	palette-setting	setting:start-from-origin	apps/web/src/components/settings/settingsSearch.ts:907|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0498	palette-setting	setting:add-project-starts-in	apps/web/src/components/settings/settingsSearch.ts:914|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0499	palette-setting	setting:ghq-clone-layout	apps/web/src/components/settings/settingsSearch.ts:921|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0500	palette-setting	setting:unpin-confirmation	apps/web/src/components/settings/settingsSearch.ts:928|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0501	palette-setting	setting:archive-confirmation	apps/web/src/components/settings/settingsSearch.ts:934|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0502	palette-setting	setting:delete-confirmation	apps/web/src/components/settings/settingsSearch.ts:940|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0503	palette-setting	setting:terminal-close-confirmation	apps/web/src/components/settings/settingsSearch.ts:946|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0504	palette-setting	setting:quit-confirmation	apps/web/src/components/settings/settingsSearch.ts:952|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0505	palette-setting	setting:text-generation-model	apps/web/src/components/settings/settingsSearch.ts:959|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0506	palette-setting	setting:thread-title-instructions	apps/web/src/components/settings/settingsSearch.ts:966|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0507	palette-setting	setting:app-version	apps/web/src/components/settings/settingsSearch.ts:973|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0508	palette-setting	setting:update-track	apps/web/src/components/settings/settingsSearch.ts:979|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0509	palette-setting	setting:cli-command	apps/web/src/components/settings/settingsSearch.ts:986|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0510	palette-setting	setting:mobile-app	apps/web/src/components/settings/settingsSearch.ts:993|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0511	palette-setting	setting:welcome-page	apps/web/src/components/settings/settingsSearch.ts:999|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0512	palette-setting	setting:privacy-policy	apps/web/src/components/settings/settingsSearch.ts:1006|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0513	palette-setting	setting:telemetry-export	apps/web/src/components/settings/settingsSearch.ts:1012|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0514	palette-setting	setting:diagnostics	apps/web/src/components/settings/settingsSearch.ts:1020|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0515	palette-setting	setting:agent-feedback	apps/web/src/components/settings/settingsSearch.ts:1026|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0516	palette-setting	setting:open-source-licenses	apps/web/src/components/settings/settingsSearch.ts:1036|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0517	palette-setting	setting:keybindings	apps/web/src/components/settings/settingsSearch.ts:1041|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0518	palette-setting	setting:snap-shot-enabled	apps/web/src/components/settings/settingsSearch.ts:1048|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0519	palette-setting	setting:snap-shot-accessibility	apps/web/src/components/settings/settingsSearch.ts:1054|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0520	palette-setting	setting:snap-shot-shortcut	apps/web/src/components/settings/settingsSearch.ts:1063|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0521	palette-setting	setting:snap-shot-sound	apps/web/src/components/settings/settingsSearch.ts:1069|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0522	palette-setting	setting:snap-shot-flash	apps/web/src/components/settings/settingsSearch.ts:1075|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0523	palette-setting	setting:snap-shot-animations	apps/web/src/components/settings/settingsSearch.ts:1081|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0524	palette-setting	setting:providers	apps/web/src/components/settings/settingsSearch.ts:1087|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0525	palette-setting	setting:usage-providers	apps/web/src/components/settings/settingsSearch.ts:1097|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0526	palette-setting	setting:text-generators	apps/web/src/components/settings/settingsSearch.ts:1108|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0527	palette-setting	setting:provider-health-check-interval	apps/web/src/components/settings/settingsSearch.ts:1120|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0528	palette-setting	setting:scheduled-tasks	apps/web/src/components/settings/settingsSearch.ts:1129|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0529	palette-setting	setting:agent-browser-access	apps/web/src/components/settings/settingsSearch.ts:1134|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0530	palette-setting	setting:device-sources	apps/web/src/components/settings/settingsSearch.ts:1141|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0531	palette-setting	setting:agent-device-access	apps/web/src/components/settings/settingsSearch.ts:1151|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0532	palette-setting	setting:device-hub	apps/web/src/components/settings/settingsSearch.ts:1158|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0533	palette-setting	setting:device-platform-support	apps/web/src/components/settings/settingsSearch.ts:1165|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0534	palette-setting	setting:browser-profiles	apps/web/src/components/settings/settingsSearch.ts:1172|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0535	palette-setting	setting:browser-default-profile	apps/web/src/components/settings/settingsSearch.ts:1178|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0536	palette-setting	setting:browser-default-viewport	apps/web/src/components/settings/settingsSearch.ts:1184|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0537	palette-setting	setting:browser-default-zoom	apps/web/src/components/settings/settingsSearch.ts:1190|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0538	palette-setting	setting:browser-default-appearance	apps/web/src/components/settings/settingsSearch.ts:1196|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0539	palette-setting	setting:browser-recording-frame-rate	apps/web/src/components/settings/settingsSearch.ts:1202|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0540	palette-setting	setting:browser-recording-key-presses	apps/web/src/components/settings/settingsSearch.ts:1207|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0541	palette-setting	setting:browser-recording-mouse-presses	apps/web/src/components/settings/settingsSearch.ts:1213|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0542	palette-setting	setting:browser-link-target	apps/web/src/components/settings/settingsSearch.ts:1219|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0543	palette-setting	setting:browser-search-engine	apps/web/src/components/settings/settingsSearch.ts:1225|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0544	palette-setting	setting:pull-request-links-open-in-app	apps/web/src/components/settings/settingsSearch.ts:1231|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0545	palette-setting	setting:browser-auto-show-floating-preview	apps/web/src/components/settings/settingsSearch.ts:1239|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0546	palette-setting	setting:automatic-pull	apps/web/src/components/settings/settingsSearch.ts:1245|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0547	palette-setting	setting:remove-agent-credits-on-merge	apps/web/src/components/settings/settingsSearch.ts:1252|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0548	palette-setting	setting:pull-request-merge-method	apps/web/src/components/settings/settingsSearch.ts:1261|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0549	palette-setting	setting:issue-trackers	apps/web/src/components/settings/settingsSearch.ts:1268|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0550	palette-setting	setting:source-control	apps/web/src/components/settings/settingsSearch.ts:1275|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0551	palette-setting	setting:git-fetch-interval	apps/web/src/components/settings/settingsSearch.ts:1284|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0552	palette-setting	setting:worktree-branch-naming	apps/web/src/components/settings/settingsSearch.ts:1295|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0553	palette-setting	setting:source-control-writing-style	apps/web/src/components/settings/settingsSearch.ts:1304|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0554	palette-setting	setting:follow-change-request-templates	apps/web/src/components/settings/settingsSearch.ts:1315|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0555	palette-setting	setting:source-control-writer-model	apps/web/src/components/settings/settingsSearch.ts:1324|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0556	palette-setting	setting:review-guides	apps/web/src/components/settings/settingsSearch.ts:1334|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0557	palette-setting	setting:review-guide-model	apps/web/src/components/settings/settingsSearch.ts:1341|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0558	palette-setting	setting:review-guide-instructions	apps/web/src/components/settings/settingsSearch.ts:1351|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0559	palette-setting	setting:project-actions	apps/web/src/components/settings/settingsSearch.ts:1360|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0560	palette-setting	setting:project-repositories	apps/web/src/components/settings/settingsSearch.ts:1366|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0561	palette-setting	setting:environment-icon	apps/web/src/components/settings/settingsSearch.ts:1372|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0562	palette-setting	setting:local-environment	apps/web/src/components/settings/settingsSearch.ts:1379|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0563	palette-setting	setting:network-access	apps/web/src/components/settings/settingsSearch.ts:1386|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0564	palette-setting	setting:tailscale-https	apps/web/src/components/settings/settingsSearch.ts:1394|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0565	palette-setting	setting:wsl-backend	apps/web/src/components/settings/settingsSearch.ts:1403|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0566	palette-setting	setting:t3-connect	apps/web/src/components/settings/settingsSearch.ts:1417|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0567	palette-setting	setting:connect-device-approval	apps/web/src/components/settings/settingsSearch.ts:1427|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0568	palette-setting	setting:hold-webhooks-while-offline	apps/web/src/components/settings/settingsSearch.ts:1438|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0569	palette-setting	setting:publish-agent-activity	apps/web/src/components/settings/settingsSearch.ts:1448|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0570	palette-setting	setting:preview-tunnel	apps/web/src/components/settings/settingsSearch.ts:1457|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0571	palette-setting	setting:connections-environment	apps/web/src/components/settings/settingsSearch.ts:1466|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0572	palette-setting	setting:linked-environments	apps/web/src/components/settings/settingsSearch.ts:1476|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0573	palette-setting	setting:remote-environments	apps/web/src/components/settings/settingsSearch.ts:1484|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0574	palette-setting	setting:load-balancing	apps/web/src/components/settings/settingsSearch.ts:1490|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0575	palette-setting	setting:pull-request-routing	apps/web/src/components/settings/settingsSearch.ts:1500|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0576	palette-setting	setting:secret-providers	apps/web/src/components/settings/settingsSearch.ts:1508|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0577	palette-setting	setting:secret-providers-add	apps/web/src/components/settings/settingsSearch.ts:1515|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0578	palette-setting	setting:archive	apps/web/src/components/settings/settingsSearch.ts:1523|apps/web/src/components/CommandPalette.tsx:1881	NAV-180
+NAV-E0579	palette-setting	setting:keybinding-thread.jump.1	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:11	NAV-180
+NAV-E0580	palette-setting	setting:keybinding-thread.jump.2	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:12	NAV-180
+NAV-E0581	palette-setting	setting:keybinding-thread.jump.3	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:13	NAV-180
+NAV-E0582	palette-setting	setting:keybinding-thread.jump.4	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:14	NAV-180
+NAV-E0583	palette-setting	setting:keybinding-thread.jump.5	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:15	NAV-180
+NAV-E0584	palette-setting	setting:keybinding-thread.jump.6	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:16	NAV-180
+NAV-E0585	palette-setting	setting:keybinding-thread.jump.7	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:17	NAV-180
+NAV-E0586	palette-setting	setting:keybinding-thread.jump.8	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:18	NAV-180
+NAV-E0587	palette-setting	setting:keybinding-thread.jump.9	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:19	NAV-180
+NAV-E0588	palette-setting	setting:keybinding-modelPicker.jump.1	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:24	NAV-180
+NAV-E0589	palette-setting	setting:keybinding-modelPicker.jump.2	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:25	NAV-180
+NAV-E0590	palette-setting	setting:keybinding-modelPicker.jump.3	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:26	NAV-180
+NAV-E0591	palette-setting	setting:keybinding-modelPicker.jump.4	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:27	NAV-180
+NAV-E0592	palette-setting	setting:keybinding-modelPicker.jump.5	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:28	NAV-180
+NAV-E0593	palette-setting	setting:keybinding-modelPicker.jump.6	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:29	NAV-180
+NAV-E0594	palette-setting	setting:keybinding-modelPicker.jump.7	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:30	NAV-180
+NAV-E0595	palette-setting	setting:keybinding-modelPicker.jump.8	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:31	NAV-180
+NAV-E0596	palette-setting	setting:keybinding-modelPicker.jump.9	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:32	NAV-180
+NAV-E0597	palette-setting	setting:keybinding-thread.stop	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:38	NAV-180
+NAV-E0598	palette-setting	setting:keybinding-thread.steerQueuedMessage	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:39	NAV-180
+NAV-E0599	palette-setting	setting:keybinding-thread.editQueuedMessage	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:40	NAV-180
+NAV-E0600	palette-setting	setting:keybinding-thread.previous	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:41	NAV-180
+NAV-E0601	palette-setting	setting:keybinding-thread.next	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:42	NAV-180
+NAV-E0602	palette-setting	setting:keybinding-thread.copyReference	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:43	NAV-180
+NAV-E0603	palette-setting	setting:keybinding-thread.settle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:44	NAV-180
+NAV-E0604	palette-setting	setting:keybinding-thread.pin	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:45	NAV-180
+NAV-E0605	palette-setting	setting:keybinding-thread.regenerateTitle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:46	NAV-180
+NAV-E0606	palette-setting	setting:keybinding-thread.undo	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:47	NAV-180
+NAV-E0607	palette-setting	setting:keybinding-modelPicker.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:52	NAV-180
+NAV-E0608	palette-setting	setting:keybinding-modelPicker.previousProvider	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:53	NAV-180
+NAV-E0609	palette-setting	setting:keybinding-modelPicker.nextProvider	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:54	NAV-180
+NAV-E0610	palette-setting	setting:keybinding-workspace.focusNext	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:59	NAV-180
+NAV-E0611	palette-setting	setting:keybinding-workspace.focusPrevious	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:60	NAV-180
+NAV-E0612	palette-setting	setting:keybinding-sidebar.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:61	NAV-180
+NAV-E0613	palette-setting	setting:keybinding-navigation.back	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:62	NAV-180
+NAV-E0614	palette-setting	setting:keybinding-navigation.forward	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:63	NAV-180
+NAV-E0615	palette-setting	setting:keybinding-terminal.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:64	NAV-180
+NAV-E0616	palette-setting	setting:keybinding-terminal.split	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:65	NAV-180
+NAV-E0617	palette-setting	setting:keybinding-terminal.splitVertical	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:66	NAV-180
+NAV-E0618	palette-setting	setting:keybinding-terminal.new	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:67	NAV-180
+NAV-E0619	palette-setting	setting:keybinding-terminal.close	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:68	NAV-180
+NAV-E0620	palette-setting	setting:keybinding-terminal.previous	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:69	NAV-180
+NAV-E0621	palette-setting	setting:keybinding-terminal.next	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:70	NAV-180
+NAV-E0622	palette-setting	setting:keybinding-rightPanel.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:71	NAV-180
+NAV-E0623	palette-setting	setting:keybinding-rightPanel.new	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:72	NAV-180
+NAV-E0624	palette-setting	setting:keybinding-threadPanel.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:73	NAV-180
+NAV-E0625	palette-setting	setting:keybinding-rightPanel.toggleMaximized	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:74	NAV-180
+NAV-E0626	palette-setting	setting:keybinding-rightPanel.close	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:75	NAV-180
+NAV-E0627	palette-setting	setting:keybinding-view.reopenClosed	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:76	NAV-180
+NAV-E0628	palette-setting	setting:keybinding-pullRequest.copyNumber	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:77	NAV-180
+NAV-E0629	palette-setting	setting:keybinding-diff.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:78	NAV-180
+NAV-E0630	palette-setting	setting:keybinding-preview.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:79	NAV-180
+NAV-E0631	palette-setting	setting:keybinding-preview.refresh	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:80	NAV-180
+NAV-E0632	palette-setting	setting:keybinding-preview.focusUrl	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:81	NAV-180
+NAV-E0633	palette-setting	setting:keybinding-preview.zoomIn	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:82	NAV-180
+NAV-E0634	palette-setting	setting:keybinding-preview.zoomOut	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:83	NAV-180
+NAV-E0635	palette-setting	setting:keybinding-preview.resetZoom	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:84	NAV-180
+NAV-E0636	palette-setting	setting:keybinding-preview.find	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:85	NAV-180
+NAV-E0637	palette-setting	setting:keybinding-commandPalette.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:86	NAV-180
+NAV-E0638	palette-setting	setting:keybinding-filePicker.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:87	NAV-180
+NAV-E0639	palette-setting	setting:keybinding-projectSearch.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:88	NAV-180
+NAV-E0640	palette-setting	setting:keybinding-usage.open	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:89	NAV-180
+NAV-E0641	palette-setting	setting:keybinding-theme.select	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:90	NAV-180
+NAV-E0642	palette-setting	setting:keybinding-appearance.cycle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:91	NAV-180
+NAV-E0643	palette-setting	setting:keybinding-themeEditor.toggle	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:92	NAV-180
+NAV-E0644	palette-setting	setting:keybinding-composer.stash	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:93	NAV-180
+NAV-E0645	palette-setting	setting:keybinding-composer.sendAlternate	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:94	NAV-180
+NAV-E0646	palette-setting	setting:keybinding-composer.sendBackground	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:95	NAV-180
+NAV-E0647	palette-setting	setting:keybinding-composer.sendAndNewThread	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:96	NAV-180
+NAV-E0648	palette-setting	setting:keybinding-composer.dictation	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:97	NAV-180
+NAV-E0649	palette-setting	setting:keybinding-composer.host	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:98	NAV-180
+NAV-E0650	palette-setting	setting:keybinding-composer.cycleHost	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:99	NAV-180
+NAV-E0651	palette-setting	setting:keybinding-composer.effort	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:100	NAV-180
+NAV-E0652	palette-setting	setting:keybinding-composer.increaseEffort	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:101	NAV-180
+NAV-E0653	palette-setting	setting:keybinding-composer.decreaseEffort	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:102	NAV-180
+NAV-E0654	palette-setting	setting:keybinding-composer.mode	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:103	NAV-180
+NAV-E0655	palette-setting	setting:keybinding-composer.workspace	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:104	NAV-180
+NAV-E0656	palette-setting	setting:keybinding-composer.previousWorktree	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:105	NAV-180
+NAV-E0657	palette-setting	setting:keybinding-composer.branch	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:106	NAV-180
+NAV-E0658	palette-setting	setting:keybinding-chat.new	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:107	NAV-180
+NAV-E0659	palette-setting	setting:keybinding-chat.newLocal	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:108	NAV-180
+NAV-E0660	palette-setting	setting:keybinding-chat.newWithoutProject	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:109	NAV-180
+NAV-E0661	palette-setting	setting:keybinding-chat.find	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:110	NAV-180
+NAV-E0662	palette-setting	setting:keybinding-editor.openFavorite	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:111	NAV-180
+NAV-E0663	palette-setting	setting:keybinding-usage.cost	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:112	NAV-180
+NAV-E0664	palette-setting	setting:keybinding-usage.tokens	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:113	NAV-180
+NAV-E0665	palette-setting	setting:keybinding-usage.limits	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:114	NAV-180
+NAV-E0666	palette-setting	setting:keybinding-usage.period.day	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:115	NAV-180
+NAV-E0667	palette-setting	setting:keybinding-usage.period.week	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:116	NAV-180
+NAV-E0668	palette-setting	setting:keybinding-usage.period.month	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:117	NAV-180
+NAV-E0669	palette-setting	setting:keybinding-usage.period.quarter	apps/web/src/components/settings/settingsSearch.ts:192|apps/web/src/components/settings/settingsSearch.ts:198|packages/contracts/src/keybindings.ts:118	NAV-180
+NAV-E0670	palette-item	thread-action:find	apps/web/src/components/threadActionMenu.logic.ts:164|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-134
+NAV-E0671	palette-item	thread-action:new-thread-on-branch	apps/web/src/components/threadActionMenu.logic.ts:169|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-196
+NAV-E0672	palette-item	thread-action:unpin	apps/web/src/components/threadActionMenu.logic.ts:178|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-198
+NAV-E0673	palette-item	thread-action:pin	apps/web/src/components/threadActionMenu.logic.ts:179|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-143
+NAV-E0674	palette-item	thread-action:unsettle	apps/web/src/components/threadActionMenu.logic.ts:186|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-197
+NAV-E0675	palette-item	thread-action:settle	apps/web/src/components/threadActionMenu.logic.ts:190|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-142
+NAV-E0676	palette-item	thread-action:unsnooze	apps/web/src/components/threadActionMenu.logic.ts:196|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-201
+NAV-E0677	palette-item	thread-action:snooze	apps/web/src/components/threadActionMenu.logic.ts:198|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-199
+NAV-E0678	palette-pattern	thread-action:snooze:${preset.id}	apps/web/src/components/threadActionMenu.logic.ts:204|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-199
+NAV-E0679	palette-item	thread-action:snooze:custom	apps/web/src/components/threadActionMenu.logic.ts:209|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-200
+NAV-E0680	palette-item	thread-action:regenerate-title	apps/web/src/components/threadActionMenu.logic.ts:227|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-144
+NAV-E0681	palette-item	thread-action:mark-unread	apps/web/src/components/threadActionMenu.logic.ts:237|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-202
+NAV-E0682	palette-item	thread-action:turn-into-project	apps/web/src/components/threadActionMenu.logic.ts:256|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-203
+NAV-E0683	palette-item	thread-action:auto-settle	apps/web/src/components/threadActionMenu.logic.ts:266|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-204
+NAV-E0684	palette-item	thread-action:auto-settle:enabled	apps/web/src/components/threadActionMenu.logic.ts:271|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-204
+NAV-E0685	palette-item	thread-action:auto-settle:disabled	apps/web/src/components/threadActionMenu.logic.ts:276|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-205
+NAV-E0686	palette-item	thread-action:copy	apps/web/src/components/threadActionMenu.logic.ts:285|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-208
+NAV-E0687	palette-item	thread-action:copy-path	apps/web/src/components/threadActionMenu.logic.ts:291|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-206
+NAV-E0688	palette-item	thread-action:copy-branch	apps/web/src/components/threadActionMenu.logic.ts:298|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-207
+NAV-E0689	palette-item	thread-action:copy-thread	apps/web/src/components/threadActionMenu.logic.ts:305|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-208
+NAV-E0690	palette-item	thread-action:copy-thread-id	apps/web/src/components/threadActionMenu.logic.ts:309|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-209
+NAV-E0691	palette-item	thread-action:archive	apps/web/src/components/threadActionMenu.logic.ts:314|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-210
+NAV-E0692	palette-item	thread-action:delete	apps/web/src/components/threadActionMenu.logic.ts:321|apps/web/src/components/CommandPaletteThreadActions.tsx:76	NAV-211
+NAV-E0693	palette-preset	thread-action:snooze:after:60	packages/contracts/src/settings.ts:132|apps/web/src/components/threadActionMenu.logic.ts:204|packages/client-runtime/src/state/threadSettled.ts:309	NAV-199
+NAV-E0694	palette-preset	thread-action:snooze:after:180	packages/contracts/src/settings.ts:133|apps/web/src/components/threadActionMenu.logic.ts:204|packages/client-runtime/src/state/threadSettled.ts:309	NAV-199
+NAV-E0695	palette-preset	thread-action:snooze:at:today:18:00	packages/contracts/src/settings.ts:134|apps/web/src/components/threadActionMenu.logic.ts:204|packages/client-runtime/src/state/threadSettled.ts:309	NAV-199
+NAV-E0696	palette-preset	thread-action:snooze:at:tomorrow:09:00	packages/contracts/src/settings.ts:135|apps/web/src/components/threadActionMenu.logic.ts:204|packages/client-runtime/src/state/threadSettled.ts:309	NAV-199
+NAV-E0697	palette-preset	thread-action:snooze:at:monday:09:00	packages/contracts/src/settings.ts:136|apps/web/src/components/threadActionMenu.logic.ts:204|packages/client-runtime/src/state/threadSettled.ts:309	NAV-199
+NAV-E0698	desktop-protocol	t3code://app/	apps/desktop/src/electron/ElectronProtocol.ts:15|apps/desktop/src/electron/ElectronProtocol.ts:27	NAV-212
+NAV-E0699	desktop-protocol	t3code-dev://app/	apps/desktop/src/electron/ElectronProtocol.ts:15|apps/desktop/src/electron/ElectronProtocol.ts:27	NAV-212
+NAV-E0700	desktop-entry	activate	apps/desktop/src/app/DesktopLifecycle.ts:287	NAV-213
+NAV-E0701	desktop-entry	window-all-closed	apps/desktop/src/app/DesktopLifecycle.ts:296	NAV-213
+NAV-E0702	desktop-entry	swipe:left	apps/desktop/src/window/DesktopWindow.ts:887	NAV-217
+NAV-E0703	desktop-entry	swipe:right	apps/desktop/src/window/DesktopWindow.ts:890	NAV-218
+NAV-E0704	desktop-binding	Cmd+Q (macOS)	apps/desktop/src/window/QuitHold.ts:109|apps/desktop/src/window/QuitHold.ts:121	NAV-219
+NAV-E0705	desktop-binding	Ctrl+Q (非 macOS)	apps/desktop/src/window/QuitHold.ts:109|apps/desktop/src/window/QuitHold.ts:121	NAV-219
+NAV-E0706	desktop-binding	CmdOrCtrl+W (本体。長押しリピート抑止)	apps/desktop/src/window/DesktopWindow.ts:839	NAV-100
+NAV-E0707	desktop-entry	open-url (HTTP / HTTPS)	apps/desktop/src/app/DesktopClerk.ts:135|apps/desktop/src/app/DesktopClerk.ts:226	NAV-221
+NAV-E0708	desktop-entry	open-file	apps/desktop/src/app/DesktopClerk.ts:237	NAV-222
+NAV-E0709	desktop-entry	open-url (pairing app link)	apps/desktop/src/app/DesktopClerk.ts:218|apps/desktop/src/app/DesktopClerk.ts:231	NAV-223
+NAV-E0710	desktop-entry	open-url (prompt app link)	apps/desktop/src/app/DesktopClerk.ts:218|apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx:214	NAV-224
+NAV-E0711	desktop-entry	showContextMenu	apps/desktop/src/ipc/methods/window.ts:355	NAV-225
+NAV-E0712	desktop-binding	both-shift-keys	packages/contracts/src/settings.ts:268	NAV-226
+NAV-E0713	desktop-binding	Ctrl+Shift+2 (Niri 設定テンプレート)	apps/desktop/src/snapShot/linuxCaptureSession.ts:44	NAV-226
+NAV-E0714	desktop-binding	Mod+R (プレビューで規則が転送されない場合)	apps/desktop/src/preview/Manager.ts:511|apps/desktop/src/preview/Manager.ts:1618	NAV-105
+NAV-E0715	hardcoded-key	Escape (/pull-requests)	apps/web/src/components/AppSidebarLayout.tsx:210	NAV-229
+NAV-E0716	hardcoded-key	Escape (選択中のスレッド)	apps/web/src/shortcuts/chatRouteCommands.ts:214	NAV-230
+NAV-E0717	hardcoded-key	Escape (スレッド内検索)	apps/web/src/components/chat/useChatShortcuts.ts:115	NAV-231
+NAV-E0718	palette-control	Open in {app}	apps/web/src/components/CommandPalette.tsx:3098	NAV-232
+NAV-E0719	palette-group	add-project	apps/web/src/components/CommandPalette.tsx:300|apps/web/src/components/CommandPalette.tsx:1312	NAV-168
+NAV-E0720	native-menu-action-handler	open-settings	apps/web/src/components/AppSidebarLayout.tsx:307	NAV-020
+NAV-E0721	native-menu-action-handler	workspace.focusNext	apps/web/src/components/AppSidebarLayout.tsx:195	NAV-084
+NAV-E0722	native-menu-action-handler	workspace.focusPrevious	apps/web/src/components/AppSidebarLayout.tsx:196	NAV-085
+NAV-E0723	native-menu-action-handler	view.reopenClosed	apps/web/src/components/ReopenClosedViewShortcut.tsx:243	NAV-101
+NAV-E0724	preview-editing-key	Mod+A	apps/desktop/src/preview/Manager.ts:533	NAV-063
+NAV-E0725	preview-editing-key	Mod+C	apps/desktop/src/preview/Manager.ts:534	NAV-060
+NAV-E0726	preview-editing-key	Mod+V	apps/desktop/src/preview/Manager.ts:535	NAV-061
+NAV-E0727	preview-editing-key	Mod+X	apps/desktop/src/preview/Manager.ts:536	NAV-059
+NAV-E0728	preview-editing-key	Mod+Z	apps/desktop/src/preview/Manager.ts:530	NAV-057
+NAV-E0729	preview-editing-key	Mod+Shift+Z (非 Windows)	apps/desktop/src/preview/Manager.ts:530	NAV-058
+NAV-E0730	preview-editing-key	Ctrl+Y (Windows)	apps/desktop/src/preview/Manager.ts:537	NAV-058
+NAV-E0731	preview-editing-key	Cmd+Alt+Shift+V (macOS)	apps/desktop/src/preview/Manager.ts:527	NAV-066
+NAV-E0732	preview-editing-key	Ctrl+Shift+V (非 macOS)	apps/desktop/src/preview/Manager.ts:528	NAV-066
+NAV-E0733	native-role	about	apps/desktop/src/window/DesktopApplicationMenu.ts:245	NAV-048
+NAV-E0734	native-role	services	apps/desktop/src/window/DesktopApplicationMenu.ts:257	NAV-050
+NAV-E0735	native-role	hide	apps/desktop/src/window/DesktopApplicationMenu.ts:259	NAV-051
+NAV-E0736	native-role	hideOthers	apps/desktop/src/window/DesktopApplicationMenu.ts:260	NAV-052
+NAV-E0737	native-role	unhide	apps/desktop/src/window/DesktopApplicationMenu.ts:262	NAV-053
+NAV-E0738	native-role	quit	apps/desktop/src/window/DesktopApplicationMenu.ts:266	NAV-054
+NAV-E0739	native-role	quit	apps/desktop/src/window/DesktopApplicationMenu.ts:300	NAV-054
+NAV-E0740	native-role	undo	apps/desktop/src/window/DesktopApplicationMenu.ts:311	NAV-057
+NAV-E0741	native-role	redo	apps/desktop/src/window/DesktopApplicationMenu.ts:312	NAV-058
+NAV-E0742	native-role	cut	apps/desktop/src/window/DesktopApplicationMenu.ts:314	NAV-059
+NAV-E0743	native-role	copy	apps/desktop/src/window/DesktopApplicationMenu.ts:315	NAV-060
+NAV-E0744	native-role	paste	apps/desktop/src/window/DesktopApplicationMenu.ts:316	NAV-061
+NAV-E0745	native-role	delete	apps/desktop/src/window/DesktopApplicationMenu.ts:322	NAV-062
+NAV-E0746	native-role	selectAll	apps/desktop/src/window/DesktopApplicationMenu.ts:324	NAV-063
+NAV-E0747	native-role	startSpeaking	apps/desktop/src/window/DesktopApplicationMenu.ts:331	NAV-064
+NAV-E0748	native-role	stopSpeaking	apps/desktop/src/window/DesktopApplicationMenu.ts:332	NAV-065
+NAV-E0749	native-role	togglefullscreen	apps/desktop/src/window/DesktopApplicationMenu.ts:398	NAV-073
+NAV-E0750	native-role	windowMenu	apps/desktop/src/window/DesktopApplicationMenu.ts:403	NAV-077
+NAV-E0751	native-role	minimize	apps/desktop/src/window/DesktopApplicationMenu.ts:406	NAV-074
+NAV-E0752	native-role	zoom	apps/desktop/src/window/DesktopApplicationMenu.ts:408	NAV-075
+NAV-E0753	native-role	front	apps/desktop/src/window/DesktopApplicationMenu.ts:414	NAV-076
+NAV-E0754	native-role	help	apps/desktop/src/window/DesktopApplicationMenu.ts:420	NAV-077
+NAV-E0755	native-context-role	cut	apps/desktop/src/window/DesktopWindow.ts:748	NAV-059
+NAV-E0756	native-context-role	copy	apps/desktop/src/window/DesktopWindow.ts:753	NAV-060
+NAV-E0757	native-context-role	paste	apps/desktop/src/window/DesktopWindow.ts:758	NAV-061
+NAV-E0758	native-context-role	selectAll	apps/desktop/src/window/DesktopWindow.ts:763	NAV-063
+NAV-E0759	palette-theme	theme:palette:t3-chat	packages/shared/src/themePalettes.ts:239|apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0760	palette-theme	theme:palette:grove	packages/shared/src/themePalettes.ts:374|apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0761	palette-theme	theme:palette:ocean	packages/shared/src/themePalettes.ts:509|apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0762	palette-theme	theme:palette:ember	packages/shared/src/themePalettes.ts:644|apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0763	palette-theme	theme:palette:iris	packages/shared/src/themePalettes.ts:779|apps/web/src/components/CommandPaletteThemeItems.tsx:86	NAV-187
+NAV-E0764	desktop-recovery-action	update	apps/desktop/src/app/DesktopStartupRecovery.ts:245	NAV-237
+NAV-E0765	desktop-recovery-action	reinstall	apps/desktop/src/app/DesktopStartupRecovery.ts:258	NAV-238
+NAV-E0766	desktop-recovery-action	releases	apps/desktop/src/app/DesktopStartupRecovery.ts:263	NAV-239
+NAV-E0767	desktop-recovery-action	copy	apps/desktop/src/app/DesktopStartupRecovery.ts:266	NAV-240
+NAV-E0768	desktop-recovery-action	quit	apps/desktop/src/app/DesktopStartupRecovery.ts:274	NAV-241
+NAV-E0769	hardcoded-key	Cmd/Ctrl+F (Settings)	apps/web/src/components/settings/SettingsSidebarNav.tsx:164	NAV-242
+NAV-E0770	hardcoded-key	/ (Settings。編集対象の外)	apps/web/src/components/settings/SettingsSidebarNav.tsx:168	NAV-242
+NAV-E0771	hardcoded-key	ContextMenu	apps/web/src/lib/sidebarTree.ts:89	NAV-244
+NAV-E0772	hardcoded-key	Shift+F10	apps/web/src/lib/sidebarTree.ts:89	NAV-244
+NAV-E0773	hardcoded-key	ArrowDown	apps/web/src/lib/sidebarTree.ts:113	NAV-243
+NAV-E0774	hardcoded-key	ArrowUp	apps/web/src/lib/sidebarTree.ts:116	NAV-243
+NAV-E0775	hardcoded-key	Home	apps/web/src/lib/sidebarTree.ts:119	NAV-243
+NAV-E0776	hardcoded-key	End	apps/web/src/lib/sidebarTree.ts:122	NAV-243
+NAV-E0777	hardcoded-key	ArrowRight	apps/web/src/lib/sidebarTree.ts:125	NAV-243
+NAV-E0778	hardcoded-key	ArrowLeft	apps/web/src/lib/sidebarTree.ts:132	NAV-243
+NAV-E0779	settings-action	Reset to default	apps/web/src/components/settings/KeybindingsSettings.tsx:1039	NAV-236
+NAV-E0780	settings-action	Unassign	apps/web/src/components/settings/KeybindingsSettings.tsx:1044	NAV-235
+NAV-E0781	settings-action	Remove	apps/web/src/components/settings/KeybindingsSettings.tsx:1049	NAV-234
+NAV-E0782	native-dialog-action	Download	apps/desktop/src/window/DesktopApplicationMenu.ts:104	NAV-245
+NAV-E0783	native-dialog-action	Restart	apps/desktop/src/window/DesktopApplicationMenu.ts:133	NAV-246
+NAV-E0784	native-dialog-action	Later	apps/desktop/src/window/DesktopApplicationMenu.ts:105	NAV-247
+NAV-E0785	native-dialog-action	Later	apps/desktop/src/window/DesktopApplicationMenu.ts:133	NAV-247
+NAV-E0786	hardcoded-key	Escape (Settings / Usage)	apps/web/src/components/AppRouteModal.tsx:80	NAV-248
+NAV-E0787	palette-host-setting	setting:source-control-host-github	packages/source-control-github/src/shared/definition.ts:33|packages/source-control-github/src/shared/definition.ts:166|apps/web/src/components/settings/settingsSearch.ts:230	NAV-180
+NAV-E0788	palette-host-setting	setting:source-control-host-gitcafe	packages/source-control-gitcafe/src/shared/definition.ts:35|packages/source-control-gitcafe/src/shared/definition.ts:105|apps/web/src/components/settings/settingsSearch.ts:230	NAV-180
+NAV-E0789	palette-host-setting	setting:source-control-host-bitbucket	packages/source-control-bitbucket/src/shared/definition.ts:30|packages/source-control-bitbucket/src/shared/definition.ts:168|apps/web/src/components/settings/settingsSearch.ts:230	NAV-180
+NAV-E0790	palette-host-setting	setting:source-control-host-tanstack-source	packages/source-control-tanstack-source/src/shared/definition.ts:27|packages/source-control-tanstack-source/src/shared/definition.ts:148|apps/web/src/components/settings/settingsSearch.ts:230	NAV-180

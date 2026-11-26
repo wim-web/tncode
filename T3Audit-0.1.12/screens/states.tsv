@@ -1,0 +1,62 @@
+screen_id	intent	source_ref	geometry_capture_ids	remaining
+SRC-S01	起動後に接続案内、空、下書き準備のいずれかを表示する	screens/source/01-workspace.md#SRC-S01	T3-M02-empty	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S02	メッセージ送信前に作業場所やモデルを選び、スレッドを開始する	screens/source/01-workspace.md#SRC-S02	T3-15-worktree-draft|T3-M04-draft	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S03	作成済み会話と別環境・共有経由の会話を開く	screens/source/01-workspace.md#SRC-S03	T3-48-resumed|T3-M08-history	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S04	見えている領域へキーボードフォーカスを巡回・復帰する	screens/source/01-workspace.md#SRC-S04	T3-03-add-project|T3-05-draft|T3-50-command-palette	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S05	プロジェクトを絞り込み、スレッド一覧の横幅を調整する	screens/source/01-workspace.md#SRC-S05	T3-32-grouped|T3-34-project-selector	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S06	スレッドを検索・選択し、棚と行の状態を操作する	screens/source/01-workspace.md#SRC-S06	ORG-03-history-search|ORG-09-pinned|ORG-13-settled|ORG-31-restored-history|T3-32-grouped|T3-33-flat	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S07	狭い画面でサイドバー、右タブ領域、入力を使用する	screens/source/01-workspace.md#SRC-S07	T3-W900-draft	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S08	テーマと文字・幅の設定で共通スタイルを変更する	screens/source/01-workspace.md#SRC-S08	T3-S-appearance	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S09	狭い viewport で右パネルをシートとして表示する	screens/source/02-panels.md#SRC-S09	T3-W900-right	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S10	チャット横の右パネルの幅を調整・最大化する	screens/source/02-panels.md#SRC-S10	T3-07-right|T3-W1440-right	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S11	右パネルでタブを追加・活性化・並べ替え・閉じる	screens/source/02-panels.md#SRC-S11	T3-09-surfaces|T3-39-git-diff|T3-P-files	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S12	スレッドの管理操作を inline カードまたは popover で使う	screens/source/02-panels.md#SRC-S12	T3-06-details|T3-W1440-details	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S13	選んだ参照、コミット、ファイルの差分と行を閲覧する	screens/source/02-panels.md#SRC-S13	ORG-37-commit-selected|ORG-38-commit-result|T3-39-git-diff|T3-40-patch|T3-41-split-diff|T3-M12-changes	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S14	ターミナルを drawer またはタブに表示し、分割する	screens/source/02-panels.md#SRC-S14	T3-42-terminal-drawer|T3-44-terminal-split|T3-M13-terminal|T3-P-terminal	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S15	プロジェクトのツリー、ファイル本文、添付を閲覧・編集する	screens/source/02-panels.md#SRC-S15	T3-P-files	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S16	Web ページや起動中のサーバーをタブ・浮動枠で表示する	screens/source/02-panels.md#SRC-S16	T3-P-browser	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S17	端末ホストと接続状態を見て端末ストリームを開く	screens/source/02-panels.md#SRC-S17	T3-P-device	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S18	PR、Issue とスレッドに関連する項目をタブで閲覧する	screens/source/02-panels.md#SRC-S18		テストリポジトリにリモート・関連 PR・Issue がない。
+SRC-S19	子スレッドと別環境の会話をタブで閲覧・操作する	screens/source/02-panels.md#SRC-S19	ORG-16-fork-outcome|ORG-18-fork-source-link	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S20	メッセージを入力して送信する	screens/source/03-conversation.md#SRC-S20	T3-M05-prompt|T3-M07-completed	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S21	狭い画面で入力を展開し、添付や補完候補を使う	screens/source/03-conversation.md#SRC-S21	T3-51-slash|T3-52-file-mention	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S22	モデルや権限に合わせて送信、保留、停止を操作する	screens/source/03-conversation.md#SRC-S22	ORG-19-queued|ORG-24-steer-outcome|T3-22-supervised-local|T3-27-running|T3-28-stopped	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S23	進行中または完了した会話とツールの出力を閲覧する	screens/source/03-conversation.md#SRC-S23	T3-M06-running|T3-M07-completed|T3-M09-partial	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S24	承認要求の文脈を確認して、利用可能な応答を選ぶ	screens/source/03-conversation.md#SRC-S24	T3-23-approval-wait|T3-25-declined|T3-26-approved	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S25	質問を展開し選択肢または任意回答を送信する	screens/source/03-conversation.md#SRC-S25		このプロバイダーテストは構造化質問を発行しない。
+SRC-S26	計画や埋め込みアプリを閲覧し、要求された Secret を入力する	screens/source/03-conversation.md#SRC-S26		計画、埋め込み MCP App、Secret 要求を返すプロバイダーが必要。
+SRC-S27	スレッド内の一致箇所、行、末尾へ移動する	screens/source/03-conversation.md#SRC-S27	ORG-01-find-first|ORG-02-find-next	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S28	検索でコマンドを選んで実行する	screens/source/04-navigation.md#SRC-S28	ORG-05-palette-search|ORG-06-palette-result|T3-50-command-palette	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S29	履歴、スレッドリンク、閉じたビューから移動する	screens/source/04-navigation.md#SRC-S29	ORG-18-fork-source-link	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S30	PR と Issue の一覧を検索し、詳細を開く	screens/source/04-navigation.md#SRC-S30		認証済みの使い捨て forge と参照 PR・Issue が必要。
+SRC-S31	Usage を集計して閲覧し、Workflows を選択・編集する	screens/source/04-navigation.md#SRC-S31		使用量の検証用履歴、ワークフローの Labs 設定と試験用定義が必要。
+SRC-S32	初回起動でプロバイダー・プロジェクトの準備を進める	screens/source/04-navigation.md#SRC-S32	T3-01-welcome|T3-M01-welcome	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S33	環境、エージェント、共有リンクへ接続する	screens/source/04-navigation.md#SRC-S33		ペアリング先・別ホスト・招待/承認済みのテスト利用者が必要。
+SRC-S34	起動待ち・ルートエラーから復旧し、エラー情報を取得する	screens/source/04-navigation.md#SRC-S34		起動失敗・再接続とレンダラーのルート障害を強制する検証が必要。
+SRC-S35	実行時の環境・エージェント・ターンの障害を確認する	screens/source/04-navigation.md#SRC-S35	T3-29-failed|T3-37-worktree-failure	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S36	モーダル内を操作し、タイトルバーとウィンドウを扱う	screens/source/04-navigation.md#SRC-S36	T3-03-add-project|T3-30-settings-launch	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S40	設定タブ・対象スコープを切り替え、検索結果へ移動する	screens/source/05-settings.md#SRC-S40	T3-30-settings-launch	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S41	通知、サイドバー、確認、表示などの装置設定を変更する	screens/source/05-settings.md#SRC-S41	T3-S-general	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S42	テーマ、色、幅、アニメーション、書体を変更する	screens/source/05-settings.md#SRC-S42	T3-S-appearance	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S43	入力、フォローアップ、子スレッド、読み上げの設定を変更する	screens/source/05-settings.md#SRC-S43	T3-S-chat	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S44	差分の表示と PR リンクの扱いを変更する	screens/source/05-settings.md#SRC-S44	T3-S-diffs	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S45	キーボード割当の確認、編集、追加を行う	screens/source/05-settings.md#SRC-S45	T3-S-keybindings	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S46	マイク、文字起こし、辞書と後処理を設定する	screens/source/05-settings.md#SRC-S46	T3-S-voice	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S47	キャプチャと SnapShots のショートカットを設定する	screens/source/05-settings.md#SRC-S47	T3-S-snap-shot	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S48	選択した環境のプロバイダーを選択、追加、構成する	screens/source/05-settings.md#SRC-S48	T3-S-providers	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S49	スレッドの初期設定、使用量、整理、自動命名を設定する	screens/source/05-settings.md#SRC-S49	T3-S-threads	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S50	ブラウザー既定値、プロファイル、録画、アクセスを設定する	screens/source/05-settings.md#SRC-S50	T3-S-browser	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S51	端末ホスト、接続ソース、エージェントのアクセスを管理する	screens/source/05-settings.md#SRC-S51	T3-S-devices	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S52	スケジュール、対象、実行時の入力を編集する	screens/source/05-settings.md#SRC-S52	ORG-40-schedule-editor|ORG-42-schedule-canceled|T3-S-scheduled-tasks	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S53	選んだプロジェクトの名前、アイコン、checkout、アクションを管理する	screens/source/05-settings.md#SRC-S53	T3-S-projects	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S54	ソース管理と Issue tracker の環境接続を構成する	screens/source/05-settings.md#SRC-S54	T3-S-source-control	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S55	Worktree の作成、ブランチ、クリーンアップを設定する	screens/source/05-settings.md#SRC-S55	T3-S-worktrees	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S56	保存済み環境を閲覧し、経路や接続状態を管理する	screens/source/05-settings.md#SRC-S56	T3-S-connections	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S57	対象環境の共有と認可済みクライアントを管理する	screens/source/05-settings.md#SRC-S57	T3-S-access	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S58	対応環境で Secret の供給元を構成する	screens/source/05-settings.md#SRC-S58		この環境の設定ナビには Secrets が出ていない。対応環境と Secret 供給元が必要。
+SRC-S59	更新、背景処理、ストレージの状態・設定を確認する	screens/source/05-settings.md#SRC-S59	T3-S-maintenance	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S60	利用可能な開発中の機能設定を切り替える	screens/source/05-settings.md#SRC-S60	T3-S-labs	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S61	アプリ情報と法務文書を開く	screens/source/05-settings.md#SRC-S61	T3-S-about	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S62	対象範囲のアーカイブ済みスレッドを確認する	screens/source/05-settings.md#SRC-S62	ORG-31-restored-history|T3-S-archived	証跡がある操作以外の分岐は機能 ID ごとに別判定。
+SRC-S63	実行環境の障害、遅い処理、集計とログを閲覧する	screens/source/05-settings.md#SRC-S63	T3-S-diagnostics	当該画面の全分岐・全操作は機能 ID ごとに別判定。
+SRC-S64	ライセンスを閲覧し、旧設定アドレスを対応タブへ移す	screens/source/05-settings.md#SRC-S64	T3-S-licenses	当該画面の全分岐・全操作は機能 ID ごとに別判定。

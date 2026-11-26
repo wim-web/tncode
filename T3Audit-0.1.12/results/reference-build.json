@@ -1,0 +1,14 @@
+{
+  "bundle_id": "com.t3tools.t3code",
+  "short_version": "0.1.12",
+  "build": "0.1.12",
+  "package_version": "0.1.12",
+  "package_commit": "ca81b7b97a1c",
+  "checked_out_tag": "v0.1.12",
+  "commit": "ca81b7b97a1c4b91e5ac25768d0f6629f37732fd",
+  "upstream": "https://github.com/pingdotgg/t3code",
+  "asar_sha256": "ae1a4315018af6a14b85807f7fee5eed78f3836793faf5a610127623cdf056bf",
+  "main_binary_sha256": "4b40f183f7d9efda2743b136472a06c021db5da555222f564236f547d1281eb7",
+  "arch": "arm64",
+  "electron": "44.10.1"
+}

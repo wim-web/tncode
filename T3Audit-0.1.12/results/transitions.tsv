@@ -1,0 +1,78 @@
+feature_id	entry_id	outcome	remaining	geometry_capture_ids
+CFG-026	CFG-E0052	Settings を開き General と設定サイドバーを表示	他の起動経路	T3-29-failed|T3-30-settings-launch
+CFG-068	CFG-E0178	Labs の設定切替後にフォルダー型からフラット型へ変わる	再起動をまたぐ永続化	T3-31-grouped-setting|T3-32-grouped|T3-33-flat
+CHAT-001	CHAT-E0001	再起動直後の下書きから Audit Project の保存済みスレッドを選び、既存の会話を表示	ネットワーク切断時と環境をまたぐ同名スレッド	T3-45-before-restart|T3-46-relaunch|T3-47-reopened
+CHAT-073	CHAT-E0163	エージェントなしで開始した後に空のワークスペースを表示	実エージェントを使う初回導入	T3-01-welcome|T3-02-empty
+CHAT-088	CHAT-E0201	初回送信後に作業中のスレッドへ移動し、fixture の完了テキストを表示	実プロバイダー・保存の検証	T3-16-prompt|T3-17-first-send|T3-18-first-result
+CHAT-089	CHAT-E0203	既存の Full access スレッドから次ターンを送り、fixture が承認相当の応答を表示	実コマンドや権限変更	T3-18-first-result|T3-19-autoapproved
+CHAT-089	CHAT-E0203	停止の後に別のターンを送信。部分応答の後に Provider error と Failed を表示	リトライと実ネットワークエラー	T3-27-running|T3-28-stopped|T3-29-failed
+CHAT-089	CHAT-E0203	再起動後の同じ会話へ fixture resume を送り、履歴に新規ターンの完了テキストを確認	停止状態の Resume thread ボタンと実プロバイダー	T3-47-reopened|T3-48-resumed
+CHAT-100	CHAT-E0221	Working と停止ボタンの表示から Run interrupted / Stopped by user に変化	停止に反応しない実プロバイダー、再開	T3-27-running|T3-28-stopped
+CHAT-113	CHAT-E0258	Full access から Supervised に変更し、次のローカル送信で承認待ちを表示	実コマンドの権限境界	T3-21-permissions|T3-22-supervised-local|T3-23-approval-wait
+CHAT-160	CHAT-E0357	次の承認要求に Approve を選び fixture の accepted 応答を表示	実コマンドの実行	T3-23-approval-wait|T3-25-declined|T3-26-approved
+CHAT-162	CHAT-E0360	承認待ちから fixture の declined 応答へ変化	実コマンドの拒否と副作用	T3-23-approval-wait|T3-24-approval-options|T3-25-declined
+CHAT-215	CHAT-E0486	New worktree を選ぶと composer の Workspace 表示が切り替わる	既存 worktree 再利用	T3-14-workspace|T3-15-worktree-draft
+CHAT-239	CHAT-E0537	詳細トグルから Thread details を表示	別の実行環境・状態での項目	T3-05-draft|T3-06-details
+DEV-001	DEV-E0001	Audit Project の既存フォルダーを追加。下書きと保存済み project 行を確認	重複追加、リモート環境	T3-04-local-folder|T3-05-draft
+DEV-004	DEV-E0004	ドラフトで New worktree を指定した	別の起点と複数リポジトリ	T3-14-workspace|T3-15-worktree-draft
+DEV-012	DEV-E0012	送信後に Git の worktree と分離したブランチが追加され、元の未コミット変更は元の checkout に残った	複数 repo、セットアップスクリプト	T3-16-prompt|T3-17-first-send|T3-18-first-result
+DEV-024	DEV-E0024	パス側を修復して Retry。失敗表示が消え、Git 一覧に新規 worktree が追加された	修復なしの場合とセットアップスクリプトの再試行	T3-37-worktree-failure|T3-38-worktree-retry
+DEV-063	-	README.md のファイル行を展開しパッチ内容を表示	複数ファイルの一括操作	T3-39-git-diff|T3-40-patch
+DEV-064	DEV-E0064	縦積み表示から左右表示へ移行	設定を変えた別ファイルでの適用	T3-40-patch|T3-41-split-diff
+DEV-129	DEV-E0129	Files を開いてワークスペースのファイル一覧を表示	個別ファイルの編集・保存	T3-07-right|T3-08-files|T3-P-files
+DEV-156	-	差分の画面からチャット下部の端末 drawer を開いた	別シェルと復元	T3-41-split-diff|T3-42-terminal-drawer
+DEV-157	DEV-E0157	Terminal を開き端末入力がフォーカスされた	コマンド実行、分割、終了	T3-09-surfaces|T3-P-terminal
+DEV-160	DEV-E0160	端末を縦分割し二つの端末領域と Side by side 2 を表示	領域を閉じて出力を再確認	T3-42-terminal-drawer|T3-44-terminal-split
+DEV-179	DEV-E0179	Browser タブと初期ビューを開いた	URL 遷移、プロファイル動作	T3-09-surfaces|T3-P-browser
+DEV-268	-	閉じた状態から Open a surface の右パネルを表示	パネルの復元	T3-06-details|T3-07-right
+DEV-326	DEV-E0326	Git server thread の右パネルで Diff に到達し README.md の差分行を表示	各差分スコープの選択	T3-09b-diff-gate|T3-39-git-diff
+RPC-052	-	同じプロジェクトのローカルスレッドと worktree スレッドで pwd と tty を実行。作業パスと端末が異なった	境界上の RPC 呼び出し自体は未採取。別ホスト	T3-43b-terminal-local|T3-43c-terminal-worktree
+DEV-023	-	T3 が送信文をスレッドに残し、準備カードを Failed にして Retry を出した。	別の Git エラーと外部セットアップスクリプトは別途再生する。	T3-37-worktree-failure
+DEV-024	-	保存先を直して Retry。準備後に同じスレッドでテスト応答を受信した。	リモート fetch や複数リポジトリの再試行は未実施。	T3-37-worktree-failure|T3-38-worktree-retry
+CHAT-222	-	準備の Failed と各ステージ、復帰後の会話を確認した。	全ステージの成功は未確認。	T3-37-worktree-failure|T3-38-worktree-retry
+DEV-156	-	下部端末に pwd と tty を実入力し、会話別の実 cwd と PTY を照合した。	再起動後のスクロールバックはこの検査の対象外。	T3-43b-terminal-local|T3-43c-terminal-worktree
+DEV-159	-	下部端末の Split Terminal Horizontally で分割が現れた。	両ペインのジョブ継続までは未検証。	T3-42-terminal-drawer|T3-44-terminal-split
+CHAT-001	-	一覧から以前の会話を開いて続けた。もう一度 PID を変更し、同じスレッドと作業先で応答が1件増えた。	他端末やアーカイブからの復帰は別の条件。	T3-45-before-restart|T3-46-relaunch|T3-47-reopened|T3-48-resumed
+CHAT-089	-	既存スレッドへ fixture resume を送信し、再開したプロバイダースレッドの応答が加わった。	本物の外部モデルによる推論は別途確認。	T3-48-resumed|T3-49-repeat-resume
+CFG-102	CFG-E0288	In-app notifications を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-062	CFG-E0160	Project grouping を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-067	CFG-E0175	Working section を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-124	-	Confirm thread unpinning を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-125	-	Confirm thread archiving を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-126	-	Confirm thread deletion を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-127	-	Confirm terminal closing を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-051	CFG-E0123	Render math を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-060	-	Wrap code, diffs, and file previews by default を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-072	CFG-E0192	Screen reader window title を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-106	-	Hide whitespace changes by default を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-109	CFG-E0309	Open pull requests and changes panels proactively を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-168	CFG-E0484	Open pull requests in T3 Code を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-169	CFG-E0487	Auto-show floating preview を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-164	CFG-E0472	Show key presses in recordings を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-165	CFG-E0475	Show mouse presses in recordings を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-121	-	Start new worktrees from remote by default を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-068	CFG-E0178	Boring sidebar (group by project) を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-077	CFG-E0211	Suggest next prompt を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CFG-079	CFG-E0219	Fast worktree checkout を変更。別タブから戻って変更値を読み、元の値に復元した。	ビューを開き直した場合の値。設定が制御する後続動作やアプリ再起動後の保持は別の検証。	
+CHAT-155	CHAT-E0346	⌘F でスレッド内検索を開き、Second delta に一致する2件が見つかった。	単一スレッドのテキスト検索。長い履歴やファイル名は未検証。	ORG-01-find-first
+CHAT-156	CHAT-E0351	Next match により 1/2 から 2/2 に移り、2件目が強調された。	Next の1回だけを検証。Previous と周回は未検証。	ORG-01-find-first|ORG-02-find-next
+CHAT-018	CHAT-E0034	タイトルにない cobalt-bird-77 が本文の抜粋付き候補になった。新規下書きから Enter で元のスレッドを開いた。	ローカルの模擬 Codex 会話1件。複数環境とページングは未検証。	ORG-03-history-search|ORG-04-history-result
+CHAT-247	CHAT-E0561	⌘K の In messages に cobalt-bird-77 が出た。Enter で対象会話を開き、スレッド内検索の 1/1 が表示された。	本文の完全一致語1件。タイトル検索と複数の候補は未検証。	ORG-05-palette-search|ORG-06-palette-result
+NAV-179	NAV-E0378	In messages の候補を開くと対象会話の一致箇所が強調された。	⌘K からローカルの本文候補1件。	ORG-05-palette-search|ORG-06-palette-result
+CHAT-036	CHAT-E0085	サイドバーの対象行で F2 を押し、Thread title を変更して Enter。行と会話見出しに Organization Lifecycle Audit が表示され、復帰後も同名だった。	F2 の経路のみ。マウスのネイティブメニューと再起動後は未検証。	ORG-07-rename-input|ORG-07-renamed|ORG-31-restored-history
+CHAT-023	CHAT-E0041	パレットの Pin thread で固定した。Pinned 1 thread と表示され、次のパレットに Unpin thread が出た。	カード表示の会話1件。固定順とドラッグは未検証。	ORG-08-pin-action|ORG-09-pinned|ORG-10-unpin-action
+CHAT-024	CHAT-E0043	パレットの Unpin thread で固定が外れ、取消操作付きの通知が出た。	固定解除の確認が無効な既定条件。確認ダイアログは未検証。	ORG-10-unpin-action|ORG-11-unpinned
+CHAT-028	CHAT-E0048	パレットの Settle thread で Settled が 0 から 1 になり、対象がその区画へ移った。会話にも Un-settle が表示された。	ローカルで停止中の会話1件。自動 Settle は未検証。	ORG-12-settle-action|ORG-13-settled
+CHAT-089	CHAT-E0203	Settled の会話へ新しいメッセージを送ると Working に移り、Settled が 1 から 0 になった。模擬応答の完了を元の会話で確認した。	送信に伴う復帰。Un-settle ボタン単体と再起動後は未検証。	ORG-13-settled|ORG-15-reactivated|ORG-18-fork-source-link
+CHAT-141	CHAT-E0318	最初の応答からフォークすると分岐点までの履歴を持つ別会話が開いた。追送信ではネイティブ分岐の失敗を表示し、履歴付きの新規セッションから模擬応答を開始した。	T3 のフォークは成立。Codex のネイティブ分岐成功は模擬プロバイダーで再現できなかった。	ORG-15-reactivated|ORG-16-fork-outcome|ORG-17-fork-followup
+CHAT-293	CHAT-E0654	Open source conversation で元の会話へ戻り、分岐後には含まれない元の会話の後続ターンも表示された。	フォーク側から元の会話へ移動した。元からフォーク側への再移動は未検証。	ORG-16-fork-outcome|ORG-18-fork-source-link
+CHAT-090	CHAT-E0205	模擬応答を保留した Working 中に ⌘Enter を押すと、入力が 1 queued に入り、現在のターンは継続した。	Steer が主操作で Queue が代替操作の条件。完了後の自動送信は未検証。	ORG-19-queued
+NAV-118	NAV-E0257	編集中に ⌘Enter で送信の代替動作を実行し、入力が Queue に入った。	既定の macOS キーバインド。Steer が代替操作となる設定は未検証。	ORG-19-queued
+CHAT-096	CHAT-E0215	Edit queued message でコンポーザーに戻し、Update queued message の後に更新した文がキューに表示された。	Working 中の1項目。ショートカットと複数項目は未検証。	ORG-20-queue-edit|ORG-22-queue-updated
+CHAT-097	CHAT-E0217	編集中に語句を追加して Cancel を押すと、元の文面のキュー項目が残った。	Working 中の1項目。	ORG-20-queue-edit|ORG-21-queue-edit-canceled
+CHAT-098	CHAT-E0218	Remove queued message で待機項目が消え、実行中の応答は続いた。履歴に削除した文は現れなかった。	Working 中のキュー1件。停止後の保留キューは未検証。	ORG-22-queue-updated|ORG-23-queue-removed|ORG-26-stopped
+CHAT-100	CHAT-E0221	Stop generation 後に Run interrupted · Stopped by user が出て、停止前の部分テキストは残った。	模擬 peer の保留ターン。	ORG-25-steer-later|ORG-26-stopped
+CHAT-043	CHAT-E0098	パレットの Archive thread で対象がサイドバーから消え、Archive 設定に同じタイトルが現れた。	既定の確認設定で1件。確認ダイアログと再起動後は未検証。	ORG-27-archive-action|ORG-28-archived|ORG-29-archive-list
+CHAT-044	CHAT-E0100	Unarchive 後に Archive の行が消え、サイドバーに戻った。対象を開くと変更済みタイトルと過去の応答が残っていた。	単一のローカル会話。アーカイブ済み worktree の回復は未検証。	ORG-29-archive-list|ORG-30-archive-restored|ORG-31-restored-history
+DEV-048	DEV-E0603	直接 Commit の自動メッセージ生成は模擬 CLI で失敗した。Git action options → Commit から手入力したメッセージで テスト用コミット が作成された。	コミットのみを検証。自動生成、push、新規ブランチは未検証。	ORG-33-commit-all|ORG-35-git-options|ORG-36-commit-dialog|ORG-38-commit-result
+DEV-049	DEV-E0049	include.txt だけがコミットされた。exclude.txt は両方の編集が作業ツリーに残ったが、ステージ済み部分は外れ、Git の状態は MM から空白 M に変わった。	同じ除外ファイルにステージ済み変更と未ステージ変更があるローカルの2ファイル。	ORG-37-commit-selected|ORG-38-commit-result

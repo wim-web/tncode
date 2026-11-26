@@ -1,0 +1,717 @@
+id	kind	name	source	feature_id
+CHAT-E0001	sidebar-row	{thread title}	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1350	CHAT-001
+CHAT-E0002	sidebar-row	{draft label}	apps/web/src/components/sidebar/SidebarDraftBlock.tsx:147	CHAT-002
+CHAT-E0003	context-menu	Discard draft	apps/web/src/components/threadActionMenu.logic.ts:88	CHAT-003
+CHAT-E0004	icon-button	Discard draft	apps/web/src/components/sidebar/SidebarDraftBlock.tsx:178	CHAT-003
+CHAT-E0005	icon-button	Discard draft	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1693	CHAT-003
+CHAT-E0006	context-submenu	Copy	apps/web/src/components/threadActionMenu.logic.ts:53	CHAT-004
+CHAT-E0007	context-menu	Path	apps/web/src/components/threadActionMenu.logic.ts:61	CHAT-004
+CHAT-E0008	context-menu	Branch	apps/web/src/components/threadActionMenu.logic.ts:70	CHAT-005
+CHAT-E0009	context-menu	Project settings	apps/web/src/components/threadActionMenu.logic.ts:81	CHAT-006
+CHAT-E0010	keyboard	thread traversal	apps/web/src/components/Sidebar.tsx:3006	CHAT-007
+CHAT-E0011	keyboard	thread jump index	apps/web/src/components/Sidebar.tsx:3017	CHAT-008
+CHAT-E0012	gesture	Cmd-click thread	apps/web/src/components/Sidebar.tsx:1617	CHAT-009
+CHAT-E0013	gesture	Shift-click thread	apps/web/src/components/Sidebar.tsx:1617	CHAT-009
+CHAT-E0014	combobox	Projects	apps/web/src/components/Sidebar.tsx:3145	CHAT-010
+CHAT-E0015	combobox	Search projects	apps/web/src/components/Sidebar.tsx:3182	CHAT-010
+CHAT-E0016	combobox-option	{project displayName}	apps/web/src/components/Sidebar.tsx:856	CHAT-010
+CHAT-E0017	context-menu	Filter by {project}	apps/web/src/components/threadActionMenu.logic.ts:248	CHAT-010
+CHAT-E0018	gesture	Shift-click project	apps/web/src/components/Sidebar.tsx:3125	CHAT-011
+CHAT-E0019	combobox-option	All projects	apps/web/src/components/Sidebar.tsx:853	CHAT-012
+CHAT-E0020	context-menu	Show all projects	apps/web/src/components/threadActionMenu.logic.ts:247	CHAT-012
+CHAT-E0021	context-menu	New thread	apps/web/src/components/Sidebar.tsx:1301	CHAT-013
+CHAT-E0022	icon-button	New thread in {project}	apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx:122	CHAT-013
+CHAT-E0023	context-menu	Copy path	apps/web/src/components/Sidebar.tsx:1302	CHAT-014
+CHAT-E0024	context-menu	Pin project	apps/web/src/components/Sidebar.tsx:1307	CHAT-015
+CHAT-E0025	palette-action	Pin project	apps/web/src/components/CommandPalette.tsx:1834	CHAT-015
+CHAT-E0026	context-menu	Unpin project	apps/web/src/components/Sidebar.tsx:1306	CHAT-016
+CHAT-E0027	palette-action	Unpin project	apps/web/src/components/CommandPalette.tsx:1834	CHAT-016
+CHAT-E0028	context-menu	Project settings	apps/web/src/components/Sidebar.tsx:1310	CHAT-017
+CHAT-E0029	palette-action	Project settings	apps/web/src/components/CommandPalette.tsx:1862	CHAT-017
+CHAT-E0030	context-menu	Project settings	apps/web/src/components/chat/ChatHeader.tsx:231	CHAT-017
+CHAT-E0031	icon-button	Project settings for {project}	apps/web/src/components/Sidebar.tsx:3295	CHAT-017
+CHAT-E0032	context-menu	Project settings	apps/web/src/components/threadActionMenu.logic.ts:312	CHAT-017
+CHAT-E0033	search-field	Search threads	apps/web/src/components/sidebar/SidebarThreadHeader.tsx:71	CHAT-018
+CHAT-E0034	search-results	Thread search results	apps/web/src/components/Sidebar.tsx:3364	CHAT-018
+CHAT-E0035	icon-button	Clear thread search	apps/web/src/components/sidebar/SidebarThreadHeader.tsx:89	CHAT-019
+CHAT-E0036	keyboard	Escape	apps/web/src/components/Sidebar.tsx:1554	CHAT-019
+CHAT-E0037	icon-button	Toggle main sidebar	apps/web/src/components/sidebar/SidebarChrome.tsx:75	CHAT-020
+CHAT-E0038	navigation	Go back	apps/web/src/components/sidebar/SidebarChrome.tsx:137	CHAT-021
+CHAT-E0039	navigation	Go forward	apps/web/src/components/sidebar/SidebarChrome.tsx:137	CHAT-021
+CHAT-E0040	navigation	T3 Code home	apps/web/src/components/sidebar/SidebarChrome.tsx:174	CHAT-022
+CHAT-E0041	context-menu	Pin thread	apps/web/src/components/threadActionMenu.logic.ts:179	CHAT-023
+CHAT-E0042	command	thread.pin	packages/contracts/src/keybindings.ts:45	CHAT-023
+CHAT-E0043	context-menu	Unpin thread	apps/web/src/components/threadActionMenu.logic.ts:178	CHAT-024
+CHAT-E0044	icon-button	Unpin thread	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1248	CHAT-024
+CHAT-E0045	drag-target	Pinned	apps/web/src/components/Sidebar.tsx:3686	CHAT-025
+CHAT-E0046	drag-target	Active	apps/web/src/components/Sidebar.tsx:3697	CHAT-026
+CHAT-E0047	drag-gesture	Drop in Pinned	apps/web/src/components/Sidebar.tsx:2268	CHAT-027
+CHAT-E0048	context-menu	Settle thread	apps/web/src/components/threadActionMenu.logic.ts:190	CHAT-028
+CHAT-E0049	icon-button	Settle thread	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1511	CHAT-028
+CHAT-E0050	drag-target	Settled	apps/web/src/components/Sidebar.tsx:3759	CHAT-028
+CHAT-E0051	command	thread.settle	packages/contracts/src/keybindings.ts:44	CHAT-028
+CHAT-E0052	context-menu	Un-settle thread	apps/web/src/components/threadActionMenu.logic.ts:187	CHAT-029
+CHAT-E0053	icon-button	Un-settle thread	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1489	CHAT-029
+CHAT-E0054	button	Un-settle	apps/web/src/components/chat/useThreadLifecycle.tsx:685	CHAT-029
+CHAT-E0055	context-submenu	Auto-settle behavior	apps/web/src/components/threadActionMenu.logic.ts:267	CHAT-030
+CHAT-E0056	context-menu	Follow settings	apps/web/src/components/threadActionMenu.logic.ts:272	CHAT-030
+CHAT-E0057	context-menu	Never	apps/web/src/components/threadActionMenu.logic.ts:277	CHAT-031
+CHAT-E0058	context-submenu	Snooze	apps/web/src/components/threadActionMenu.logic.ts:199	CHAT-032
+CHAT-E0059	icon-button	Snooze thread	apps/web/src/components/sidebar/SidebarThreadRow.tsx:449	CHAT-032
+CHAT-E0060	context-menu	In 1 hour	packages/contracts/src/settings.ts:132	CHAT-032
+CHAT-E0061	context-menu	In 3 hours	packages/contracts/src/settings.ts:133	CHAT-032
+CHAT-E0062	context-menu	This evening	packages/client-runtime/src/state/threadSettled.ts:301	CHAT-032
+CHAT-E0063	context-menu	Tomorrow	packages/client-runtime/src/state/threadSettled.ts:303	CHAT-032
+CHAT-E0064	context-menu	Next week	packages/client-runtime/src/state/threadSettled.ts:304	CHAT-032
+CHAT-E0065	context-menu	{configured snooze preset}	apps/web/src/components/threadActionMenu.logic.ts:203	CHAT-032
+CHAT-E0066	context-menu	Custom…	apps/web/src/components/threadActionMenu.logic.ts:210	CHAT-033
+CHAT-E0067	form-control	Schedule type	apps/web/src/components/CustomSnoozeDialog.tsx:120	CHAT-033
+CHAT-E0068	option	Date and time	apps/web/src/components/CustomSnoozeDialog.tsx:130	CHAT-033
+CHAT-E0069	option	Duration	apps/web/src/components/CustomSnoozeDialog.tsx:133	CHAT-033
+CHAT-E0070	button	Cancel	apps/web/src/components/CustomSnoozeDialog.tsx:268	CHAT-033
+CHAT-E0071	button	Snooze	apps/web/src/components/CustomSnoozeDialog.tsx:271	CHAT-033
+CHAT-E0072	form-control	Choose snooze date	apps/web/src/components/CustomSnoozeDialog.tsx:160	CHAT-033
+CHAT-E0073	icon-button	Decrease duration	apps/web/src/components/CustomSnoozeDialog.tsx:209	CHAT-033
+CHAT-E0074	icon-button	Increase duration	apps/web/src/components/CustomSnoozeDialog.tsx:211	CHAT-033
+CHAT-E0075	select-option	Minutes	apps/web/src/components/CustomSnoozeDialog.tsx:218	CHAT-033
+CHAT-E0076	select-option	Hours	apps/web/src/components/CustomSnoozeDialog.tsx:218	CHAT-033
+CHAT-E0077	select-option	Days	apps/web/src/components/CustomSnoozeDialog.tsx:218	CHAT-033
+CHAT-E0078	context-menu	Wake thread	apps/web/src/components/threadActionMenu.logic.ts:196	CHAT-034
+CHAT-E0079	icon-button	Wake thread now	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1472	CHAT-034
+CHAT-E0080	button	Wake now	apps/web/src/components/chat/useThreadLifecycle.tsx:671	CHAT-034
+CHAT-E0081	status	Woke	apps/web/src/components/sidebar/SidebarThreadRow.tsx:861	CHAT-035
+CHAT-E0082	icon-button	Dismiss Woke notification	apps/web/src/components/sidebar/SidebarThreadRow.tsx:1430	CHAT-035
+CHAT-E0083	button	Dismiss	apps/web/src/components/chat/useThreadLifecycle.tsx:693	CHAT-035
+CHAT-E0084	context-menu	Rename thread	apps/web/src/components/threadActionMenu.logic.ts:219	CHAT-036
+CHAT-E0085	text-field	Thread title	apps/web/src/components/sidebar/SidebarThreadRow.tsx:690	CHAT-036
+CHAT-E0086	text-field	Thread title	apps/web/src/components/chat/ChatHeader.tsx:341	CHAT-036
+CHAT-E0087	context-menu	Regenerate title	apps/web/src/components/threadActionMenu.logic.ts:230	CHAT-037
+CHAT-E0088	context-menu	Regenerating…	apps/web/src/components/threadActionMenu.logic.ts:229	CHAT-037
+CHAT-E0089	command	thread.regenerateTitle	packages/contracts/src/keybindings.ts:46	CHAT-037
+CHAT-E0090	context-menu	Mark unread	apps/web/src/components/threadActionMenu.logic.ts:237	CHAT-038
+CHAT-E0091	context-submenu	Copy	apps/web/src/components/threadActionMenu.logic.ts:286	CHAT-039
+CHAT-E0092	context-menu	Path	apps/web/src/components/threadActionMenu.logic.ts:292	CHAT-039
+CHAT-E0093	context-menu	Branch	apps/web/src/components/threadActionMenu.logic.ts:299	CHAT-040
+CHAT-E0094	context-menu	Thread	apps/web/src/components/threadActionMenu.logic.ts:306	CHAT-041
+CHAT-E0095	palette-action	Copy thread	apps/web/src/components/CommandPalette.tsx:1511	CHAT-041
+CHAT-E0096	command	thread.copyReference	packages/contracts/src/keybindings.ts:43	CHAT-041
+CHAT-E0097	context-menu	Thread ID	apps/web/src/components/threadActionMenu.logic.ts:309	CHAT-042
+CHAT-E0098	context-menu	Archive thread	apps/web/src/components/threadActionMenu.logic.ts:315	CHAT-043
+CHAT-E0099	context-menu	Unarchive	apps/web/src/components/settings/ArchivedThreadsPanel.tsx:35	CHAT-044
+CHAT-E0100	icon-button	Unarchive {title}	apps/web/src/components/settings/ArchivedThreadsPanel.tsx:36	CHAT-044
+CHAT-E0101	context-menu	Delete	apps/web/src/components/threadActionMenu.logic.ts:322	CHAT-045
+CHAT-E0102	context-menu	Delete	apps/web/src/components/settings/ArchivedThreadsPanel.tsx:42	CHAT-046
+CHAT-E0103	icon-button	Delete {title}	apps/web/src/components/settings/ArchivedThreadsPanel.tsx:43	CHAT-046
+CHAT-E0104	bulk-context-menu	Settle ({count})	apps/web/src/components/Sidebar.tsx:2410	CHAT-047
+CHAT-E0105	bulk-context-submenu	Snooze ({count})	apps/web/src/components/Sidebar.tsx:2417	CHAT-048
+CHAT-E0106	bulk-context-menu	{configured snooze preset}	apps/web/src/components/Sidebar.tsx:2422	CHAT-048
+CHAT-E0107	bulk-context-menu	Custom…	apps/web/src/components/Sidebar.tsx:2428	CHAT-048
+CHAT-E0108	bulk-context-menu	Unpin ({count})	apps/web/src/components/Sidebar.logic.ts:641	CHAT-049
+CHAT-E0109	bulk-context-menu	Regenerate titles ({count})	apps/web/src/components/Sidebar.logic.ts:633	CHAT-050
+CHAT-E0110	bulk-context-menu	Regenerating… ({count})	apps/web/src/components/Sidebar.logic.ts:627	CHAT-050
+CHAT-E0111	bulk-context-menu	Mark unread ({count})	apps/web/src/components/Sidebar.tsx:2446	CHAT-051
+CHAT-E0112	bulk-context-menu	Delete ({count})	apps/web/src/components/Sidebar.tsx:2449	CHAT-052
+CHAT-E0113	icon-button	New thread	apps/web/src/components/sidebar/SidebarThreadHeader.tsx:102	CHAT-053
+CHAT-E0114	palette-action	New thread in...	apps/web/src/components/CommandPalette.tsx:1389	CHAT-053
+CHAT-E0115	palette-option	{project title}	apps/web/src/components/CommandPalette.tsx:939	CHAT-053
+CHAT-E0116	command	chat.new	packages/contracts/src/keybindings.ts:107	CHAT-053
+CHAT-E0117	icon-button	New thread in {project}	apps/web/src/components/chat/ChatHeader.tsx:274	CHAT-054
+CHAT-E0118	palette-action	New thread in {project}	apps/web/src/components/CommandPalette.tsx:1371	CHAT-054
+CHAT-E0119	command	chat.newLocal	packages/contracts/src/keybindings.ts:108	CHAT-054
+CHAT-E0120	context-menu	New thread on {branch}	apps/web/src/components/threadActionMenu.logic.ts:170	CHAT-055
+CHAT-E0121	button	Start without a project	apps/web/src/components/NoProjectsHero.tsx:53	CHAT-056
+CHAT-E0122	palette-option	No project	apps/web/src/components/CommandPalette.tsx:952	CHAT-056
+CHAT-E0123	palette-action	New thread without a project	apps/web/src/components/CommandPalette.tsx:1401	CHAT-056
+CHAT-E0124	command	chat.newWithoutProject	packages/contracts/src/keybindings.ts:109	CHAT-056
+CHAT-E0125	context-menu	Turn into project	apps/web/src/components/threadActionMenu.logic.ts:257	CHAT-057
+CHAT-E0126	button	Add project	apps/web/src/components/NoProjectsHero.tsx:44	CHAT-058
+CHAT-E0127	combobox-option	Add project	apps/web/src/components/Sidebar.tsx:852	CHAT-058
+CHAT-E0128	palette-action	Add project	apps/web/src/components/CommandPalette.tsx:1664	CHAT-058
+CHAT-E0129	palette-option	Local folder	apps/web/src/components/CommandPalette.tsx:1111	CHAT-058
+CHAT-E0130	palette-option	Add existing project	apps/web/src/components/CommandPalette.tsx:2526	CHAT-058
+CHAT-E0131	palette-option	{already added folder}	apps/web/src/components/CommandPalette.tsx:2046	CHAT-059
+CHAT-E0132	palette-option	{archived project folder}	apps/web/src/components/CommandPalette.tsx:2046	CHAT-060
+CHAT-E0133	palette-group	Environments	apps/web/src/components/CommandPalette.tsx:1274	CHAT-061
+CHAT-E0134	palette-option	{environment label}	apps/web/src/components/CommandPalette.tsx:1247	CHAT-061
+CHAT-E0135	select-field	Host for the new repository	apps/web/src/components/CommandPaletteAddProject.tsx:107	CHAT-061
+CHAT-E0136	palette-option	Git URL	apps/web/src/components/CommandPalette.tsx:1143	CHAT-062
+CHAT-E0137	button	Continue	apps/web/src/components/CommandPalette.tsx:2655	CHAT-062
+CHAT-E0138	palette-option	{source} repository	apps/web/src/components/CommandPalette.tsx:1143	CHAT-063
+CHAT-E0139	status	Setup Required	apps/web/src/components/CommandPalette.tsx:1166	CHAT-063
+CHAT-E0140	button	Lookup	apps/web/src/components/CommandPalette.tsx:2656	CHAT-063
+CHAT-E0141	palette-group	Select where to clone	apps/web/src/components/CommandPalette.tsx:2455	CHAT-063
+CHAT-E0142	palette-option	New project	apps/web/src/components/CommandPalette.tsx:1126	CHAT-064
+CHAT-E0143	palette-action	New project	apps/web/src/components/CommandPalette.tsx:1633	CHAT-064
+CHAT-E0144	palette-option	Create private repository	apps/web/src/components/CommandPalette.tsx:2553	CHAT-065
+CHAT-E0145	palette-option	Create private repository on {host}	apps/web/src/components/CommandPalette.tsx:2554	CHAT-065
+CHAT-E0146	palette-action	Go to file	apps/web/src/components/CommandPalette.tsx:1606	CHAT-066
+CHAT-E0147	palette-action	Search project contents	apps/web/src/components/CommandPalette.tsx:1619	CHAT-067
+CHAT-E0148	dialog	Add to another machine	apps/web/src/components/AddProjectToMachineDialog.tsx:265	CHAT-068
+CHAT-E0149	select-field	Machine to add the project to	apps/web/src/components/AddProjectToMachineDialog.tsx:312	CHAT-068
+CHAT-E0150	select-field	Clone protocol	apps/web/src/components/AddProjectToMachineDialog.tsx:349	CHAT-068
+CHAT-E0151	form-field	Folder on {machine}	apps/web/src/components/AddProjectToMachineDialog.tsx:366	CHAT-068
+CHAT-E0152	button	Clone to {machine}	apps/web/src/components/AddProjectToMachineDialog.tsx:477	CHAT-068
+CHAT-E0153	button	Cancel	apps/web/src/components/AddProjectToMachineDialog.tsx:471	CHAT-068
+CHAT-E0154	checkbox	Copy ignored files	apps/web/src/components/AddProjectToMachineDialog.tsx:384	CHAT-069
+CHAT-E0155	button	All	apps/web/src/components/AddProjectToMachineDialog.tsx:398	CHAT-069
+CHAT-E0156	button	None	apps/web/src/components/AddProjectToMachineDialog.tsx:397	CHAT-069
+CHAT-E0157	search-field	Search ignored files	apps/web/src/components/AddProjectToMachineDialog.tsx:407	CHAT-069
+CHAT-E0158	route	/new	apps/web/src/routes/_chat.new.tsx:30	CHAT-070
+CHAT-E0159	palette-action	Triage an issue	apps/web/src/components/CommandPalette.tsx:1413	CHAT-071
+CHAT-E0160	button	{triage CLI command}	apps/web/src/components/chat/TriageDraftHero.tsx:57	CHAT-071
+CHAT-E0161	page	Welcome to T3 Code	apps/web/src/components/onboarding/WelcomePage.tsx:283	CHAT-072
+CHAT-E0162	button	Start	apps/web/src/components/onboarding/WelcomePage.tsx:334	CHAT-072
+CHAT-E0163	button	Start without an agent	apps/web/src/components/onboarding/WelcomePage.tsx:313	CHAT-073
+CHAT-E0164	button	Turn on	apps/web/src/components/onboarding/WelcomePage.tsx:599	CHAT-074
+CHAT-E0165	accessible-label	Turn on: {agent}	apps/web/src/components/onboarding/WelcomePage.tsx:595	CHAT-074
+CHAT-E0166	button	Set up	apps/web/src/components/onboarding/WelcomePage.tsx:616	CHAT-075
+CHAT-E0167	accessible-label	Set up: {agent}	apps/web/src/components/onboarding/WelcomePage.tsx:612	CHAT-075
+CHAT-E0168	choice	existing	apps/web/src/components/onboarding/WelcomePage.tsx:1155	CHAT-075
+CHAT-E0169	button	Update	apps/web/src/components/onboarding/WelcomePage.tsx:605	CHAT-076
+CHAT-E0170	button	Details	apps/web/src/components/onboarding/WelcomePage.tsx:635	CHAT-076
+CHAT-E0171	button	Set up	apps/web/src/components/onboarding/WelcomePage.tsx:635	CHAT-076
+CHAT-E0172	section	Set up an agent	apps/web/src/components/onboarding/WelcomePage.tsx:690	CHAT-077
+CHAT-E0173	section	Add more agents	apps/web/src/components/onboarding/WelcomePage.tsx:690	CHAT-077
+CHAT-E0174	button	Install	apps/web/src/components/onboarding/WelcomePage.tsx:1205	CHAT-077
+CHAT-E0175	terminal	Install {agent}	apps/web/src/components/onboarding/WelcomePage.tsx:1457	CHAT-077
+CHAT-E0176	button	Retry	apps/web/src/components/onboarding/WelcomePage.tsx:1443	CHAT-077
+CHAT-E0177	button	Close	apps/web/src/components/onboarding/WelcomePage.tsx:1447	CHAT-077
+CHAT-E0178	button	Sign in	apps/web/src/components/onboarding/WelcomePage.tsx:1205	CHAT-078
+CHAT-E0179	button	Sign in	apps/web/src/components/onboarding/WelcomePage.tsx:635	CHAT-078
+CHAT-E0180	button	Browse	apps/web/src/components/onboarding/WelcomePage.tsx:721	CHAT-079
+CHAT-E0181	button	Retry	apps/web/src/components/onboarding/WelcomePage.tsx:835	CHAT-080
+CHAT-E0182	checkbox	Import projects and their threads	apps/web/src/components/onboarding/WelcomePage.tsx:892	CHAT-081
+CHAT-E0183	button	Review all {count}	apps/web/src/components/onboarding/WelcomePage.tsx:910	CHAT-082
+CHAT-E0184	button	Hide	apps/web/src/components/onboarding/WelcomePage.tsx:909	CHAT-082
+CHAT-E0185	button	Select all	apps/web/src/components/onboarding/WelcomePage.tsx:937	CHAT-082
+CHAT-E0186	button	Select none	apps/web/src/components/onboarding/WelcomePage.tsx:945	CHAT-082
+CHAT-E0187	disclosure	Other folders	apps/web/src/components/onboarding/WelcomePage.tsx:1801	CHAT-082
+CHAT-E0188	checkbox	{project folder}	apps/web/src/components/onboarding/WelcomePage.tsx:1818	CHAT-082
+CHAT-E0189	button	Import threads and start	apps/web/src/components/onboarding/WelcomePage.tsx:333	CHAT-083
+CHAT-E0190	status	Importing…	apps/web/src/components/onboarding/WelcomePage.tsx:325	CHAT-083
+CHAT-E0191	disclosure	Use T3 Code on your phone	apps/web/src/components/onboarding/WelcomePage.tsx:992	CHAT-084
+CHAT-E0192	button	Set up	apps/web/src/components/onboarding/WelcomePage.tsx:995	CHAT-084
+CHAT-E0193	button	Hide	apps/web/src/components/onboarding/WelcomePage.tsx:995	CHAT-084
+CHAT-E0194	link	T3 Code app for iPhone and Android	apps/web/src/components/onboarding/WelcomePage.tsx:1018	CHAT-084
+CHAT-E0195	button	Sign in to T3 Connect	apps/web/src/components/onboarding/WelcomePage.tsx:1121	CHAT-085
+CHAT-E0196	button	Retry sign-in	apps/web/src/components/onboarding/WelcomePage.tsx:1117	CHAT-085
+CHAT-E0197	link	Check T3 Connect	apps/web/src/components/onboarding/WelcomePage.tsx:1078	CHAT-085
+CHAT-E0198	link	Set up T3 Connect	apps/web/src/components/onboarding/WelcomePage.tsx:1106	CHAT-085
+CHAT-E0199	button	Add to PATH	apps/web/src/components/onboarding/WelcomePage.tsx:2026	CHAT-086
+CHAT-E0200	text-field	Message	apps/web/src/components/chat/ChatComposer.tsx:3929	CHAT-087
+CHAT-E0201	icon-button	Submit message	apps/web/src/components/chat/ComposerPrimaryActions.tsx:403	CHAT-088
+CHAT-E0202	accessible-label	Send message	apps/web/src/components/chat/ChatComposer.tsx:1354	CHAT-088
+CHAT-E0203	icon-button	Submit message	apps/web/src/components/chat/ComposerPrimaryActions.tsx:403	CHAT-089
+CHAT-E0204	icon-button	Queue message	apps/web/src/components/chat/ComposerPrimaryActions.tsx:400	CHAT-090
+CHAT-E0205	tooltip	Click to steer, {modifier}-click to queue	apps/web/src/components/chat/ComposerPrimaryActions.tsx:424	CHAT-090
+CHAT-E0206	icon-button	Steer message	apps/web/src/components/chat/ComposerPrimaryActions.tsx:402	CHAT-091
+CHAT-E0207	tooltip	Click to queue, {modifier}-click to steer	apps/web/src/components/chat/ComposerPrimaryActions.tsx:430	CHAT-091
+CHAT-E0208	queue-action	Send into the current turn	apps/web/src/components/chat/QueuedRunsControl.tsx:347	CHAT-092
+CHAT-E0209	command	thread.steerQueuedMessage	packages/contracts/src/keybindings.ts:39	CHAT-092
+CHAT-E0210	queue-action	Start a turn with this message	apps/web/src/components/chat/QueuedRunsControl.tsx:342	CHAT-093
+CHAT-E0211	queue-action	Skip compaction and send this message	apps/web/src/components/chat/QueuedRunsControl.tsx:344	CHAT-094
+CHAT-E0212	queue-action	Move this command to the front of the queue	apps/web/src/components/chat/QueuedRunsControl.tsx:346	CHAT-095
+CHAT-E0213	queue-action	Edit queued message	apps/web/src/components/chat/QueuedRunsControl.tsx:380	CHAT-096
+CHAT-E0214	tooltip	Edit in the composer	apps/web/src/components/chat/QueuedRunsControl.tsx:407	CHAT-096
+CHAT-E0215	icon-button	Update queued message	apps/web/src/components/chat/ComposerPrimaryActions.tsx:396	CHAT-096
+CHAT-E0216	command	thread.editQueuedMessage	packages/contracts/src/keybindings.ts:40	CHAT-096
+CHAT-E0217	queue-action	Cancel editing queued message	apps/web/src/components/chat/QueuedRunsControl.tsx:366	CHAT-097
+CHAT-E0218	queue-action	Remove queued message	apps/web/src/components/chat/QueuedRunsControl.tsx:416	CHAT-098
+CHAT-E0219	button	Show fewer	apps/web/src/components/chat/QueuedRunsControl.tsx:448	CHAT-099
+CHAT-E0220	button	{count more queued messages}	apps/web/src/components/chat/QueuedRunsControl.tsx:449	CHAT-099
+CHAT-E0221	icon-button	Stop generation	apps/web/src/components/chat/ComposerPrimaryActions.tsx:175	CHAT-100
+CHAT-E0222	tooltip	Interrupt	apps/web/src/components/chat/ComposerPrimaryActions.tsx:186	CHAT-100
+CHAT-E0223	status	Stopping…	apps/web/src/components/chat/ComposerPrimaryActions.tsx:185	CHAT-100
+CHAT-E0224	command	thread.stop	packages/contracts/src/keybindings.ts:38	CHAT-100
+CHAT-E0225	icon-button	Resume thread	apps/web/src/components/chat/ComposerPrimaryActions.tsx:394	CHAT-101
+CHAT-E0226	icon-button	Resume thread	apps/web/src/components/chat/ComposerPrimaryActions.tsx:394	CHAT-102
+CHAT-E0227	button	Cancel	apps/web/src/components/chat/ComposerHeldSendBanner.tsx:46	CHAT-103
+CHAT-E0228	keyboard	Esc	apps/web/src/components/chat/ComposerHeldSendBanner.tsx:38	CHAT-103
+CHAT-E0229	status	Sending when ready	apps/web/src/components/chat/ComposerPrimaryActions.tsx:407	CHAT-103
+CHAT-E0230	icon-button	Compact and send	apps/web/src/components/chat/ComposerPrimaryActions.tsx:398	CHAT-104
+CHAT-E0231	toggle	Compact	apps/web/src/components/chat/ComposerPrimaryActions.tsx:533	CHAT-104
+CHAT-E0232	tooltip	Summarize {tokens} tokens of history, then send	apps/web/src/components/chat/ComposerPrimaryActions.tsx:434	CHAT-104
+CHAT-E0233	toggle	Keep	apps/web/src/components/chat/ComposerPrimaryActions.tsx:532	CHAT-105
+CHAT-E0234	tooltip	Next send keeps all {tokens} tokens.	apps/web/src/components/chat/ComposerPrimaryActions.tsx:540	CHAT-105
+CHAT-E0235	palette-action	Restart agent session	apps/web/src/components/CommandPalette.tsx:1569	CHAT-106
+CHAT-E0236	slash-command	/clear	apps/web/src/components/chat/useComposerMenuItems.ts:289	CHAT-106
+CHAT-E0237	banner	Your next message starts a fresh session	apps/web/src/components/chat/ComposerFreshSession.tsx:17	CHAT-106
+CHAT-E0238	button	Keep the current session	apps/web/src/components/chat/ComposerFreshSession.tsx:19	CHAT-107
+CHAT-E0239	combobox	Choose model	apps/web/src/components/chat/ProviderModelPicker.tsx:178	CHAT-108
+CHAT-E0240	search-field	Search models...	apps/web/src/components/chat/ModelPickerContent.tsx:1054	CHAT-108
+CHAT-E0241	combobox-option	{provider model}	apps/web/src/components/chat/ComposerFooterControls.tsx:333	CHAT-108
+CHAT-E0242	combobox	Choose models	apps/web/src/components/chat/ProviderModelPicker.tsx:261	CHAT-109
+CHAT-E0243	button	Restore prompt	apps/web/src/components/chat/useMultipleModelSend.ts:284	CHAT-109
+CHAT-E0244	model-tab	Favorites	apps/web/src/components/chat/ModelPickerContent.tsx:930	CHAT-110
+CHAT-E0245	model-tab	{provider displayName}	apps/web/src/components/chat/ModelPickerContent.tsx:930	CHAT-110
+CHAT-E0246	button	Show less	apps/web/src/components/chat/ModelPickerContent.tsx:1160	CHAT-110
+CHAT-E0247	button	Show more	apps/web/src/components/chat/ModelPickerContent.tsx:1161	CHAT-110
+CHAT-E0248	menu-group	Options	apps/web/src/components/chat/ComposerModelEffort.tsx:557	CHAT-111
+CHAT-E0249	menu-group	Effort	apps/web/src/components/chat/ComposerModelEffort.tsx:558	CHAT-111
+CHAT-E0250	model-option	Reasoning effort	apps/web/src/components/chat/TraitsPicker.tsx:62	CHAT-111
+CHAT-E0251	model-option	Reasoning	apps/web/src/components/chat/TraitsPicker.tsx:63	CHAT-111
+CHAT-E0252	model-option	Agent	apps/web/src/components/chat/TraitsPicker.tsx:60	CHAT-111
+CHAT-E0253	model-option	On	apps/web/src/components/chat/ComposerModelEffort.tsx:343	CHAT-111
+CHAT-E0254	model-option	Off	apps/web/src/components/chat/ComposerModelEffort.tsx:344	CHAT-111
+CHAT-E0255	model-option	Fast	apps/web/src/components/chat/ComposerModelEffort.tsx:646	CHAT-112
+CHAT-E0256	model-option	Standard	apps/web/src/components/chat/ComposerModelEffort.tsx:647	CHAT-112
+CHAT-E0257	menu	Permissions	apps/web/src/components/chat/ComposerFooterControls.tsx:124	CHAT-113
+CHAT-E0258	option	Supervised	apps/web/src/components/chat/runtimeModeConfig.ts:18	CHAT-113
+CHAT-E0259	option	Auto-accept edits	apps/web/src/components/chat/runtimeModeConfig.ts:23	CHAT-114
+CHAT-E0260	option	Auto	apps/web/src/components/chat/runtimeModeConfig.ts:28	CHAT-115
+CHAT-E0261	option	Full access	apps/web/src/components/chat/runtimeModeConfig.ts:33	CHAT-116
+CHAT-E0262	icon-button	Attach files	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:777	CHAT-117
+CHAT-E0263	drop-target	{thread row}	apps/web/src/components/Sidebar.tsx:1509	CHAT-118
+CHAT-E0264	gesture	Drop files in composer	apps/web/src/components/chat/ChatComposer.tsx:2913	CHAT-118
+CHAT-E0265	gesture	Paste files or images	apps/web/src/components/chat/ChatComposer.tsx:3019	CHAT-118
+CHAT-E0266	toast	Large paste attached as {name}	apps/web/src/components/chat/useComposerAttachmentIntake.ts:254	CHAT-119
+CHAT-E0267	tooltip	{shortcut} to keep a large paste inline	apps/web/src/components/chat/useComposerAttachmentIntake.ts:256	CHAT-119
+CHAT-E0268	gesture	Drop a local folder	apps/web/src/components/chat/ChatComposer.tsx:2967	CHAT-120
+CHAT-E0269	icon-button	Retry upload for {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:320	CHAT-121
+CHAT-E0270	icon-button	Retry upload for {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:420	CHAT-121
+CHAT-E0271	icon-button	Retry upload for {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:530	CHAT-121
+CHAT-E0272	button	Attach again	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:501	CHAT-122
+CHAT-E0273	status	Remove to send	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:503	CHAT-122
+CHAT-E0274	icon-button	Remove {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:342	CHAT-123
+CHAT-E0275	icon-button	Remove {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:436	CHAT-123
+CHAT-E0276	icon-button	Remove {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:545	CHAT-123
+CHAT-E0277	icon-button	Remove {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:724	CHAT-123
+CHAT-E0278	icon-button	Preview {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:233	CHAT-124
+CHAT-E0279	icon-button	Preview {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:632	CHAT-124
+CHAT-E0280	icon-button	Close image preview	apps/web/src/components/chat/ExpandedImageDialog.tsx:201	CHAT-124
+CHAT-E0281	icon-button	Play {name}	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:380	CHAT-125
+CHAT-E0282	suggestion-group	Pull requests	apps/web/src/components/chat/ComposerCommandMenu.tsx:314	CHAT-126
+CHAT-E0283	suggestion	#{pullRequest.number}	apps/web/src/components/chat/useComposerMenuItems.ts:409	CHAT-126
+CHAT-E0284	drop-target	Thread context	apps/web/src/components/chat/ChatComposer.tsx:3209	CHAT-127
+CHAT-E0285	attachment	{terminal context}	apps/web/src/components/chat/ComposerPendingTerminalContexts.tsx:18	CHAT-128
+CHAT-E0286	command	composer.stash	packages/contracts/src/keybindings.ts:93	CHAT-129
+CHAT-E0287	icon-button	Stashed prompts: {count}. Open stash.	apps/web/src/components/chat/ComposerStashBadge.tsx:42	CHAT-130
+CHAT-E0288	button	Restore stashed prompt: {snippet}	apps/web/src/components/chat/ComposerStashMenu.tsx:225	CHAT-130
+CHAT-E0289	button	Close stash	apps/web/src/components/chat/ComposerStashMenu.tsx:167	CHAT-130
+CHAT-E0290	icon-button	Delete stashed prompt	apps/web/src/components/chat/ComposerStashMenu.tsx:277	CHAT-131
+CHAT-E0291	slash-command	/model	apps/web/src/components/chat/useComposerMenuItems.ts:262	CHAT-132
+CHAT-E0292	suggestion-group	Commands	apps/web/src/components/chat/ComposerCommandMenu.tsx:315	CHAT-133
+CHAT-E0293	slash-command	/{command.name}	apps/web/src/components/chat/useComposerMenuItems.ts:307	CHAT-133
+CHAT-E0294	suggestion-group	Skills	apps/web/src/components/chat/ComposerCommandMenu.tsx:316	CHAT-134
+CHAT-E0295	slash-command	/skill:{skill.name}	apps/web/src/components/chat/useComposerMenuItems.ts:316	CHAT-134
+CHAT-E0296	suggestion	{provider skill}	apps/web/src/components/chat/useComposerMenuItems.ts:340	CHAT-134
+CHAT-E0297	button	Start voice input	apps/web/src/components/chat/ComposerSpeechButton.tsx:126	CHAT-135
+CHAT-E0298	button	Start dictating	apps/web/src/components/chat/VoiceInputSetup.tsx:292	CHAT-135
+CHAT-E0299	button	Finish voice input	apps/web/src/components/chat/ComposerSpeechButton.tsx:248	CHAT-135
+CHAT-E0300	button	Cancel voice input	apps/web/src/components/chat/ComposerSpeechButton.tsx:196	CHAT-136
+CHAT-E0301	button	Skip	apps/web/src/components/chat/ComposerSpeechButton.tsx:241	CHAT-137
+CHAT-E0302	dialog	Set up voice input	apps/web/src/components/chat/VoiceInputSetup.tsx:105	CHAT-138
+CHAT-E0303	button	Download model	apps/web/src/components/chat/VoiceInputSetup.tsx:277	CHAT-138
+CHAT-E0304	button	Cancel download	apps/web/src/components/chat/VoiceInputSetup.tsx:264	CHAT-138
+CHAT-E0305	button	Retry loading models	apps/web/src/components/chat/VoiceInputSetup.tsx:259	CHAT-138
+CHAT-E0306	button	Try again	apps/web/src/components/chat/VoiceInputSetup.tsx:275	CHAT-138
+CHAT-E0307	button	Other models	apps/web/src/components/chat/VoiceInputSetup.tsx:253	CHAT-138
+CHAT-E0308	button	Choose a model	apps/web/src/components/chat/VoiceInputSetup.tsx:253	CHAT-138
+CHAT-E0309	select-field	Microphone	apps/web/src/components/chat/VoiceInputSetup.tsx:203	CHAT-139
+CHAT-E0310	select-option	System default	apps/web/src/components/chat/VoiceInputSetup.tsx:211	CHAT-139
+CHAT-E0311	select-option	{microphone label}	apps/web/src/components/chat/VoiceInputSetup.tsx:203	CHAT-139
+CHAT-E0312	icon-button	Refresh microphones	apps/web/src/components/chat/VoiceInputSetup.tsx:230	CHAT-139
+CHAT-E0313	button	Voice settings	apps/web/src/components/chat/VoiceInputSetup.tsx:286	CHAT-139
+CHAT-E0314	button	Open voice settings	apps/web/src/components/chat/VoiceInputErrorPill.tsx:45	CHAT-140
+CHAT-E0315	button	Retry transcription	apps/web/src/components/chat/VoiceInputErrorPill.tsx:48	CHAT-140
+CHAT-E0316	button	Record again	apps/web/src/components/chat/VoiceInputErrorPill.tsx:51	CHAT-140
+CHAT-E0317	icon-button	Dismiss voice input error	apps/web/src/components/chat/VoiceInputErrorPill.tsx:61	CHAT-140
+CHAT-E0318	icon-button	Fork from this response	apps/web/src/components/chat/TimelineAssistantRows.tsx:163	CHAT-141
+CHAT-E0319	icon-button	Edit from here	apps/web/src/components/chat/TimelineUserMessageRow.tsx:1198	CHAT-142
+CHAT-E0320	details-section	Side chats	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1145	CHAT-143
+CHAT-E0321	menu-item	Side chat	apps/web/src/components/RightPanelTabs.tsx:424	CHAT-143
+CHAT-E0322	menu-item	Side chat	apps/web/src/components/RightPanelTabs.tsx:1266	CHAT-143
+CHAT-E0323	slash-command	/side	apps/web/src/components/chat/useComposerMenuItems.ts:271	CHAT-144
+CHAT-E0324	slash-command	/btw	apps/web/src/components/chat/useComposerMenuItems.ts:278	CHAT-144
+CHAT-E0325	lineage-action	Open side chat	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:233	CHAT-145
+CHAT-E0326	button	Add to chat	apps/web/src/components/chat/SideThreadPane.tsx:172	CHAT-146
+CHAT-E0327	icon-button	Close side chat	apps/web/src/components/chat/SideThreadPane.tsx:194	CHAT-147
+CHAT-E0328	icon-button	Delete side chat	apps/web/src/components/chat/SideThreadPane.tsx:185	CHAT-148
+CHAT-E0329	icon-button	Open parent thread: {title}	apps/web/src/components/chat/ChatHeader.tsx:308	CHAT-149
+CHAT-E0330	lineage-action	Open parent thread in this chat	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:242	CHAT-149
+CHAT-E0331	lineage-action	Open parent agent in this chat	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:238	CHAT-149
+CHAT-E0332	lineage-action	Open parent agent on {label}	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:478	CHAT-149
+CHAT-E0333	lineage-action	Open fork in this chat	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:241	CHAT-150
+CHAT-E0334	lineage-action	Open context transfer in this chat	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:234	CHAT-150
+CHAT-E0335	lineage-action	Merge back to {parentTitle}	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:999	CHAT-151
+CHAT-E0336	lineage-action	Merge back to source conversation	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1000	CHAT-151
+CHAT-E0337	lineage-action	Open subagent	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:237	CHAT-152
+CHAT-E0338	button	Open subagent	apps/web/src/components/chat/TimelineWorkEntryRow.tsx:683	CHAT-152
+CHAT-E0339	link	Read the thread on {label}	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:372	CHAT-152
+CHAT-E0340	link	Open on {label}	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:373	CHAT-152
+CHAT-E0341	disclosure	Previous agents	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:666	CHAT-152
+CHAT-E0342	icon-button	Stop subagent {threadTitle}	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1038	CHAT-153
+CHAT-E0343	tooltip	Stop subagent	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1051	CHAT-153
+CHAT-E0344	menu	More thread actions	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1089	CHAT-154
+CHAT-E0345	menu-item	Disconnect agent session	apps/web/src/components/chat/ThreadRelationshipsControl.tsx:1099	CHAT-154
+CHAT-E0346	context-menu	Find in thread	apps/web/src/components/threadActionMenu.logic.ts:164	CHAT-155
+CHAT-E0347	palette-action	Find in current thread	apps/web/src/components/CommandPalette.tsx:1424	CHAT-155
+CHAT-E0348	search-field	Find in thread	apps/web/src/components/chat/ThreadFindBar.tsx:100	CHAT-155
+CHAT-E0349	command	chat.find	packages/contracts/src/keybindings.ts:110	CHAT-155
+CHAT-E0350	icon-button	Previous match	apps/web/src/components/chat/ThreadFindBar.tsx:129	CHAT-156
+CHAT-E0351	icon-button	Next match	apps/web/src/components/chat/ThreadFindBar.tsx:138	CHAT-156
+CHAT-E0352	button	Retry	apps/web/src/components/chat/ThreadFindBar.tsx:123	CHAT-157
+CHAT-E0353	icon-button	Close find	apps/web/src/components/chat/ThreadFindBar.tsx:147	CHAT-158
+CHAT-E0354	button	Jump to message: {text}	apps/web/src/components/chat/TimelineMinimap.tsx:152	CHAT-159
+CHAT-E0355	button	Previous turn	apps/web/src/components/chat/TimelineMinimap.tsx:283	CHAT-159
+CHAT-E0356	button	Next turn	apps/web/src/components/chat/TimelineMinimap.tsx:283	CHAT-159
+CHAT-E0357	button	Approve	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:39	CHAT-160
+CHAT-E0358	menu	More approval options	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:117	CHAT-161
+CHAT-E0359	menu-item	Always allow this session	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:36	CHAT-161
+CHAT-E0360	button	Decline	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:34	CHAT-162
+CHAT-E0361	menu-item	Cancel	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:30	CHAT-163
+CHAT-E0362	approval-kind	Command approval	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx:19	CHAT-164
+CHAT-E0363	approval-kind	File change approval	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx:24	CHAT-164
+CHAT-E0364	approval-kind	File read approval	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx:27	CHAT-164
+CHAT-E0365	approval-kind	App permission approval	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx:30	CHAT-164
+CHAT-E0366	approval-kind	App access approval	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx:35	CHAT-164
+CHAT-E0367	approval-action	{provider option.label}	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:52	CHAT-164
+CHAT-E0368	composer-placeholder	Send feedback to decline this request	apps/web/src/components/chat/ChatComposer.tsx:3962	CHAT-165
+CHAT-E0369	composer-placeholder	Send a message to decline and redirect the agent	apps/web/src/components/chat/ChatComposer.tsx:3963	CHAT-165
+CHAT-E0370	question-option	{question option}	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx:327	CHAT-166
+CHAT-E0371	button	Submit	apps/web/src/components/chat/ComposerPrimaryActions.tsx:88	CHAT-166
+CHAT-E0372	button	Submit answer	apps/web/src/components/chat/ComposerPrimaryActions.tsx:94	CHAT-166
+CHAT-E0373	button	Submit answers	apps/web/src/components/chat/ComposerPrimaryActions.tsx:94	CHAT-166
+CHAT-E0374	button	Next	apps/web/src/components/chat/ComposerPrimaryActions.tsx:89	CHAT-167
+CHAT-E0375	button	Next question	apps/web/src/components/chat/ComposerPrimaryActions.tsx:92	CHAT-167
+CHAT-E0376	icon-button	Previous question	apps/web/src/components/chat/ComposerPrimaryActions.tsx:319	CHAT-167
+CHAT-E0377	button	Previous	apps/web/src/components/chat/ComposerPrimaryActions.tsx:331	CHAT-167
+CHAT-E0378	button	Show the question and its options	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx:210	CHAT-168
+CHAT-E0379	button	Hide the question and its options	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx:211	CHAT-168
+CHAT-E0380	icon-button	Dismiss question without answering	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx:245	CHAT-169
+CHAT-E0381	button	Open approval	apps/web/src/components/chat/ThreadActivityBanners.tsx:89	CHAT-170
+CHAT-E0382	button	Open question	apps/web/src/components/chat/ThreadActivityBanners.tsx:89	CHAT-170
+CHAT-E0383	button	Save securely	apps/web/src/components/chat/SecretRequestCard.tsx:184	CHAT-171
+CHAT-E0384	icon-button	Show {label}	apps/web/src/components/chat/SecretRequestCard.tsx:359	CHAT-171
+CHAT-E0385	button	Decline	apps/web/src/components/chat/SecretRequestCard.tsx:298	CHAT-172
+CHAT-E0386	button	Choose machine…	apps/web/src/components/chat/LinkRequestCard.tsx:156	CHAT-173
+CHAT-E0387	button	Review link…	apps/web/src/components/chat/LinkRequestCard.tsx:156	CHAT-173
+CHAT-E0388	form-field	Address	apps/web/src/components/chat/LinkRequestCard.tsx:375	CHAT-173
+CHAT-E0389	form-field	Pairing code	apps/web/src/components/chat/LinkRequestCard.tsx:414	CHAT-173
+CHAT-E0390	button	Another address…	apps/web/src/components/chat/LinkRequestCard.tsx:534	CHAT-173
+CHAT-E0391	button	Continue	apps/web/src/components/chat/LinkRequestCard.tsx:489	CHAT-173
+CHAT-E0392	button	Use this link	apps/web/src/components/chat/LinkRequestCard.tsx:486	CHAT-173
+CHAT-E0393	button	Link	apps/web/src/components/chat/LinkRequestCard.tsx:488	CHAT-173
+CHAT-E0394	button	Back	apps/web/src/components/chat/LinkRequestCard.tsx:471	CHAT-173
+CHAT-E0395	button	Cancel	apps/web/src/components/chat/LinkRequestCard.tsx:475	CHAT-173
+CHAT-E0396	button	Decline	apps/web/src/components/chat/LinkRequestCard.tsx:153	CHAT-174
+CHAT-E0397	card	Feedback for the T3 team	apps/web/src/components/chat/FeedbackRequestCard.tsx:33	CHAT-175
+CHAT-E0398	checkbox	Include the conversation	apps/web/src/components/chat/FeedbackRequestCard.tsx:139	CHAT-175
+CHAT-E0399	button	Send	apps/web/src/components/chat/FeedbackRequestCard.tsx:174	CHAT-175
+CHAT-E0400	button	Don't send	apps/web/src/components/chat/FeedbackRequestCard.tsx:171	CHAT-176
+CHAT-E0401	button	Show full message	apps/web/src/components/chat/TimelineUserMessageRow.tsx:1275	CHAT-177
+CHAT-E0402	button	Show less	apps/web/src/components/chat/TimelineUserMessageRow.tsx:1275	CHAT-177
+CHAT-E0403	icon-button	Copy message	apps/web/src/components/chat/MessageCopyButton.tsx:30	CHAT-178
+CHAT-E0404	palette-action	Copy prompt link	apps/web/src/components/CommandPalette.tsx:1481	CHAT-179
+CHAT-E0405	message-action	Copy prompt link	apps/web/src/components/chat/TimelineUserMessageRow.tsx:380	CHAT-179
+CHAT-E0406	message-action	Copy prompt link	apps/web/src/components/chat/TimelineUserMessageRow.tsx:895	CHAT-179
+CHAT-E0407	palette-action	Copy prompt link with repo and model	apps/web/src/components/CommandPalette.tsx:1492	CHAT-180
+CHAT-E0408	button	Cite	apps/web/src/components/chat/AssistantSelectionToolbar.tsx:217	CHAT-181
+CHAT-E0409	accessible-label	Cite selection in composer	apps/web/src/components/chat/AssistantSelectionToolbar.tsx:201	CHAT-181
+CHAT-E0410	button	View cited assistant text: {label}	apps/web/src/components/chat/AssistantCitationChip.tsx:259	CHAT-181
+CHAT-E0411	button	Add comment to citation	apps/web/src/components/chat/AssistantCitationChip.tsx:288	CHAT-182
+CHAT-E0412	button	Edit citation comment	apps/web/src/components/chat/AssistantCitationChip.tsx:328	CHAT-182
+CHAT-E0413	text-field	Comment on selected text	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx:86	CHAT-182
+CHAT-E0414	button	Cancel	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx:133	CHAT-182
+CHAT-E0415	button	Shorten comment	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx:142	CHAT-182
+CHAT-E0416	button	Save	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx:143	CHAT-182
+CHAT-E0417	citation	Go to quoted response: {label}	apps/web/src/components/chat/AssistantCitationChip.tsx:134	CHAT-183
+CHAT-E0418	citation	Go to the response this replies to: {label}	apps/web/src/components/chat/AssistantCitationChip.tsx:172	CHAT-183
+CHAT-E0419	button	Expand plan	apps/web/src/components/chat/ProposedPlanCard.tsx:239	CHAT-184
+CHAT-E0420	button	Collapse plan	apps/web/src/components/chat/ProposedPlanCard.tsx:239	CHAT-184
+CHAT-E0421	menu	Plan actions	apps/web/src/components/chat/ProposedPlanCard.tsx:181	CHAT-185
+CHAT-E0422	menu-item	Copy to clipboard	apps/web/src/components/chat/ProposedPlanCard.tsx:187	CHAT-185
+CHAT-E0423	menu-item	Download as markdown	apps/web/src/components/chat/ProposedPlanCard.tsx:190	CHAT-186
+CHAT-E0424	menu-item	Save to workspace	apps/web/src/components/chat/ProposedPlanCard.tsx:196	CHAT-187
+CHAT-E0425	dialog	Save plan to workspace	apps/web/src/components/chat/ProposedPlanCard.tsx:293	CHAT-187
+CHAT-E0426	form-field	Workspace path	apps/web/src/components/chat/ProposedPlanCard.tsx:314	CHAT-187
+CHAT-E0427	button	Cancel	apps/web/src/components/chat/ProposedPlanCard.tsx:328	CHAT-187
+CHAT-E0428	button	Save	apps/web/src/components/chat/ProposedPlanCard.tsx:331	CHAT-187
+CHAT-E0429	disclosure	Details	apps/web/src/components/chat/MarkdownDetails.tsx:43	CHAT-188
+CHAT-E0430	disclosure	Tool calls	apps/web/src/components/chat/TimelineWorkGroupRows.tsx:337	CHAT-188
+CHAT-E0431	disclosure	Activity	apps/web/src/components/chat/TimelineWorkGroupRows.tsx:114	CHAT-188
+CHAT-E0432	disclosure	{tool activity label}	apps/web/src/components/chat/TimelineWorkEntryRow.tsx:576	CHAT-189
+CHAT-E0433	status	Loading output…	apps/web/src/components/chat/CommandOutputPanel.tsx:65	CHAT-189
+CHAT-E0434	status	No output.	apps/web/src/components/chat/CommandOutputPanel.tsx:71	CHAT-189
+CHAT-E0435	status	Earlier output not shown	apps/web/src/components/chat/CommandOutputPanel.tsx:89	CHAT-189
+CHAT-E0436	button	Open diff	apps/web/src/components/chat/V2ItemInspector.tsx:323	CHAT-190
+CHAT-E0437	icon-button	Copy code	apps/web/src/components/chat/MarkdownCodeBlock.tsx:172	CHAT-191
+CHAT-E0438	status	Copied	apps/web/src/components/chat/MarkdownCodeBlock.tsx:172	CHAT-191
+CHAT-E0439	menu	Code block actions	apps/web/src/components/chat/MarkdownCodeBlock.tsx:227	CHAT-192
+CHAT-E0440	button	Wrap lines	apps/web/src/components/chat/MarkdownCodeBlock.tsx:171	CHAT-192
+CHAT-E0441	button	Disable line wrap	apps/web/src/components/chat/MarkdownCodeBlock.tsx:171	CHAT-192
+CHAT-E0442	icon-button	Run in terminal	apps/web/src/components/chat/MarkdownCodeBlock.tsx:255	CHAT-193
+CHAT-E0443	button	Show diagram	apps/web/src/components/chat/MarkdownMermaidCodeBlock.tsx:33	CHAT-194
+CHAT-E0444	button	Show code	apps/web/src/components/chat/MarkdownMermaidCodeBlock.tsx:33	CHAT-194
+CHAT-E0445	button	Preview image	apps/web/src/components/chat/ChatMarkdownMedia.tsx:124	CHAT-195
+CHAT-E0446	button	Preview {name}	apps/web/src/components/chat/ChatMarkdownMedia.tsx:123	CHAT-195
+CHAT-E0447	button	Preview {label}	apps/web/src/components/chat/TimelineUserMessageRow.tsx:786	CHAT-195
+CHAT-E0448	button	Close image preview	apps/web/src/components/chat/ExpandedImageDialog.tsx:201	CHAT-195
+CHAT-E0449	button	Close video preview	apps/web/src/components/chat/ExpandedImageDialog.tsx:201	CHAT-195
+CHAT-E0450	icon-button	Open full screen	apps/web/src/components/chat/HtmlRenderFrame.tsx:107	CHAT-196
+CHAT-E0451	icon-button	Zoom out	apps/web/src/components/chat/HtmlRenderDialog.tsx:79	CHAT-196
+CHAT-E0452	icon-button	Reset zoom	apps/web/src/components/chat/HtmlRenderDialog.tsx:88	CHAT-196
+CHAT-E0453	icon-button	Zoom in	apps/web/src/components/chat/HtmlRenderDialog.tsx:96	CHAT-196
+CHAT-E0454	icon-button	Close	apps/web/src/components/chat/HtmlRenderDialog.tsx:54	CHAT-196
+CHAT-E0455	file-link	{file label}	apps/web/src/components/chat/MarkdownFileLink.tsx:68	CHAT-197
+CHAT-E0456	icon-button	File options for {label}	apps/web/src/components/chat/MarkdownFileLink.tsx:384	CHAT-197
+CHAT-E0457	context-menu	Preview media	apps/web/src/components/chat/MarkdownFileLink.tsx:262	CHAT-198
+CHAT-E0458	context-menu	Open in editor	apps/web/src/editorLabels.ts:29	CHAT-199
+CHAT-E0459	context-menu	Open in {editor}	apps/web/src/editorLabels.ts:31	CHAT-199
+CHAT-E0460	context-menu	Open app	apps/web/src/components/ChatMarkdown.tsx:1064	CHAT-199
+CHAT-E0461	context-menu	Open in integrated browser	apps/web/src/components/chat/MarkdownFileLink.tsx:265	CHAT-200
+CHAT-E0462	context-menu	Reveal in Finder	apps/web/src/components/preview/fileExplorerLabel.ts:27	CHAT-201
+CHAT-E0463	context-menu	Copy full path	apps/web/src/components/chat/MarkdownFileLink.logic.ts:39	CHAT-202
+CHAT-E0464	context-menu	Copy relative path	apps/web/src/components/chat/MarkdownFileLink.logic.ts:48	CHAT-203
+CHAT-E0465	context-menu	Open in integrated browser	apps/web/src/components/chat/externalLinkContextMenu.ts:30	CHAT-204
+CHAT-E0466	context-menu	Open in system browser	apps/web/src/components/chat/externalLinkContextMenu.ts:31	CHAT-205
+CHAT-E0467	context-menu	Copy Link	apps/web/src/components/chat/externalLinkContextMenu.ts:32	CHAT-206
+CHAT-E0468	context-menu	Link to thread	apps/web/src/components/chat/externalLinkContextMenu.ts:50	CHAT-207
+CHAT-E0469	palette-action	Link pull request to thread	apps/web/src/components/CommandPalette.tsx:1528	CHAT-207
+CHAT-E0470	context-menu	Unlink from thread	apps/web/src/components/chat/externalLinkContextMenu.ts:51	CHAT-208
+CHAT-E0471	button	Show app	apps/web/src/components/chat/McpAppFrame.tsx:447	CHAT-209
+CHAT-E0472	button	Exit full screen	apps/web/src/components/chat/McpAppFrame.tsx:493	CHAT-209
+CHAT-E0473	confirmation	Allow {server} to run {tool}?	apps/web/src/components/chat/McpAppFrame.tsx:296	CHAT-210
+CHAT-E0474	confirmation	Send this message from {server}?	apps/web/src/components/chat/McpAppFrame.tsx:327	CHAT-211
+CHAT-E0475	confirmation	Save {names} from {server}?	apps/web/src/components/chat/McpAppFrame.tsx:364	CHAT-212
+CHAT-E0476	button	Sign in	apps/web/src/components/chat/McpSignInAction.tsx:121	CHAT-213
+CHAT-E0477	dialog	Sign in to {server}	apps/web/src/components/chat/McpSignInAction.tsx:132	CHAT-213
+CHAT-E0478	button	Open sign-in page	apps/web/src/components/chat/McpSignInAction.tsx:162	CHAT-213
+CHAT-E0479	button	Copy link	apps/web/src/components/chat/McpSignInAction.tsx:166	CHAT-213
+CHAT-E0480	form-field	Address of the page your browser opened	apps/web/src/components/chat/McpSignInAction.tsx:170	CHAT-213
+CHAT-E0481	button	Cancel	apps/web/src/components/chat/McpSignInAction.tsx:192	CHAT-213
+CHAT-E0482	button	Try again	apps/web/src/components/chat/McpSignInAction.tsx:196	CHAT-213
+CHAT-E0483	button	Finish sign-in	apps/web/src/components/chat/McpSignInAction.tsx:206	CHAT-213
+CHAT-E0484	select-field	Workspace	apps/web/src/components/BranchToolbarEnvModeSelector.tsx:129	CHAT-214
+CHAT-E0485	select-option	Current checkout	apps/web/src/components/BranchToolbar.logic.ts:123	CHAT-214
+CHAT-E0486	select-option	New worktree	apps/web/src/components/BranchToolbar.logic.ts:123	CHAT-215
+CHAT-E0487	status	Preparing worktree	apps/web/src/components/chat/ComposerPrimaryActions.tsx:410	CHAT-215
+CHAT-E0488	select-option	Previous worktree	apps/web/src/components/PreviousWorktreeItemContent.tsx:12	CHAT-216
+CHAT-E0489	select-option	Previous worktree ({branch})	apps/web/src/components/BranchToolbar.logic.ts:196	CHAT-216
+CHAT-E0490	combobox	Select ref	apps/web/src/components/BranchToolbar.logic.ts:302	CHAT-217
+CHAT-E0491	search-field	Search refs...	apps/web/src/components/BranchPicker.tsx:110	CHAT-217
+CHAT-E0492	select-option	{Git ref}	apps/web/src/components/WorktreeBaseBranchPicker.tsx:105	CHAT-217
+CHAT-E0493	toggle	Start from remote	apps/web/src/components/BranchPicker.tsx:172	CHAT-218
+CHAT-E0494	accessible-label	Start worktree from remote	apps/web/src/components/BranchPicker.tsx:179	CHAT-218
+CHAT-E0495	menu	Run on	apps/web/src/components/BranchToolbar.tsx:362	CHAT-219
+CHAT-E0496	menu-option	{environment label}	apps/web/src/components/BranchToolbar.tsx:366	CHAT-219
+CHAT-E0497	button	Add to another machine	apps/web/src/components/BranchToolbar.tsx:411	CHAT-219
+CHAT-E0498	menu-option	Auto balance	apps/web/src/components/BranchToolbar.tsx:384	CHAT-220
+CHAT-E0499	status	Checking machines…	apps/web/src/components/chat/useDraftEnvironmentRouting.ts:263	CHAT-220
+CHAT-E0500	status	Auto balance unavailable	apps/web/src/components/chat/useDraftEnvironmentRouting.ts:265	CHAT-220
+CHAT-E0501	context-menu	Copy full path	apps/web/src/components/BranchToolbar.tsx:131	CHAT-221
+CHAT-E0502	status	Setting up worktree…	apps/web/src/components/chat/WorktreeSetupCard.tsx:116	CHAT-222
+CHAT-E0503	status	Worktree ready	apps/web/src/components/chat/WorktreeSetupCard.tsx:120	CHAT-222
+CHAT-E0504	status	Worktree ready, setup script failed	apps/web/src/components/chat/WorktreeSetupCard.tsx:119	CHAT-222
+CHAT-E0505	status	Worktree setup failed	apps/web/src/components/chat/WorktreeSetupCard.tsx:122	CHAT-222
+CHAT-E0506	status	Worktree setup cancelled	apps/web/src/components/chat/WorktreeSetupCard.tsx:124	CHAT-222
+CHAT-E0507	disclosure	Details	apps/web/src/components/chat/WorktreeSetupCard.tsx:384	CHAT-222
+CHAT-E0508	button	Open terminal	apps/web/src/components/chat/WorktreeSetupCard.tsx:389	CHAT-223
+CHAT-E0509	button	Cancel	apps/web/src/components/chat/WorktreeSetupCard.tsx:401	CHAT-224
+CHAT-E0510	button	Work locally	apps/web/src/components/chat/WorktreeSetupCard.tsx:395	CHAT-225
+CHAT-E0511	button	Retry	apps/web/src/components/chat/TimelineWorkEntryRow.tsx:417	CHAT-226
+CHAT-E0512	button	Restore branch	apps/web/src/components/chat/ThreadActivityBanners.tsx:348	CHAT-227
+CHAT-E0513	text-field	Project name	apps/web/src/components/settings/ProjectSettingsPanel.tsx:583	CHAT-228
+CHAT-E0514	button	Reset project name to default	apps/web/src/components/settings/ProjectSettingsPanel.tsx:567	CHAT-229
+CHAT-E0515	button	Choose icon	apps/web/src/components/settings/ProjectSettingsPanel.tsx:632	CHAT-230
+CHAT-E0516	tab	Icons	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:137	CHAT-230
+CHAT-E0517	tab	Emoji	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:140	CHAT-230
+CHAT-E0518	tab	Monogram	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:143	CHAT-230
+CHAT-E0519	form-field	Color	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:150	CHAT-230
+CHAT-E0520	form-field	Letters	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:229	CHAT-230
+CHAT-E0521	form-field	Or paste any emoji	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:267	CHAT-230
+CHAT-E0522	button	Save icon	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:289	CHAT-230
+CHAT-E0523	button	Cancel	apps/web/src/components/settings/ProjectIconPickerDialog.tsx:286	CHAT-230
+CHAT-E0524	button	Choose file	apps/web/src/components/settings/ProjectSettingsPanel.tsx:642	CHAT-231
+CHAT-E0525	accessible-label	Choose a project icon file	apps/web/src/components/settings/ProjectSettingsPanel.tsx:638	CHAT-231
+CHAT-E0526	button	Reset project icon to default	apps/web/src/components/settings/ProjectSettingsPanel.tsx:615	CHAT-232
+CHAT-E0527	button	Archive	apps/web/src/components/settings/ProjectSettingsPanel.tsx:689	CHAT-233
+CHAT-E0528	button	Unarchive	apps/web/src/components/settings/ProjectSettingsPanel.tsx:688	CHAT-234
+CHAT-E0529	button	Remove checkout	apps/web/src/components/settings/ProjectSettingsPanel.tsx:731	CHAT-235
+CHAT-E0530	icon-button	Remove checkout {path}	apps/web/src/components/settings/ProjectSettingsPanel.tsx:455	CHAT-235
+CHAT-E0531	button	Remove	apps/web/src/components/settings/ProjectSettingsPanel.tsx:457	CHAT-235
+CHAT-E0532	button	Remove project	apps/web/src/components/settings/ProjectSettingsPanel.tsx:734	CHAT-236
+CHAT-E0533	section	Remove this project everywhere	apps/web/src/components/settings/ProjectSettingsPanel.tsx:707	CHAT-237
+CHAT-E0534	button	Remove all entries	apps/web/src/components/settings/ProjectSettingsPanel.tsx:733	CHAT-237
+CHAT-E0535	select-field	Grouping rule for {path} on {environment}	apps/web/src/components/settings/ProjectSettingsPanel.tsx:123	CHAT-238
+CHAT-E0536	select-option	Use global default	apps/web/src/components/settings/ProjectSettingsPanel.tsx:138	CHAT-238
+CHAT-E0537	icon-button	Toggle thread details panel	apps/web/src/components/chat/PanelLayoutControls.tsx:67	CHAT-239
+CHAT-E0538	button	Choose what to show	apps/web/src/components/chat/ThreadDetailsPanel.tsx:349	CHAT-240
+CHAT-E0539	menu	Show in thread details	apps/web/src/components/chat/ThreadDetailsItemsMenu.tsx:24	CHAT-240
+CHAT-E0540	checkbox	Environment and worktree	apps/web/src/components/chat/threadDetailsItems.ts:6	CHAT-240
+CHAT-E0541	checkbox	Open in editor	apps/web/src/components/chat/threadDetailsItems.ts:7	CHAT-240
+CHAT-E0542	checkbox	Project scripts	apps/web/src/components/chat/threadDetailsItems.ts:8	CHAT-240
+CHAT-E0543	checkbox	Branch and pull request	apps/web/src/components/chat/threadDetailsItems.ts:9	CHAT-240
+CHAT-E0544	checkbox	Git actions	apps/web/src/components/chat/threadDetailsItems.ts:10	CHAT-240
+CHAT-E0545	checkbox	Changes	apps/web/src/components/chat/threadDetailsItems.ts:13	CHAT-240
+CHAT-E0546	checkbox	Servers	apps/web/src/components/chat/threadDetailsItems.ts:18	CHAT-240
+CHAT-E0547	checkbox	Automations	apps/web/src/components/chat/threadDetailsItems.ts:21	CHAT-240
+CHAT-E0548	checkbox	Lineage	apps/web/src/components/chat/threadDetailsItems.ts:24	CHAT-240
+CHAT-E0549	checkbox	Side chats	apps/web/src/components/chat/threadDetailsItems.ts:27	CHAT-240
+CHAT-E0550	checkbox	Usage limits	apps/web/src/components/chat/threadDetailsItems.ts:28	CHAT-240
+CHAT-E0551	checkbox	Context window	apps/web/src/components/chat/threadDetailsItems.ts:29	CHAT-240
+CHAT-E0552	menu-item	Reset to default	apps/web/src/components/chat/ThreadDetailsItemsMenu.tsx:45	CHAT-241
+CHAT-E0553	disclosure	{project displayName}	apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx:80	CHAT-242
+CHAT-E0554	disclosure	Working	apps/web/src/components/Sidebar.tsx:3727	CHAT-243
+CHAT-E0555	disclosure	Snoozed	apps/web/src/components/Sidebar.tsx:3742	CHAT-244
+CHAT-E0556	disclosure	Settled	apps/web/src/components/Sidebar.tsx:3759	CHAT-245
+CHAT-E0557	button	Show {count} more	apps/web/src/components/Sidebar.tsx:3813	CHAT-245
+CHAT-E0558	button	Undo	apps/web/src/hooks/showThreadUndoNotice.ts:60	CHAT-246
+CHAT-E0559	command	thread.undo	packages/contracts/src/keybindings.ts:47	CHAT-246
+CHAT-E0560	palette-result	{thread title}	apps/web/src/components/CommandPaletteThreadItems.tsx:148	CHAT-247
+CHAT-E0561	palette-result	{message match}	apps/web/src/components/CommandPaletteThreadItems.tsx:226	CHAT-247
+CHAT-E0562	keyboard	Back	apps/web/src/components/CommandPaletteContent.tsx:117	CHAT-247
+CHAT-E0563	keyboard	Close	apps/web/src/components/CommandPaletteContent.tsx:123	CHAT-247
+CHAT-E0564	keyboard	ArrowUp	apps/web/src/components/chat/composerCommandKey.ts:284	CHAT-248
+CHAT-E0565	keyboard	ArrowDown	apps/web/src/components/chat/composerCommandKey.ts:284	CHAT-248
+CHAT-E0566	button	Use suggested prompt	apps/web/src/components/chat/ChatComposer.tsx:3984	CHAT-249
+CHAT-E0567	keyboard	Tab	apps/web/src/components/chat/composerCommandKey.ts:271	CHAT-249
+CHAT-E0568	card	{name} template	apps/web/src/components/ChatMarkdown.tsx:312	CHAT-250
+CHAT-E0569	button	Use template	apps/web/src/components/ChatMarkdown.tsx:340	CHAT-250
+CHAT-E0570	icon-button	Copy snapshot	apps/web/src/components/chat/SnapShotAttachmentDetails.tsx:96	CHAT-251
+CHAT-E0571	icon-button	View accessibility data	apps/web/src/components/chat/SnapShotAttachmentDetails.tsx:157	CHAT-252
+CHAT-E0572	status	No accessibility data	apps/web/src/components/chat/SnapShotAttachmentDetails.tsx:158	CHAT-252
+CHAT-E0573	context-menu	Share with guest	apps/web/src/components/threadActionMenu.logic.ts:240	CHAT-253
+CHAT-E0574	palette-action	Share with guest	apps/web/src/components/CommandPalette.tsx:1555	CHAT-253
+CHAT-E0575	button	Create link	apps/web/src/components/chat/GuestShareControls.tsx:178	CHAT-253
+CHAT-E0576	button	Cancel	apps/web/src/components/chat/GuestShareControls.tsx:171	CHAT-253
+CHAT-E0577	form-field	Guest link	apps/web/src/components/chat/GuestShareControls.tsx:136	CHAT-253
+CHAT-E0578	button	Copy	apps/web/src/components/chat/GuestShareControls.tsx:142	CHAT-254
+CHAT-E0579	status	Copied	apps/web/src/components/chat/GuestShareControls.tsx:142	CHAT-254
+CHAT-E0580	button	Stop sharing	apps/web/src/components/chat/GuestShareControls.tsx:213	CHAT-255
+CHAT-E0581	button	Send message from {guestName}	apps/web/src/components/chat/GuestShareControls.tsx:341	CHAT-256
+CHAT-E0582	button	Send	apps/web/src/components/chat/GuestShareControls.tsx:344	CHAT-256
+CHAT-E0583	button	Dismiss message from {guestName}	apps/web/src/components/chat/GuestShareControls.tsx:333	CHAT-257
+CHAT-E0584	button	Dismiss	apps/web/src/components/chat/GuestShareControls.tsx:336	CHAT-257
+CHAT-E0585	button	Resume at reset	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:204	CHAT-258
+CHAT-E0586	button	Cancel auto-resume	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:201	CHAT-258
+CHAT-E0587	button	Snooze until reset	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:211	CHAT-259
+CHAT-E0588	button	Wake now	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:211	CHAT-259
+CHAT-E0589	button	Resume now	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:203	CHAT-260
+CHAT-E0590	button	Copy request for admin	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:142	CHAT-261
+CHAT-E0591	button	Copy request for admin	apps/web/src/components/chat/ThreadErrorBanner.tsx:128	CHAT-261
+CHAT-E0592	button	Force stop	apps/web/src/components/chat/ThreadActivityBanners.tsx:189	CHAT-262
+CHAT-E0593	status	Force stopping...	apps/web/src/components/chat/ThreadActivityBanners.tsx:189	CHAT-262
+CHAT-E0594	button	Stop	apps/web/src/components/chat/ThreadActivityBanners.tsx:297	CHAT-263
+CHAT-E0595	button	Resume	apps/web/src/components/chat/ThreadActivityBanners.tsx:137	CHAT-264
+CHAT-E0596	button	Clear	apps/web/src/components/chat/ThreadActivityBanners.tsx:146	CHAT-265
+CHAT-E0597	icon-button	Dismiss error	apps/web/src/components/chat/ThreadErrorBanner.tsx:137	CHAT-266
+CHAT-E0598	icon-button	Dismiss {provider} provider error	apps/web/src/components/chat/ProviderStatusBanner.tsx:236	CHAT-266
+CHAT-E0599	icon-button	Dismiss {provider} provider warning	apps/web/src/components/chat/ProviderStatusBanner.tsx:238	CHAT-266
+CHAT-E0600	icon-button	Dismiss {provider} provider ready	apps/web/src/components/chat/ProviderStatusBanner.tsx:240	CHAT-266
+CHAT-E0601	icon-button	Dismiss {provider} provider disabled	apps/web/src/components/chat/ProviderStatusBanner.tsx:241	CHAT-266
+CHAT-E0602	button	Open provider setup	apps/web/src/components/chat/ProviderStatusBanner.tsx:216	CHAT-267
+CHAT-E0603	button	Open provider settings	apps/web/src/components/chat/ComposerControlsBar.tsx:264	CHAT-267
+CHAT-E0604	button	Set up {provider}	apps/web/src/components/chat/ModelPickerContent.tsx:243	CHAT-267
+CHAT-E0605	button	Provider settings	apps/web/src/components/chat/ModelPickerContent.tsx:267	CHAT-267
+CHAT-E0606	command	composer.sendBackground	packages/contracts/src/keybindings.ts:95	CHAT-268
+CHAT-E0607	toast	Started in background	apps/web/src/components/chat/useComposerSend.ts:1655	CHAT-268
+CHAT-E0608	button	Open	apps/web/src/components/chat/useComposerSend.ts:1658	CHAT-268
+CHAT-E0609	command	composer.sendAndNewThread	packages/contracts/src/keybindings.ts:96	CHAT-269
+CHAT-E0610	icon-button	Expand composer	apps/web/src/components/chat/ChatComposer.tsx:3766	CHAT-270
+CHAT-E0611	combobox	Code language: {language}	apps/web/src/components/chat/ComposerCodeBlockLanguagePicker.tsx:80	CHAT-271
+CHAT-E0612	search-field	Search languages	apps/web/src/components/chat/ComposerCodeBlockLanguagePicker.tsx:92	CHAT-271
+CHAT-E0613	combobox-option	{language label}	apps/web/src/components/chat/ComposerCodeBlockLanguagePicker.tsx:104	CHAT-271
+CHAT-E0614	button	Clone {repository}	apps/web/src/components/promptLinks/NewThreadLinkView.tsx:397	CHAT-272
+CHAT-E0615	button	Open it again	apps/web/src/components/promptLinks/NewThreadLinkView.tsx:378	CHAT-272
+CHAT-E0616	button	Use without project	apps/web/src/components/promptLinks/NewThreadLinkView.tsx:400	CHAT-273
+CHAT-E0617	native-context-menu	{dictionary suggestion}	apps/desktop/src/window/DesktopWindow.ts:694	CHAT-274
+CHAT-E0618	native-context-menu	No suggestions	apps/desktop/src/window/DesktopWindow.ts:701	CHAT-274
+CHAT-E0619	native-context-menu	Cut	apps/desktop/src/window/DesktopWindow.ts:749	CHAT-275
+CHAT-E0620	mac-menu	Cut	apps/desktop/src/window/DesktopApplicationMenu.ts:314	CHAT-275
+CHAT-E0621	native-context-menu	Copy	apps/desktop/src/window/DesktopWindow.ts:754	CHAT-276
+CHAT-E0622	mac-menu	Copy	apps/desktop/src/window/DesktopApplicationMenu.ts:315	CHAT-276
+CHAT-E0623	native-context-menu	Paste	apps/desktop/src/window/DesktopWindow.ts:759	CHAT-277
+CHAT-E0624	mac-menu	Paste	apps/desktop/src/window/DesktopApplicationMenu.ts:316	CHAT-277
+CHAT-E0625	mac-menu	Paste as Text	apps/desktop/src/window/DesktopApplicationMenu.ts:318	CHAT-277
+CHAT-E0626	native-context-menu	Select All	apps/desktop/src/window/DesktopWindow.ts:764	CHAT-278
+CHAT-E0627	mac-menu	Select All	apps/desktop/src/window/DesktopApplicationMenu.ts:324	CHAT-278
+CHAT-E0628	native-context-menu	Copy Image	apps/desktop/src/window/DesktopWindow.ts:733	CHAT-279
+CHAT-E0629	native-context-menu	Copy Email Address	apps/desktop/src/window/DesktopWindow.ts:722	CHAT-280
+CHAT-E0630	native-context-menu	Copy Link	apps/desktop/src/window/DesktopWindow.ts:709	CHAT-281
+CHAT-E0631	agent-tool	t3_submit_output	apps/server/src/mcp/toolkits/thread/tools.ts:244	CHAT-282
+CHAT-E0632	agent-tool	t3_thread_wait	apps/server/src/mcp/toolkits/orchestrator/tools.ts:297	CHAT-282
+CHAT-E0633	combobox	Choose a project	apps/web/src/components/chat/DraftHeroHeadline.tsx:247	CHAT-283
+CHAT-E0634	combobox	{activeProjectTitle}	apps/web/src/components/chat/DraftHeroHeadline.tsx:247	CHAT-283
+CHAT-E0635	search-field	Search projects	apps/web/src/components/chat/DraftHeroHeadline.tsx:262	CHAT-283
+CHAT-E0636	combobox-option	{project label}	apps/web/src/components/chat/DraftHeroHeadline.tsx:228	CHAT-283
+CHAT-E0637	combobox-option	{project label}	apps/web/src/components/chat/DraftHeroHeadline.tsx:232	CHAT-284
+CHAT-E0638	button	or start without a project	apps/web/src/components/chat/DraftHeroHeadline.tsx:346	CHAT-285
+CHAT-E0639	combobox	No project	apps/web/src/components/chat/DraftHeroHeadline.tsx:247	CHAT-285
+CHAT-E0640	combobox-option	Add project	apps/web/src/components/chat/DraftHeroHeadline.tsx:148	CHAT-286
+CHAT-E0641	button	Add a project to start	apps/web/src/components/chat/DraftHeroHeadline.tsx:379	CHAT-286
+CHAT-E0642	icon-button	Add to favorites	apps/web/src/components/chat/ModelListRow.tsx:120	CHAT-287
+CHAT-E0643	icon-button	Remove from favorites	apps/web/src/components/chat/ModelListRow.tsx:120	CHAT-288
+CHAT-E0644	button	Edit snooze options	apps/web/src/components/CustomSnoozeDialog.tsx:265	CHAT-289
+CHAT-E0645	status	Update this server to send files with question answers	apps/web/src/components/chat/ChatComposer.tsx:865	CHAT-290
+CHAT-E0646	icon-button	Attach files	apps/web/src/components/chat/ComposerAttachmentStrip.tsx:777	CHAT-290
+CHAT-E0647	icon-button	Stop workflow {label}	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:178	CHAT-291
+CHAT-E0648	tooltip	Stop entire workflow	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:191	CHAT-291
+CHAT-E0649	disclosure	Expand {label}	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:203	CHAT-292
+CHAT-E0650	disclosure	Collapse {label}	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:203	CHAT-292
+CHAT-E0651	disclosure	Expand {title} phase, {status}	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:233	CHAT-292
+CHAT-E0652	disclosure	Collapse {title} phase, {status}	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:229	CHAT-292
+CHAT-E0653	lineage-action	Open {title} chat	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx:92	CHAT-292
+CHAT-E0654	message-action	Open source conversation	apps/web/src/components/chat/V2LifecycleRow.tsx:115	CHAT-293
+CHAT-E0655	message-action	Open fork	apps/web/src/components/chat/V2LifecycleRow.tsx:115	CHAT-293
+CHAT-E0656	button	Open chat	apps/web/src/components/chat/V2LifecycleRow.tsx:143	CHAT-293
+CHAT-E0657	button	Open chat	apps/web/src/components/chat/TimelineWorkEntryRow.tsx:671	CHAT-293
+CHAT-E0658	palette-action	Copy PR link	apps/web/src/components/CommandPalette.tsx:1510	CHAT-294
+CHAT-E0659	palette-action	Show linked items	apps/web/src/components/CommandPalette.tsx:1538	CHAT-295
+CHAT-E0660	mac-menu	Undo	apps/desktop/src/window/DesktopApplicationMenu.ts:311	CHAT-296
+CHAT-E0661	mac-menu	Redo	apps/desktop/src/window/DesktopApplicationMenu.ts:312	CHAT-297
+CHAT-E0662	command	thread.jump.1	packages/contracts/src/keybindings.ts:11	CHAT-008
+CHAT-E0663	command	thread.jump.2	packages/contracts/src/keybindings.ts:12	CHAT-008
+CHAT-E0664	command	thread.jump.3	packages/contracts/src/keybindings.ts:13	CHAT-008
+CHAT-E0665	command	thread.jump.4	packages/contracts/src/keybindings.ts:14	CHAT-008
+CHAT-E0666	command	thread.jump.5	packages/contracts/src/keybindings.ts:15	CHAT-008
+CHAT-E0667	command	thread.jump.6	packages/contracts/src/keybindings.ts:16	CHAT-008
+CHAT-E0668	command	thread.jump.7	packages/contracts/src/keybindings.ts:17	CHAT-008
+CHAT-E0669	command	thread.jump.8	packages/contracts/src/keybindings.ts:18	CHAT-008
+CHAT-E0670	command	thread.jump.9	packages/contracts/src/keybindings.ts:19	CHAT-008
+CHAT-E0671	command	thread.previous	packages/contracts/src/keybindings.ts:41	CHAT-007
+CHAT-E0672	command	thread.next	packages/contracts/src/keybindings.ts:42	CHAT-007
+CHAT-E0673	command	modelPicker.toggle	packages/contracts/src/keybindings.ts:52	CHAT-108
+CHAT-E0674	command	modelPicker.previousProvider	packages/contracts/src/keybindings.ts:53	CHAT-110
+CHAT-E0675	command	modelPicker.nextProvider	packages/contracts/src/keybindings.ts:54	CHAT-110
+CHAT-E0676	command	sidebar.toggle	packages/contracts/src/keybindings.ts:61	CHAT-020
+CHAT-E0677	command	navigation.back	packages/contracts/src/keybindings.ts:62	CHAT-021
+CHAT-E0678	command	navigation.forward	packages/contracts/src/keybindings.ts:63	CHAT-021
+CHAT-E0679	command	threadPanel.toggle	packages/contracts/src/keybindings.ts:73	CHAT-239
+CHAT-E0680	command	commandPalette.toggle	packages/contracts/src/keybindings.ts:86	CHAT-247
+CHAT-E0681	command	filePicker.toggle	packages/contracts/src/keybindings.ts:87	CHAT-066
+CHAT-E0682	command	projectSearch.toggle	packages/contracts/src/keybindings.ts:88	CHAT-067
+CHAT-E0683	command	composer.sendAlternate	packages/contracts/src/keybindings.ts:94	CHAT-091
+CHAT-E0684	command	composer.dictation	packages/contracts/src/keybindings.ts:97	CHAT-135
+CHAT-E0685	command	composer.host	packages/contracts/src/keybindings.ts:98	CHAT-219
+CHAT-E0686	command	composer.cycleHost	packages/contracts/src/keybindings.ts:99	CHAT-219
+CHAT-E0687	command	composer.effort	packages/contracts/src/keybindings.ts:100	CHAT-111
+CHAT-E0688	command	composer.increaseEffort	packages/contracts/src/keybindings.ts:101	CHAT-111
+CHAT-E0689	command	composer.decreaseEffort	packages/contracts/src/keybindings.ts:102	CHAT-111
+CHAT-E0690	command	composer.mode	packages/contracts/src/keybindings.ts:103	CHAT-113
+CHAT-E0691	command	composer.workspace	packages/contracts/src/keybindings.ts:104	CHAT-214
+CHAT-E0692	command	composer.previousWorktree	packages/contracts/src/keybindings.ts:105	CHAT-216
+CHAT-E0693	command	composer.branch	packages/contracts/src/keybindings.ts:106	CHAT-217
+CHAT-E0694	palette-thread-action	Pin thread	apps/web/src/components/threadActionMenu.logic.ts:179	CHAT-023
+CHAT-E0695	palette-thread-action	Unpin thread	apps/web/src/components/threadActionMenu.logic.ts:178	CHAT-024
+CHAT-E0696	palette-thread-action	Settle thread	apps/web/src/components/threadActionMenu.logic.ts:190	CHAT-028
+CHAT-E0697	palette-thread-action	Un-settle thread	apps/web/src/components/threadActionMenu.logic.ts:187	CHAT-029
+CHAT-E0698	palette-thread-action	Auto-settle behavior	apps/web/src/components/threadActionMenu.logic.ts:267	CHAT-030
+CHAT-E0699	palette-thread-action	Follow settings	apps/web/src/components/threadActionMenu.logic.ts:272	CHAT-030
+CHAT-E0700	palette-thread-action	Never	apps/web/src/components/threadActionMenu.logic.ts:277	CHAT-031
+CHAT-E0701	palette-thread-action	Snooze	apps/web/src/components/threadActionMenu.logic.ts:199	CHAT-032
+CHAT-E0702	palette-thread-action	{configured snooze preset}	apps/web/src/components/threadActionMenu.logic.ts:203	CHAT-032
+CHAT-E0703	palette-thread-action	Custom…	apps/web/src/components/threadActionMenu.logic.ts:210	CHAT-033
+CHAT-E0704	palette-thread-action	Wake thread	apps/web/src/components/threadActionMenu.logic.ts:196	CHAT-034
+CHAT-E0705	palette-thread-action	Regenerate title	apps/web/src/components/threadActionMenu.logic.ts:230	CHAT-037
+CHAT-E0706	palette-thread-action	Regenerating…	apps/web/src/components/threadActionMenu.logic.ts:229	CHAT-037
+CHAT-E0707	palette-thread-action	Mark unread	apps/web/src/components/threadActionMenu.logic.ts:237	CHAT-038
+CHAT-E0708	palette-thread-action	Copy	apps/web/src/components/threadActionMenu.logic.ts:286	CHAT-039
+CHAT-E0709	palette-thread-action	Path	apps/web/src/components/threadActionMenu.logic.ts:292	CHAT-039
+CHAT-E0710	palette-thread-action	Branch	apps/web/src/components/threadActionMenu.logic.ts:299	CHAT-040
+CHAT-E0711	palette-thread-action	Thread	apps/web/src/components/threadActionMenu.logic.ts:306	CHAT-041
+CHAT-E0712	palette-thread-action	Thread ID	apps/web/src/components/threadActionMenu.logic.ts:309	CHAT-042
+CHAT-E0713	palette-thread-action	Archive thread	apps/web/src/components/threadActionMenu.logic.ts:315	CHAT-043
+CHAT-E0714	palette-thread-action	Delete	apps/web/src/components/threadActionMenu.logic.ts:322	CHAT-045
+CHAT-E0715	palette-thread-action	New thread on {branch}	apps/web/src/components/threadActionMenu.logic.ts:170	CHAT-055
+CHAT-E0716	palette-thread-action	Turn into project	apps/web/src/components/threadActionMenu.logic.ts:257	CHAT-057

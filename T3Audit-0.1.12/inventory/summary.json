@@ -1,0 +1,52 @@
+{
+  "source_registries": {
+    "NAV": {
+      "features": 248,
+      "entries": 790
+    },
+    "CHAT": {
+      "features": 297,
+      "entries": 716
+    },
+    "DEV": {
+      "features": 355,
+      "entries": 737
+    },
+    "CFG": {
+      "features": 369,
+      "entries": 1128
+    },
+    "HOST": {
+      "features": 225,
+      "entries": 760
+    },
+    "RPC": {
+      "features": 87,
+      "entries": 899
+    },
+    "UI": {
+      "features": 1491,
+      "entries": 5733
+    }
+  },
+  "total_feature_rows": 3072,
+  "total_entry_rows": 10763,
+  "user_workflow_rows": 1494,
+  "workflow_evidence_levels": {
+    "コードのみ": 1099,
+    "画面・状態に到達": 62,
+    "表示を観測": 266,
+    "記載した遷移を実行": 67
+  },
+  "native_source_status_workflows": {
+    "構成差": 80,
+    "同等候補": 43,
+    "部分": 144,
+    "未対応": 1205,
+    "未判定": 17,
+    "対象外": 5
+  },
+  "workflow_without_executed_transition": 1427,
+  "runtime_controls": 1091,
+  "runtime_only_feature_count": 2
+}

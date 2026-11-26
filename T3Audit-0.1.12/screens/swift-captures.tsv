@@ -1,0 +1,14 @@
+capture_id	width	height
+01-empty	1080	720
+02-open-project	1080	720
+03-invalid-project	1080	720
+04-draft	1080	720
+05-prompt	1080	720
+06-running	1080	720
+07-completed	1080	720
+08-restored-history	1080	720
+09-resumed-turn	1080	720
+10-failure	1080	720
+11-model-settings	1080	720
+12-changes	1080	720
+13-terminal	1080	720

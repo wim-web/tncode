@@ -1,0 +1,16 @@
+{
+  "sdkVersion": "1.6.1",
+  "helperEnvironment": {
+    "PI_TELEMETRY": "0",
+    "PI_OFFLINE": "1"
+  },
+  "enabledControl": {
+    "installReporting": true,
+    "attributionEnabled": true
+  },
+  "nativeDefault": {
+    "installReporting": false,
+    "attributionEnabled": false
+  },
+  "scope": "Swift launch configuration and bundled SDK decisions; no network capture."
+}

@@ -1,0 +1,489 @@
+capture_id	order	role	control	x	y	width	height
+01-empty	0	AXWindow	workspace	0	0	1080	720
+01-empty	1	AXGroup		0	0	1080	720
+01-empty	2	AXSplitGroup		0	0	1080	720
+01-empty	3	AXGroup		0	0	238	720
+01-empty	4	AXStaticText		14	44.5	91.5	17
+01-empty	5	AXButton	open-project	163	40.5	25	25
+01-empty	6	AXButton		199	40.5	25	25
+01-empty	7	AXTextField		41.5	81	147.5	15
+01-empty	8	AXMenuButton		197	81.5	22	14
+01-empty	9	AXScrollArea		0	113	238	565
+01-empty	11	AXButton	model-settings	14	691.9775390625	70.5	15
+01-empty	12	AXSplitter		238	32	1	688
+01-empty	13	AXGroup		239	0	841	720
+01-empty	14	AXStaticText		573.25	343	172.5	30
+01-empty	15	AXButton		612	385	95	24
+01-empty	16	AXButton		8	8	16	16
+01-empty	17	AXButton		54	8	16	16
+01-empty	18	AXGroup		55	9	14	14
+01-empty	19	AXGroup		55	9	14	14
+01-empty	20	AXButton		31	8	16	16
+01-empty	21	AXStaticText		82	8	92	16
+02-open-project	0	AXWindow	workspace	0	0	1080	720
+02-open-project	1	AXGroup		0	0	1080	720
+02-open-project	2	AXSplitGroup		0	0	1080	720
+02-open-project	3	AXGroup		0	0	238	720
+02-open-project	4	AXStaticText		14	44.5	91.5	17
+02-open-project	5	AXButton	open-project	163	40.5	25	25
+02-open-project	6	AXButton		199	40.5	25	25
+02-open-project	7	AXTextField		41.5	81	147.5	15
+02-open-project	8	AXMenuButton		197	81.5	22	14
+02-open-project	9	AXScrollArea		0	113	238	565
+02-open-project	11	AXButton	model-settings	14	691.9775390625	70.5	15
+02-open-project	12	AXSplitter		238	32	1	688
+02-open-project	13	AXGroup		239	0	841	720
+02-open-project	14	AXStaticText		573.25	343	172.5	30
+02-open-project	15	AXButton		612	385	95	24
+02-open-project	16	AXButton		8	8	16	16
+02-open-project	17	AXButton		54	8	16	16
+02-open-project	18	AXGroup		55	9	14	14
+02-open-project	19	AXGroup		55	9	14	14
+02-open-project	20	AXButton		31	8	16	16
+02-open-project	21	AXStaticText		82	8	92	16
+02-open-project	22	AXSheet		298	274	485	172
+02-open-project	23	AXGroup		298	274	485	172
+02-open-project	24	AXStaticText		320	296	83.5	19
+02-open-project	25	AXStaticText		320	329	79	15
+02-open-project	26	AXTextField	project-path	320	358	354	24
+02-open-project	27	AXButton	browse-project	682	358	79	24
+02-open-project	28	AXButton		592	400	66	24
+02-open-project	29	AXButton		666	400	95	24
+03-invalid-project	0	AXWindow	workspace	0	0	1080	720
+03-invalid-project	1	AXGroup		0	0	1080	720
+03-invalid-project	2	AXSplitGroup		0	0	1080	720
+03-invalid-project	3	AXGroup		0	0	238	720
+03-invalid-project	4	AXStaticText		14	44.5	91.5	17
+03-invalid-project	5	AXButton	open-project	163	40.5	25	25
+03-invalid-project	6	AXButton		199	40.5	25	25
+03-invalid-project	7	AXTextField		41.5	81	147.5	15
+03-invalid-project	8	AXMenuButton		197	81.5	22	14
+03-invalid-project	9	AXScrollArea		0	113	238	565
+03-invalid-project	11	AXButton	model-settings	14	691.9775390625	70.5	15
+03-invalid-project	12	AXSplitter		238	32	1	688
+03-invalid-project	13	AXGroup		239	0	841	720
+03-invalid-project	14	AXStaticText		573.25	343	172.5	30
+03-invalid-project	15	AXButton		612	385	95	24
+03-invalid-project	16	AXButton		8	8	16	16
+03-invalid-project	17	AXButton		54	8	16	16
+03-invalid-project	18	AXGroup		55	9	14	14
+03-invalid-project	19	AXGroup		55	9	14	14
+03-invalid-project	20	AXButton		31	8	16	16
+03-invalid-project	21	AXStaticText		82	8	92	16
+03-invalid-project	22	AXSheet		298	259	485	201
+03-invalid-project	23	AXGroup		298	259	485	201
+03-invalid-project	24	AXStaticText		320	281	83.5	19
+03-invalid-project	25	AXStaticText		320	314	79	15
+03-invalid-project	26	AXTextField	project-path	320	343	354	24
+03-invalid-project	27	AXButton	browse-project	682	343	79	24
+03-invalid-project	28	AXStaticText		320	381	146.5	15
+03-invalid-project	29	AXButton		592	414	66	24
+03-invalid-project	30	AXButton		666	414	95	24
+04-draft	0	AXWindow	workspace	0	0	1080	720
+04-draft	1	AXGroup		0	0	1080	720
+04-draft	2	AXSplitGroup		0	0	1080	720
+04-draft	3	AXGroup		0	0	238	720
+04-draft	4	AXStaticText		14	44.5	91.5	17
+04-draft	5	AXButton	open-project	163	40.5	25	25
+04-draft	6	AXButton		199	40.5	25	25
+04-draft	7	AXTextField		41.5	81	147.5	15
+04-draft	8	AXMenuButton		197	81.5	22	14
+04-draft	9	AXScrollArea		0	113	238	565
+04-draft	10	AXOpaqueProviderGroup		8	113	222	49
+04-draft	11	AXButton		8	113	222	49
+04-draft	12	AXButton	model-settings	14	691.9775390625	70.5	15
+04-draft	13	AXSplitter		238	32	1	688
+04-draft	14	AXGroup		239	0	841	720
+04-draft	15	AXMenuButton		255	45	106.5	16
+04-draft	16	AXMenuButton		381.5	45	76	16
+04-draft	17	AXButton		1002.5	46	11	14
+04-draft	18	AXButton		1024.5	47	15	12
+04-draft	19	AXButton		1050	46.5	13	13
+04-draft	20	AXStaticText		589	298	141	32
+04-draft	21	AXStaticText		623	337	73	15
+04-draft	22	AXTextField	composer	316.5	388	686	34
+04-draft	23	AXButton		864.5	433.5	104	15
+04-draft	24	AXButton	send-message	981.5	430	21	22
+04-draft	25	AXButton		307.5	472	41.5	13
+04-draft	26	AXButton		8	8	16	16
+04-draft	27	AXButton		54	8	16	16
+04-draft	28	AXGroup		55	9	14	14
+04-draft	29	AXGroup		55	9	14	14
+04-draft	30	AXButton		31	8	16	16
+04-draft	31	AXStaticText		82	8	92	16
+05-prompt	0	AXWindow	workspace	0	0	1080	720
+05-prompt	1	AXGroup		0	0	1080	720
+05-prompt	2	AXSplitGroup		0	0	1080	720
+05-prompt	3	AXGroup		0	0	238	720
+05-prompt	4	AXStaticText		14	44.5	91.5	17
+05-prompt	5	AXButton	open-project	163	40.5	25	25
+05-prompt	6	AXButton		199	40.5	25	25
+05-prompt	7	AXTextField		41.5	81	147.5	15
+05-prompt	8	AXMenuButton		197	81.5	22	14
+05-prompt	9	AXScrollArea		0	113	238	565
+05-prompt	10	AXOpaqueProviderGroup		8	113	222	49
+05-prompt	11	AXButton		8	113	222	49
+05-prompt	12	AXButton	model-settings	14	691.9775390625	70.5	15
+05-prompt	13	AXSplitter		238	32	1	688
+05-prompt	14	AXGroup		239	0	841	720
+05-prompt	15	AXMenuButton		255	45	106.5	16
+05-prompt	16	AXMenuButton		381.5	45	76	16
+05-prompt	17	AXButton		1002.5	46	11	14
+05-prompt	18	AXButton		1024.5	47	15	12
+05-prompt	19	AXButton		1050	46.5	13	13
+05-prompt	20	AXStaticText		589	298	141	32
+05-prompt	21	AXStaticText		623	337	73	15
+05-prompt	22	AXTextField	composer	316.5	388	686	34
+05-prompt	23	AXButton		864.5	433.5	104	15
+05-prompt	24	AXButton	send-message	981.5	430	21	22
+05-prompt	25	AXButton		307.5	472	41.5	13
+05-prompt	26	AXButton		8	8	16	16
+05-prompt	27	AXButton		54	8	16	16
+05-prompt	28	AXGroup		55	9	14	14
+05-prompt	29	AXGroup		55	9	14	14
+05-prompt	30	AXButton		31	8	16	16
+05-prompt	31	AXStaticText		82	8	92	16
+06-running	0	AXWindow	workspace	0	0	1080	720
+06-running	1	AXGroup		0	0	1080	720
+06-running	2	AXSplitGroup		0	0	1080	720
+06-running	3	AXGroup		0	0	238	720
+06-running	4	AXStaticText		14	44.5	91.5	17
+06-running	5	AXButton	open-project	163	40.5	25	25
+06-running	6	AXButton		199	40.5	25	25
+06-running	7	AXTextField		41.5	81	147.5	15
+06-running	8	AXMenuButton		197	81.5	22	14
+06-running	9	AXScrollArea		0	113	238	565
+06-running	10	AXOpaqueProviderGroup		8	113	222	49
+06-running	11	AXButton		8	113	222	49
+06-running	12	AXButton	model-settings	14	691.9775390625	70.5	15
+06-running	13	AXSplitter		238	32	1	688
+06-running	14	AXGroup		239	0	841	720
+06-running	15	AXMenuButton		255	45	106.5	16
+06-running	16	AXMenuButton		381.5	45	90	16
+06-running	17	AXButton		1002.5	46	11	14
+06-running	18	AXButton		1024.5	47	15	12
+06-running	19	AXButton		1050	46.5	13	13
+06-running	20	AXScrollArea		239	75	841	513.5
+06-running	21	AXOpaqueProviderGroup		304.5	108	699	68
+06-running	22	AXStaticText		914	108	89.5	17
+06-running	23	AXStaticText	streaming-reply	304.5	159	150.5	17
+06-running	24	AXTextField	composer	316.5	612.5	686	34
+06-running	25	AXButton		864	657.25	104	15
+06-running	26	AXButton	stop-message	981	654.5	21.5	20.5
+06-running	27	AXStaticText		307.5	695	47	13
+06-running	28	AXStaticText		927	695	85.5	13
+06-running	29	AXButton		8	8	16	16
+06-running	30	AXButton		54	8	16	16
+06-running	31	AXGroup		55	9	14	14
+06-running	32	AXGroup		55	9	14	14
+06-running	33	AXButton		31	8	16	16
+06-running	34	AXStaticText		82	8	92	16
+07-completed	0	AXWindow	workspace	0	0	1080	720
+07-completed	1	AXGroup		0	0	1080	720
+07-completed	2	AXSplitGroup		0	0	1080	720
+07-completed	3	AXGroup		0	0	238	720
+07-completed	4	AXStaticText		14	44.5	91.5	17
+07-completed	5	AXButton	open-project	163	40.5	25	25
+07-completed	6	AXButton		199	40.5	25	25
+07-completed	7	AXTextField		41.5	81	147.5	15
+07-completed	8	AXMenuButton		197	81.5	22	14
+07-completed	9	AXScrollArea		0	113	238	565
+07-completed	10	AXOpaqueProviderGroup		8	113	222	49
+07-completed	11	AXButton		8	113	222	49
+07-completed	12	AXButton	model-settings	14	691.9775390625	70.5	15
+07-completed	13	AXSplitter		238	32	1	688
+07-completed	14	AXGroup		239	0	841	720
+07-completed	15	AXMenuButton		255	45	106.5	16
+07-completed	16	AXMenuButton		381.5	45	90	16
+07-completed	17	AXButton		1002.5	46	11	14
+07-completed	18	AXButton		1024.5	47	15	12
+07-completed	19	AXButton		1050	46.5	13	13
+07-completed	20	AXScrollArea		239	75	841	512
+07-completed	21	AXOpaqueProviderGroup		304.5	108	699	68
+07-completed	22	AXStaticText		914	108	89.5	17
+07-completed	23	AXStaticText		304.5	159	355	17
+07-completed	24	AXTextField	composer	316.5	611	686	34
+07-completed	25	AXButton		864.5	656.5	104	15
+07-completed	26	AXButton	send-message	981.5	653	21	22
+07-completed	27	AXStaticText		307.5	695	47	13
+07-completed	28	AXButton		8	8	16	16
+07-completed	29	AXButton		54	8	16	16
+07-completed	30	AXGroup		55	9	14	14
+07-completed	31	AXGroup		55	9	14	14
+07-completed	32	AXButton		31	8	16	16
+07-completed	33	AXStaticText		82	8	92	16
+08-restored-history	0	AXWindow	workspace	0	0	1080	720
+08-restored-history	1	AXGroup		0	0	1080	720
+08-restored-history	2	AXSplitGroup		0	0	1080	720
+08-restored-history	3	AXGroup		0	0	238	720
+08-restored-history	4	AXStaticText		14	44.5	91.5	17
+08-restored-history	5	AXButton	open-project	163	40.5	25	25
+08-restored-history	6	AXButton		199	40.5	25	25
+08-restored-history	7	AXTextField		41.5	81	147.5	15
+08-restored-history	8	AXMenuButton		197	81.5	22	14
+08-restored-history	9	AXScrollArea		0	113	238	565
+08-restored-history	10	AXOpaqueProviderGroup		8	113	222	49
+08-restored-history	11	AXButton		8	113	222	49
+08-restored-history	12	AXButton	model-settings	14	691.9775390625	70.5	15
+08-restored-history	13	AXSplitter		238	32	1	688
+08-restored-history	14	AXGroup		239	0	841	720
+08-restored-history	15	AXMenuButton		255	45	106.5	16
+08-restored-history	16	AXMenuButton		381.5	45	90	16
+08-restored-history	17	AXButton		1002.5	46	11	14
+08-restored-history	18	AXButton		1024.5	47	15	12
+08-restored-history	19	AXButton		1050	46.5	13	13
+08-restored-history	20	AXScrollArea		239	75	841	512
+08-restored-history	21	AXOpaqueProviderGroup		304.5	108	699	68
+08-restored-history	22	AXStaticText		914	108	89.5	17
+08-restored-history	23	AXStaticText		304.5	159	355	17
+08-restored-history	24	AXTextField	composer	316.5	611	686	34
+08-restored-history	25	AXButton		864.5	656.5	104	15
+08-restored-history	26	AXButton	send-message	981.5	653	21	22
+08-restored-history	27	AXStaticText		307.5	695	47	13
+08-restored-history	28	AXButton		8	8	16	16
+08-restored-history	29	AXButton		54	8	16	16
+08-restored-history	30	AXGroup		55	9	14	14
+08-restored-history	31	AXGroup		55	9	14	14
+08-restored-history	32	AXButton		31	8	16	16
+08-restored-history	33	AXStaticText		82	8	92	16
+09-resumed-turn	0	AXWindow	workspace	0	0	1080	720
+09-resumed-turn	1	AXGroup		0	0	1080	720
+09-resumed-turn	2	AXSplitGroup		0	0	1080	720
+09-resumed-turn	3	AXGroup		0	0	238	720
+09-resumed-turn	4	AXStaticText		14	44.5	91.5	17
+09-resumed-turn	5	AXButton	open-project	163	40.5	25	25
+09-resumed-turn	6	AXButton		199	40.5	25	25
+09-resumed-turn	7	AXTextField		41.5	81	147.5	15
+09-resumed-turn	8	AXMenuButton		197	81.5	22	14
+09-resumed-turn	9	AXScrollArea		0	113	238	565
+09-resumed-turn	10	AXOpaqueProviderGroup		8	113	222	49
+09-resumed-turn	11	AXButton		8	113	222	49
+09-resumed-turn	12	AXButton	model-settings	14	691.9775390625	70.5	15
+09-resumed-turn	13	AXSplitter		238	32	1	688
+09-resumed-turn	14	AXGroup		239	0	841	720
+09-resumed-turn	15	AXMenuButton		255	45	106.5	16
+09-resumed-turn	16	AXMenuButton		381.5	45	90	16
+09-resumed-turn	17	AXButton		1002.5	46	11	14
+09-resumed-turn	18	AXButton		1024.5	47	15	12
+09-resumed-turn	19	AXButton		1050	46.5	13	13
+09-resumed-turn	20	AXScrollArea		239	75	841	512
+09-resumed-turn	21	AXOpaqueProviderGroup		304.5	108	699	170
+09-resumed-turn	22	AXStaticText		914	108	89.5	17
+09-resumed-turn	23	AXStaticText		304.5	159	355	17
+09-resumed-turn	24	AXStaticText		910.5	210	93	17
+09-resumed-turn	25	AXStaticText		304.5	261	154	17
+09-resumed-turn	26	AXTextField	composer	316.5	611	686	34
+09-resumed-turn	27	AXButton		864.5	656.5	104	15
+09-resumed-turn	28	AXButton	send-message	981.5	653	21	22
+09-resumed-turn	29	AXStaticText		307.5	695	47	13
+09-resumed-turn	30	AXButton		8	8	16	16
+09-resumed-turn	31	AXButton		54	8	16	16
+09-resumed-turn	32	AXGroup		55	9	14	14
+09-resumed-turn	33	AXGroup		55	9	14	14
+09-resumed-turn	34	AXButton		31	8	16	16
+09-resumed-turn	35	AXStaticText		82	8	92	16
+10-failure	0	AXWindow	workspace	0	0	1080	720
+10-failure	1	AXGroup		0	0	1080	720
+10-failure	2	AXSplitGroup		0	0	1080	720
+10-failure	3	AXGroup		0	0	238	720
+10-failure	4	AXStaticText		14	44.5	91.5	17
+10-failure	5	AXButton	open-project	163	40.5	25	25
+10-failure	6	AXButton		199	40.5	25	25
+10-failure	7	AXTextField		41.5	81	147.5	15
+10-failure	8	AXMenuButton		197	81.5	22	14
+10-failure	9	AXScrollArea		0	113	238	565
+10-failure	10	AXOpaqueProviderGroup		8	113	222	49
+10-failure	11	AXButton		8	113	222	49
+10-failure	12	AXButton	model-settings	14	691.9775390625	70.5	15
+10-failure	13	AXSplitter		238	32	1	688
+10-failure	14	AXGroup		239	0	841	720
+10-failure	15	AXMenuButton		255	45	106.5	16
+10-failure	16	AXMenuButton		381.5	45	90	16
+10-failure	17	AXButton		1002.5	46	11	14
+10-failure	18	AXButton		1024.5	47	15	12
+10-failure	19	AXButton		1050	46.5	13	13
+10-failure	20	AXScrollArea		239	75	841	489
+10-failure	21	AXOpaqueProviderGroup		304.5	108	699	221
+10-failure	22	AXStaticText		914	108	89.5	17
+10-failure	23	AXStaticText		304.5	159	355	17
+10-failure	24	AXStaticText		910.5	210	93	17
+10-failure	25	AXStaticText		304.5	261	154	17
+10-failure	26	AXStaticText		939.5	312	64	17
+10-failure	27	AXStaticText		304.5	576	472	15
+10-failure	28	AXTextField	composer	316.5	611	686	34
+10-failure	29	AXButton		864.5	656.5	104	15
+10-failure	30	AXButton	send-message	981.5	653	21	22
+10-failure	31	AXStaticText		307.5	695	47	13
+10-failure	32	AXButton		8	8	16	16
+10-failure	33	AXButton		54	8	16	16
+10-failure	34	AXGroup		55	9	14	14
+10-failure	35	AXGroup		55	9	14	14
+10-failure	36	AXButton		31	8	16	16
+10-failure	37	AXStaticText		82	8	92	16
+11-model-settings	0	AXWindow	workspace	0	0	1080	720
+11-model-settings	1	AXGroup		0	0	1080	720
+11-model-settings	2	AXSplitGroup		0	0	1080	720
+11-model-settings	3	AXGroup		0	0	238	720
+11-model-settings	4	AXStaticText		14	44.5	91.5	17
+11-model-settings	5	AXButton	open-project	163	40.5	25	25
+11-model-settings	6	AXButton		199	40.5	25	25
+11-model-settings	7	AXTextField		41.5	81	147.5	15
+11-model-settings	8	AXMenuButton		197	81.5	22	14
+11-model-settings	9	AXScrollArea		0	113	238	565
+11-model-settings	10	AXOpaqueProviderGroup		8	113	222	49
+11-model-settings	11	AXButton		8	113	222	49
+11-model-settings	12	AXButton	model-settings	14	691.9775390625	70.5	15
+11-model-settings	13	AXSplitter		238	32	1	688
+11-model-settings	14	AXGroup		239	0	841	720
+11-model-settings	15	AXMenuButton		255	45	106.5	16
+11-model-settings	16	AXMenuButton		381.5	45	90	16
+11-model-settings	17	AXButton		1002.5	46	11	14
+11-model-settings	18	AXButton		1024.5	47	15	12
+11-model-settings	19	AXButton		1050	46.5	13	13
+11-model-settings	20	AXScrollArea		239	75	841	489
+11-model-settings	21	AXOpaqueProviderGroup		304.5	108	699	221
+11-model-settings	22	AXStaticText		914	108	89.5	17
+11-model-settings	23	AXStaticText		304.5	159	355	17
+11-model-settings	24	AXStaticText		910.5	210	93	17
+11-model-settings	25	AXStaticText		304.5	261	154	17
+11-model-settings	26	AXStaticText		939.5	312	64	17
+11-model-settings	27	AXStaticText		304.5	576	472	15
+11-model-settings	28	AXTextField	composer	316.5	611	686	34
+11-model-settings	29	AXButton		864.5	656.5	104	15
+11-model-settings	30	AXButton	send-message	981.5	653	21	22
+11-model-settings	31	AXStaticText		307.5	695	47	13
+11-model-settings	32	AXButton		8	8	16	16
+11-model-settings	33	AXButton		54	8	16	16
+11-model-settings	34	AXGroup		55	9	14	14
+11-model-settings	35	AXGroup		55	9	14	14
+11-model-settings	36	AXButton		31	8	16	16
+11-model-settings	37	AXStaticText		82	8	92	16
+11-model-settings	38	AXSheet		305	198	470	324
+11-model-settings	39	AXGroup		305	198	470	324
+11-model-settings	40	AXStaticText		329	222.25439453125	120	20.5
+11-model-settings	41	AXStaticText		414.5	264.50439453125	50.5	16
+11-model-settings	42	AXPopUpButton		473	261	201.5	24
+11-model-settings	43	AXStaticText		411	296.9052734375	54	16
+11-model-settings	44	AXTextField		473	293	278	24
+11-model-settings	45	AXStaticText		406.5	328.9052734375	58.5	16
+11-model-settings	46	AXTextField		473	325	278	24
+11-model-settings	47	AXStaticText		368	360.9052734375	97	16
+11-model-settings	48	AXTextField		473	357	278	24
+11-model-settings	49	AXCheckBox		473	387	194	16.5
+11-model-settings	50	AXStaticText		329	413.325439453125	136	16
+11-model-settings	51	AXTextField		473	409.5	278	24
+11-model-settings	52	AXCheckBox		473	439.5	133	16
+11-model-settings	53	AXButton		623.5	473.5	66	24
+11-model-settings	54	AXButton		697.5	473.5	53.5	24
+12-changes	0	AXWindow	workspace	0	0	1080	720
+12-changes	1	AXGroup		0	0	1080	720
+12-changes	2	AXSplitGroup		0	0	1080	720
+12-changes	3	AXGroup		0	0	238	720
+12-changes	4	AXStaticText		14	44.5	91.5	17
+12-changes	5	AXButton	open-project	163	40.5	25	25
+12-changes	6	AXButton		199	40.5	25	25
+12-changes	7	AXTextField		41.5	81	147.5	15
+12-changes	8	AXMenuButton		197	81.5	22	14
+12-changes	9	AXScrollArea		0	113	238	565
+12-changes	10	AXOpaqueProviderGroup		8	113	222	49
+12-changes	11	AXButton		8	113	222	49
+12-changes	12	AXButton	model-settings	14	691.9775390625	70.5	15
+12-changes	13	AXSplitter		238	32	1	688
+12-changes	14	AXGroup		239	0	841	720
+12-changes	15	AXMenuButton		255	45	106.5	16
+12-changes	16	AXMenuButton		381.5	45	90	16
+12-changes	17	AXButton		1002.5	46	11	14
+12-changes	18	AXButton		1024.5	47	15	12
+12-changes	19	AXButton		1050	46.5	13	13
+12-changes	20	AXSplitGroup		239	75	841	645
+12-changes	21	AXGroup		239	75	420	645
+12-changes	22	AXScrollArea		239	75	420	512
+12-changes	23	AXOpaqueProviderGroup		263	108	361	221
+12-changes	24	AXStaticText		534.5	108	89.5	17
+12-changes	25	AXStaticText		263	159	355	17
+12-changes	26	AXStaticText		531	210	93	17
+12-changes	27	AXStaticText		263	261	154	17
+12-changes	28	AXStaticText		560	312	64	17
+12-changes	29	AXTextField	composer	275	611	348	34
+12-changes	30	AXButton		485	656.5	104	15
+12-changes	31	AXButton	send-message	602	653	21	22
+12-changes	32	AXStaticText		266	695	47	13
+12-changes	33	AXSplitter		659	75	1	645
+12-changes	34	AXGroup		660	75	420	645
+12-changes	35	AXStaticText		672	85	55.5	16
+12-changes	36	AXMenuButton		979.5	85	67	16
+12-changes	37	AXButton		1055.5	86	11.5	14
+12-changes	38	AXScrollArea		660	112	420	124
+12-changes	39	AXOpaqueProviderGroup		674	124	390.5	15
+12-changes	40	AXButton		674	124	371.5	15
+12-changes	41	AXButton		1054	126.5	10.5	10.5
+12-changes	42	AXStaticText		668	250.5	61.5	13
+12-changes	43	AXButton		738.5	250.5	13	13
+12-changes	44	AXRadioGroup		914	245	158	24
+12-changes	45	AXRadioButton		914	245	79	24
+12-changes	46	AXRadioButton		994	245	78	24
+12-changes	47	AXScrollArea		660	277	420	400
+12-changes	48	AXOpaqueProviderGroup	git-patch	754.5	421	231.5	112
+12-changes	49	AXStaticText		754.5	421	231.5	14
+12-changes	50	AXStaticText		754.5	435	197.5	14
+12-changes	51	AXStaticText		754.5	449	102	14
+12-changes	52	AXStaticText		754.5	463	102	14
+12-changes	53	AXStaticText		754.5	477	88.5	14
+12-changes	54	AXStaticText		754.5	491	116	14
+12-changes	55	AXStaticText		754.5	505	177	14
+12-changes	56	AXStaticText		754.5	519	7	14
+12-changes	57	AXTextField		669	687	322.5	24
+12-changes	58	AXButton		999.5	687	71.5	24
+12-changes	59	AXButton		8	8	16	16
+12-changes	60	AXButton		54	8	16	16
+12-changes	61	AXGroup		55	9	14	14
+12-changes	62	AXGroup		55	9	14	14
+12-changes	63	AXButton		31	8	16	16
+12-changes	64	AXStaticText		82	8	92	16
+13-terminal	0	AXWindow	workspace	0	0	1080	720
+13-terminal	1	AXGroup		0	0	1080	720
+13-terminal	2	AXSplitGroup		0	0	1080	720
+13-terminal	3	AXGroup		0	0	238	720
+13-terminal	4	AXStaticText		14	44.5	91.5	17
+13-terminal	5	AXButton	open-project	163	40.5	25	25
+13-terminal	6	AXButton		199	40.5	25	25
+13-terminal	7	AXTextField		41.5	81	147.5	15
+13-terminal	8	AXMenuButton		197	81.5	22	14
+13-terminal	9	AXScrollArea		0	113	238	565
+13-terminal	10	AXOpaqueProviderGroup		8	113	222	49
+13-terminal	11	AXButton		8	113	222	49
+13-terminal	12	AXButton	model-settings	14	691.9775390625	70.5	15
+13-terminal	13	AXSplitter		238	32	1	688
+13-terminal	14	AXGroup		239	0	841	720
+13-terminal	15	AXMenuButton		255	45	106.5	16
+13-terminal	16	AXMenuButton		381.5	45	90	16
+13-terminal	17	AXButton		1002.5	46	11	14
+13-terminal	18	AXButton		1024.5	47	15	12
+13-terminal	19	AXButton		1050	46.5	13	13
+13-terminal	20	AXScrollArea		239	75	841	307
+13-terminal	21	AXOpaqueProviderGroup		304.5	108	699	221
+13-terminal	22	AXStaticText		914	108	89.5	17
+13-terminal	23	AXStaticText		304.5	159	355	17
+13-terminal	24	AXStaticText		910.5	210	93	17
+13-terminal	25	AXStaticText		304.5	261	154	17
+13-terminal	26	AXStaticText		939.5	312	64	17
+13-terminal	27	AXScrollBar		1062	74	19	309
+13-terminal	28	AXValueIndicator		1071	78	6	297
+13-terminal	29	AXButton		1063	75	0	0
+13-terminal	30	AXButton		1063	75	0	0
+13-terminal	31	AXButton		1071	375.5	6	3.5
+13-terminal	32	AXButton		1071	78	6	0
+13-terminal	33	AXTextField	composer	316.5	406	686	34
+13-terminal	34	AXButton		864.5	451.5	104	15
+13-terminal	35	AXButton	send-message	981.5	448	21	22
+13-terminal	36	AXStaticText		307.5	490	47	13
+13-terminal	37	AXStaticText		252	524.5	63.5	13
+13-terminal	38	AXButton		997.5	523	28	16
+13-terminal	39	AXButton		1033.5	523	34.5	16
+13-terminal	40	AXTextArea		239	546	841	174
+13-terminal	41	AXButton		8	8	16	16
+13-terminal	42	AXButton		54	8	16	16
+13-terminal	43	AXGroup		55	9	14	14
+13-terminal	44	AXGroup		55	9	14	14
+13-terminal	45	AXButton		31	8	16	16
+13-terminal	46	AXStaticText		82	8	92	16

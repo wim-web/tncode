@@ -1,0 +1,761 @@
+id	kind	name	source	feature_id
+HOST-E0001	workflow-entry	Settings → Providers → Devices	apps/web/src/components/settings/ProviderSettingsPanel.tsx:333	HOST-001
+HOST-E0002	ui-text	Devices	apps/web/src/components/settings/ProviderSettingsPanel.tsx:405	HOST-001
+HOST-E0003	ui-text	Limited permissions	apps/web/src/components/settings/ProviderSettingsPanel.tsx:1092	HOST-001
+HOST-E0004	workflow-entry	Settings → Providers → Add provider	apps/web/src/components/settings/AddProviderInstanceDialog.tsx:169	HOST-002
+HOST-E0005	ui-text	Done	apps/web/src/components/settings/ProviderWizardAuthenticationStep.tsx:98	HOST-002
+HOST-E0006	ui-text	Skip for now	apps/web/src/components/settings/ProviderWizardAuthenticationStep.tsx:98	HOST-002
+HOST-E0007	workflow-entry	Settings → Providers → Enable {provider}	apps/web/src/components/settings/ProviderInstanceCard.tsx:861	HOST-003
+HOST-E0008	workflow-entry	Settings → Providers → インスタンス	apps/web/src/components/settings/ProviderInstanceCard.tsx:1361	HOST-004
+HOST-E0009	ui-text	Status	apps/web/src/components/settings/ProviderInstanceCard.tsx:1362	HOST-004
+HOST-E0010	ui-text	Could not update provider instance	apps/web/src/components/settings/ProviderSettingsPanel.tsx:841	HOST-004
+HOST-E0011	workflow-entry	Settings → Providers → インスタンス	apps/web/src/components/settings/ProviderSettingsForm.tsx:262	HOST-005
+HOST-E0012	workflow-entry	Settings → Providers → Environment variables	apps/web/src/components/settings/ProviderInstanceCard.tsx:356	HOST-006
+HOST-E0013	ui-text	API keys, base URLs, and other per-instance CLI settings.	apps/web/src/components/settings/ProviderInstanceCard.tsx:458	HOST-006
+HOST-E0014	ui-text	Add variable	apps/web/src/components/settings/ProviderInstanceCard.tsx:462	HOST-006
+HOST-E0015	workflow-entry	Settings → Providers → Environment variables	apps/web/src/components/settings/ProviderInstanceCard.tsx:276	HOST-007
+HOST-E0016	workflow-entry	Settings → Providers → Delete instance	apps/web/src/components/settings/ProviderInstanceCard.tsx:1280	HOST-008
+HOST-E0017	workflow-entry	Settings → Providers → Reset {provider} provider settings to default	apps/web/src/components/settings/ProviderSettingsPanel.tsx:931	HOST-009
+HOST-E0018	ui-text	Could not reset provider instance	apps/web/src/components/settings/ProviderSettingsPanel.tsx:942	HOST-009
+HOST-E0019	workflow-entry	Settings → Providers → Refresh provider status	apps/web/src/components/settings/ProviderSettingsPanel.tsx:680	HOST-010
+HOST-E0020	workflow-entry	Settings → Providers → Advanced	apps/web/src/components/settings/ProviderSettingsPanel.tsx:1167	HOST-011
+HOST-E0021	ui-text	Advanced	apps/web/src/components/settings/ProviderSettingsPanel.tsx:1167	HOST-011
+HOST-E0022	ui-text	Increase provider health check interval	apps/web/src/components/settings/ProviderSettingsPanel.tsx:1217	HOST-011
+HOST-E0023	workflow-entry	Settings → Providers → Status 詳細	apps/web/src/components/settings/ProviderInstanceCard.tsx:1090	HOST-012
+HOST-E0024	ui-text	Copy update command	apps/web/src/components/settings/ProviderInstanceCard.tsx:1156	HOST-012
+HOST-E0025	workflow-entry	Settings → Providers → Models	apps/web/src/components/settings/ProviderModelsSection.tsx:90	HOST-013
+HOST-E0026	ui-text	Filter models	apps/web/src/components/settings/ProviderModelsSection.tsx:369	HOST-013
+HOST-E0027	workflow-entry	Settings → Providers → Models	apps/web/src/components/settings/ProviderModelsSection.tsx:569	HOST-014
+HOST-E0028	workflow-entry	Settings → Providers → Models	apps/web/src/components/settings/ProviderModelsSection.tsx:410	HOST-015
+HOST-E0029	ui-text	Add	apps/web/src/components/settings/ProviderModelsSection.tsx:497	HOST-015
+HOST-E0030	workflow-entry	Settings → Providers → Models	apps/web/src/components/settings/ProviderModelsSection.tsx:626	HOST-016
+HOST-E0031	workflow-entry	Settings → Providers → Authentication	apps/web/src/components/settings/ProviderAuthenticationSection.tsx:114	HOST-017
+HOST-E0032	workflow-entry	Settings → Providers → Cancel sign-in	apps/web/src/components/settings/ProviderAuthenticationSection.tsx:294	HOST-018
+HOST-E0033	ui-text	Cancel sign-in	apps/web/src/components/settings/ProviderAuthenticationSection.tsx:294	HOST-018
+HOST-E0034	workflow-entry	Settings → Providers → Authentication	apps/web/src/components/settings/ProviderAuthenticationSection.tsx:309	HOST-019
+HOST-E0035	ui-text	Remove connection	apps/web/src/components/settings/ChatGptAccountPicker.tsx:96	HOST-019
+HOST-E0036	workflow-entry	Settings → Providers → Codex	apps/server/src/provider/Drivers/CodexDriver.ts:150	HOST-020
+HOST-E0037	workflow-entry	Settings → Providers → Add Codex account	apps/web/src/components/settings/AddCodexAccountDialog.tsx:72	HOST-021
+HOST-E0038	workflow-entry	Settings → Providers → Codex → ChatGptAccountPicker	apps/web/src/components/settings/ChatGptAccountPicker.tsx:62	HOST-022
+HOST-E0039	ui-text	ChatGPT account to connect	apps/web/src/components/settings/ChatGptAccountPicker.tsx:62	HOST-022
+HOST-E0040	workflow-entry	Managed Codex の接続画面	apps/server/src/provider/CodexChatGptHandoff.ts:11	HOST-023
+HOST-E0041	workflow-entry	Settings → Providers → Claude Code	apps/server/src/provider/Drivers/ClaudeDriver.ts:94	HOST-024
+HOST-E0042	workflow-entry	Settings → Providers → Sign in with Cursor	packages/provider-cursor/src/server/auth.ts:172	HOST-025
+HOST-E0043	workflow-entry	Settings → Providers → Cursor API key	packages/provider-cursor/src/client.ts:12	HOST-026
+HOST-E0044	ui-text	Cursor account	apps/web/src/components/settings/ProviderSettingsPanel.tsx:1451	HOST-026
+HOST-E0045	workflow-entry	Settings → Providers → Grok	packages/provider-grok/src/settings.ts:18	HOST-027
+HOST-E0046	workflow-entry	Settings → Providers → Add provider → fx	packages/provider-fx/src/client.ts:15	HOST-028
+HOST-E0047	workflow-entry	Settings → Providers → OpenCode → Binary path	packages/provider-opencode/src/settings.ts:22	HOST-029
+HOST-E0048	workflow-entry	Settings → Providers → OpenCode → Server URL	packages/provider-opencode/src/settings.ts:33	HOST-030
+HOST-E0049	workflow-entry	Settings → Providers → Kiro	packages/provider-kiro/src/client.ts:18	HOST-031
+HOST-E0050	workflow-entry	Settings → Providers → Kiro API key	packages/provider-kiro/src/client.ts:23	HOST-032
+HOST-E0051	workflow-entry	Settings → Providers → Muse Code	packages/provider-muse/src/server/status.ts:128	HOST-033
+HOST-E0052	workflow-entry	Settings → Providers → Pi → Refresh provider status	packages/provider-pi/src/server/status.ts:292	HOST-034
+HOST-E0053	workflow-entry	Settings → Providers → Pi → Status	packages/provider-pi/src/server/status.ts:355	HOST-035
+HOST-E0054	workflow-entry	Settings → Providers → Pi → CLI arguments、または Pi 端末	packages/provider-pi/src/settings.ts:28	HOST-036
+HOST-E0055	workflow-entry	Settings → Providers → Antigravity → Setup	apps/web/src/components/settings/ProviderSetupSection.tsx:173	HOST-037
+HOST-E0056	ui-text	Not installed.	apps/web/src/components/settings/ProviderSetupSection.tsx:171	HOST-037
+HOST-E0057	ui-text	Antigravity download	apps/web/src/components/settings/ProviderSetupSection.tsx:252	HOST-037
+HOST-E0058	workflow-entry	Settings → Providers → Antigravity → Setup	apps/web/src/components/settings/ProviderSetupSection.tsx:292	HOST-038
+HOST-E0059	ui-text	Starting installation	apps/web/src/components/settings/ProviderSetupSection.tsx:293	HOST-038
+HOST-E0060	workflow-entry	Settings → Providers → Antigravity → Remove downloaded runtime	apps/web/src/components/settings/ProviderSetupSection.tsx:203	HOST-039
+HOST-E0061	ui-text	Remove downloaded runtime	apps/web/src/components/settings/ProviderSetupSection.tsx:317	HOST-039
+HOST-E0062	workflow-entry	Settings → Providers → Antigravity → Log in with Google	apps/server/src/provider/Drivers/AntigravityDriver.ts:424	HOST-040
+HOST-E0063	workflow-entry	Settings → Providers → Antigravity → Setup	apps/web/src/components/settings/ProviderSetupSection.tsx:41	HOST-041
+HOST-E0064	workflow-entry	Settings → Providers → Add provider → ACP Registry	apps/web/src/components/settings/AddProviderInstanceDialog.tsx:183	HOST-042
+HOST-E0065	workflow-entry	Settings → Providers → ACP Registry → Local command	packages/provider-acp-registry/src/settings.ts:17	HOST-043
+HOST-E0066	workflow-entry	Settings → Providers → ACP インスタンスの認証	packages/provider-acp-registry/src/server/probe.ts:357	HOST-044
+HOST-E0067	workflow-entry	Settings → Providers → ACP インスタンス	apps/server/src/ws.ts:2511	HOST-045
+HOST-E0068	workflow-entry	対象 ACP のセッション一覧または API	apps/server/src/provider/AcpRegistrySessions.ts:67	HOST-046
+HOST-E0069	workflow-entry	ACP の内部プロバイダー設定または API	apps/server/src/ws.ts:2542	HOST-047
+HOST-E0070	workflow-entry	Provider Status またはターン開始	apps/server/src/provider/providerCompatibility.ts:73	HOST-048
+HOST-E0071	workflow-entry	Settings → Connections → This app	apps/web/src/components/settings/LocalEnvironmentSetting.tsx:23	HOST-049
+HOST-E0072	ui-text	This app	apps/web/src/components/settings/ConnectionsSettings.tsx:1830	HOST-049
+HOST-E0073	workflow-entry	Settings → Connections → Add environment → Remote	apps/web/src/components/settings/AddEnvironmentDialog.tsx:210	HOST-050
+HOST-E0074	workflow-entry	/pair → PairingRouteSurface	apps/web/src/components/auth/PairingRouteSurface.tsx:50	HOST-051
+HOST-E0075	workflow-entry	Settings → Connections → Add environment → SSH	apps/web/src/components/settings/AddEnvironmentDialog.tsx:138	HOST-052
+HOST-E0076	workflow-entry	Settings → Connections → Routes → Add route	apps/web/src/components/settings/EnvironmentRoutesList.tsx:133	HOST-053
+HOST-E0077	ui-text	Add route	apps/web/src/components/settings/EnvironmentRoutesList.tsx:135	HOST-053
+HOST-E0078	workflow-entry	Settings → Connections → Routes	apps/web/src/components/settings/EnvironmentRoutesList.tsx:42	HOST-054
+HOST-E0079	workflow-entry	Settings → Connections → Routes︱各行	apps/web/src/components/settings/EnvironmentRoutesList.tsx:142	HOST-055
+HOST-E0080	workflow-entry	Settings → Connections → Switch off / on	apps/web/src/components/settings/SavedEnvironmentRows.tsx:414	HOST-056
+HOST-E0081	workflow-entry	Connections → More actions → Remove from this device…	apps/web/src/components/settings/SavedEnvironmentRows.tsx:468	HOST-057
+HOST-E0082	ui-text	Removing…	apps/web/src/components/settings/SavedEnvironmentRows.tsx:469	HOST-057
+HOST-E0083	ui-text	Remove from this device…	apps/web/src/components/settings/SavedEnvironmentRows.tsx:469	HOST-057
+HOST-E0084	workflow-entry	Connections → 対象環境の診断	apps/web/src/components/settings/SavedEnvironmentRows.tsx:356	HOST-058
+HOST-E0085	ui-text	Copy trace ID	apps/web/src/components/settings/SavedEnvironmentRows.tsx:464	HOST-058
+HOST-E0086	workflow-entry	Connections → 対象環境 → Update	apps/web/src/components/settings/SavedEnvironmentRows.tsx:385	HOST-059
+HOST-E0087	workflow-entry	Settings → Access → Network access	apps/web/src/components/settings/ConnectionsSettings.tsx:514	HOST-060
+HOST-E0088	workflow-entry	Settings → Access → Tailscale HTTPS	apps/web/src/components/settings/ConnectionsSettings.tsx:552	HOST-061
+HOST-E0089	workflow-entry	Settings → Access → Set default	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:1006	HOST-062
+HOST-E0090	ui-text	Set as default	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:1007	HOST-062
+HOST-E0091	workflow-entry	Settings → Access → Authorized clients	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:319	HOST-063
+HOST-E0092	ui-text	Copy link	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:472	HOST-063
+HOST-E0093	ui-text	Creating…	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:843	HOST-063
+HOST-E0094	ui-text	Create link	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:843	HOST-063
+HOST-E0095	workflow-entry	Settings → Access → Authorized clients	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:402	HOST-064
+HOST-E0096	ui-text	Revoking…	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:404	HOST-064
+HOST-E0097	ui-text	Revoke	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:404	HOST-064
+HOST-E0098	workflow-entry	Settings → Access → Authorized clients	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:578	HOST-065
+HOST-E0099	ui-text	Revoking…	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:580	HOST-065
+HOST-E0100	ui-text	Revoke	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:580	HOST-065
+HOST-E0101	workflow-entry	Settings → Access → Revoke other clients	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:688	HOST-066
+HOST-E0102	ui-text	Revoking…	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:690	HOST-066
+HOST-E0103	ui-text	Revoke others	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:690	HOST-066
+HOST-E0104	workflow-entry	サイドバーの T3 Connect／アカウントメニュー	apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx:53	HOST-067
+HOST-E0105	workflow-entry	Connections または Access → T3 Connect	apps/web/src/components/settings/SavedEnvironmentRows.tsx:662	HOST-068
+HOST-E0106	ui-text	Run `t3 connect link` on the host, then restart T3 Code there.	apps/web/src/components/settings/SavedEnvironmentRows.tsx:782	HOST-068
+HOST-E0107	workflow-entry	接続画面 → Cloud environment list	apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx:163	HOST-069
+HOST-E0108	workflow-entry	アバター → T3 Connect	apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx:76	HOST-070
+HOST-E0109	ui-text	Deregister	apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx:77	HOST-070
+HOST-E0110	ui-text	Deregistering…	apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx:121	HOST-070
+HOST-E0111	ui-text	Mobile clients	apps/web/src/components/clerk/T3ConnectAccountPages.tsx:13	HOST-070
+HOST-E0112	workflow-entry	Connections → Publish agent activity to mobile clients	apps/web/src/components/settings/SavedEnvironmentRows.tsx:684	HOST-071
+HOST-E0113	workflow-entry	Connections → Hold webhook requests while this environment is offline	apps/web/src/components/settings/SavedEnvironmentRows.tsx:699	HOST-072
+HOST-E0114	workflow-entry	Connections → Require approval for new T3 Connect devices	apps/web/src/components/settings/SavedEnvironmentRows.tsx:827	HOST-073
+HOST-E0115	ui-text	Your session does not have permission to manage access.	apps/web/src/components/settings/SavedEnvironmentRows.tsx:842	HOST-073
+HOST-E0116	workflow-entry	Access → T3 Connect devices またはデスクトップの申請通知	apps/web/src/components/settings/ConnectDeviceApprovalSettings.tsx:56	HOST-074
+HOST-E0117	workflow-entry	Access → T3 Connect devices	apps/web/src/components/settings/ConnectDeviceApprovalSettings.tsx:57	HOST-075
+HOST-E0118	workflow-entry	Access → T3 Connect devices → Revoke	apps/web/src/components/settings/ConnectDeviceApprovalSettings.tsx:150	HOST-076
+HOST-E0119	workflow-entry	Access → Use in another app → Connect agent または Approve agent	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:680	HOST-077
+HOST-E0120	ui-text	Use in another app (MCP)	apps/web/src/components/settings/AuthorizedClientsSettings.tsx:682	HOST-077
+HOST-E0121	workflow-entry	Connect agent または Approve agent	apps/web/src/components/auth/ConnectAgentSurface.tsx:208	HOST-078
+HOST-E0122	workflow-entry	Settings → Access → Linked environments	apps/web/src/components/settings/LabsSettingsPanel.tsx:176	HOST-079
+HOST-E0123	workflow-entry	Settings → Linked environments	apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx:189	HOST-080
+HOST-E0124	ui-text	Forgetting…	apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx:191	HOST-080
+HOST-E0125	ui-text	Forget	apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx:191	HOST-080
+HOST-E0126	workflow-entry	Linked thread route または既存のリモート作業リンク	apps/server/src/ws.ts:2831	HOST-081
+HOST-E0127	workflow-entry	Settings → Labs → Guest links	apps/web/src/components/settings/LabsSettingsPanel.tsx:110	HOST-082
+HOST-E0128	workflow-entry	スレッド → Share with guest	apps/web/src/components/chat/GuestShareControls.tsx:91	HOST-083
+HOST-E0129	ui-text	Copied	apps/web/src/components/chat/GuestShareControls.tsx:142	HOST-083
+HOST-E0130	ui-text	Copy	apps/web/src/components/chat/GuestShareControls.tsx:142	HOST-083
+HOST-E0131	ui-text	A new link ends the current one.	apps/web/src/components/chat/GuestShareControls.tsx:148	HOST-083
+HOST-E0132	ui-text	The link works once and expires in 24 hours.	apps/web/src/components/chat/GuestShareControls.tsx:149	HOST-083
+HOST-E0133	workflow-entry	スレッドのゲスト共有インジケーター	apps/web/src/components/chat/GuestShareControls.tsx:189	HOST-084
+HOST-E0134	workflow-entry	/guest → ゲスト名入力	apps/web/src/components/guest/GuestPage.tsx:360	HOST-085
+HOST-E0135	workflow-entry	/guest → スレッド表示	apps/server/src/guest/GuestShareService.ts:538	HOST-086
+HOST-E0136	workflow-entry	/guest → 入力欄	apps/web/src/components/guest/GuestPage.tsx:587	HOST-087
+HOST-E0137	workflow-entry	チャット → Send message from {guestName}	apps/web/src/components/chat/GuestShareControls.tsx:254	HOST-088
+HOST-E0138	workflow-entry	チャット → Dismiss message from {guestName}	apps/web/src/components/chat/GuestShareControls.tsx:282	HOST-089
+HOST-E0139	workflow-entry	Settings → Connections → WSL	apps/web/src/components/settings/ConnectionsSettings.tsx:934	HOST-090
+HOST-E0140	ui-text	WSL only	apps/web/src/components/settings/ConnectionsSettings.tsx:1127	HOST-090
+HOST-E0141	ui-text	Run only the WSL backend. T3 Code restarts when this changes.	apps/web/src/components/settings/ConnectionsSettings.tsx:1128	HOST-090
+HOST-E0142	workflow-entry	MCP → orchestrator_capabilities	apps/server/src/mcp/toolkits/orchestrator/tools.ts:75	HOST-091
+HOST-E0143	workflow-entry	MCP → delegate_task → isolation shared	apps/server/src/mcp/OrchestratorMcpService.ts:2930	HOST-092
+HOST-E0144	workflow-entry	MCP → delegate_task → isolation worktree	apps/server/src/mcp/OrchestratorMcpService.ts:2977	HOST-093
+HOST-E0145	workflow-entry	MCP → delegate_task → target.environmentId	apps/server/src/mcp/OrchestratorMcpService.ts:2913	HOST-094
+HOST-E0146	workflow-entry	MCP → delegate_task → mode async	apps/server/src/mcp/toolkits/orchestrator/tools.ts:89	HOST-095
+HOST-E0147	workflow-entry	MCP → delegate_task → mode wait	apps/server/src/mcp/OrchestratorMcpService.ts:2107	HOST-096
+HOST-E0148	workflow-entry	MCP → task_status	apps/server/src/mcp/toolkits/orchestrator/tools.ts:103	HOST-097
+HOST-E0149	workflow-entry	MCP → task_cancel	apps/server/src/mcp/OrchestratorMcpService.ts:3106	HOST-098
+HOST-E0150	workflow-entry	親チャット → ChildThreadApprovals	apps/web/src/components/chat/ChildThreadApprovals.tsx:16	HOST-099
+HOST-E0151	workflow-entry	チャット → NativeChildWorkDialog	apps/web/src/components/chat/NativeChildWorkDialog.tsx:31	HOST-100
+HOST-E0152	ui-text	Refresh	apps/web/src/components/chat/NativeChildWorkDialog.tsx:89	HOST-100
+HOST-E0153	workflow-entry	MCP → t3_thread_launch または create_threads	apps/server/src/mcp/toolkits/project/tools.ts:131	HOST-101
+HOST-E0154	workflow-entry	MCP → t3_thread_list / t3_thread_read	apps/server/src/mcp/toolkits/orchestrator/tools.ts:238	HOST-102
+HOST-E0155	workflow-entry	MCP → t3_thread_send	apps/server/src/mcp/toolkits/orchestrator/tools.ts:284	HOST-103
+HOST-E0156	workflow-entry	MCP → t3_thread_wait / t3_background_wait	apps/server/src/mcp/toolkits/orchestrator/tools.ts:146	HOST-104
+HOST-E0157	workflow-entry	MCP → t3_thread_interrupt	apps/server/src/mcp/toolkits/orchestrator/tools.ts:311	HOST-105
+HOST-E0158	workflow-entry	Settings → Scheduled tasks → editor または MCP schedule_task	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1458	HOST-106
+HOST-E0159	workflow-entry	Scheduled tasks → タスク行 → Edit	apps/web/src/components/settings/ScheduledTasksSettings.tsx:892	HOST-107
+HOST-E0160	ui-text	Edit	apps/web/src/components/settings/ScheduledTasksSettings.tsx:894	HOST-107
+HOST-E0161	workflow-entry	Scheduled tasks → タスク行のスイッチ	apps/web/src/components/settings/ScheduledTasksSettings.tsx:793	HOST-108
+HOST-E0162	workflow-entry	Scheduled tasks → Run now または MCP run_scheduled_task_now	apps/web/src/components/settings/ScheduledTasksSettings.tsx:902	HOST-109
+HOST-E0163	ui-text	Run now	apps/web/src/components/settings/ScheduledTasksSettings.tsx:904	HOST-109
+HOST-E0164	workflow-entry	Scheduled tasks → Delete または MCP delete_scheduled_task	apps/web/src/components/settings/ScheduledTasksSettings.tsx:799	HOST-110
+HOST-E0165	workflow-entry	Scheduled tasks → editor → Webhook	apps/web/src/components/settings/ScheduledTasksSettings.tsx:218	HOST-111
+HOST-E0166	workflow-entry	Scheduled tasks → Webhook endpoint → Rotate URL	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1165	HOST-112
+HOST-E0167	ui-text	Rotate	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1226	HOST-112
+HOST-E0168	workflow-entry	HTTP webhook → Scheduled tasks → Deliveries	apps/server/src/scheduledTasks/webhookRoute.ts:54	HOST-113
+HOST-E0169	ui-text	Refresh	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1122	HOST-113
+HOST-E0170	workflow-entry	Settings → Labs → Workflows	apps/web/src/components/settings/LabsSettingsPanel.tsx:210	HOST-114
+HOST-E0171	workflow-entry	Workflows → Definitions	apps/web/src/components/workflows/WorkflowDefinitionEditor.tsx:121	HOST-115
+HOST-E0172	workflow-entry	Workflows → Definitions → Delete	apps/web/src/components/workflows/WorkflowDefinitionEditor.tsx:257	HOST-116
+HOST-E0173	workflow-entry	CLI t3 workflow start または MCP t3_workflow start	apps/server/src/cli/workflow.ts:63	HOST-117
+HOST-E0174	workflow-entry	Workflow definition → every / daily / webhook / issuesOpened / pullRequestsOpened	apps/server/src/workflows/triggers.ts:55	HOST-118
+HOST-E0175	workflow-entry	Workflows → Runs または CLI t3 workflow list/show	apps/web/src/components/workflows/WorkflowsPage.tsx:155	HOST-119
+HOST-E0176	ui-text	Open run	apps/web/src/components/workflows/WorkflowRunFeed.tsx:1640	HOST-119
+HOST-E0177	workflow-entry	Workflows → Run feed → question	apps/web/src/components/workflows/WorkflowRunFeed.tsx:1858	HOST-120
+HOST-E0178	workflow-entry	Workflows → Run feed → Resume または t3 workflow resume	apps/web/src/components/workflows/WorkflowRunFeed.tsx:237	HOST-121
+HOST-E0179	ui-text	Resume	apps/web/src/components/workflows/WorkflowRunFeed.tsx:1844	HOST-121
+HOST-E0180	workflow-entry	Workflows → Run feed → Cancel または t3 workflow cancel	apps/web/src/components/workflows/WorkflowRunFeed.tsx:238	HOST-122
+HOST-E0181	ui-text	Cancel run	apps/web/src/components/workflows/WorkflowRunFeed.tsx:480	HOST-122
+HOST-E0182	workflow-entry	CLI t3 workflow signal または MCP t3_workflow signal	apps/server/src/mcp/toolkits/workflow/tools.ts:26	HOST-123
+HOST-E0183	workflow-entry	CLI t3 workflow withdraw または MCP t3_workflow withdraw	apps/server/src/mcp/toolkits/workflow/tools.ts:29	HOST-124
+HOST-E0184	workflow-entry	CLI t3 workflow store または MCP t3_workflow store/store_set/store_delete	apps/server/src/mcp/toolkits/workflow/tools.ts:11	HOST-125
+HOST-E0185	workflow-entry	Settings → Labs → Skipped runs kept	apps/web/src/components/settings/LabsSettingsPanel.tsx:237	HOST-126
+HOST-E0186	ui-text	Skipped runs kept	apps/web/src/components/settings/LabsSettingsPanel.tsx:278	HOST-126
+HOST-E0187	ui-text	Mixed	apps/web/src/components/settings/LabsSettingsPanel.tsx:279	HOST-126
+HOST-E0188	ui-text	Hide skipped	apps/web/src/components/workflows/WorkflowRunsView.tsx:408	HOST-126
+HOST-E0189	workflow-entry	MCP → t3_workflow_stop または thread workflow stop RPC	apps/server/src/mcp/toolkits/orchestrator/tools.ts:131	HOST-127
+HOST-E0190	workflow-entry	チャット → SecretRequestCard	apps/server/src/mcp/toolkits/orchestrator/tools.ts:209	HOST-128
+HOST-E0191	workflow-entry	チャット → エージェントの入力要求	apps/web/src/components/settings/LabsSettingsPanel.tsx:413	HOST-129
+HOST-E0192	workflow-entry	アバター → Mobile clients	apps/web/src/components/clerk/T3ConnectAccountPages.tsx:11	HOST-130
+HOST-E0193	ui-text	Mobile clients	apps/web/src/components/clerk/T3ConnectAccountPages.tsx:13	HOST-130
+HOST-E0194	ui-text	Try again	apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx:151	HOST-130
+HOST-E0195	workflow-entry	アバター → T3 Chat	apps/web/src/components/clerk/T3ConnectAccountPages.tsx:24	HOST-131
+HOST-E0196	ui-text	Unlinking…	apps/web/src/components/clerk/T3ChatUserProfilePage.tsx:127	HOST-131
+HOST-E0197	ui-text	Unlink	apps/web/src/components/clerk/T3ChatUserProfilePage.tsx:127	HOST-131
+HOST-E0198	ui-text	Opening…	apps/web/src/components/clerk/T3ChatUserProfilePage.tsx:131	HOST-131
+HOST-E0199	ui-text	Link T3 Chat	apps/web/src/components/clerk/T3ChatUserProfilePage.tsx:131	HOST-131
+HOST-E0200	workflow-entry	アバター → T3 Connect → Tunnel usage	apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx:132	HOST-132
+HOST-E0201	workflow-entry	Usage → Usage period / Usage metric	apps/web/src/components/usage/UsagePage.tsx:178	HOST-133
+HOST-E0202	ui-text	Usage period	apps/web/src/components/usage/UsagePage.tsx:421	HOST-133
+HOST-E0203	ui-text	Usage metric	apps/web/src/components/usage/UsagePage.tsx:437	HOST-133
+HOST-E0204	ui-text	Cost	apps/web/src/components/usage/usageShortcuts.ts:8	HOST-133
+HOST-E0205	ui-text	Tokens	apps/web/src/components/usage/usageShortcuts.ts:9	HOST-133
+HOST-E0206	workflow-entry	Usage → フィルター	apps/web/src/components/usage/UsagePage.tsx:1189	HOST-134
+HOST-E0207	ui-text	Some environments could not report usage	apps/web/src/components/usage/UsagePage.tsx:1234	HOST-134
+HOST-E0208	workflow-entry	Usage → Refresh usage / Usage breakdown	apps/web/src/components/usage/UsagePage.tsx:309	HOST-135
+HOST-E0209	ui-text	Refresh limits	apps/web/src/components/usage/UsagePage.tsx:453	HOST-135
+HOST-E0210	ui-text	Refresh usage	apps/web/src/components/usage/UsagePage.tsx:453	HOST-135
+HOST-E0211	ui-text	Usage breakdown	apps/web/src/components/usage/UsagePage.tsx:906	HOST-135
+HOST-E0212	workflow-entry	Usage → Model prices	apps/web/src/components/usage/UsagePage.tsx:1322	HOST-136
+HOST-E0213	ui-text	Model prices	apps/web/src/components/usage/UsagePage.tsx:1324	HOST-136
+HOST-E0214	ui-text	Add model price	apps/web/src/components/usage/UsagePriceOverrides.tsx:404	HOST-136
+HOST-E0215	ui-text	new model	apps/web/src/components/usage/UsagePriceOverrides.tsx:485	HOST-136
+HOST-E0216	ui-text	Discard pending changes	apps/web/src/components/usage/UsagePriceOverrides.tsx:653	HOST-136
+HOST-E0217	workflow-entry	Usage → Limits → Refresh limits	apps/web/src/components/usage/UsagePage.tsx:257	HOST-137
+HOST-E0218	ui-text	Refresh limits	apps/web/src/components/usage/UsagePage.tsx:453	HOST-137
+HOST-E0219	ui-text	Refresh usage	apps/web/src/components/usage/UsagePage.tsx:453	HOST-137
+HOST-E0220	workflow-entry	Usage → Limits → Reset credit	apps/web/src/components/usage/UsageLimits.tsx:272	HOST-138
+HOST-E0221	ui-text	Using…	apps/web/src/components/usage/UsageLimitsPooled.tsx:231	HOST-138
+HOST-E0222	workflow-entry	Settings → Providers → Usage sources → Add CLIProxyAPI hub	apps/web/src/components/settings/UsageProviderSettings.tsx:47	HOST-139
+HOST-E0223	ui-text	Add hub	apps/web/src/components/settings/UsageProviderSettings.tsx:49	HOST-139
+HOST-E0224	ui-text	Add an HTTP quota source	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx:94	HOST-139
+HOST-E0225	ui-text	Add a CLIProxyAPI hub	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx:94	HOST-139
+HOST-E0226	workflow-entry	Settings → Providers → Usage sources → Add an HTTP quota source	apps/web/src/components/settings/UsageProviderSettings.tsx:51	HOST-140
+HOST-E0227	ui-text	Add hub	apps/web/src/components/settings/UsageProviderSettings.tsx:49	HOST-140
+HOST-E0228	ui-text	Add HTTP source	apps/web/src/components/settings/UsageProviderSettings.tsx:53	HOST-140
+HOST-E0229	ui-text	Add an HTTP quota source	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx:94	HOST-140
+HOST-E0230	ui-text	Add a CLIProxyAPI hub	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx:94	HOST-140
+HOST-E0231	workflow-entry	Usage sources → Remove	apps/web/src/components/settings/UsageProviderSettings.tsx:104	HOST-141
+HOST-E0232	workflow-entry	Settings → Thread notifications	apps/web/src/components/settings/NotificationSettings.tsx:26	HOST-142
+HOST-E0233	ui-text	Off	apps/web/src/threadNotifications.ts:10	HOST-142
+HOST-E0234	ui-text	Notifications only	apps/web/src/threadNotifications.ts:11	HOST-142
+HOST-E0235	workflow-entry	チャット実行または承認待ち	apps/web/src/components/ThreadNotificationCoordinator.tsx:63	HOST-143
+HOST-E0236	workflow-entry	Settings → Voice → Input	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1366	HOST-144
+HOST-E0237	ui-text	Input	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1454	HOST-144
+HOST-E0238	ui-text	Refresh microphones	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1467	HOST-144
+HOST-E0239	ui-text	Dictation shortcut	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1491	HOST-144
+HOST-E0240	workflow-entry	Settings → Voice → Transcribe with → On this device	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1346	HOST-145
+HOST-E0241	workflow-entry	Settings → Voice → Transcribe with → On an environment	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1526	HOST-146
+HOST-E0242	ui-text	Transcribe with	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1526	HOST-146
+HOST-E0243	workflow-entry	Settings → Voice → Transcribe with → Cloud via {environment}	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1399	HOST-147
+HOST-E0244	ui-text	Retry loading models	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:409	HOST-147
+HOST-E0245	ui-text	Remove key	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:489	HOST-147
+HOST-E0246	workflow-entry	Settings → Voice → Transcribe with → Off	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1550	HOST-148
+HOST-E0247	workflow-entry	Settings → Voice → Models → Download	apps/web/src/components/settings/VoiceSettingsPanel.tsx:318	HOST-149
+HOST-E0248	ui-text	Download	apps/web/src/components/settings/VoiceSettingsPanel.tsx:352	HOST-149
+HOST-E0249	workflow-entry	Settings → Voice → Cancel {name} download	apps/web/src/components/settings/VoiceSettingsPanel.tsx:343	HOST-150
+HOST-E0250	workflow-entry	Settings → Voice → Models → Select	apps/web/src/components/settings/VoiceSettingsPanel.tsx:360	HOST-151
+HOST-E0251	ui-text	Use model	apps/web/src/components/settings/VoiceSettingsPanel.tsx:361	HOST-151
+HOST-E0252	workflow-entry	Settings → Voice → Models → Remove	apps/web/src/components/settings/VoiceSettingsPanel.tsx:369	HOST-152
+HOST-E0253	workflow-entry	Settings → Voice → Models → Existing path	apps/web/src/components/settings/VoiceSettingsPanel.tsx:932	HOST-153
+HOST-E0254	ui-text	Could not use a model from that path	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1180	HOST-153
+HOST-E0255	workflow-entry	Settings → Voice → Hardware	apps/web/src/components/settings/VoiceSettingsPanel.tsx:836	HOST-154
+HOST-E0256	ui-text	Hardware	apps/web/src/components/settings/VoiceSettingsPanel.tsx:836	HOST-154
+HOST-E0257	ui-text	Auto uses the environment’s GPU when it has one.	apps/web/src/components/settings/VoiceSettingsPanel.tsx:837	HOST-154
+HOST-E0258	workflow-entry	Settings → Voice → Unload model	apps/web/src/components/settings/VoiceSettingsPanel.tsx:879	HOST-155
+HOST-E0259	ui-text	Unload model	apps/web/src/components/settings/VoiceSettingsPanel.tsx:879	HOST-155
+HOST-E0260	workflow-entry	Settings → Voice → Streaming transcription	apps/web/src/components/settings/VoiceSettingsPanel.tsx:817	HOST-156
+HOST-E0261	ui-text	Streaming transcription	apps/web/src/components/settings/VoiceSettingsPanel.tsx:817	HOST-156
+HOST-E0262	workflow-entry	Settings → Voice → Language / Translate to English	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1348	HOST-157
+HOST-E0263	ui-text	Language	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1703	HOST-157
+HOST-E0264	ui-text	Translate to English	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1737	HOST-157
+HOST-E0265	ui-text	Speak any language and get English text.	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1738	HOST-157
+HOST-E0266	workflow-entry	Settings → Voice → Silence filtering	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1752	HOST-158
+HOST-E0267	ui-text	Silence filtering	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1752	HOST-158
+HOST-E0268	workflow-entry	Settings → Voice → Remove filler words	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1773	HOST-159
+HOST-E0269	ui-text	Remove filler words	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1773	HOST-159
+HOST-E0270	workflow-entry	Settings → Voice → Dictionary	apps/web/src/components/settings/VoiceSettingsPanel.tsx:398	HOST-160
+HOST-E0271	ui-text	Your dictionary	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1808	HOST-160
+HOST-E0272	ui-text	Names and terms to spell your way, saved on this device.	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1809	HOST-160
+HOST-E0273	workflow-entry	Settings → Voice → Cleanup	apps/web/src/components/settings/VoiceSettingsPanel.tsx:559	HOST-161
+HOST-E0274	ui-text	Use a separate cleanup model	apps/web/src/components/settings/VoiceSettingsPanel.tsx:677	HOST-161
+HOST-E0275	ui-text	Cleanup	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1822	HOST-161
+HOST-E0276	ui-text	Clean up transcripts	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1824	HOST-161
+HOST-E0277	ui-text	Custom cleanup instructions	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1882	HOST-161
+HOST-E0278	ui-text	Correction cue	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1902	HOST-161
+HOST-E0279	ui-text	The phrase you say to fix a mistake, like “scratch that”.	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1903	HOST-161
+HOST-E0280	workflow-entry	Settings → Voice → 試験入力欄	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1216	HOST-162
+HOST-E0281	ui-text	Close model test	apps/web/src/components/settings/VoiceSettingsPanel.tsx:1308	HOST-162
+HOST-E0282	workflow-entry	Settings → Secrets → Add または Edit	apps/web/src/components/settings/SecretsSettings.tsx:113	HOST-163
+HOST-E0283	ui-text	Add provider	apps/web/src/components/settings/SecretsSettings.tsx:115	HOST-163
+HOST-E0284	ui-text	Edit	apps/web/src/components/settings/SecretsSettings.tsx:175	HOST-163
+HOST-E0285	workflow-entry	Settings → Secrets → Remove	apps/web/src/components/settings/SecretsSettings.tsx:205	HOST-164
+HOST-E0286	workflow-entry	Secret source の Check	apps/server/src/secrets/SecretCheck.ts:13	HOST-165
+HOST-E0287	workflow-entry	Settings → Source control → Server environment	apps/web/src/components/settings/SourceControlSettings.tsx:274	HOST-166
+HOST-E0288	ui-text	Scan	apps/web/src/components/settings/SourceControlSettings.tsx:453	HOST-166
+HOST-E0289	ui-text	Use active login	apps/web/src/components/settings/SourceControlAccountSettings.tsx:241	HOST-166
+HOST-E0290	workflow-entry	Settings → Source control → App sign in	apps/web/src/components/settings/SourceControlAppSignInSettings.tsx:128	HOST-167
+HOST-E0291	workflow-entry	Issue tracker の接続設定と対象プロジェクト	apps/server/src/issue/IssueTrackerConnections.ts:223	HOST-168
+HOST-E0292	workflow-entry	チャット → MCP Sign in action	apps/web/src/components/chat/McpSignInAction.tsx:37	HOST-169
+HOST-E0293	workflow-entry	Settings → Devices → Device hub	apps/web/src/components/settings/IntegrationsSettings.tsx:1039	HOST-170
+HOST-E0294	ui-text	Device hub	apps/web/src/components/settings/IntegrationsSettings.tsx:1050	HOST-170
+HOST-E0295	workflow-entry	Settings → Devices → Agent device access	apps/web/src/components/settings/IntegrationsSettings.tsx:1061	HOST-171
+HOST-E0296	ui-text	Agent device access	apps/web/src/components/settings/IntegrationsSettings.tsx:1087	HOST-171
+HOST-E0297	workflow-entry	Settings → Devices → Check versions / Update	apps/web/src/components/settings/IntegrationsSettings.tsx:968	HOST-172
+HOST-E0298	workflow-entry	Device hub または許可済み MCP device_*	apps/server/src/device/LocalDeviceHost.ts:114	HOST-173
+HOST-E0299	workflow-entry	Settings → Browser → Agent browser access	apps/web/src/components/settings/IntegrationsSettings.tsx:1107	HOST-174
+HOST-E0300	ui-text	Agent browser access	apps/web/src/components/settings/IntegrationsSettings.tsx:1142	HOST-174
+HOST-E0301	workflow-entry	ACP → Import session	apps/server/src/provider/AcpRegistrySessions.ts:67	HOST-175
+HOST-E0302	workflow-entry	ACP → Delete session	apps/server/src/provider/AcpRegistrySessions.ts:67	HOST-176
+HOST-E0303	workflow-entry	ACP provider → Disable	apps/server/src/ws.ts:2552	HOST-177
+HOST-E0304	workflow-entry	Settings → Maintenance → Provider update checks	apps/web/src/components/settings/SettingsPanels.tsx:2394	HOST-178
+HOST-E0305	ui-text	Check provider versions	apps/web/src/components/settings/SettingsPanels.tsx:2419	HOST-178
+HOST-E0306	workflow-entry	t3 auth session issue	apps/server/src/cli/auth.ts:293	HOST-179
+HOST-E0307	workflow-entry	t3 connect login / link / status / publish / unlink / logout	apps/server/src/cli/connect.ts:561	HOST-180
+HOST-E0308	workflow-entry	リンク先へ移動する接続フロー	apps/server/src/peer/PeerClientPairing.ts:96	HOST-181
+HOST-E0309	workflow-entry	Connections → T3 Connect → 診断	apps/web/src/components/settings/SavedEnvironmentRows.tsx:634	HOST-182
+HOST-E0310	workflow-entry	Connections → More actions → Environment icon	apps/web/src/components/settings/SavedEnvironmentRows.tsx:449	HOST-183
+HOST-E0311	workflow-entry	/guest → 該当項目	apps/server/src/guest/GuestShareService.ts:707	HOST-184
+HOST-E0312	workflow-entry	Settings → Scheduled tasks または MCP list_scheduled_tasks	apps/web/src/components/settings/ScheduledTasksSettings.tsx:398	HOST-185
+HOST-E0313	workflow-entry	Scheduled tasks → Destination	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1300	HOST-186
+HOST-E0314	workflow-entry	Scheduled tasks → Destination → 既存スレッド	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1290	HOST-187
+HOST-E0315	workflow-entry	CLI t3 workflow hooks → HTTP 試験要求	apps/server/src/cli/workflow.ts:375	HOST-188
+HOST-E0316	workflow-entry	CLI t3 workflow questions または MCP t3_workflow questions	apps/server/src/cli/workflow.ts:345	HOST-189
+HOST-E0317	workflow-entry	CLI t3 workflow store set または MCP t3_workflow store_set	apps/server/src/cli/workflow.ts:429	HOST-190
+HOST-E0318	workflow-entry	CLI t3 workflow store delete または MCP t3_workflow store_delete	apps/server/src/cli/workflow.ts:453	HOST-191
+HOST-E0319	workflow-entry	チャット → UsageLimitRecoveryBanner	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:90	HOST-192
+HOST-E0320	ui-text	Saving...	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:199	HOST-192
+HOST-E0321	ui-text	Wake now	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:211	HOST-192
+HOST-E0322	ui-text	Snooze until reset	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:211	HOST-192
+HOST-E0323	workflow-entry	チャット → UsageLimitRecoveryBanner → Copy	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:96	HOST-193
+HOST-E0324	ui-text	Copy request for admin	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx:142	HOST-193
+HOST-E0325	workflow-entry	Settings → Source control → App sign in → Sign out	apps/web/src/components/settings/SourceControlAppSignInSettings.tsx:149	HOST-194
+HOST-E0326	ui-text	Sign out	apps/web/src/components/settings/SourceControlAppSignInSettings.tsx:188	HOST-194
+HOST-E0327	workflow-entry	Settings → Devices → Device sources → SSH	apps/web/src/components/settings/DeviceHostEditor.tsx:106	HOST-195
+HOST-E0328	workflow-entry	Settings → Devices → Device sources → Expo EAS	apps/web/src/components/settings/EasDeviceHostEditor.tsx:180	HOST-196
+HOST-E0329	ui-text	Check account	apps/web/src/components/settings/EasDeviceHostEditor.tsx:289	HOST-196
+HOST-E0330	ui-text	Expo project	apps/web/src/components/settings/EasDeviceHostEditor.tsx:307	HOST-196
+HOST-E0331	workflow-entry	Settings → Devices → Device sources → Simlock	apps/web/src/components/settings/LabsSettingsPanel.tsx:317	HOST-197
+HOST-E0332	ui-text	Agent token	apps/web/src/components/settings/SimlockDeviceHostEditor.tsx:342	HOST-197
+HOST-E0333	workflow-entry	Settings → Devices → Device sources → Remove	apps/web/src/components/settings/DeviceSourcesSettings.tsx:384	HOST-198
+HOST-E0334	ui-text	Remove	apps/web/src/components/settings/DeviceSourcesSettings.tsx:385	HOST-198
+HOST-E0335	ui-text	Device sources	apps/web/src/components/settings/DeviceSourcesSettings.tsx:616	HOST-198
+HOST-E0336	workflow-entry	Settings → Diagnostics → Live Processes / Resource History / Trace Diagnostics	apps/web/src/components/settings/DiagnosticsSettings.tsx:230	HOST-199
+HOST-E0337	ui-text	Copied trace ID	apps/web/src/components/settings/DiagnosticsSettings.tsx:230	HOST-199
+HOST-E0338	ui-text	Copy trace ID	apps/web/src/components/settings/DiagnosticsSettings.tsx:230	HOST-199
+HOST-E0339	ui-text	Live Processes	apps/web/src/components/settings/DiagnosticsSettings.tsx:1010	HOST-199
+HOST-E0340	ui-text	Resource History	apps/web/src/components/settings/DiagnosticsSettings.tsx:1076	HOST-199
+HOST-E0341	ui-text	Trace Diagnostics	apps/web/src/components/settings/DiagnosticsSettings.tsx:1150	HOST-199
+HOST-E0342	workflow-entry	Diagnostics → Live Processes → signal control	apps/web/src/components/settings/DiagnosticsSettings.tsx:445	HOST-200
+HOST-E0343	workflow-entry	Settings → Storage → Cleanup	apps/web/src/components/settings/StorageSettings.tsx:480	HOST-201
+HOST-E0344	ui-text	Deleting…	apps/web/src/components/settings/StorageSettings.tsx:532	HOST-201
+HOST-E0345	ui-text	Delete now	apps/web/src/components/settings/StorageSettings.tsx:532	HOST-201
+HOST-E0346	ui-text	Last run	apps/web/src/components/settings/StorageSettings.tsx:540	HOST-201
+HOST-E0347	workflow-entry	Storage → DatabaseStorageNotice	apps/web/src/components/settings/DatabaseStorageNotice.tsx:149	HOST-202
+HOST-E0348	workflow-entry	Providers、Access、Workflow、その他対象の設定	apps/server/src/policy/managedProviders.ts:142	HOST-203
+HOST-E0349	workflow-entry	MCP → tool_search	apps/server/src/mcp/McpToolExposure.ts:4	HOST-204
+HOST-E0350	workflow-entry	チャット → 業務処理の MCP App 項目	apps/server/src/ws.ts:2697	HOST-205
+HOST-E0351	workflow-entry	Device hub または MCP device_list	apps/server/src/device/DeviceService.ts:564	HOST-206
+HOST-E0352	workflow-entry	MCP → device_screenshot	apps/server/src/mcp/toolkits/device/tools.ts:73	HOST-207
+HOST-E0353	workflow-entry	Device hub または MCP device_close	apps/server/src/ws.ts:3511	HOST-208
+HOST-E0354	workflow-entry	Device hub → Shutdown	apps/server/src/ws.ts:3512	HOST-209
+HOST-E0355	workflow-entry	MCP → send_to_user	apps/server/src/mcp/toolkits/message/tools.ts:11	HOST-210
+HOST-E0356	workflow-entry	MCP → t3_thread_update / t3_thread_organize / t3_thread_configure	apps/server/src/mcp/toolkits/orchestrator/tools.ts:267	HOST-211
+HOST-E0357	workflow-entry	Scheduled tasks → Destination → fresh_session	apps/web/src/components/settings/ScheduledTasksSettings.tsx:1300	HOST-212
+HOST-E0358	workflow-entry	MCP → t3_environment_link	apps/server/src/mcp/toolkits/orchestrator/tools.ts:337	HOST-213
+HOST-E0359	workflow-entry	MCP → t3_background_wait	apps/server/src/mcp/toolkits/orchestrator/tools.ts:146	HOST-214
+HOST-E0360	workflow-entry	プロバイダーのフィードバック操作または provider.uploadFeedback RPC	apps/server/src/ws.ts:2703	HOST-215
+HOST-E0361	workflow-entry	Settings → Providers → Antigravity → Gemini Enterprise	packages/contracts/src/settings.ts:876	HOST-216
+HOST-E0362	workflow-entry	Settings → Providers → Antigravity → Agent Platform (Vertex AI)	packages/contracts/src/settings.ts:878	HOST-217
+HOST-E0363	workflow-entry	Settings → Providers → Claude Code → Auto-compact after / Compact idle threads	packages/contracts/src/settings.ts:840	HOST-218
+HOST-E0364	workflow-entry	外部 MCP OAuth → revoke または Access のクライアント操作	apps/server/src/auth/mcpOAuthHttp.ts:212	HOST-219
+HOST-E0365	workflow-entry	Voice → Manage key → Remove	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:471	HOST-220
+HOST-E0366	ui-text	Remove key…	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:473	HOST-220
+HOST-E0367	ui-text	Remove key	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:489	HOST-220
+HOST-E0368	workflow-entry	Voice → Manage OpenRouter → OpenRouter model	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:90	HOST-221
+HOST-E0369	ui-text	OpenRouter model	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:124	HOST-221
+HOST-E0370	ui-text	Search transcription models	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:125	HOST-221
+HOST-E0371	ui-text	Retry loading models	apps/web/src/components/settings/CloudVoiceConfiguration.tsx:409	HOST-221
+HOST-E0372	workflow-entry	Workflows → Definitions → 新規ファイル	apps/web/src/components/workflows/WorkflowDefinitionEditor.tsx:345	HOST-222
+HOST-E0373	ui-text	New file	apps/web/src/components/workflows/WorkflowDefinitionEditor.tsx:509	HOST-222
+HOST-E0374	workflow-entry	MCP → schedule_task → scheduledTaskId	apps/server/src/mcp/toolkits/orchestrator/tools.ts:170	HOST-223
+HOST-E0375	workflow-entry	ゲストページの再読込または有効性照会	apps/web/src/components/chat/GuestShareControls.tsx:221	HOST-224
+HOST-E0376	workflow-entry	MCP → t3_thread_send → environmentId	apps/server/src/mcp/toolkits/orchestrator/handlers.ts:192	HOST-225
+HOST-E0377	shortcut-command	usage.cost	apps/web/src/components/usage/usageShortcuts.ts:8	HOST-133
+HOST-E0378	shortcut-command	usage.tokens	apps/web/src/components/usage/usageShortcuts.ts:9	HOST-133
+HOST-E0379	shortcut-command	usage.limits	apps/web/src/components/usage/usageShortcuts.ts:10	HOST-133
+HOST-E0380	shortcut-command	usage.period.day	apps/web/src/components/usage/usageShortcuts.ts:14	HOST-133
+HOST-E0381	shortcut-command	usage.period.week	apps/web/src/components/usage/usageShortcuts.ts:15	HOST-133
+HOST-E0382	shortcut-command	usage.period.month	apps/web/src/components/usage/usageShortcuts.ts:16	HOST-133
+HOST-E0383	shortcut-command	usage.period.quarter	apps/web/src/components/usage/usageShortcuts.ts:17	HOST-133
+HOST-E0384	route-id	/pair	apps/web/src/routes/pair.tsx:9	HOST-051
+HOST-E0385	route-id	/connect	apps/web/src/routes/connect.tsx:6	HOST-069
+HOST-E0386	route-id	/connect-agent	apps/web/src/routes/connect-agent.tsx:5	HOST-077
+HOST-E0387	route-id	/approve-agent	apps/web/src/routes/approve-agent.tsx:7	HOST-077
+HOST-E0388	route-id	/guest	apps/web/src/routes/guest.tsx:5	HOST-085
+HOST-E0389	route-id	/_chat/settings/providers	apps/web/src/routes/_chat.settings.providers.tsx:37	HOST-001
+HOST-E0390	route-id	/_chat/settings/connections	apps/web/src/routes/_chat.settings.connections.tsx:8	HOST-050
+HOST-E0391	route-id	/_chat/settings/access	apps/web/src/routes/_chat.settings.access.tsx:8	HOST-063
+HOST-E0392	route-id	/_chat/settings/labs	apps/web/src/routes/_chat.settings.labs.tsx:4	HOST-082
+HOST-E0393	route-id	/_chat/settings/scheduled-tasks	apps/web/src/routes/_chat.settings.scheduled-tasks.tsx:11	HOST-185
+HOST-E0394	route-id	/_chat/workflows	apps/web/src/routes/_chat.workflows.tsx:9	HOST-119
+HOST-E0395	route-id	/_chat/usage	apps/web/src/routes/_chat.usage.tsx:5	HOST-133
+HOST-E0396	route-id	/_chat/settings/voice	apps/web/src/routes/_chat.settings.voice.tsx:5	HOST-144
+HOST-E0397	route-id	/_chat/settings/secrets	apps/web/src/routes/_chat.settings.secrets.tsx:7	HOST-163
+HOST-E0398	route-id	/_chat/settings/source-control	apps/web/src/routes/_chat.settings.source-control.tsx:5	HOST-166
+HOST-E0399	route-id	/_chat/settings/devices	apps/web/src/routes/_chat.settings.devices.tsx:4	HOST-170
+HOST-E0400	route-id	/_chat/settings/diagnostics	apps/web/src/routes/_chat.settings.diagnostics.tsx:5	HOST-199
+HOST-E0401	route-id	/_chat/settings/storage	apps/web/src/routes/_chat.settings.storage.tsx:4	HOST-201
+HOST-E0402	provider-driver	codex	apps/server/src/provider/builtInDrivers.ts:34	HOST-020
+HOST-E0403	provider-driver	claudeAgent	apps/server/src/provider/builtInDrivers.ts:35	HOST-024
+HOST-E0404	provider-driver	cursor	apps/server/src/provider/builtInDrivers.ts:36	HOST-025
+HOST-E0405	provider-driver	grok	apps/server/src/provider/builtInDrivers.ts:37	HOST-027
+HOST-E0406	provider-driver	fx	apps/server/src/provider/builtInDrivers.ts:38	HOST-028
+HOST-E0407	provider-driver	opencode	apps/server/src/provider/builtInDrivers.ts:39	HOST-029
+HOST-E0408	provider-driver	antigravity	apps/server/src/provider/builtInDrivers.ts:40	HOST-037
+HOST-E0409	provider-driver	kiro	apps/server/src/provider/builtInDrivers.ts:41	HOST-031
+HOST-E0410	provider-driver	pi	apps/server/src/provider/builtInDrivers.ts:42	HOST-034
+HOST-E0411	provider-driver	muse	apps/server/src/provider/builtInDrivers.ts:43	HOST-033
+HOST-E0412	provider-driver	acpRegistry	apps/server/src/provider/builtInDrivers.ts:44	HOST-042
+HOST-E0413	usage-reader	claudeAgent	apps/server/src/provider/builtInDrivers.ts:61	HOST-135
+HOST-E0414	usage-reader	codex	apps/server/src/provider/builtInDrivers.ts:62	HOST-135
+HOST-E0415	usage-reader	grok	apps/server/src/provider/builtInDrivers.ts:63	HOST-135
+HOST-E0416	usage-reader	pi	apps/server/src/provider/builtInDrivers.ts:64	HOST-135
+HOST-E0417	usage-reader	opencode	apps/server/src/provider/builtInDrivers.ts:65	HOST-135
+HOST-E0418	usage-reader	muse	apps/server/src/provider/builtInDrivers.ts:66	HOST-135
+HOST-E0419	usage-reader	antigravity	apps/server/src/provider/builtInDrivers.ts:67	HOST-135
+HOST-E0420	usage-reader	cursor	apps/server/src/provider/builtInDrivers.ts:68	HOST-135
+HOST-E0421	provider-field	codex.setupMode	packages/contracts/src/settings.ts:726	HOST-021
+HOST-E0422	provider-field	codex.enabled	packages/contracts/src/settings.ts:729	HOST-003
+HOST-E0423	provider-field	codex.binaryPath	packages/contracts/src/settings.ts:733	HOST-005
+HOST-E0424	provider-field	codex.homePath	packages/contracts/src/settings.ts:740	HOST-005
+HOST-E0425	provider-field	codex.shadowHomePath	packages/contracts/src/settings.ts:751	HOST-005
+HOST-E0426	provider-field	codex.launchArgs	packages/contracts/src/settings.ts:763	HOST-005
+HOST-E0427	provider-field	codex.customModels	packages/contracts/src/settings.ts:770	HOST-015
+HOST-E0428	provider-field	claudeAgent.enabled	packages/contracts/src/settings.ts:805	HOST-003
+HOST-E0429	provider-field	claudeAgent.binaryPath	packages/contracts/src/settings.ts:809	HOST-005
+HOST-E0430	provider-field	claudeAgent.homePath	packages/contracts/src/settings.ts:816	HOST-005
+HOST-E0431	provider-field	claudeAgent.customModels	packages/contracts/src/settings.ts:825	HOST-015
+HOST-E0432	provider-field	claudeAgent.launchArgs	packages/contracts/src/settings.ts:829	HOST-005
+HOST-E0433	provider-field	claudeAgent.autoCompactWindow	packages/contracts/src/settings.ts:840	HOST-218
+HOST-E0434	provider-field	claudeAgent.idleCompaction	packages/contracts/src/settings.ts:854	HOST-218
+HOST-E0435	provider-field	cursor.enabled	packages/provider-cursor/src/settings.ts:7	HOST-003
+HOST-E0436	provider-field	cursor.binaryPath	packages/provider-cursor/src/settings.ts:12	HOST-005
+HOST-E0437	provider-field	cursor.apiEndpoint	packages/provider-cursor/src/settings.ts:15	HOST-005
+HOST-E0438	provider-field	cursor.customModels	packages/provider-cursor/src/settings.ts:18	HOST-015
+HOST-E0439	provider-field	grok.enabled	packages/provider-grok/src/settings.ts:11	HOST-003
+HOST-E0440	provider-field	grok.binaryPath	packages/provider-grok/src/settings.ts:15	HOST-005
+HOST-E0441	provider-field	grok.customModels	packages/provider-grok/src/settings.ts:22	HOST-015
+HOST-E0442	provider-field	fx.enabled	packages/provider-fx/src/settings.ts:17	HOST-003
+HOST-E0443	provider-field	fx.binaryPath	packages/provider-fx/src/settings.ts:21	HOST-005
+HOST-E0444	provider-field	fx.customModels	packages/provider-fx/src/settings.ts:28	HOST-015
+HOST-E0445	provider-field	opencode.enabled	packages/provider-opencode/src/settings.ts:15	HOST-003
+HOST-E0446	provider-field	opencode.binaryPath	packages/provider-opencode/src/settings.ts:19	HOST-005
+HOST-E0447	provider-field	opencode.serverUrl	packages/provider-opencode/src/settings.ts:29	HOST-030
+HOST-E0448	provider-field	opencode.serverPassword	packages/provider-opencode/src/settings.ts:40	HOST-030
+HOST-E0449	provider-field	opencode.customModels	packages/provider-opencode/src/settings.ts:53	HOST-015
+HOST-E0450	provider-field	antigravity.enabled	packages/contracts/src/settings.ts:887	HOST-003
+HOST-E0451	provider-field	antigravity.authMethod	packages/contracts/src/settings.ts:891	HOST-041
+HOST-E0452	provider-field	antigravity.apiKey	packages/contracts/src/settings.ts:904	HOST-041
+HOST-E0453	provider-field	antigravity.gcpProject	packages/contracts/src/settings.ts:917	HOST-217
+HOST-E0454	provider-field	antigravity.gcpLocation	packages/contracts/src/settings.ts:926	HOST-217
+HOST-E0455	provider-field	antigravity.binaryPath	packages/contracts/src/settings.ts:934	HOST-005
+HOST-E0456	provider-field	antigravity.customModels	packages/contracts/src/settings.ts:942	HOST-015
+HOST-E0457	provider-field	kiro.enabled	packages/provider-kiro/src/settings.ts:12	HOST-003
+HOST-E0458	provider-field	kiro.binaryPath	packages/provider-kiro/src/settings.ts:16	HOST-005
+HOST-E0459	provider-field	kiro.customModels	packages/provider-kiro/src/settings.ts:23	HOST-015
+HOST-E0460	provider-field	pi.enabled	packages/provider-pi/src/settings.ts:13	HOST-003
+HOST-E0461	provider-field	pi.binaryPath	packages/provider-pi/src/settings.ts:17	HOST-005
+HOST-E0462	provider-field	pi.launchArgs	packages/provider-pi/src/settings.ts:24	HOST-036
+HOST-E0463	provider-field	pi.customModels	packages/provider-pi/src/settings.ts:32	HOST-015
+HOST-E0464	provider-field	muse.enabled	packages/provider-muse/src/settings.ts:12	HOST-003
+HOST-E0465	provider-field	muse.binaryPath	packages/provider-muse/src/settings.ts:16	HOST-005
+HOST-E0466	provider-field	muse.customModels	packages/provider-muse/src/settings.ts:24	HOST-015
+HOST-E0467	provider-field	acpRegistry.source	packages/provider-acp-registry/src/settings.ts:10	HOST-043
+HOST-E0468	provider-field	acpRegistry.enabled	packages/provider-acp-registry/src/settings.ts:23	HOST-003
+HOST-E0469	provider-field	acpRegistry.agentId	packages/provider-acp-registry/src/settings.ts:27	HOST-042
+HOST-E0470	provider-field	acpRegistry.commandPath	packages/provider-acp-registry/src/settings.ts:35	HOST-043
+HOST-E0471	provider-field	acpRegistry.commandArgs	packages/provider-acp-registry/src/settings.ts:44	HOST-043
+HOST-E0472	provider-field	acpRegistry.authMethodId	packages/provider-acp-registry/src/settings.ts:48	HOST-044
+HOST-E0473	provider-field	acpRegistry.distribution	packages/provider-acp-registry/src/settings.ts:57	HOST-042
+HOST-E0474	provider-field	acpRegistry.customModels	packages/provider-acp-registry/src/settings.ts:61	HOST-015
+HOST-E0475	provider-env-field	CURSOR_API_KEY	packages/provider-cursor/src/client.ts:14	HOST-026
+HOST-E0476	provider-env-field	KIRO_API_KEY	packages/provider-kiro/src/client.ts:25	HOST-032
+HOST-E0477	provider-auth-mode	oauth-personal	packages/contracts/src/settings.ts:875	HOST-040
+HOST-E0478	provider-auth-mode	oauth-business	packages/contracts/src/settings.ts:876	HOST-216
+HOST-E0479	provider-auth-mode	gemini-api-key	packages/contracts/src/settings.ts:877	HOST-041
+HOST-E0480	provider-auth-mode	agent-platform	packages/contracts/src/settings.ts:878	HOST-217
+HOST-E0481	cloud-speech-provider	openai	packages/contracts/src/speech.ts:11	HOST-147
+HOST-E0482	cloud-speech-provider	xai	packages/contracts/src/speech.ts:11	HOST-147
+HOST-E0483	cloud-speech-provider	openrouter	packages/contracts/src/speech.ts:11	HOST-147
+HOST-E0484	websocket	/ws/voice	packages/contracts/src/speech.ts:340|apps/server/src/speech/stream.ts:121	HOST-156
+HOST-E0485	scheduled-task-mode	new_thread	packages/contracts/src/scheduledTask.ts:231	HOST-186
+HOST-E0486	scheduled-task-mode	continue	packages/contracts/src/scheduledTask.ts:231	HOST-187
+HOST-E0487	scheduled-task-mode	fresh_session	packages/contracts/src/scheduledTask.ts:231	HOST-212
+HOST-E0488	rpc	mcpApps.callTool	packages/contracts/src/rpc.ts:518|apps/server/src/ws.ts:2697|apps/server/src/auth/RpcAuthorization.ts:203	HOST-205
+HOST-E0489	rpc	mcpApps.toolInfo	packages/contracts/src/rpc.ts:519|apps/server/src/ws.ts:2698|apps/server/src/auth/RpcAuthorization.ts:204	HOST-205
+HOST-E0490	rpc	mcpApps.readResource	packages/contracts/src/rpc.ts:520|apps/server/src/ws.ts:2700|apps/server/src/auth/RpcAuthorization.ts:205	HOST-205
+HOST-E0491	rpc	mcpApps.updateModelContext	packages/contracts/src/rpc.ts:521|apps/server/src/ws.ts:2699|apps/server/src/auth/RpcAuthorization.ts:206	HOST-205
+HOST-E0492	rpc	provider.uploadFeedback	packages/contracts/src/rpc.ts:523|apps/server/src/ws.ts:2703|apps/server/src/auth/RpcAuthorization.ts:202	HOST-215
+HOST-E0493	rpc	provider.mcpSignIn.start	packages/contracts/src/rpc.ts:524|apps/server/src/ws.ts:2701|apps/server/src/auth/RpcAuthorization.ts:79|packages/contracts/src/clientRpcPermissions.ts:24	HOST-169
+HOST-E0494	rpc	provider.mcpSignIn.complete	packages/contracts/src/rpc.ts:525|apps/server/src/ws.ts:2702|apps/server/src/auth/RpcAuthorization.ts:80|packages/contracts/src/clientRpcPermissions.ts:25	HOST-169
+HOST-E0495	rpc	provider.auth.start	packages/contracts/src/rpc.ts:526|apps/server/src/ws.ts:2785|apps/server/src/auth/RpcAuthorization.ts:76	HOST-017
+HOST-E0496	rpc	provider.consumeResetCredit	packages/contracts/src/rpc.ts:527|apps/server/src/ws.ts:2753|apps/server/src/auth/RpcAuthorization.ts:77	HOST-138
+HOST-E0497	rpc	provider.auth.complete	packages/contracts/src/rpc.ts:528|apps/server/src/ws.ts:2790|apps/server/src/auth/RpcAuthorization.ts:78	HOST-017
+HOST-E0498	rpc	provider.chatgpt.reconnect-profile	packages/contracts/src/rpc.ts:529|apps/server/src/ws.ts:2792|apps/server/src/auth/RpcAuthorization.ts:81	HOST-022
+HOST-E0499	rpc	provider.chatgpt.import-profile	packages/contracts/src/rpc.ts:530|apps/server/src/ws.ts:2793|apps/server/src/auth/RpcAuthorization.ts:82	HOST-023
+HOST-E0500	rpc	provider.chatgpt.handoff.subscribe	packages/contracts/src/rpc.ts:531|apps/server/src/ws.ts:2794|apps/server/src/auth/RpcAuthorization.ts:83	HOST-023
+HOST-E0501	rpc	provider.auth.respond	packages/contracts/src/rpc.ts:532|apps/server/src/ws.ts:2786|apps/server/src/auth/RpcAuthorization.ts:84	HOST-017
+HOST-E0502	rpc	provider.auth.cancel	packages/contracts/src/rpc.ts:533|apps/server/src/ws.ts:2796|apps/server/src/auth/RpcAuthorization.ts:85	HOST-018
+HOST-E0503	rpc	provider.auth.removeMethod	packages/contracts/src/rpc.ts:534|apps/server/src/ws.ts:2797|apps/server/src/auth/RpcAuthorization.ts:86|packages/contracts/src/clientRpcPermissions.ts:22	HOST-019
+HOST-E0504	rpc	provider.auth.logout	packages/contracts/src/rpc.ts:535|apps/server/src/ws.ts:2798|apps/server/src/auth/RpcAuthorization.ts:87	HOST-019
+HOST-E0505	rpc	provider.auth.subscribe	packages/contracts/src/rpc.ts:536|apps/server/src/ws.ts:2799|apps/server/src/auth/RpcAuthorization.ts:88	HOST-017
+HOST-E0506	rpc	provider.install.start	packages/contracts/src/rpc.ts:537|apps/server/src/ws.ts:2801|apps/server/src/auth/RpcAuthorization.ts:89	HOST-037
+HOST-E0507	rpc	provider.install.cancel	packages/contracts/src/rpc.ts:538|apps/server/src/ws.ts:2802|apps/server/src/auth/RpcAuthorization.ts:90	HOST-038
+HOST-E0508	rpc	provider.install.subscribe	packages/contracts/src/rpc.ts:539|apps/server/src/ws.ts:2803|apps/server/src/auth/RpcAuthorization.ts:91	HOST-037
+HOST-E0509	rpc	provider.install.remove	packages/contracts/src/rpc.ts:540|apps/server/src/ws.ts:2804|apps/server/src/auth/RpcAuthorization.ts:92	HOST-039
+HOST-E0510	rpc	device.configure	packages/contracts/src/rpc.ts:577|apps/server/src/ws.ts:3492|apps/server/src/auth/RpcAuthorization.ts:238	HOST-170
+HOST-E0511	rpc	device.list	packages/contracts/src/rpc.ts:578|apps/server/src/ws.ts:3496|apps/server/src/auth/RpcAuthorization.ts:242	HOST-206
+HOST-E0512	rpc	device.testHost	packages/contracts/src/rpc.ts:579|apps/server/src/ws.ts:3493|apps/server/src/auth/RpcAuthorization.ts:239	HOST-195
+HOST-E0513	rpc	device.easAccount	packages/contracts/src/rpc.ts:580|apps/server/src/ws.ts:3494|apps/server/src/auth/RpcAuthorization.ts:240	HOST-196
+HOST-E0514	rpc	device.simlockIdentity	packages/contracts/src/rpc.ts:581|apps/server/src/ws.ts:3495|apps/server/src/auth/RpcAuthorization.ts:241	HOST-197
+HOST-E0515	rpc	device.open	packages/contracts/src/rpc.ts:582|apps/server/src/ws.ts:3507|apps/server/src/auth/RpcAuthorization.ts:243	HOST-173
+HOST-E0516	rpc	device.close	packages/contracts/src/rpc.ts:583|apps/server/src/ws.ts:3511|apps/server/src/auth/RpcAuthorization.ts:244	HOST-208
+HOST-E0517	rpc	device.shutdown	packages/contracts/src/rpc.ts:584|apps/server/src/ws.ts:3512|apps/server/src/auth/RpcAuthorization.ts:245	HOST-209
+HOST-E0518	rpc	device.detail	packages/contracts/src/rpc.ts:585|apps/server/src/ws.ts:3513|apps/server/src/auth/RpcAuthorization.ts:246	HOST-206
+HOST-E0519	rpc	device.action	packages/contracts/src/rpc.ts:586|apps/server/src/ws.ts:3514|apps/server/src/auth/RpcAuthorization.ts:247	HOST-173
+HOST-E0520	rpc	server.probe	packages/contracts/src/rpc.ts:588|apps/server/src/ws.ts:2481|apps/server/src/auth/RpcAuthorization.ts:71	HOST-058
+HOST-E0521	rpc	server.getConfig	packages/contracts/src/rpc.ts:589|apps/server/src/ws.ts:2483|apps/server/src/auth/RpcAuthorization.ts:72	HOST-001
+HOST-E0522	rpc	server.getNpmRelease	packages/contracts/src/rpc.ts:590|apps/server/src/ws.ts:2806|apps/server/src/auth/RpcAuthorization.ts:73	HOST-059
+HOST-E0523	rpc	server.refreshProviders	packages/contracts/src/rpc.ts:591|apps/server/src/ws.ts:2600|apps/server/src/auth/RpcAuthorization.ts:74|packages/contracts/src/clientRpcPermissions.ts:36	HOST-010
+HOST-E0524	rpc	server.updateProvider	packages/contracts/src/rpc.ts:592|apps/server/src/ws.ts:2751|apps/server/src/auth/RpcAuthorization.ts:75	HOST-012
+HOST-E0525	rpc	server.updateServer	packages/contracts/src/rpc.ts:593|apps/server/src/ws.ts:2805|apps/server/src/auth/RpcAuthorization.ts:93	HOST-059
+HOST-E0526	rpc	server.updateServerWithProgress	packages/contracts/src/rpc.ts:594|apps/server/src/ws.ts:2807|apps/server/src/auth/RpcAuthorization.ts:94	HOST-059
+HOST-E0527	rpc	server.commitDesktopUpdate	packages/contracts/src/rpc.ts:595|apps/server/src/ws.ts:2809|apps/server/src/auth/RpcAuthorization.ts:95	HOST-059
+HOST-E0528	rpc	server.runStorageCleanup	packages/contracts/src/rpc.ts:598|apps/server/src/ws.ts:2821|packages/contracts/src/clientRpcPermissions.ts:29	HOST-201
+HOST-E0529	rpc	server.getStorageCleanupReport	packages/contracts/src/rpc.ts:599|apps/server/src/ws.ts:2822|apps/server/src/auth/RpcAuthorization.ts:98	HOST-201
+HOST-E0530	rpc	server.getDatabaseStorage	packages/contracts/src/rpc.ts:600|apps/server/src/ws.ts:2823|apps/server/src/auth/RpcAuthorization.ts:99	HOST-202
+HOST-E0531	rpc	server.reclaimDatabaseSpace	packages/contracts/src/rpc.ts:601|apps/server/src/ws.ts:2824|packages/contracts/src/clientRpcPermissions.ts:31	HOST-202
+HOST-E0532	rpc	peerLinks.list	packages/contracts/src/rpc.ts:602|apps/server/src/ws.ts:2825|apps/server/src/auth/RpcAuthorization.ts:101	HOST-079
+HOST-E0533	rpc	peerLinks.names	packages/contracts/src/rpc.ts:603|apps/server/src/ws.ts:2827|apps/server/src/auth/RpcAuthorization.ts:103	HOST-079
+HOST-E0534	rpc	peerLinks.link	packages/contracts/src/rpc.ts:604|apps/server/src/ws.ts:2829|packages/contracts/src/clientRpcPermissions.ts:100	HOST-079
+HOST-E0535	rpc	peerLinks.unlink	packages/contracts/src/rpc.ts:605|apps/server/src/ws.ts:2830|packages/contracts/src/clientRpcPermissions.ts:101	HOST-080
+HOST-E0536	rpc	peerLinks.answerRequest	packages/contracts/src/rpc.ts:606|apps/server/src/ws.ts:2844|packages/contracts/src/clientRpcPermissions.ts:103	HOST-081
+HOST-E0537	rpc	peerLinks.subscribeThread	packages/contracts/src/rpc.ts:607|apps/server/src/ws.ts:2831|apps/server/src/auth/RpcAuthorization.ts:105	HOST-081
+HOST-E0538	rpc	peerLinks.threadHistoryPage	packages/contracts/src/rpc.ts:608|apps/server/src/ws.ts:2832|apps/server/src/auth/RpcAuthorization.ts:106	HOST-081
+HOST-E0539	rpc	peerLinks.threadItem	packages/contracts/src/rpc.ts:609|apps/server/src/ws.ts:2836|apps/server/src/auth/RpcAuthorization.ts:107	HOST-081
+HOST-E0540	rpc	peerLinks.pairClient	packages/contracts/src/rpc.ts:610|apps/server/src/ws.ts:2840|packages/contracts/src/clientRpcPermissions.ts:104	HOST-181
+HOST-E0541	rpc	peerLinks.pairLink	packages/contracts/src/rpc.ts:611|apps/server/src/ws.ts:2842|packages/contracts/src/clientRpcPermissions.ts:105	HOST-079
+HOST-E0542	rpc	server.getSettings	packages/contracts/src/rpc.ts:612|apps/server/src/ws.ts:2848|apps/server/src/auth/RpcAuthorization.ts:100	HOST-001
+HOST-E0543	rpc	server.updateSettings	packages/contracts/src/rpc.ts:613|apps/server/src/ws.ts:2852|apps/server/src/auth/RpcAuthorization.ts:108	HOST-005
+HOST-E0544	rpc	server.discoverSourceControl	packages/contracts/src/rpc.ts:614|apps/server/src/ws.ts:2866|apps/server/src/auth/RpcAuthorization.ts:120	HOST-166
+HOST-E0545	rpc	server.checkSecretSource	packages/contracts/src/rpc.ts:615|apps/server/src/ws.ts:2867|packages/contracts/src/clientRpcPermissions.ts:33	HOST-165
+HOST-E0546	rpc	server.searchAcpRegistry	packages/contracts/src/rpc.ts:616|apps/server/src/ws.ts:2489|apps/server/src/auth/RpcAuthorization.ts:109	HOST-042
+HOST-E0547	rpc	server.prepareAcpRegistryAgent	packages/contracts/src/rpc.ts:617|apps/server/src/ws.ts:2493|apps/server/src/auth/RpcAuthorization.ts:110	HOST-042
+HOST-E0548	rpc	server.uninstallAcpRegistryManagedBinary	packages/contracts/src/rpc.ts:618|apps/server/src/ws.ts:2511|apps/server/src/auth/RpcAuthorization.ts:111	HOST-045
+HOST-E0549	rpc	server.acceptAcpRegistryUrlAuth	packages/contracts/src/rpc.ts:619|apps/server/src/ws.ts:2519|apps/server/src/auth/RpcAuthorization.ts:112	HOST-044
+HOST-E0550	rpc	server.listAcpRegistrySessions	packages/contracts/src/rpc.ts:620|apps/server/src/ws.ts:2527|apps/server/src/auth/RpcAuthorization.ts:113	HOST-046
+HOST-E0551	rpc	server.importAcpRegistrySession	packages/contracts/src/rpc.ts:621|apps/server/src/ws.ts:2532|apps/server/src/auth/RpcAuthorization.ts:114	HOST-175
+HOST-E0552	rpc	server.deleteAcpRegistrySession	packages/contracts/src/rpc.ts:622|apps/server/src/ws.ts:2537|apps/server/src/auth/RpcAuthorization.ts:115	HOST-176
+HOST-E0553	rpc	server.listAcpRegistryProviders	packages/contracts/src/rpc.ts:623|apps/server/src/ws.ts:2542|apps/server/src/auth/RpcAuthorization.ts:116	HOST-047
+HOST-E0554	rpc	server.setAcpRegistryProvider	packages/contracts/src/rpc.ts:624|apps/server/src/ws.ts:2547|apps/server/src/auth/RpcAuthorization.ts:117	HOST-047
+HOST-E0555	rpc	server.disableAcpRegistryProvider	packages/contracts/src/rpc.ts:625|apps/server/src/ws.ts:2552|apps/server/src/auth/RpcAuthorization.ts:118	HOST-177
+HOST-E0556	rpc	server.logoutAcpRegistry	packages/contracts/src/rpc.ts:626|apps/server/src/ws.ts:2557|apps/server/src/auth/RpcAuthorization.ts:119	HOST-044
+HOST-E0557	rpc	server.getTraceDiagnostics	packages/contracts/src/rpc.ts:627|apps/server/src/ws.ts:2868|apps/server/src/auth/RpcAuthorization.ts:121	HOST-199
+HOST-E0558	rpc	server.getProcessDiagnostics	packages/contracts/src/rpc.ts:628|apps/server/src/ws.ts:2873|apps/server/src/auth/RpcAuthorization.ts:122	HOST-199
+HOST-E0559	rpc	server.getHostResources	packages/contracts/src/rpc.ts:629|apps/server/src/ws.ts:2874|apps/server/src/auth/RpcAuthorization.ts:124	HOST-199
+HOST-E0560	rpc	server.getProcessResourceHistory	packages/contracts/src/rpc.ts:630|apps/server/src/ws.ts:2875|apps/server/src/auth/RpcAuthorization.ts:125	HOST-199
+HOST-E0561	rpc	server.getResourceTelemetryHistory	packages/contracts/src/rpc.ts:631|apps/server/src/ws.ts:2877|apps/server/src/auth/RpcAuthorization.ts:126	HOST-199
+HOST-E0562	rpc	server.retryResourceTelemetry	packages/contracts/src/rpc.ts:632|apps/server/src/ws.ts:2881|apps/server/src/auth/RpcAuthorization.ts:127	HOST-199
+HOST-E0563	rpc	server.listTextGeneratorModels	packages/contracts/src/rpc.ts:634|apps/server/src/ws.ts:2883|packages/contracts/src/clientRpcPermissions.ts:35	HOST-161
+HOST-E0564	rpc	server.signalProcess	packages/contracts/src/rpc.ts:636|apps/server/src/ws.ts:2885|apps/server/src/auth/RpcAuthorization.ts:130	HOST-200
+HOST-E0565	rpc	server.reportClientActivity	packages/contracts/src/rpc.ts:637|apps/server/src/ws.ts:2886|apps/server/src/auth/RpcAuthorization.ts:131	HOST-071
+HOST-E0566	rpc	server.getUsageSummary	packages/contracts/src/rpc.ts:638|apps/server/src/ws.ts:2879|apps/server/src/auth/RpcAuthorization.ts:128	HOST-135
+HOST-E0567	rpc	server.refreshUsageRates	packages/contracts/src/rpc.ts:639|apps/server/src/ws.ts:2880|apps/server/src/auth/RpcAuthorization.ts:129	HOST-135
+HOST-E0568	rpc	workflows.subscribe	packages/contracts/src/rpc.ts:641|apps/server/src/ws.ts:2409|apps/server/src/auth/RpcAuthorization.ts:133	HOST-119
+HOST-E0569	rpc	workflows.counts	packages/contracts/src/rpc.ts:642|apps/server/src/ws.ts:2411|apps/server/src/auth/RpcAuthorization.ts:134	HOST-119
+HOST-E0570	rpc	workflows.get	packages/contracts/src/rpc.ts:643|apps/server/src/ws.ts:2412|apps/server/src/auth/RpcAuthorization.ts:135	HOST-119
+HOST-E0571	rpc	workflows.answer	packages/contracts/src/rpc.ts:644|apps/server/src/ws.ts:2414|packages/contracts/src/clientRpcPermissions.ts:90	HOST-120
+HOST-E0572	rpc	workflows.resume	packages/contracts/src/rpc.ts:645|apps/server/src/ws.ts:2437|packages/contracts/src/clientRpcPermissions.ts:91	HOST-121
+HOST-E0573	rpc	workflows.cancel	packages/contracts/src/rpc.ts:646|apps/server/src/ws.ts:2439|packages/contracts/src/clientRpcPermissions.ts:92	HOST-122
+HOST-E0574	rpc	workflows.getDefinition	packages/contracts/src/rpc.ts:647|apps/server/src/ws.ts:2441|apps/server/src/auth/RpcAuthorization.ts:136	HOST-115
+HOST-E0575	rpc	workflows.saveDefinition	packages/contracts/src/rpc.ts:648|apps/server/src/ws.ts:2442|packages/contracts/src/clientRpcPermissions.ts:94	HOST-115
+HOST-E0576	rpc	workflows.deleteDefinition	packages/contracts/src/rpc.ts:649|apps/server/src/ws.ts:2444|packages/contracts/src/clientRpcPermissions.ts:95	HOST-116
+HOST-E0577	rpc	scheduledTasks.subscribe	packages/contracts/src/rpc.ts:651|apps/server/src/ws.ts:2445|apps/server/src/auth/RpcAuthorization.ts:132	HOST-185
+HOST-E0578	rpc	scheduledTasks.upsert	packages/contracts/src/rpc.ts:652|apps/server/src/ws.ts:2447|packages/contracts/src/clientRpcPermissions.ts:83	HOST-106
+HOST-E0579	rpc	scheduledTasks.setEnabled	packages/contracts/src/rpc.ts:653|apps/server/src/ws.ts:2448|packages/contracts/src/clientRpcPermissions.ts:84	HOST-108
+HOST-E0580	rpc	scheduledTasks.delete	packages/contracts/src/rpc.ts:654|apps/server/src/ws.ts:2452|packages/contracts/src/clientRpcPermissions.ts:85	HOST-110
+HOST-E0581	rpc	scheduledTasks.runNow	packages/contracts/src/rpc.ts:655|apps/server/src/ws.ts:2456|packages/contracts/src/clientRpcPermissions.ts:86	HOST-109
+HOST-E0582	rpc	scheduledTasks.rotateWebhookToken	packages/contracts/src/rpc.ts:656|apps/server/src/ws.ts:2460|packages/contracts/src/clientRpcPermissions.ts:87	HOST-112
+HOST-E0583	rpc	secrets.answerRequest	packages/contracts/src/rpc.ts:657|apps/server/src/ws.ts:2468|apps/server/src/auth/RpcAuthorization.ts:137	HOST-128
+HOST-E0584	rpc	agentFeedback.answerRequest	packages/contracts/src/rpc.ts:658|apps/server/src/ws.ts:2472|apps/server/src/auth/RpcAuthorization.ts:138|packages/contracts/src/clientRpcPermissions.ts:107	HOST-129
+HOST-E0585	rpc	guestShare.create	packages/contracts/src/rpc.ts:659|apps/server/src/ws.ts:2464|packages/contracts/src/clientRpcPermissions.ts:99	HOST-083
+HOST-E0586	rpc	scheduledTasks.listWebhookDeliveries	packages/contracts/src/rpc.ts:660|apps/server/src/ws.ts:2473|apps/server/src/auth/RpcAuthorization.ts:140	HOST-113
+HOST-E0587	rpc	scheduledTasks.getWebhookDelivery	packages/contracts/src/rpc.ts:661|apps/server/src/ws.ts:2477|apps/server/src/auth/RpcAuthorization.ts:141	HOST-113
+HOST-E0588	rpc	cloud.getRelayClientStatus	packages/contracts/src/rpc.ts:663|apps/server/src/ws.ts:2900|apps/server/src/auth/RpcAuthorization.ts:142	HOST-068
+HOST-E0589	rpc	cloud.installRelayClient	packages/contracts/src/rpc.ts:664|apps/server/src/ws.ts:2901|apps/server/src/auth/RpcAuthorization.ts:143	HOST-068
+HOST-E0590	rpc	issueTrackers.list	packages/contracts/src/rpc.ts:714|apps/server/src/ws.ts:2055|apps/server/src/auth/RpcAuthorization.ts:159	HOST-168
+HOST-E0591	rpc	issueTrackers.connect	packages/contracts/src/rpc.ts:715|apps/server/src/ws.ts:2056|apps/server/src/auth/RpcAuthorization.ts:160|packages/contracts/src/clientRpcPermissions.ts:54	HOST-168
+HOST-E0592	rpc	issueTrackers.bindProject	packages/contracts/src/rpc.ts:716|apps/server/src/ws.ts:2057|apps/server/src/auth/RpcAuthorization.ts:161|packages/contracts/src/clientRpcPermissions.ts:55	HOST-168
+HOST-E0593	rpc	sourceControl.signInStart	packages/contracts/src/rpc.ts:721|apps/server/src/ws.ts:3021|packages/contracts/src/clientRpcPermissions.ts:63	HOST-167
+HOST-E0594	rpc	sourceControl.signInWait	packages/contracts/src/rpc.ts:722|apps/server/src/ws.ts:3022|packages/contracts/src/clientRpcPermissions.ts:64	HOST-167
+HOST-E0595	rpc	sourceControl.signInCancel	packages/contracts/src/rpc.ts:723|apps/server/src/ws.ts:3023|packages/contracts/src/clientRpcPermissions.ts:65	HOST-167
+HOST-E0596	rpc	sourceControl.appAccess	packages/contracts/src/rpc.ts:724|apps/server/src/ws.ts:3024|apps/server/src/auth/RpcAuthorization.ts:177	HOST-167
+HOST-E0597	rpc	subscribeDeviceState	packages/contracts/src/rpc.ts:740|apps/server/src/ws.ts:3515|apps/server/src/auth/RpcAuthorization.ts:248	HOST-170
+HOST-E0598	rpc	subscribeServerConfig	packages/contracts/src/rpc.ts:741|apps/server/src/ws.ts:3543|apps/server/src/auth/RpcAuthorization.ts:249	HOST-001
+HOST-E0599	rpc	subscribeServerLifecycle	packages/contracts/src/rpc.ts:742|apps/server/src/ws.ts:3701|apps/server/src/auth/RpcAuthorization.ts:250	HOST-059
+HOST-E0600	rpc	subscribeAuthAccess	packages/contracts/src/rpc.ts:743|apps/server/src/ws.ts:3721|apps/server/src/auth/RpcAuthorization.ts:251	HOST-063
+HOST-E0601	rpc	orchestration.getWorkflowScript	packages/contracts/src/orchestrationV2.ts:4114|apps/server/src/ws.ts:2116|apps/server/src/auth/RpcAuthorization.ts:48	HOST-119
+HOST-E0602	rpc	orchestration.getNativeChildWork	packages/contracts/src/orchestrationV2.ts:4115|apps/server/src/ws.ts:2118|apps/server/src/auth/RpcAuthorization.ts:49	HOST-100
+HOST-E0603	rpc	orchestration.stopWorkflow	packages/contracts/src/orchestrationV2.ts:4116|apps/server/src/ws.ts:2113|apps/server/src/auth/RpcAuthorization.ts:50|packages/contracts/src/clientRpcPermissions.ts:88	HOST-127
+HOST-E0604	rpc	orchestration.forceStopThread	packages/contracts/src/orchestrationV2.ts:4117|apps/server/src/ws.ts:2114|apps/server/src/auth/RpcAuthorization.ts:51|packages/contracts/src/clientRpcPermissions.ts:97	HOST-105
+HOST-E0605	rpc	orchestration.launchThread	packages/contracts/src/orchestrationV2.ts:4119|apps/server/src/ws.ts:2249|apps/server/src/auth/RpcAuthorization.ts:65	HOST-101
+HOST-E0606	mcp-tool	orchestrator_capabilities	apps/server/src/mcp/toolkits/orchestrator/tools.ts:75	HOST-091
+HOST-E0607	mcp-tool	delegate_task	apps/server/src/mcp/toolkits/orchestrator/tools.ts:89	HOST-092
+HOST-E0608	mcp-tool	task_status	apps/server/src/mcp/toolkits/orchestrator/tools.ts:103	HOST-097
+HOST-E0609	mcp-tool	task_cancel	apps/server/src/mcp/toolkits/orchestrator/tools.ts:118	HOST-098
+HOST-E0610	mcp-tool	t3_workflow_stop	apps/server/src/mcp/toolkits/orchestrator/tools.ts:131	HOST-127
+HOST-E0611	mcp-tool	t3_background_wait	apps/server/src/mcp/toolkits/orchestrator/tools.ts:146	HOST-214
+HOST-E0612	mcp-tool	schedule_task	apps/server/src/mcp/toolkits/orchestrator/tools.ts:170	HOST-106
+HOST-E0613	mcp-tool	list_scheduled_tasks	apps/server/src/mcp/toolkits/orchestrator/tools.ts:183	HOST-185
+HOST-E0614	mcp-tool	delete_scheduled_task	apps/server/src/mcp/toolkits/orchestrator/tools.ts:197	HOST-110
+HOST-E0615	mcp-tool	request_secret	apps/server/src/mcp/toolkits/orchestrator/tools.ts:209	HOST-128
+HOST-E0616	mcp-tool	create_threads	apps/server/src/mcp/toolkits/orchestrator/tools.ts:224	HOST-101
+HOST-E0617	mcp-tool	t3_thread_list	apps/server/src/mcp/toolkits/orchestrator/tools.ts:238	HOST-102
+HOST-E0618	mcp-tool	t3_thread_read	apps/server/src/mcp/toolkits/orchestrator/tools.ts:252	HOST-102
+HOST-E0619	mcp-tool	t3_thread_update	apps/server/src/mcp/toolkits/orchestrator/tools.ts:267	HOST-211
+HOST-E0620	mcp-tool	t3_thread_send	apps/server/src/mcp/toolkits/orchestrator/tools.ts:284	HOST-103
+HOST-E0621	mcp-tool	t3_thread_wait	apps/server/src/mcp/toolkits/orchestrator/tools.ts:297	HOST-104
+HOST-E0622	mcp-tool	t3_thread_interrupt	apps/server/src/mcp/toolkits/orchestrator/tools.ts:311	HOST-105
+HOST-E0623	mcp-tool	t3_environment_links	apps/server/src/mcp/toolkits/orchestrator/tools.ts:323	HOST-079
+HOST-E0624	mcp-tool	t3_environment_link	apps/server/src/mcp/toolkits/orchestrator/tools.ts:337	HOST-213
+HOST-E0625	mcp-tool	t3_environment_unlink	apps/server/src/mcp/toolkits/orchestrator/tools.ts:351	HOST-080
+HOST-E0626	mcp-tool	t3_workflow	apps/server/src/mcp/toolkits/workflow/tools.ts:18	HOST-117
+HOST-E0627	mcp-tool	t3_thread_organize	apps/server/src/mcp/toolkits/thread/tools.ts:33	HOST-211
+HOST-E0628	mcp-tool	t3_thread_configure	apps/server/src/mcp/toolkits/thread/tools.ts:155	HOST-211
+HOST-E0629	mcp-tool	run_scheduled_task_now	apps/server/src/mcp/toolkits/thread/tools.ts:222	HOST-109
+HOST-E0630	mcp-tool	t3_thread_launch	apps/server/src/mcp/toolkits/project/tools.ts:131	HOST-101
+HOST-E0631	mcp-tool	t3_feedback	apps/server/src/mcp/toolkits/feedback/tools.ts:25	HOST-129
+HOST-E0632	mcp-tool	device_list	apps/server/src/mcp/toolkits/device/tools.ts:30	HOST-206
+HOST-E0633	mcp-tool	device_open	apps/server/src/mcp/toolkits/device/tools.ts:51	HOST-173
+HOST-E0634	mcp-tool	device_screenshot	apps/server/src/mcp/toolkits/device/tools.ts:73	HOST-207
+HOST-E0635	mcp-tool	device_close	apps/server/src/mcp/toolkits/device/tools.ts:88	HOST-208
+HOST-E0636	mcp-tool	tool_search	apps/server/src/mcp/McpToolExposure.ts:4	HOST-204
+HOST-E0637	mcp-tool	send_to_user	apps/server/src/mcp/toolkits/message/tools.ts:11|packages/shared/src/toolOutput.ts:20	HOST-210
+HOST-E0638	mcp-action	t3_workflow action=start	apps/server/src/mcp/toolkits/workflow/tools.ts:25	HOST-117
+HOST-E0639	mcp-action	t3_workflow action=list	apps/server/src/mcp/toolkits/workflow/tools.ts:11	HOST-119
+HOST-E0640	mcp-action	t3_workflow action=read	apps/server/src/mcp/toolkits/workflow/tools.ts:11	HOST-119
+HOST-E0641	mcp-action	t3_workflow action=resume	apps/server/src/mcp/toolkits/workflow/tools.ts:27	HOST-121
+HOST-E0642	mcp-action	t3_workflow action=cancel	apps/server/src/mcp/toolkits/workflow/tools.ts:28	HOST-122
+HOST-E0643	mcp-action	t3_workflow action=signal	apps/server/src/mcp/toolkits/workflow/tools.ts:26	HOST-123
+HOST-E0644	mcp-action	t3_workflow action=withdraw	apps/server/src/mcp/toolkits/workflow/tools.ts:29	HOST-124
+HOST-E0645	mcp-action	t3_workflow action=store	apps/server/src/mcp/toolkits/workflow/tools.ts:11	HOST-125
+HOST-E0646	mcp-action	t3_workflow action=hooks	apps/server/src/mcp/toolkits/workflow/tools.ts:24	HOST-188
+HOST-E0647	mcp-action	t3_workflow action=questions	apps/server/src/mcp/toolkits/workflow/tools.ts:11	HOST-189
+HOST-E0648	mcp-action	t3_workflow action=store_set	apps/server/src/mcp/toolkits/workflow/tools.ts:30	HOST-190
+HOST-E0649	mcp-action	t3_workflow action=store_delete	apps/server/src/mcp/toolkits/workflow/tools.ts:31	HOST-191
+HOST-E0650	http	GET /.well-known/t3/environment	packages/contracts/src/environmentHttp.ts:590	HOST-050
+HOST-E0651	http	GET /api/auth/session	packages/contracts/src/environmentHttp.ts:597	HOST-051
+HOST-E0652	http	POST /api/auth/browser-session	packages/contracts/src/environmentHttp.ts:604	HOST-051
+HOST-E0653	http	POST /oauth/token	packages/contracts/src/environmentHttp.ts:611	HOST-051
+HOST-E0654	http	POST /api/auth/websocket-ticket	packages/contracts/src/environmentHttp.ts:619	HOST-051
+HOST-E0655	http	POST /api/auth/websocket-ticket/:use	packages/contracts/src/environmentHttp.ts:626	HOST-051
+HOST-E0656	http	POST /api/auth/pairing-token	packages/contracts/src/environmentHttp.ts:634	HOST-063
+HOST-E0657	http	POST /api/auth/pairing-links/revoke	packages/contracts/src/environmentHttp.ts:642	HOST-064
+HOST-E0658	http	POST /api/auth/clients/revoke	packages/contracts/src/environmentHttp.ts:650	HOST-065
+HOST-E0659	http	POST /api/auth/connect-devices/approve	packages/contracts/src/environmentHttp.ts:658	HOST-074
+HOST-E0660	http	POST /api/auth/connect-devices/revoke	packages/contracts/src/environmentHttp.ts:666	HOST-076
+HOST-E0661	http	POST /api/auth/clients/revoke-others	packages/contracts/src/environmentHttp.ts:674	HOST-066
+HOST-E0662	http	GET /.well-known/oauth-protected-resource	packages/contracts/src/environmentHttp.ts:683	HOST-077
+HOST-E0663	http	GET /.well-known/oauth-protected-resource/mcp	packages/contracts/src/environmentHttp.ts:688	HOST-077
+HOST-E0664	http	GET /.well-known/oauth-authorization-server	packages/contracts/src/environmentHttp.ts:693	HOST-077
+HOST-E0665	http	POST /oauth/mcp/register	packages/contracts/src/environmentHttp.ts:698	HOST-077
+HOST-E0666	http	GET /oauth/mcp/authorize	packages/contracts/src/environmentHttp.ts:704	HOST-077
+HOST-E0667	http	POST /oauth/mcp/approval	packages/contracts/src/environmentHttp.ts:706	HOST-077
+HOST-E0668	http	POST /oauth/mcp/decision	packages/contracts/src/environmentHttp.ts:715	HOST-077
+HOST-E0669	http	POST /oauth/mcp/token	packages/contracts/src/environmentHttp.ts:724	HOST-077
+HOST-E0670	http	POST /oauth/mcp/revoke	packages/contracts/src/environmentHttp.ts:731	HOST-219
+HOST-E0671	http	GET /api/voice/cloud/keys	packages/contracts/src/environmentHttp.ts:856	HOST-147
+HOST-E0672	http	POST /api/voice/cloud/:provider/key	packages/contracts/src/environmentHttp.ts:863	HOST-147
+HOST-E0673	http	GET /api/voice/cloud/openrouter/models	packages/contracts/src/environmentHttp.ts:877	HOST-221
+HOST-E0674	http	POST /api/voice/cloud/:provider/transcribe	packages/contracts/src/environmentHttp.ts:884	HOST-147
+HOST-E0675	http	GET /api/voice/status	packages/contracts/src/environmentHttp.ts:900	HOST-146
+HOST-E0676	http	POST /api/voice/models/prepare	packages/contracts/src/environmentHttp.ts:907	HOST-146
+HOST-E0677	http	GET /api/voice/models	packages/contracts/src/environmentHttp.ts:914	HOST-149
+HOST-E0678	http	POST /api/voice/models/download	packages/contracts/src/environmentHttp.ts:922	HOST-149
+HOST-E0679	http	POST /api/voice/models/select	packages/contracts/src/environmentHttp.ts:930	HOST-151
+HOST-E0680	http	POST /api/voice/models/cancel	packages/contracts/src/environmentHttp.ts:938	HOST-150
+HOST-E0681	http	POST /api/voice/models/remove	packages/contracts/src/environmentHttp.ts:946	HOST-152
+HOST-E0682	http	POST /api/voice/models/link	packages/contracts/src/environmentHttp.ts:954	HOST-153
+HOST-E0683	http	POST /api/voice/acceleration	packages/contracts/src/environmentHttp.ts:962	HOST-154
+HOST-E0684	http	POST /api/voice/model-unload-timeout	packages/contracts/src/environmentHttp.ts:970	HOST-155
+HOST-E0685	http	POST /api/voice/transcribe	packages/contracts/src/environmentHttp.ts:978	HOST-146
+HOST-E0686	http	POST /api/voice/post-process	packages/contracts/src/environmentHttp.ts:988	HOST-161
+HOST-E0687	http	POST /api/connect/link-proof	packages/contracts/src/environmentHttp.ts:998	HOST-068
+HOST-E0688	http	POST /api/connect/relay-config	packages/contracts/src/environmentHttp.ts:1006	HOST-068
+HOST-E0689	http	GET /api/connect/link-state	packages/contracts/src/environmentHttp.ts:1014	HOST-182
+HOST-E0690	http	POST /api/connect/reachability	packages/contracts/src/environmentHttp.ts:1021	HOST-182
+HOST-E0691	http	POST /api/connect/unlink	packages/contracts/src/environmentHttp.ts:1028	HOST-068
+HOST-E0692	http	POST /api/connect/preferences	packages/contracts/src/environmentHttp.ts:1035	HOST-072
+HOST-E0693	http	POST /api/connect/live-activity-preference	packages/contracts/src/environmentHttp.ts:1043	HOST-071
+HOST-E0694	http	POST /api/t3-connect/health	packages/contracts/src/environmentHttp.ts:1051	HOST-182
+HOST-E0695	http	POST /api/t3-connect/mint-credential	packages/contracts/src/environmentHttp.ts:1058	HOST-069
+HOST-E0696	http	POST /api/peer-link/client-pairing	packages/contracts/src/environmentHttp.ts:1070	HOST-181
+HOST-E0697	http	POST /api/hooks/:hookId/:token	packages/contracts/src/environmentHttp.ts:1097|packages/contracts/src/environmentHttp.ts:1094	HOST-113
+HOST-E0698	http	PUT /api/hooks/:hookId/:token	packages/contracts/src/environmentHttp.ts:1098|packages/contracts/src/environmentHttp.ts:1094	HOST-113
+HOST-E0699	http	PATCH /api/hooks/:hookId/:token	packages/contracts/src/environmentHttp.ts:1099|packages/contracts/src/environmentHttp.ts:1094	HOST-113
+HOST-E0700	http	GET /api/hooks/:hookId/:token	packages/contracts/src/environmentHttp.ts:1100|packages/contracts/src/environmentHttp.ts:1094	HOST-113
+HOST-E0701	http	POST /api/guest/redeem	apps/server/src/guest/http.ts:110	HOST-085
+HOST-E0702	http	POST /api/guest/messages	apps/server/src/guest/http.ts:183	HOST-087
+HOST-E0703	http	GET /api/guest/stream	apps/server/src/guest/http.ts:205	HOST-086
+HOST-E0704	http	GET /api/guest/session	apps/server/src/guest/http.ts:218	HOST-086
+HOST-E0705	http	GET /api/guest/render	apps/server/src/guest/http.ts:234	HOST-086
+HOST-E0706	http	GET /api/guest/item	apps/server/src/guest/http.ts:252	HOST-086
+HOST-E0707	http	GET /api/guest/history	apps/server/src/guest/http.ts:271	HOST-086
+HOST-E0708	http	GET /api/guest/command-output	apps/server/src/guest/http.ts:293	HOST-184
+HOST-E0709	http	GET /api/guest/attachment	apps/server/src/guest/http.ts:309	HOST-086
+HOST-E0710	http	GET /api/guest/media	apps/server/src/guest/http.ts:339	HOST-086
+HOST-E0711	cli	t3 auth pairing create	apps/server/src/cli/auth.ts:103	HOST-063
+HOST-E0712	cli	t3 auth pairing list	apps/server/src/cli/auth.ts:136	HOST-063
+HOST-E0713	cli	t3 auth pairing revoke	apps/server/src/cli/auth.ts:158	HOST-064
+HOST-E0714	cli	t3 auth connect-device list	apps/server/src/cli/auth.ts:192	HOST-073
+HOST-E0715	cli	t3 auth connect-device approve	apps/server/src/cli/auth.ts:219	HOST-074
+HOST-E0716	cli	t3 auth connect-device revoke	apps/server/src/cli/auth.ts:251	HOST-076
+HOST-E0717	cli	t3 auth session issue	apps/server/src/cli/auth.ts:293	HOST-179
+HOST-E0718	cli	t3 auth session list	apps/server/src/cli/auth.ts:328	HOST-065
+HOST-E0719	cli	t3 auth session revoke	apps/server/src/cli/auth.ts:348	HOST-065
+HOST-E0720	cli	t3 connect login	apps/server/src/cli/connect.ts:615	HOST-180
+HOST-E0721	cli	t3 connect link	apps/server/src/cli/connect.ts:633	HOST-068
+HOST-E0722	cli	t3 connect status	apps/server/src/cli/connect.ts:664	HOST-182
+HOST-E0723	cli	t3 connect publish	apps/server/src/cli/connect.ts:738	HOST-071
+HOST-E0724	cli	t3 connect unlink	apps/server/src/cli/connect.ts:801	HOST-068
+HOST-E0725	cli	t3 connect logout	apps/server/src/cli/connect.ts:810	HOST-180
+HOST-E0726	cli	t3 environment link	apps/server/src/cli/environment.ts:208	HOST-079
+HOST-E0727	cli	t3 environment list	apps/server/src/cli/environment.ts:279	HOST-079
+HOST-E0728	cli	t3 environment unlink	apps/server/src/cli/environment.ts:294	HOST-080
+HOST-E0729	cli	t3 pair	apps/server/src/cli/pair.ts:531	HOST-063
+HOST-E0730	cli	t3 workflow start	apps/server/src/cli/workflow.ts:63	HOST-117
+HOST-E0731	cli	t3 workflow list	apps/server/src/cli/workflow.ts:99	HOST-119
+HOST-E0732	cli	t3 workflow show	apps/server/src/cli/workflow.ts:138	HOST-119
+HOST-E0733	cli	t3 workflow resume	apps/server/src/cli/workflow.ts:190	HOST-121
+HOST-E0734	cli	t3 workflow cancel	apps/server/src/cli/workflow.ts:203	HOST-122
+HOST-E0735	cli	t3 workflow signal	apps/server/src/cli/workflow.ts:218	HOST-123
+HOST-E0736	cli	t3 workflow withdraw	apps/server/src/cli/workflow.ts:306	HOST-124
+HOST-E0737	cli	t3 workflow questions	apps/server/src/cli/workflow.ts:345	HOST-189
+HOST-E0738	cli	t3 workflow hooks	apps/server/src/cli/workflow.ts:375	HOST-188
+HOST-E0739	cli	t3 workflow store list	apps/server/src/cli/workflow.ts:401	HOST-125
+HOST-E0740	cli	t3 workflow store set	apps/server/src/cli/workflow.ts:429	HOST-190
+HOST-E0741	cli	t3 workflow store delete	apps/server/src/cli/workflow.ts:453	HOST-191
+HOST-E0742	electron-ipc	desktop:apple-speech-available	apps/desktop/src/ipc/methods/appleSpeech.ts:13|apps/desktop/src/ipc/channels.ts:141	HOST-145
+HOST-E0743	electron-ipc	desktop:apple-speech-prepare	apps/desktop/src/ipc/methods/appleSpeech.ts:22|apps/desktop/src/ipc/channels.ts:142	HOST-145
+HOST-E0744	electron-ipc	desktop:apple-speech-transcribe	apps/desktop/src/ipc/methods/appleSpeech.ts:31|apps/desktop/src/ipc/channels.ts:143	HOST-145
+HOST-E0745	electron-ipc	desktop:get-connection-catalog	apps/desktop/src/ipc/methods/connectionCatalog.ts:10|apps/desktop/src/ipc/channels.ts:65	HOST-050
+HOST-E0746	electron-ipc	desktop:set-connection-catalog	apps/desktop/src/ipc/methods/connectionCatalog.ts:20|apps/desktop/src/ipc/channels.ts:66	HOST-050
+HOST-E0747	electron-ipc	desktop:get-local-environment-enabled	apps/desktop/src/ipc/methods/localEnvironment.ts:12|apps/desktop/src/ipc/channels.ts:44	HOST-049
+HOST-E0748	electron-ipc	desktop:set-local-environment-enabled	apps/desktop/src/ipc/methods/localEnvironment.ts:21|apps/desktop/src/ipc/channels.ts:45	HOST-049
+HOST-E0749	electron-ipc	desktop:get-host-environment-id	apps/desktop/src/ipc/methods/localEnvironment.ts:36|apps/desktop/src/ipc/channels.ts:46	HOST-049
+HOST-E0750	electron-ipc	desktop:set-notification-badge	apps/desktop/src/ipc/methods/notificationBadge.ts:57|apps/desktop/src/ipc/channels.ts:3	HOST-143
+HOST-E0751	electron-ipc	desktop:receive-provider-auth-callback	apps/desktop/src/ipc/methods/providerAuth.ts:17|apps/desktop/src/ipc/channels.ts:150	HOST-021
+HOST-E0752	electron-ipc	desktop:cancel-provider-auth-callback	apps/desktop/src/ipc/methods/providerAuth.ts:46|apps/desktop/src/ipc/channels.ts:151	HOST-021
+HOST-E0753	electron-ipc	desktop:discover-ssh-hosts	apps/desktop/src/ipc/methods/sshEnvironment.ts:112|apps/desktop/src/ipc/channels.ts:67	HOST-052
+HOST-E0754	electron-ipc	desktop:resolve-ssh-host	apps/desktop/src/ipc/methods/sshEnvironment.ts:122|apps/desktop/src/ipc/channels.ts:68	HOST-052
+HOST-E0755	electron-ipc	desktop:ensure-ssh-environment	apps/desktop/src/ipc/methods/sshEnvironment.ts:132|apps/desktop/src/ipc/channels.ts:69	HOST-052
+HOST-E0756	electron-ipc	desktop:disconnect-ssh-environment	apps/desktop/src/ipc/methods/sshEnvironment.ts:152|apps/desktop/src/ipc/channels.ts:70	HOST-052
+HOST-E0757	electron-ipc	desktop:fetch-ssh-environment-descriptor	apps/desktop/src/ipc/methods/sshEnvironment.ts:162|apps/desktop/src/ipc/channels.ts:71	HOST-052
+HOST-E0758	electron-ipc	desktop:bootstrap-ssh-bearer-session	apps/desktop/src/ipc/methods/sshEnvironment.ts:173|apps/desktop/src/ipc/channels.ts:72	HOST-052
+HOST-E0759	electron-ipc	desktop:fetch-ssh-session-state	apps/desktop/src/ipc/methods/sshEnvironment.ts:190|apps/desktop/src/ipc/channels.ts:73	HOST-052
+HOST-E0760	electron-ipc	desktop:resolve-ssh-password-prompt	apps/desktop/src/ipc/methods/sshEnvironment.ts:207|apps/desktop/src/ipc/channels.ts:75	HOST-052

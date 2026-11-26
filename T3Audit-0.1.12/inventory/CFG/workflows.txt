@@ -1,0 +1,172 @@
+# search-id ^ schema keys ^ 操作 ^ 確認できる結果 ^ 行固有の条件 ^ 追加ソース
+setting-appearance-contrast^client:appearanceContrast^コントラストのスライダーを調整する^境界線やテキストのコントラストが選択値で描画される
+setting-glass-opacity^client:glassOpacity^透明度のスライダーを調整する^ガラス面の不透明度が変わる
+diff-color-scheme^client:diffColorScheme^Red & green または Blue & orange を選ぶ^差分の追加と削除に選択した配色が使われる
+chat-width^client:chatWidth^Comfortable、Wide、Full を選ぶ^メッセージ列の幅が変わる
+html-preview-width^client:htmlPreviewWidth^Chat、Wide、Full の幅を選ぶ^インライン HTML プレビューの幅が変わる
+thread-details-items^client:threadDetailsItems^表示するメタデータを選ぶ^スレッド詳細カードに選んだ項目が表示される
+effort-display^client:effortDisplay^Label または Bars を選ぶ^推論努力レベルの表示が変わる
+math-rendering^client:mathRenderingEnabled^Render math を切り替える^Markdown 内の TeX 数式が組版されるか切り替わる
+panel-animations^client:panelAnimationDurationMs^Advanced でアニメーション時間を変更する^パネルのサイズ遷移が指定時間になる^Advanced^AppearanceSettingsPanel.tsx:413
+environment-identification^client:environmentIdentificationMode^Advanced で環境を識別する表示方法を選ぶ^対応するアプリのチャンネル表示が切り替わる^Advanced。選択肢はチャンネル依存^AppearanceSettingsPanel.tsx:52
+interface-font^client:fontFamilySans,client:fontSizeInterface^インターフェース用のフォントとサイズを変更する^インターフェースのサンセリフと文字サイズに反映される
+prompt-font^client:fontFamilyComposer,client:fontSizePrompt^プロンプト用のフォントとサイズを変更する^コンポーザーに適用される^Separate fonts オン
+code-font^client:fontFamilyCode,client:fontSizeCode^コード用のフォントとサイズを変更する^コードブロックや差分に適用される^Separate fonts オン
+terminal-font^client:fontFamilyTerminal,client:fontSizeTerminal^ターミナル用のフォントとサイズを変更する^ターミナルに適用される^Separate fonts オン
+separate-fonts^local:t3code:typography-advanced^Advanced で Separate fonts を切り替える^共通フォントと用途別フォントの入力が切り替わる^Advanced^apps/web/src/appearanceFonts.ts:20
+font-smoothing^client:fontSmoothing^Advanced で Font smoothing を切り替える^macOS のテキスト描画が選択値に従う^macOS。Advanced
+word-wrap^client:wordWrap^Word wrap を切り替える^コードや差分の長い行の折り返しが変わる
+composer-context^client:persistComposerContextStrip^Advanced でコンポーザーの文脈表示を切り替える^入力の有無に応じたコンテキスト帯の常時表示が切り替わる^Advanced
+color-scheme^local:t3code:theme-appearance-mode,local:t3code:theme-follow-system^System、Light、Dark を選ぶ^アプリの配色モードが変わる^このアプリ^ThemeSettings.tsx:701|apps/web/src/themePalette.ts:49
+theme^local:t3code:theme,local:t3code:theme-halves:v1^テーマの Light または Dark の配色を選ぶ^選んだテーマが画面に適用される^このアプリ。選べる外観はテーマ依存^ThemeSettings.tsx:682|apps/web/src/hooks/useTheme.ts:41
+project-grouping^client:sidebarProjectGroupingMode^プロジェクトのグループ化方式を選ぶ^同一リポジトリのチェックアウトのまとまり方が変わる
+project-order^client:sidebarProjectSortOrder^プロジェクトの並べ方を選ぶ^サイドバーのプロジェクト順が変わる
+working-shelf^client:sidebarWorkingShelfEnabled^Working section を切り替える^作業中と監視中のスレッドをまとめるか変わる^通常のサイドバー
+thread-notifications^client:notificationMode^Thread notifications の通知レベルを選ぶ^選択した種類のスレッド通知が有効になる
+in-app-notifications^client:inAppNotificationsEnabled^In-app notifications を切り替える^アプリ内にも通知を表示するか変わる
+language^client:language^言語またはシステム言語を選ぶ^インターフェースとデスクトップの翻訳が切り替わる^デスクトップ IPC による言語更新^apps/desktop/src/ipc/methods/clientSettings.ts:31
+time-format^client:timestampFormat^時刻の表示形式を選ぶ^時刻ラベルが選択形式になる
+unpin-confirmation^client:confirmThreadUnpin^Unpin confirmation を切り替える^ピン解除の確認ダイアログの有無が変わる
+archive-confirmation^client:confirmThreadArchive^Archive confirmation を切り替える^アーカイブ時の確認ダイアログの有無が変わる
+delete-confirmation^client:confirmThreadDelete^Delete confirmation を切り替える^スレッド削除時の確認ダイアログの有無が変わる
+terminal-close-confirmation^client:confirmTerminalClose^Terminal close confirmation を切り替える^ターミナル終了時の確認の有無が変わる
+quit-confirmation^client:confirmQuit^Quit shortcut の動作を選ぶ^終了ショートカットの確認方法が変わる^デスクトップ。macOS
+tool-call-visibility^client:toolCallVisibility^ツール呼び出しの表示モードを選ぶ^成功した呼び出しや進行中の情報の表示量が変わる
+screen-reader-announcements^client:screenReaderAnnouncements^読み上げ対象を選ぶ^スクリーンリーダーに通知されるイベントの範囲が変わる
+screen-reader-window-title^client:screenReaderWindowTitle^Screen reader window title を切り替える^読み上げ用のウィンドウタイトルにスレッドの状態を出すか変わる
+skills-in-slash-menu^client:showSkillsInSlashMenu^Advanced で Show skills in slash menu を切り替える^スラッシュメニューにスキルを表示するか変わる^Advanced^SettingsPanels.tsx:1323
+composer-rich-text^client:composerRichTextEnabled^Rich text composer を切り替える^コンポーザーにリッチテキスト編集を使うか変わる
+send-shortcut^client:sendShortcut^送信と改行のキー動作を選ぶ^Enter と修飾キー付き Enter の送信条件が切り替わる
+follow-up-behavior^client:followUpBehavior^Queue または Steer を選ぶ^進行中のターンに追送したときの既定が切り替わる
+side-thread-open-target^client:sideThreadOpenTarget^サブエージェントとサイドチャットを開く場所を選ぶ^サイドチャットの既定の開き方が変わる
+hide-whitespace-changes^client:diffIgnoreWhitespace^Hide whitespace changes を切り替える^空白のみの変更を差分に出すか変わる
+default-diff-file-state^client:diffFilesCollapsed^Collapsed または Expanded を選ぶ^新しく表示した差分の各ファイルが選択状態で開く
+diff-layout^client:diffLayout^Stacked または Split を選ぶ^差分の列構成が変わる
+proactive-panels^client:proactivePanelsEnabled^プルリクエストと変更パネルの自動表示を切り替える^対象の更新に合わせて対応パネルが開くか変わる
+pull-request-links-open-in-app^client:pullRequestLinksOpenInApp^Open pull requests in T3 Code を切り替える^認識したプルリクエストリンクの開き先が変わる
+boring-sidebar^client:boringSidebarEnabled^Boring sidebar を切り替える^プロジェクトフォルダー表示が有効になり、ピン留めと Snoozed、Settled が別に並ぶ
+boring-sidebar-multiline^client:boringSidebarMultilineRows^Two-line folder rows を切り替える^フォルダー内の行にブランチ、PR、エージェントの二行目が出る^Boring sidebar オン^LabsSettingsPanel.tsx:75
+guest-links^server:guestSharingEnabled^Guest links を切り替える^対象環境でゲストリンクが利用可能になる。オフにすると既存リンクが止まる^利用には T3 Connect のサインインとマシン接続が必要。未サインイン時の対応ビルドでは Sign in を表示。Connect の管理ポリシー^LabsSettingsPanel.tsx:109|LabsSettingsPanel.tsx:141
+linked-environments-beta^server:linkedEnvironmentsEnabled^Linked environments を切り替える^両側で有効なリンクを使って新規の環境間作業を開始できる。オフにしても実行中のタスクは完了する^リンクの両側で有効化し Environments で接続
+workflows-beta^server:workflowsEnabled^Workflows を切り替える^T3 home の workflows をコマンドパレットから開ける。オフの間は処理が待機する^対象サーバーに定義ファイルがある^apps/server/src/workflows/WorkflowRuntime.ts:781
+workflow-skipped-runs^server:workflowSkippedRunsKept^Skipped runs kept に 0 から 10000 の整数を確定する^ワークフローごとのスキップ履歴の上限が変わる。処理を行った実行は保持される^Workflows オン。混在値は Mixed^LabsSettingsPanel.tsx:243|packages/contracts/src/settings.ts:1373
+prompt-suggestions-beta^server:promptSuggestionsEnabled^Suggest next prompt を切り替える^完了ターン後の空コンポーザーに候補が出て Tab で採用できる^対応する Claude または Codex 0.165+。Claude はスレッド再起動後^apps/server/src/orchestration-v2/ProviderSessionManager.ts:491
+simlock-hosts^server:simlockDeviceHostsEnabled^Simlock device hosts を切り替える^Devices で設定した Simlock プールから Device パネルがデバイスを借りられる^接続済みの Simlock 設定と Device サポート
+worktree-fast-checkout^server:fastWorktreeCheckout^Fast worktree checkout を切り替える^対応した新規 worktree でキャッシュからクローンする。無効化時にキャッシュを削除する^環境または全環境。選択中の全接続環境が fastWorktreeCheckout capability を広告。一致しない操作は Git にフォールバック^LabsSettingsPanel.tsx:366
+agent-feedback^server:agentFeedback.mode^Off、When I ask、Automatic を選ぶ^Off は送信なし。When I ask は依頼と承認後に送信。Automatic は自発的な問題報告も許す^環境または全環境。選択中の全接続環境が agentFeedback capability を広告^LabsSettingsPanel.tsx:397|LabsSettingsPanel.tsx:421
+voice-transcription-destination^local:t3code:voice-audio-grant:v1^Off、Apple Speech、この環境、対応する他の環境またはクラウドを選ぶ^文字起こしの無効化または選んだ処理先と設定欄が反映される^Apple Speech は対応する Mac。環境またはクラウドは対応環境と送信先の同意^apps/web/src/speech/voiceConsent.ts:14|apps/web/src/speech/voiceConsent.ts:71
+voice-microphone^client:voiceMicrophones^マイクを追加して入力候補にする^接続中の最上位マイクが録音入力になる^マイク権限。利用可能なデバイスに依存
+dictation-shortcut-mode^client:voiceShortcutMode^自動、長押し、トグルを選ぶ^ショートカットの録音開始と停止の動作が変わる
+speech-language^client:speechLanguage^入力言語または自動検出を選ぶ^文字起こしが選択した言語モードを使う^文字起こし先が対応
+speech-dictionary^client:speechCustomWords^Your dictionary に単語を追加または除去する^個人辞書に入力が反映される
+speech-project-dictionary^server:speechProjectCustomWords^Project dictionary を編集する^プロジェクトと対象環境の辞書に単語が反映される^環境またはプロジェクトを選び設定書き込み権限を得る
+speech-post-processing-model^server:speechPostProcessingModelSelection^Cleanup model を選ぶか既定へ戻す^文字起こしの整形用モデルを選択値に固定するか一般のテキスト生成モデルを継承する^接続環境と利用可能なテキスト生成モデル
+speech-correction-word^client:speechCorrectionWord^Correction cue に語句を入力して確定する^訂正を指示する合図が整形時に使われる^Clean up transcripts が有効な条件
+speech-silence-filtering^client:speechSilenceFiltering^Silence filtering を切り替える^入力の無音フィルタが選択状態になる
+remove-filler-words^client:speechRemoveFillerWords^Remove filler words を切り替える^対応する文字起こしでフィラーの処理が変わる
+speech-post-processing^local:t3code:voice-cleanup-grant:v1^Clean up transcripts を切り替える^対応する環境で文字起こし後の整形が使われるか変わる^整形に使えるモデル^apps/web/src/speech/voiceConsent.ts:125
+speech-models^server:speechModelId^インストール済みの文字起こしモデルを選ぶ^指定モデルが環境の文字起こしに使われる^文字起こし環境がローカルモデルに対応
+speech-hardware^server:speechAcceleration^Advanced の Hardware で使用ハードウェアを選ぶ^モデルの実行時に選択したアクセラレーションを使用する^Advanced。対応ホストとモデル^VoiceSettingsPanel.tsx:836
+speech-streaming^client:speechStreaming^Advanced で Streaming transcription を切り替える^録音中に逐次の文字起こしを表示するか変わる^Advanced。対応する文字起こし先
+microphone-test^^録音を開始しマイクテストを行う^選択した入力の音量とテスト結果が出る^マイク権限
+transcription-test^^Test model で試しに音声を入力する^テスト欄にモデルの文字起こしが出る^モデルの準備が完了。マイク権限
+snooze-options^server:snoozePresets^Snooze プリセットの時刻と種類を編集する^スレッドの Snooze メニューのプリセットに反映される
+snooze-limited-threads^server:snoozeLimitedThreads^Snooze until limits reset を切り替える^使用上限のリセットまでスレッドを Snooze するか変わる^利用上限のリセット時刻が取得できる
+auto-resume-limited-threads^server:autoResumeLimitedThreads^Resume after usage limits を切り替える^対応する使用上限の解除後にスレッドが再開するか変わる^対応プロバイダーの利用上限通知
+auto-settle-inactive-threads^server:sidebarAutoSettleAfterDays^Auto-settle inactive threads を切り替える^非アクティブなスレッドを自動で Settled に移すか変わる^選択中の設定取得済み接続環境
+auto-settle-merged-threads^server:sidebarAutoSettleOnMerge^Auto-settle merged threads を切り替える^マージ済み PR のスレッドを自動で Settled にするか変わる^選択中の設定取得済み接続環境
+keep-threads-with-pull-requests^server:sidebarAutoSettleKeepPullRequests^Keep threads with a PR を切り替える^PR のあるスレッドを非アクティブ判定で残すか変わる^Auto-settle inactive threads が有効^SettingsPanels.tsx:2189
+days-before-auto-settle^server:sidebarAutoSettleAfterDays^非アクティブ日数欄を確定する^指定した非アクティブ期間が経過すると条件に合うスレッドが Settled へ移る^Auto-settle inactive threads が有効
+response-streaming^server:responseStreamingMode^Advanced でターン単位または段落単位を選ぶ^応答テキストの配信単位が変わる^Advanced
+new-threads^server:defaultThreadEnvMode^Workspace の既定を選ぶ^新しいスレッドの Workspace 初期値が切り替わる^該当プロジェクトまたは環境
+default-model^server:defaultModelSelection^新規スレッドのプロバイダー、モデル、推論オプションを選ぶ^新規スレッドの初期モデル選択が変わる^利用できるプロバイダー
+fallback-model^server:fallbackModelSelection^フォールバックのプロバイダーとモデルを選ぶ^使用上限に達した場合に使う環境の代替モデルが設定される^環境既定。対応するプロバイダー
+default-permissions^server:defaultRuntimeMode^Permissions の既定の実行モードを選ぶ^新規スレッドの権限モードに反映される^プロバイダーと管理ポリシー
+project-defaults^server:projectSettingsOverrides^設定範囲をプロジェクトまたはチェックアウトにして継承値と上書きを見る^対象の有効値と継承元が表示される^接続環境に該当するプロジェクト^SettingInheritance.tsx:258
+add-project-starts-in^server:addProjectBaseDirectory^Add project starts in の開始フォルダーを入力して確定する^プロジェクト追加時の起点が変わる^環境のパス
+ghq-clone-layout^server:ghqCloneLayout^Clone into host folders を切り替える^クローン先がホストとリポジトリの階層を使うか変わる
+text-generation-model^server:textGenerationModelSelection^補助テキスト生成用のモデルを選ぶ^タイトルと既定の整形などで指定モデルが使われる^対象環境のプロバイダーまたはテキスト生成サービス
+thread-title-instructions^server:threadTitleInstructions^Advanced の指示を編集して確定する^スレッド名を生成するときに指示を付加する^Advanced
+compact-idle-threads^server:idleCompaction,server:compactIdleThreads^Providers の Advanced で圧縮時期を選ぶ^対象の長いアイドルスレッドの圧縮方針が変わる^対応する Claude モデル。旧キーは互換読み取り^packages/contracts/src/settings.ts:1728
+provider-health-check-interval^server:providerHealthRefreshInterval^Providers の Advanced でヘルスチェック間隔を選ぶ^バックグラウンドポリシーが許可したときのプローブ間隔が変わる^Advanced
+provider-update-checks^server:enableProviderUpdateChecks^Provider update checks を切り替える^対応プロバイダー CLI の更新確認を行うか変わる
+continue-threads-after-server-update^server:continueThreadsAfterServerUpdate^再起動後にスレッドを続行するか切り替える^サーバー更新再起動後に対象スレッドを再開するか変わる^対応サーバーとスレッド
+keep-awake-while-agents-work^server:keepAwakeWhileAgentsWork^Keep awake while agents work を切り替える^エージェントの作業中に対象マシンのスリープを抑止するか変わる^対応環境
+background-activity^server:backgroundActivity,server:backgroundActivityProfile^Balanced、Performance、Battery saver を選ぶ^環境のバックグラウンドプローブを抑制する条件が変わる^Advanced は単一環境のみ^BackgroundActivitySettings.tsx:424
+git-fetch-interval^server:backgroundActivity.overrides.automaticGitFetchInterval,server:automaticGitFetchInterval^Background activity の Advanced で Git fetch 間隔を変える^バックグラウンドポリシーが許可したときのフェッチ間隔が変わる^単一環境の Advanced
+storage-worktrees^server:worktreeCleanup,server:storageCleanup^Automatic worktree cleanup の継承、オフ、カスタムを選ぶ^範囲ごとのクリーンアップルールの適用方針が変わる^プロジェクト範囲に継承と上書き。環境では環境のルール^StorageSettings.tsx:664
+storage-worktree-keep-when^server:worktreeCleanup.rules.worktreeKeepWhen,server:storageCleanup.worktreeKeepWhen^Advanced で残すローカル変更の種類を選ぶ^指定したローカル変更のある worktree が削除候補から除外される^設定対象の接続済み環境が storageCleanupRun に対応。Advanced^StorageSettings.tsx:814|packages/contracts/src/settings.ts:1356
+storage-worktrees-location^server:worktreesDirectory^Worktree location で場所を入力または選択して確定する^新規 worktree のルートが変わる^環境書き込み。既存パスの追跡は previousWorktreesDirectories^packages/contracts/src/settings.ts:1408
+storage-artifacts^server:storageCleanup.browserArtifactsAfterDays^Delete old browser artifacts の保存期間を入力する^指定期間を過ぎたブラウザー成果物が整理対象になる^対応する環境^StorageSettings.tsx:932|packages/contracts/src/settings.ts:1366
+storage-delete-now^^Delete now を押す^クリーンアップを実行し Last run の結果を更新する^テスト用の不要データと環境の保守権限^StorageSettings.tsx:530
+worktree-submodules^server:worktreeSubmodules^Advanced で Recursive、Top level、None を選ぶ^新規 worktree のサブモジュール初期化の深さが変わる^Advanced
+start-from-origin^server:newWorktreesStartFromOrigin^Start from remote を切り替える^新規 worktree のブランチが対象のリモート起点を使うか変わる^対応リモートブランチ
+worktree-branch-naming^server:branchNamingMode,server:branchNamePrefix,server:branchNameInstructions^ブランチの名前付けモードを選び、該当するプレフィックスまたは指示を編集する^新規 worktree のブランチ名が選んだ方法で生成される^入力欄はモード依存
+snap-shot-enabled^client:snapShotEnabled^SnapShots をオンにして設定手順を進める^キャプチャ機能が有効になり従属設定が表示される^macOS Electron。スクリーン収録権限と必要に応じてアクセシビリティ権限
+snap-shot-accessibility^client:snapShotIncludeAccessibility^Include app text を切り替える^キャプチャ時にアクセシビリティのアプリ文字情報を含めるか変わる^SnapShots が有効。アクセシビリティ権限
+snap-shot-shortcut^client:snapShotShortcut^Capture shortcut のキーを設定して保存する^有効な組み合わせがキャプチャショートカットとして登録される^SnapShots 設定済み。OS とキーの競合
+snap-shot-sound^client:snapShotPlaySound,client:snapShotSound^Capture sound で Off、Whoosh、Click を選ぶ^キャプチャ時の音の有無または音色が変わる^SnapShots が有効
+snap-shot-flash^client:snapShotFlash^Capture flash を切り替える^キャプチャ時の画面フラッシュが変わる^SnapShots が有効
+snap-shot-animations^client:snapShotAnimations^Capture animations を切り替える^キャプチャ用アニメーションが変わる^SnapShots が有効。OS のモーション設定も関与
+agent-browser-access^server:enableAgentBrowserAccess,server:projectAgentBrowserAccessOverrides^Agent browser access を切り替える^対象環境またはプロジェクト内のエージェントのブラウザーアクセスが変わる^設定範囲と管理ポリシー
+browser-default-viewport^client:browserDefaultViewport^Advanced で Fill、端末プリセット、カスタム寸法を選ぶ^新規ブラウザーの表示領域が選択値になる^Advanced。寸法と向きは選択内容による
+browser-default-zoom^client:browserDefaultZoomFactor^Advanced で既定ズームを選ぶ^新規ブラウザーの倍率が変わる^Advanced
+browser-default-appearance^client:browserDefaultAppearance^Advanced で既定の外観 を選ぶ^ブラウザーの外観エミュレーションが変わる^Advanced
+browser-recording-frame-rate^client:browserRecordingFrameRate^録画のフレームレートを選ぶ^次回のブラウザー録画が指定 FPS を使う
+browser-recording-key-presses^client:browserRecordingShowKeyPresses^録画のキー入力表示を切り替える^次の録画のキー入力オーバーレイが変わる
+browser-recording-mouse-presses^client:browserRecordingShowMousePresses^録画のマウス入力表示を切り替える^次の録画のマウス入力オーバーレイが変わる
+browser-link-target^client:browserLinkTarget^リンクを開くアプリを選ぶ^一般リンクの既定の開き先が切り替わる
+browser-search-engine^client:browserSearchEngine^Search engine から検索エンジンを選ぶ^ブラウザーの検索先が切り替わる。Custom では URL 欄が出る
+browser-auto-show-floating-preview^client:browserAutoShowFloatingPreview^Auto-show floating preview を切り替える^ブラウザーのフローティングプレビューを自動表示するか変わる
+browser-profiles^client:browserProfiles^プロファイルを新規作成する^独立したブラウザープロファイルがリストに加わる^Electron^IntegrationsSettings.tsx:1262
+browser-default-profile^client:browserDefaultProfileId^既定にするプロファイルを選ぶ^新規ブラウザーが指定プロファイルを使う^Electron。既定化できるプロファイル^IntegrationsSettings.tsx:1529
+device-hub^server:enableDeviceSupport,server:deviceOnboardingCompleted^Use devices を切り替えてオンボーディングを進める^対象サーバーの Device サポートが切り替わる^デバイス対応環境
+agent-device-access^server:enableAgentDeviceAccess^Agents can use devices を切り替える^エージェントのデバイス利用を許可するか変わる^Device サポートと管理ポリシー
+device-sources^server:deviceHosts,server:easDeviceHosts,server:simlockDeviceHosts^追加メニューでデバイスソースの種類を選ぶ^対象環境に保存するソースの設定画面が開く^ソースごとのサービス、ホスト、サポート
+device-platform-support^^Local simulators の準備状態を開く^OS とツールチェーンの対応状況とセットアップ項目が表示される^接続したデバイス対応環境^DeviceSourcesSettings.tsx:397
+automatic-pull^server:defaultAutoPull,server:projectAutoPullOverrides^Automatically pull を切り替える^対象の自動プル方針が変わる^プロジェクトまたは環境の既定
+remove-agent-credits-on-merge^server:removeAgentCreditsOnMerge^マージ時にエージェントのクレジットを除去するか切り替える^対応するマージ操作でクレジット除去が適用される
+pull-request-merge-method^server:pullRequestMergeMethod,client:pullRequestMergeMethodOverrides^既定のマージ方法または直前の方法を選ぶ^次の PR マージの初期選択に反映される^対応するリポジトリとプロバイダー
+source-control-writing-style^server:sourceControlWritingStyle^コミットや PR の文体を選び、カスタム時に指示を編集する^生成するコミットメッセージと PR 本文に文体が適用される^ソース管理の書き込み設定
+follow-change-request-templates^server:sourceControlWritingStyle.followChangeRequestTemplates^Advanced で Follow pull request templates を切り替える^対応する PR 本文の生成がテンプレートを参照するか変わる^Advanced^packages/contracts/src/settings.ts:1074
+source-control-writer-model^server:sourceControlWriterModelSelection^Advanced で生成用モデルを選ぶ^コミットと PR ライターが指定モデルを使用する^Advanced。対応する生成モデル
+review-guides^server:reviewGuidesEnabled^Review guides を切り替える^対応する PR のガイド生成を利用できるか変わる
+review-guide-model^server:reviewGuideModelSelection^ガイド生成モデルを選ぶ^レビューガイドの生成モデルが変わる^Review guides オン。利用可能なモデル
+review-guide-instructions^server:reviewGuideInstructions^追加指示を編集する^レビューガイド生成時に指示が渡る^Review guides オン
+source-control^server:offeredSourceControlProviders^ソース管理プロバイダーの提供設定を切り替える^対象環境で提示するプロバイダーの状態が変わる^プロバイダーは検出結果と対応するホストに依存
+issue-trackers^^Issue trackers で接続済みトラッカーと状態を見る^対象環境の利用できるサービスを表示する^環境。接続済みドライバーに依存
+project-overview^^プロジェクトまたはチェックアウトを選んで Overview を開く^名前、アイコン、チェックアウトと操作が表示される^接続したプロジェクト
+project-actions^server:defaultProjectScripts,server:projectScriptOverrides^Actions で追加を選びスクリプトを保存する^設定対象のプロジェクトに新しい Action が表示される^プロジェクトのスクリプト書き込み権限
+project-repositories^^Repositories の管理を開く^対象の checkout に現在登録されているリポジトリが表示される^単一チェックアウトと対応環境
+providers^server:providerInstances^環境を選び Add provider でインスタンスを作成する^選んだドライバーのプロバイダーインスタンスが一覧に現れる^設定対象の接続と管理ポリシー。ドライバーごとにフォームが変わる
+usage-providers^server:usageLimitSources^使用量ソースを追加して保存する^指定したプロバイダーに使用量の取得元が表示される^接続環境。CLIProxyAPI または HTTP 設定
+text-generators^server:textGenerators^テキスト生成サービスの接続とモデルを選び追加する^新しいテキスト生成サービスを補助タスクの選択肢にできる^接続環境。プロバイダー許可リストがある場合は非表示
+scheduled-tasks^^タスクの追加フォームで目的地、指示、トリガーを保存する^選択した環境のタスク一覧に追加される^スケジュールをサポートし書き込み可能な環境
+environment-icon^server:environmentIcon^現在のマシンのアイコンを選ぶ^選択した環境のアイコン表現が更新される^環境のメタデータを書き込める^EnvironmentIconPicker.tsx:41
+local-environment^desktop:localEnvironmentEnabled^Local environment の有効状態を変更する^内蔵サーバーが有効または無効になる^Electron のローカル環境。適用するとアプリが再起動。オフの場合、このマシン上のエージェントとターミナルが停止する^apps/desktop/src/ipc/methods/localEnvironment.ts:7
+network-access^desktop:serverExposureMode^Network access を切り替え必要な確認を承認する^ローカル限定またはネットワーク公開の状態と接続先表示が変わる^ローカルデスクトップ環境の保守権限と管理ポリシー
+tailscale-https^desktop:tailscaleServeEnabled,desktop:tailscaleServePort^Tailscale HTTPS のセットアップを開き有効化または無効化する^対象マシンの Tailscale HTTPS 接続先が追加または停止される^対応するローカル Tailscale と保守権限
+wsl-backend^desktop:wslBackendEnabled,desktop:wslDistro,desktop:wslOnly^WSL のモードとディストリビューションを選ぶ^Windows のバックエンド構成が切り替わる^Windows 専用。macOS では非表示
+t3-connect^rpc:managedTunnelActive^T3 Connect にサインインして対象マシンをリンクする^対象マシンの T3 Connect リンク状態が更新される^クラウド対応ビルド、アカウント、対応サーバーと管理ポリシー^SavedEnvironmentRows.tsx:662|packages/contracts/src/environmentHttp.ts:555
+connect-device-approval^server:requireConnectDeviceApproval^Require approval for new devices を切り替える^新しい T3 Connect デバイスからのアクセス要求に承認が必要か変わる^対応サーバーと T3 Connect
+hold-webhooks-while-offline^rpc:holdWebhooksWhileOffline^オフライン中の Webhook 保留を切り替える^オンではオフライン時に最長 24 時間保留する。オフにすると新規オフライン配信は失敗し、保留済みの配信は続く^T3 Connect の管理トンネルとサインイン^SavedEnvironmentRows.tsx:700|packages/contracts/src/environmentHttp.ts:570
+publish-agent-activity^rpc:publishAgentActivity^Publish agent activity を切り替える^対応サービスへ公開するエージェント活動の状態が変わる^T3 Connect にサインインし、対象環境にリレー設定を変更できる権限がある^SavedEnvironmentRows.tsx:684|packages/contracts/src/environmentHttp.ts:569
+preview-tunnel^server:enablePreviewTunnel^Preview tunnel を切り替える^対象環境のプレビューのトンネル利用を許可するか変わる^対応環境と管理ポリシー
+connections-environment^^This machine の詳細を開く^マシンのネットワーク、アクセス、認証状態が表示される^選択したローカルまたは管理可能な環境
+linked-environments^^マシン間のリンク操作を開始する^他マシンを選んでリンクしマップから接続状態を確認できる^起点と接続先の Linked environments 設定と権限
+remote-environments^^Environments の追加から接続情報を指定する^接続先が一覧またはマップに表示される^接続先と認証情報
+load-balancing^client:loadBalancingEnabled^Load balancing を切り替える^候補環境に新規作業を分配するか変わる^候補となる環境
+pull-request-routing^local:t3code:github-routing:<environmentId>^Pull request sharing のルーティングを設定する^共有された PR を処理する環境の選択規則が変わる^対象の接続環境^PullRequestRoutingSettings.tsx:60|apps/web/src/connection/storage.ts:627
+secret-providers^server:secretProviders^対象環境の Secret providers を開く^設定済みのシークレットプロバイダーと利用箇所が表示される^secret_providers を広告する接続環境と権限
+secret-providers-add^server:secretProviders^Add secret provider を押し設定を保存する^プロバイダーが登録され対応入力で参照できる^secret_providers を広告する環境。対応 CLI と認証^SecretsSettings.tsx:110
+archive^^環境、プロジェクト、チェックアウトを選びアーカイブを絞り込む^対象のアーカイブ一覧が表示される^対象環境へ接続
+app-version^^Version 行を開いて現行バージョンを確認する^アプリのバージョンと利用可能な更新操作が表示される^更新操作は実行環境と更新状況に依存
+update-track^desktop:updateChannel,desktop:updateChannelConfiguredByUser^Stable または Nightly を選び、対象マシンの確認を進める^アプリと互換性がある対象マシンの更新トラックを切り替えられる^デスクトップの更新機構と互換性。ポリシーで Nightly を禁止できる^SettingsPanels.tsx:414|SettingsPanels.tsx:429
+cli-command^^t3 command をインストールする^ターミナルから t3 コマンドを呼び出せる^対応デスクトップ。書き込み可能なインストール先
+mobile-app^^Mobile app の案内を開く^モバイルアプリの入手案内が表示される
+welcome-page^^Welcome page を開く^オンボーディングの案内が表示される
+privacy-policy^^Privacy policy を開く^プライバシーポリシーへのリンクを開く
+open-source-licenses^^Open source licenses を開く^ライセンス一覧が表示される^About から到達^apps/web/src/routes/_chat.settings.open-source-licenses.tsx:5
+telemetry-export^server:observability^OpenTelemetry export のエンドポイントを設定して確定する^対応環境で設定した送信先へテレメトリを出力する^診断を開ける接続環境。HTTP(S) の有効な URL
+diagnostics^^Maintenance の Diagnostics から診断ページを開く^対象環境のプロセス、履歴、トレースを確認できる^対象環境と対応 RPC
+keybindings^^Keybindings を開きコマンドを検索する^コマンドごとの割り当てと既定かカスタムかが表示される^アクセスできるキーバインド設定

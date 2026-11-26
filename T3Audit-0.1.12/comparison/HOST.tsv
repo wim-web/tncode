@@ -1,0 +1,226 @@
+id	status	verification	swift_source	difference	acceptance
+HOST-001	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/Workspace.swift:126	固定のモデル供給元と選択先のキー有無をこの Mac で表示する。環境別のプロバイダー一覧・認証・実行版の Status は未実装。	固定候補と保存済みキーの有無をモデル設定で確認する。試験環境を 2 件切り替え、各環境のプロバイダー一覧と状態が表示されることを検査する。
+HOST-002	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:5|Sources/PiWorkspace/Workspace.swift:126	ドライバー ID や独立インスタンスの登録枠がない。	同一対応ドライバーを異なる 2 ID で作成し、再読込して両方が出る
+HOST-003	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sources/PiWorkspace/Workspace.swift:5	モデル設定は使用先を選ぶ。個別供給元を無効にしてコンポーザー候補から外す設定がない。	無効化後に選択肢から外れ、再度有効化すると戻る
+HOST-004	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:5|Sources/PiWorkspace/PiWorkspaceApp.swift:103	供給元の表示名は列挙型による固定ラベル。利用者が設定する名前や色を保持しない。	色と名前をそれぞれ変更して再読込する
+HOST-005	部分	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:112|Sources/PiWorkspace/Workspace.swift:45|Sources/PiWorkspace/PiProcess.swift:74	ローカルモデルの URL とコンテキスト長は編集できる。Node のパスと Pi worker の起動引数は固定で、バイナリの Status 検査はない。	ローカル URL とコンテキスト長を保存して開き直す。別途、誤った実行ファイルを設定した場合の Status 失敗と、修正後の再検査成功を確認する。
+HOST-006	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:77|Sources/PiWorkspace/PiWorkspaceApp.swift:86	同梱 worker の環境は Swift の固定値。利用者が供給元ごとに任意変数を登録する機能がない。	無害な識別子を追加・変更・削除し、再読込で各状態を確認する
+HOST-007	部分	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/KeyVault.swift:46|Sources/PiWorkspace/PiProcess.swift:77	モデル API キーは SecureField と Keychain で管理する。任意の環境変数を秘密扱いにする操作や外部参照の指定はない。	試験 API キーが設定 JSON に入らず、再表示で値が平文に出ないことを確かめる。任意の変数を秘密参照にした場合も参照だけを保持できれば全範囲を満たす。
+HOST-008	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:5|Sources/PiWorkspace/Workspace.swift:126	固定された候補を利用する。対象 ID のプロバイダー登録を削除する機能がない。	別インスタンスを残したまま対象 ID だけが消える
+HOST-009	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sources/PiWorkspace/WorkspaceModel.swift:229	供給元を選ぶとモデル欄は既定値になる。保存済みインスタンス設定全体の Reset はない。	カスタム設定を変更してからリセットし、再読込して初期値を確認する
+HOST-010	未対応	ソース確認	Sidecar/worker.mjs:138|Sources/PiWorkspace/WorkspaceModel.swift:384	会話を開くと選択モデルを確認する。供給元の状態を手動取得する Status はない。	CLI の状態を変えてから押し、Status が更新される
+HOST-011	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:129	モデルカタログの起動時更新は無効。プロバイダー状態の定期更新や間隔設定がない。	0 を保存して再読込し、Reset でプリセット値に戻る
+HOST-012	未対応	ソース確認	scripts/build-app.sh:31|Sources/PiWorkspace/PiProcess.swift:74	アプリが Pi と Node を同梱する。設定画面にプロバイダー別の更新開始と版の再検査がない。	更新可能なテスト CLI で開始を確認し、Status の実測バージョンを読み直す
+HOST-013	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:112|Sidecar/worker.mjs:138	モデル ID を直接入力する。カタログのモデルを一括表示・非表示にする選択メニューがない。	既知のモデルだけを隠し、モデル選択メニューで不在を確認して戻す
+HOST-014	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:112|Sources/PiWorkspace/Workspace.swift:126	モデル ID を 1 件設定する。モデルのスターとお気に入り一覧がない。	1 モデルだけスターを切替え、モデル選択メニューを開き直す
+HOST-015	部分	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:112|Sidecar/worker.mjs:91|Sources/PiWorkspace/Workspace.swift:126	ローカルモデルを 1 件指定できる。複数カスタムモデルを保存・編集・削除する管理一覧はない。	ローカルの試験モデル ID を入力し、再起動後のターンで使われることを確かめる。複数登録の検査ではモデルを追加、改名、再表示、削除し、別モデルが残ることを確かめる。
+HOST-016	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:112|Sources/PiWorkspace/Workspace.swift:126	カスタムモデルのリストがなく、表示順の保存はない。	隣接 2 件を入れ替え再読込して順序を比較する
+HOST-017	部分	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sidecar/worker.mjs:115|Sidecar/worker.mjs:200	ネイティブ設定で API キーを保存して選択モデルを使う。認証 URL の発行、認証セッションの継続、認証済み Status がない。	有効な試験キーの設定後にターンが成功する。認証フローの検査では開始元に届く URL または入力要求で続行し、完了後の認証済み状態を確認する。
+HOST-018	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sidecar/worker.mjs:115	設定画面の Cancel は入力を捨てる。開始済みプロバイダー認証を取り消すセッションはない。	キャンセル後に古い応答先で完了せず、新規開始できる
+HOST-019	部分	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/KeyVault.swift:59|Sidecar/worker.mjs:200	保存したモデル API キーを削除できる。CLI や OAuth のログアウト、実行ホストで複数の認証方式を解除する機能はない。	試験キーを保存して送信し、Remove saved key を保存すると同じ供給元の次の送信で設定が求められる。CLI または OAuth の試験認証でも解除後に再認証が必要か確認する。
+HOST-020	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	OpenAI の API モデルを Pi で使う。Codex CLI とその home に保存されたログインは読み込まない。	テスト用 Codex home で既存ログイン状態を再現し、Codex のターンを開始する
+HOST-021	未対応	ソース確認	Sidecar/worker.mjs:115|Sources/PiWorkspace/PiWorkspaceApp.swift:122	モデル API キー経路のみ。ChatGPT の管理認証とアカウント共有設定がない。	テストアカウントで共有のオン・オフを試し、表示と利用可否を比較する
+HOST-022	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:33|Sidecar/worker.mjs:115	供給元またはループバック URL ごとにキー 1 件を保管する。ChatGPT ログイン済みアカウントの選択と再接続がない。	2 アカウントを切替え、Status が選択先を示す
+HOST-023	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:19|Sidecar/worker.mjs:115|Sources/PiWorkspace/PiProcess.swift:83	端末ローカルの保管先から worker へキーを渡す。別の実行環境に ChatGPT 認証を引き渡す機能がない。	2 環境でテスト認証を開始し、対象 Codex の利用可否を確認する
+HOST-024	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Anthropic API を Pi で使う。Claude Code CLI の認証プロファイルとログイン状態を読まない。	未認証プロファイルと有効なプロファイルで検査結果を比較する
+HOST-025	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Cursor ドライバー、ブラウザ認証と完了状態の検査がない。	API キーなしで認証し、完了後の Cursor Status を確認する
+HOST-026	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiWorkspaceApp.swift:122	Cursor 専用 API キーと Cursor のブラウザ認証への切り替えがない。	キーを入れるとブラウザ認証の代替が表示され、削除すると戻る
+HOST-027	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:129	Grok CLI のログイン・モデルの検出がない。	CLI 認証のない状態とある状態でモデル表示を比較する
+HOST-028	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiProcess.swift:74	fx CLI のログイン、バックエンド検出とホスト内インスタンス間の状態共有がない。	正常な fx CLI で Status を検査し、同一ホストの別インスタンスにも状態が反映される
+HOST-029	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiProcess.swift:74	OpenCode CLI の起動やモデル列挙がない。	URL 未指定のテスト環境でモデル表示とターン成功を確認する
+HOST-030	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:45|Sidecar/worker.mjs:110	ローカルモデルの URL はループバック限定。外部 OpenCode サーバーの接続・キー検査はない。	CLI の代わりに外部テストサーバーを使い、誤ったキーの拒否と正しいキーの成功を確認する
+HOST-031	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Kiro CLI のログイン状態と再検査に対応していない。	未ログイン警告を確認後、ログインして再検査する
+HOST-032	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiWorkspaceApp.swift:122	Kiro ドライバーと Kiro 用 API キー認証がない。	CLI のログインなしで有効キーを指定し、認証済みになることを確認する
+HOST-033	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:129|Sources/PiWorkspace/PiProcess.swift:74	Muse Code のバイナリ選択、CLI 認証、SDK のモデル検査がない。	カタログ失敗を再現し、導入・ログイン済みの実行ファイルを選んでモデル表示を確認する
+HOST-034	部分	ソース確認	Sidecar/worker.mjs:138|Sidecar/worker.mjs:200|Sources/PiWorkspace/PiWorkspaceApp.swift:122	選択中のモデル ID の不在と送信時のキー欠落を個別に示す。Pi CLI 全体の認証済みモデル数、Status とモデル一覧を診断しない。	キーなしの選択モデルで送信し設定が求められることを確認する。全モデルが未認証の Pi CLI で 0 件を表示し、試験認証後に ready と新しい候補が出れば全範囲を満たす。
+HOST-035	部分	ソース確認	Sidecar/worker.mjs:138|Sidecar/worker.mjs:200|Sources/PiWorkspace/PiWorkspaceApp.swift:103	モデルの不在とキー欠落は別の経路で表示され、設定で別モデルを選べる。T3 の既定モデル専用診断や CLI の --api-key 分岐はない。	不正モデル ID のエラーと、有効 ID でキーがない場合の設定案内を比較する。T3 相当の検査では既定モデルだけ未構成とし、別モデルは選択でき、専用説明と --api-key の汎用説明を確認する。
+HOST-036	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:74|Sidecar/worker.mjs:166|Sources/PiWorkspace/WorkspaceModel.swift:219	プロジェクトのツール許可は UI で選べる。起動引数は固定で、プロジェクトを信頼して skills を読み込む経路はない。	同一作業パスで信頼前後の skills 読み込みを比較する
+HOST-037	未対応	ソース確認	scripts/build-app.sh:31|Sidecar/worker.mjs:110	Antigravity のランタイムを取得する機能も進捗 UI もない。	Mac 用テスト環境で進行表示から完了に変わることを確認する
+HOST-038	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Antigravity の取得タスクを開始・中止する機能がない。	ダウンロード途中で中止し、別の操作として再開始する
+HOST-039	未対応	ソース確認	scripts/build-app.sh:31|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Antigravity の管理ランタイムを個別に削除・再導入できない。	削除後に未導入の表示になる。再ダウンロードして導入済みに戻る
+HOST-040	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Antigravity の Google 認証フローがない。	ローカルとリモートの試験フローで完了し、認証状態を確認する
+HOST-041	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Pi 用 API キーは使える。Antigravity とその認証方式切り替えは未実装。	認証方式切替後の Status の種別とターン開始を確認する
+HOST-042	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sidecar/worker.mjs:110	ACP Registry の検索と ACP エージェント初期化がない。	ライブ検索で候補を選択し、設定保存後に ACP 初期化結果を確認する
+HOST-043	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:74|Sidecar/worker.mjs:110	任意の ACP コマンドを登録・起動してモデル一覧を検査する機能がない。	テスト用 ACP コマンドを設定し、モデル一覧が検査応答と一致する
+HOST-044	未対応	ソース確認	Sidecar/worker.mjs:115|Sidecar/worker.mjs:110	ACP が通知した認証方式を表示して開始する機能がない。	方式を公開するエージェントで認証し、成功と未対応時の UI を比較する
+HOST-045	未対応	ソース確認	scripts/build-app.sh:31|Sidecar/worker.mjs:110	ACP バイナリを個別に導入・削除する管理機能がない。	管理導入の削除後に検査し、再 prepare で元に戻る
+HOST-046	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:173|Sidecar/worker.mjs:143	自アプリのスレッド ID で Pi 履歴を開く。ACP セッションの列挙、取り込み、削除がない。	一覧からテスト session を取り込む。削除可能な別 session を削除して再一覧する
+HOST-047	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:5|Sidecar/worker.mjs:110	ACP エージェント固有の供給元設定とその可用性一覧がない。	対応エージェントで設定前後と無効化後の一覧を比較する
+HOST-048	未対応	ソース確認	scripts/build-app.sh:31|Sidecar/worker.mjs:138	同梱ランタイムで選択モデルの不在を表示する。任意のプロバイダー実行版と対応範囲を比較する Status はない。	非対応と対応バージョンで Status とターン開始可否を比較する
+HOST-049	構成差	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:51|Sources/PiWorkspace/WorkspaceModel.swift:384|Sources/PiWorkspace/WorkspaceModel.swift:75	選択会話に従って同梱 helper を起動・終了する。T3 の接続可能なローカルホストを独立にオン・オフする製品機能はない。	ローカル会話の選択で helper が起動し、アプリ終了時に停止する。ホスト公開を製品範囲に含める場合は、切り替え前後でローカル環境への接続可否を確認する。
+HOST-050	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:45|Sources/PiWorkspace/PiProcess.swift:83	ループバックのモデル URL は入力できる。別のアプリホストに対する Direct 接続の登録・復帰がない。	新しいテスト環境を追加し、アプリの再起動後も同じ環境が復帰する
+HOST-051	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:51|Sources/PiWorkspace/PiProcess.swift:83	ブラウザからのアプリ・ホストのペアリングページと期限付きコードがない。	別ブラウザプロファイルで接続し、同じ期限切れコードの拒否を確認する
+HOST-052	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:102|Sources/PiWorkspace/PiProcess.swift:74	ローカル絶対パスで helper を起動する。SSH で実行するアプリホストの登録・認証・再接続がない。	SSH エントリ登録後に接続が復帰し、誤った認証から修正できる
+HOST-053	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	保存済みホスト ID と複数接続経路の対応を保持しない。	2 経路が同じ環境に表示され、別環境の URL 追加が拒否される
+HOST-054	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	経路の優先順、ヘルス判定と代替経路への切り替えがない。	順序変更が再読込で残る。主経路を止め、接続状態が別ルートへ移るか確認する
+HOST-055	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	複数接続経路から 1 本だけ登録を削除する機能がない。	複数ルートのうち 1 本のみ削除される
+HOST-056	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:384|Sources/PiWorkspace/PiProcess.swift:83	会話 helper の再起動はできる。登録した別ホストの一時停止・再接続はない。	一時停止で切断され、同じ登録から再接続する
+HOST-057	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/WorkspaceModel.swift:147	ローカルプロジェクトの一覧除外はある。クライアントの保存済み環境登録を選んで除去する機能がない。	環境 A を除去し、環境 B とホスト側の接続口を確認する
+HOST-058	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:410|Sources/PiWorkspace/WorkspaceView.swift:603|Sources/PiWorkspace/PiProcess.swift:83	Pi helper の終了や作業フォルダー不在を通知し、会話単位で再接続できる。Direct・SSH・Relay 経路の障害診断と Retry はない。	ローカル helper の異常終了後は Reconnect で同じ履歴を開く。ホスト接続の検査では経路を遮断・復旧させ、診断理由と Retry 後の到達を確認する。
+HOST-059	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:74|scripts/build-app.sh:31	管理可能なリモート T3 ホストとアップデート経路がない。	古い試験ホストに更新をかけ、更新後にバージョンと再接続を確認する
+HOST-060	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:45	ローカル子プロセスのパイプとループバックのモデル接続を使う。アプリホストの LAN 公開を設定できない。	公開の前後で LAN 側からの到達可否を比較する
+HOST-061	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:45	Tailscale HTTPS の生成、公開状態の表示、解除がない。	HTTPS を作成し、無効化後にそのエンドポイントが消える
+HOST-062	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:45|Sources/PiWorkspace/Workspace.swift:126	ループバック URL は推論呼び出しに使う。ペアリング時に案内する既定 URL の設定はない。	既定変更後に新しいペアリング案内の URL を比較する
+HOST-063	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/PiProcess.swift:83	モデル API キーは推論用。ホストアクセス用の期限・権限付き資格情報を発行できない。	限定権限のテストリンクを発行し、接続先でそれより広い操作が拒否される
+HOST-064	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	未使用のリンクを発行・追跡・取り消す接続管理がない。	取り消したコードの拒否と新しいコードの成功を確認する
+HOST-065	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:28|Sources/PiWorkspace/PiProcess.swift:83	選択中の helper を閉じられる。外部クライアント台帳と個別失効はない。	別クライアントだけを失効させ、操作元が残ることを確認する
+HOST-066	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:28|Sources/PiWorkspace/PiProcess.swift:83	操作元を残してほかの認証済みクライアントを一括失効させる機能がない。	2 台以上の試験クライアントが切断され操作元が残る
+HOST-067	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:33|Sidecar/worker.mjs:115	アプリに T3 Connect アカウントのログイン、切替、ログアウトがない。	サインインでアカウント画面が開き、サインアウトで認証依存の表示が変わる
+HOST-068	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	T3 Connect へのホスト登録と Relay トンネルの有効化・解除がない。	試験ホストを有効化し別端末で発見する。解除後にトンネル経由で接続できないことを確認
+HOST-069	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	アカウントに属する接続環境を発見・選択する一覧がない。	アカウントに属する 1 ホストを別テスト端末から選び接続する
+HOST-070	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	T3 Connect のホスト台帳を読み、登録解除する機能がない。	対象ホストを解除して更新し、別ホストの登録が残る
+HOST-071	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:628|Sources/PiWorkspace/PiWorkspaceApp.swift:51	実行状態は選択中の会話内に出る。モバイル端末への活動配信設定がない。	試験アカウントのモバイル受信端末でオン・オフ時の活動を比較する
+HOST-072	未対応	ソース確認	Sidecar/worker.mjs:230|Sources/PiWorkspace/Workspace.swift:126	オフライン中に webhook を預かり復帰時に配送する処理がない。	短時間オフラインにして試験要求を送り、オン・オフで復帰後の配信結果を比較する
+HOST-073	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	新しい外部端末を承認待ちにするポリシーと台帳がない。	新規テスト端末で、設定オンのときに承認待ちになる
+HOST-074	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	保留中の端末を選んで承認し接続させる処理がない。	承認前は待機、承認後に同じ試験端末が接続する
+HOST-075	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	承認待ちの端末要求を選んで拒否する処理がない。	拒否後に端末がその申請で接続できない
+HOST-076	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/Workspace.swift:126	承認済みの端末権限を個別に取り消せない。	端末失効後に以前の許可で接続できない
+HOST-077	未対応	ソース確認	Sidecar/worker.mjs:159|Sources/PiWorkspace/PiProcess.swift:83	外部に MCP サーバーを公開せず、読み取り限定のクライアント権限を発行しない。	read-only で許可し読み取りを試す。書込操作が拒否されることを確認
+HOST-078	未対応	ソース確認	Sidecar/worker.mjs:159|Sources/PiWorkspace/PiProcess.swift:83	外部 MCP 接続の承認待ち、拒否、拒否後の RPC 制御がない。	拒否後に当該クライアントが環境 RPC を呼べない
+HOST-079	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	ホスト間を片方向または両方向にリンクする設定がない。	片方向作成と任意の Link back を分け、それぞれリンク一覧を確認する
+HOST-080	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	ピアリンクの登録と解除済みリンクによるアクセス拒否がない。	解除後にリンク一覧とリモートスレッドへのアクセスを比較する
+HOST-081	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:184|Sources/PiWorkspace/PiProcess.swift:42	アプリ内のローカル会話だけを選択して開く。ピアの閲覧権限で別ホストの履歴を開く機能がない。	履歴を開き、閲覧権限のみの接続で応答できないことを確認する
+HOST-082	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:97|Sources/PiWorkspace/WorkspaceView.swift:329	スレッドごとのゲスト共有許可とサーバー側ゲートがない。	オンとオフで共有入口とサーバーの発行可否を比較する
+HOST-083	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:97|Sources/PiWorkspace/WorkspaceView.swift:329	共有リンクの発行、コピー、一度だけ利用できる招待の消費がない。	テスト招待を発行し、別ブラウザで 1 回利用すると再引換できない
+HOST-084	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:97|Sources/PiWorkspace/PiProcess.swift:83	共有終了によってゲストのアクセスを失効させる処理がない。	共有を閉じて旧ゲストの次回取得が拒否される
+HOST-085	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:51|Sources/PiWorkspace/PiProcess.swift:83	ゲストブラウザ用の招待確認ページと一度限りの引き換えがない。	アカウントを持たない試験ブラウザで参加し、二度目の引換が失敗する
+HOST-086	未対応	ソース確認	Sidecar/worker.mjs:78|Sources/PiWorkspace/WorkspaceView.swift:558	ローカル所有者に本文を表示する。共有したメッセージと添付だけをゲストへ見せる投影はない。	公開対象メッセージと添付を確認し、無関係のスレッドを参照できない
+HOST-087	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:680|Sidecar/worker.mjs:230	送信元はローカル GUI。ゲスト用の入力受付と所有者の承認まで保持するキューがない。	試験テキストを送り、所有者が確定するまでプロバイダーターンが始まらない
+HOST-088	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sidecar/worker.mjs:230	ゲストの保留カードと承認した入力をターンへ渡す処理がない。	送信を選んで保留カードが消え、ゲスト入力がターンに含まれる
+HOST-089	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sidecar/worker.mjs:230	ゲスト保留カードを破棄しターンを起こさない操作がない。	破棄後にカードが消え、その入力でプロバイダーターンが作られない
+HOST-090	対象外	ソース確認	Package.swift:6|Sources/PiWorkspace/PiProcess.swift:74	対象は macOS。Windows の WSL ディストリビューション選択はプラットフォーム対象外。	Mac の接続設定で WSL 選択が出ないことを確認する
+HOST-091	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sidecar/worker.mjs:159	会話の固定モデル構成を選択する。委譲先ごとの対応供給元・モデル・実行条件の照会がない。	無効なプロバイダーを有効化し、候補範囲が変わるか確認する
+HOST-092	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:28|Sidecar/worker.mjs:156|Sidecar/worker.mjs:159	アプリのターンを担う helper は 1 つ。子の起動、同じ checkout のバインド、依頼 ID による重複排除がない。	同一 clientRequestId で再送し、子を重複作成せず同じ作業パスで走ることを確認
+HOST-093	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:318|Sources/PiWorkspace/GitWorkspace.swift:119|Sidecar/worker.mjs:159	ネイティブ UI からトップレベル会話の worktree を作れる。親のコミットを基点にする子タスクの隔離起動はない。	親コミットを子で確認し、子のファイル変更が親パスに出ない
+HOST-094	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sidecar/worker.mjs:159	別環境への子タスク委譲、実行結果の親への配送がない。	A から B に委譲し、作業が B に作られ完了が A に届く
+HOST-095	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:28|Sidecar/worker.mjs:214	選択したターンの完了は通知する。親に即時応答して後から子の完了を配送する契約がない。	即時戻りと後続の完了配送を別々に確認する
+HOST-096	未対応	ソース確認	Sidecar/worker.mjs:192|Sidecar/worker.mjs:214	ローカルターンの終端を GUI で待つ。子タスク ID で期限付き待機し、期限後に完了を通知する契約がない。	短い子で同期完了を確認し、長い子で期限後に親へ終端が届くか確認する
+HOST-097	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:6|Sources/PiWorkspace/PiProcess.swift:21	選択会話の表示用フェーズを保持する。taskId を指定した子の状態照会がない。	稼働中と完了後の同一 taskId の結果を比較する
+HOST-098	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:369|Sidecar/worker.mjs:239	選択中の turn だけ中断できる。子 ID を指定し並列の別タスクを残して停止する機能がない。	実行中の子を取り消し、隣接タスクが実行を続けることを確認
+HOST-099	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:652|Sidecar/worker.mjs:156	プロジェクト単位のツール許可は選べる。子の操作ごとの承認を親へ転送し回答する処理がない。	子で承認要求を出し、親で応答して両側の保留表示が消える
+HOST-100	未対応	ソース確認	Sidecar/worker.mjs:186|Sources/PiWorkspace/WorkspaceView.swift:628	Pi が開始したツール名を一時表示する。プロバイダー内部の子作業ログとステップの閲覧がない。	ネイティブ子の作業体を作り、表示が子のステップと一致する
+HOST-101	部分	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:166|Sidecar/worker.mjs:230	ネイティブ UI で対象プロジェクトに 1 件ずつ作成できる。エージェントからの起動、バッチ作成、返却 ID の契約がない。	別名の新規スレッドを同一プロジェクトに作り一覧を確認する。バッチ作成では一度の要求で複数の ID を取得し一覧を照合する。
+HOST-102	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:184|Sidecar/worker.mjs:78|Sidecar/worker.mjs:159	一覧と履歴はローカル GUI にある。MCP の対象指定による一覧・本文・状態取得とアクセス範囲の制御がない。	対象と無関係な別スレッドの表示範囲を確認する
+HOST-103	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:294|Sidecar/worker.mjs:192|Sidecar/worker.mjs:159	GUI から選択会話へ送る。MCP の対象指定、要求 ID を使った再送と重複排除はない。	送信を再試行しても試験本文の入力が重複しない
+HOST-104	未対応	ソース確認	Sidecar/worker.mjs:214|Sidecar/worker.mjs:159	現在のターンの完了は GUI に表示される。MCP で別スレッドや背景処理の完了を待つ機能がない。	完了済みと未完了、背景処理ありで結果を比較する
+HOST-105	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:369|Sidecar/worker.mjs:159	現在の GUI スレッドを止められる。MCP が対象 ID を指定して中断し、状態を再照会する機能がない。	停止要求前後で状態を確認し、同じ ID で安全に再照会する
+HOST-106	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	定期・単発の予定を永続化して指定時刻に run を生成する機能がない。	短い間隔と単発の 2 タスクを保存し、予定時刻と作成された run を確認する
+HOST-107	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	予定タスクの宛先や本文の編集、間隔変更時の時刻再計算がない。	本文のみ編集した時には予定を維持し、間隔の編集では予定を再計算する
+HOST-108	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	予定を維持したまま実行を一時停止・再有効化する機能がない。	次回時刻をまたいで停止し実行されないことを確認する
+HOST-109	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:294|Sidecar/worker.mjs:230	コンポーザーからの手動送信はある。保存済み予定の即時実行がない。	遠い将来予定の試験タスクを選び、期日前に run ができる
+HOST-110	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	登録済み予定タスクを削除して将来の起動を止める機能がない。	対象タスクのみ消え、以前の予定時刻に起動しない
+HOST-111	未対応	ソース確認	Sidecar/worker.mjs:230|Sources/PiWorkspace/PiProcess.swift:83	webhook タスクの登録と署名・テンプレート・フィルター・重複による判定がない。	試験タスクを作りテンプレート展開、署名不一致、フィルター不一致と重複の結果を比較する
+HOST-112	未対応	ソース確認	Sidecar/worker.mjs:230|Sources/PiWorkspace/PiProcess.swift:83	webhook の URL 発行・ローテーションと旧 URL の失効がない。	更新前後の URL を呼び、以前の URL が失効することを確認する
+HOST-113	未対応	ソース確認	Sidecar/worker.mjs:230|Sources/PiWorkspace/PiProcess.swift:83	webhook リクエストの受信・検証・配信履歴の表示がない。	有効な要求と無効な署名を送り、ステータスと試験 run の有無を比較する
+HOST-114	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	Workflows を有効化・停止する Labs 設定と Workflow 実行機能がない。	有効化前後の一覧と試験定義の実行可否を比較する
+HOST-115	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	Workflow 定義の編集、構文検証、保存がない。	有効定義を保存し、構文エラー版を保存すると拒否され旧定義が残る
+HOST-116	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	Workflow 定義を停止・削除して以後の起動を拒否する設計がない。	定義を削除してエディター一覧と新規 run の結果を確認する
+HOST-117	未対応	ソース確認	Sidecar/worker.mjs:230|Sidecar/worker.mjs:192	手動の単発プロンプトのみ。入力や冪等キーで Workflow run を起動する処理がない。	同じ入力とキーで 2 回要求し、run ID が一致する
+HOST-118	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	時刻・イベント条件を評価して Workflow run を起動する処理がない。	設定したトリガーごとに条件一致と不一致で run の差を確認する
+HOST-119	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:21|Sources/PiWorkspace/WorkspaceView.swift:454	Workflow run と各ステップ、親子 run のリンクを表示する機能がない。	親子 run を作成し、一覧・ステップから子のリンクを開ける
+HOST-120	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sidecar/worker.mjs:230	定義された Workflow の質問を選択肢で解決するカードと回答契約がない。	指定選択肢で解決し、重複応答でも追加の待機解決が起きない
+HOST-121	未対応	ソース確認	Sidecar/worker.mjs:161|Sidecar/worker.mjs:214	ターンの終了結果は表示する。失敗した Workflow run を同じ ID で再開する機能がない。	最初の試行だけ失敗させ、修正後に同じ run ID が完了する
+HOST-122	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:369|Sidecar/worker.mjs:230	選択中のモデルターンは中断できる。待機ステップを含む Workflow 全体の取り消しはない。	待機ステップを持つ run を取り消し、後続ステップが起動しないことを確認する
+HOST-123	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	Workflow の待機と先着・後着の信号を照合する機能がない。	先に待機を作る場合と先に信号を送る場合を試し結果を比較する
+HOST-124	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sidecar/worker.mjs:230	Workflow の未回答の質問を引き下げる操作、解決状態の保持がない。	同じ質問の 1 回目と再送の結果を比較する
+HOST-125	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/Workspace.swift:169	Workspace はプロジェクトとモデルを保存する。Workflow が共有するキー、プレフィックス検索、削除の領域がない。	キーを set し prefix で取得し、delete 後に取得できない
+HOST-126	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	skipped run の保持制限と展開 UI がない。	上限より多く skipped run を生成して、保持される件数と展開表示を確認する
+HOST-127	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:369|Sidecar/worker.mjs:230	通常のモデルターンの Stop はある。旧スレッド Workflow の識別・停止がない。	Claude Workflow を停止し、スレッドで次の操作ができることと他の run が残ることを確認する
+HOST-128	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/WorkspaceModel.swift:427|Sources/PiWorkspace/PiProcess.swift:21	SecureField はモデル API キー設定専用。エージェント要求の入力カード・用途指定の配送・要求の拒否がない。	試験用の値で完了とキャンセルを試し、チャット本文へ秘密値が出ない
+HOST-129	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sources/PiWorkspace/PiProcess.swift:21	通常のチャット応答を受ける。エージェントが提示した入力カードと構造化回答の返送がない。	テスト要求に回答し、エージェントへ回答が届きカードが閉じる
+HOST-130	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/Workspace.swift:33	T3 Connect のアカウント別モバイル端末を取得する機能がない。	登録したテスト端末だけが一覧に現れる
+HOST-131	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sidecar/worker.mjs:115	T3 Chat アカウントの OAuth、プラン表示と連携解除がない。	連携後にプラン表示を確認し、解除後に連携状態が変わる
+HOST-132	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiProcess.swift:83	Relay トンネルの契約・使用数・上限を取得する機能がない。	試験登録の作成前後で使用数の変化を確認する
+HOST-133	未対応	ソース確認	Sidecar/worker.mjs:78|Sources/PiWorkspace/WorkspaceView.swift:558	Pi 履歴の本文を表示する。日付別・指標別のトークン・コスト集計 UI がない。	既知の日付を持つテスト履歴で期間を変え、集計対象が変わる
+HOST-134	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:78	環境・供給元別の使用量集計とフィルターがない。	寄与が既知の環境・プロバイダーを 1 件ずつ除いて合計を比較する
+HOST-135	未対応	ソース確認	Sidecar/worker.mjs:78|Sources/PiWorkspace/WorkspaceView.swift:558	使用量の手動更新、モデル別・時間帯別の詳細画面がない。	履歴を増やして更新し、期待するモデル・時間帯の値に反映する
+HOST-136	未対応	ソース確認	Sidecar/worker.mjs:91|Sidecar/worker.mjs:129	ローカルモデルは固定のゼロ単価で登録する。価格上書きと別モデルへの価格の割り当てはない。	同じ使用量と異なる単価で Cost の差分を確認する
+HOST-137	未対応	ソース確認	Sidecar/worker.mjs:129|Sidecar/worker.mjs:214	選択モデルのエラーは表示できる。プロバイダーの利用枠ウィンドウの取得・手動更新はない。	既知の利用枠データを変更後、更新して最新ウィンドウを比較する
+HOST-138	未対応	ソース確認	Sidecar/worker.mjs:115|Sidecar/worker.mjs:230	利用枠のリセットクレジット残高の取得・消費がない。	成功と拒否でクレジット残量・利用枠・エラー表示を比較する
+HOST-139	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:45	モデル用のループバック URL は設定できる。CLIProxyAPI から利用枠を読む別の接続はない。	試験ハブを登録して制限を表示し、無効なキーの取得結果と比較する
+HOST-140	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:129	利用枠の HTTP ソースを登録して応答スキーマを検査する機能がない。	正常 fixture と schema 不一致の fixture で表示または診断を比較する
+HOST-141	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/PiWorkspaceApp.swift:86	外部の利用枠ソースを個別に削除する設定がない。	該当ソースだけ消え、別ソースは残る
+HOST-142	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/PiWorkspaceApp.swift:51	スレッド通知の方式、通知権限状態、Sound only の選択がない。	OS 拒否時の表示と Sound only の選択可否を確認する
+HOST-143	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:628|Sources/PiWorkspace/Workspace.swift:97|Sources/PiWorkspace/PiWorkspaceApp.swift:51	アクティブな会話の状態・エラーを表示する。別会話の完了・入力要求の通知と未読 Dock バッジがない。	別スレッドを選び試験完了を起こす。該当スレッドを開いた後の未読バッジを確認する
+HOST-144	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:643|Sources/PiWorkspace/PiWorkspaceApp.swift:69	テキストコンポーザーと固定ショートカットを持つ。マイク優先順と録音ショートカットの設定がない。	2 入力の優先順を変え、ショートカットで選択先から収音する
+HOST-145	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:643|Sources/PiWorkspace/PiWorkspaceApp.swift:86	アプリに Apple Speech のエンジン選択、対応状況と転写セッションがない。	対応 Mac で選択肢と文字起こしを確認し、非対応版で利用不可を確認する
+HOST-146	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:643|Sources/PiWorkspace/PiProcess.swift:83	指定ホストへ音声を転送して転写結果を受ける機能がない。	試験音声を選択環境で処理し、接続切断で失敗が分かる
+HOST-147	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Keychain の設定はモデル推論用。クラウド音声認識の供給元設定、キー管理と接続検査がない。	試験用環境で有効なキーと無効キーの結果を比較し、削除後の認証状態を確認する
+HOST-148	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:643|Sources/PiWorkspace/WorkspaceView.swift:673	Stop はモデルターンの中断に使う。録音の取消、宛先同意の撤回と未転送の保証がない。	収音中にキャンセルし、送信先の試験受信記録に入力が出ない
+HOST-149	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	音声モデルを対象環境へダウンロードして利用可能にする処理がない。	ダウンロード後に利用可能状態となり再読込しても保持される
+HOST-150	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:230	音声モデルのダウンロードを開始して途中で取り消す処理がない。	取得中に中止し、その取得がモデルを選択可能にしない
+HOST-151	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:103|Sources/PiWorkspace/Workspace.swift:126	モデル設定は会話用。音声認識モデルの一覧と active 設定がない。	選択を切替え、再読込で active モデルと処理結果を確認する
+HOST-152	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	ダウンロード済み音声モデルを個別に削除する操作がない。	対象だけ消え、他モデルが残ることを確認する
+HOST-153	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	ファイルパスから既存の音声モデルを検査・登録する操作がない。	正しいパスで一覧に出る。誤パスが追加されない
+HOST-154	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:230	音声認識の CPU・アクセラレータを選ぶ設定がない。	CPU と利用可能な加速方式で同じテスト音声を処理する
+HOST-155	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:230	音声認識モデルをアイドル時に解放するタイマーと表示状態がない。	短い解放時間を設定して時間経過後の Status と次回読み込みを確認する
+HOST-156	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:643|Sidecar/worker.mjs:182	テキスト応答のストリーム表示はある。録音中の部分転写と設定切り替えがない。	オン時の録音途中の表示をオフ時と比較する
+HOST-157	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/WorkspaceView.swift:643	音声認識の言語指定と英語翻訳の選択がない。	同じ非英語音声で翻訳対応モデルのオン・オフを比較する
+HOST-158	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/WorkspaceView.swift:643	録音の無音検出とフィルター設定がない。	無音を含む同一試験入力で動作を比較する
+HOST-159	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/WorkspaceView.swift:643	転写後のフィラー除去設定がない。	同じ試験転写でオン・オフの結果を比較する
+HOST-160	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	転写の用語辞書、別名の登録と編集がない。	追加した別名を含む音声を試し、辞書編集前後を比較する
+HOST-161	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/WorkspaceView.swift:643	転写テキストの Cleanup と指示の指定がない。	既知の転写で Cleanup のオン・オフと指示変更の結果を比較する
+HOST-162	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/WorkspaceView.swift:643	音声設定に試し録音・転写結果の表示欄がない。	短い音声を録音し試験欄だけに結果が出る
+HOST-163	未対応	ソース確認	Sources/PiWorkspace/KeyVault.swift:46|Sources/PiWorkspace/Workspace.swift:33	アプリ専用 Keychain にモデルキーを保存する。複数の外部シークレット保管先の登録・編集がない。	試験保管先を追加して編集し、参照選択肢が更新される
+HOST-164	未対応	ソース確認	Sources/PiWorkspace/KeyVault.swift:59|Sources/PiWorkspace/Workspace.swift:33	モデルキーの削除はある。外部保管先を除去する際の参照元の列挙はない。	参照ありの試験保管先で影響箇所の表示を確認して除去する
+HOST-165	未対応	ソース確認	Sources/PiWorkspace/KeyVault.swift:39|Sources/PiWorkspace/PiWorkspaceApp.swift:122	アプリ自身の Keychain 項目の有無を UI で示す。外部シークレット参照を対象にした検査はない。	正常・ロック中の参照で成功と失敗を比較し応答に値がない
+HOST-166	未対応	ソース確認	Sources/PiWorkspace/SourceControlView.swift:80|Sources/PiWorkspace/GitWorkspace.swift:126	作業コピーの Git 分岐を切り替えられる。ソース管理ホスト・CLI のアカウント検出、既定選択がない。	複数のテストアカウントで既定を切替え、再スキャン後の選択を確認する
+HOST-167	未対応	ソース確認	Sources/PiWorkspace/SourceControlView.swift:80|Sources/PiWorkspace/PiWorkspaceApp.swift:122	GitHub App のソース管理認証開始・中止と認証状態の表示がない。	同一環境でキャンセルと成功を試し、認証状態を比較する
+HOST-168	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/WorkspaceView.swift:329	Issue tracker のアカウント接続、プロジェクト紐付けと Issue 一覧がない。	保存した対応プロジェクトの Issue が一覧に出る
+HOST-169	未対応	ソース確認	Sidecar/worker.mjs:159|Sidecar/worker.mjs:115	モデルキー認証と別に必要な MCP サービスの OAuth・トークン保管・再接続がない。	テスト認証を完了し同じプロバイダーがサービスに接続できる
+HOST-170	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Device hub の状態・一覧・有効化 UI がない。	オンでテスト端末が見え、オフで hub と agent access が停止する
+HOST-171	未対応	ソース確認	Sidecar/worker.mjs:156|Sidecar/worker.mjs:159	プロジェクトの Pi ファイル・シェルツール選択はある。エージェント用デバイスツールの専用許可がない。	オン・オフで新規エージェントが取得できるデバイス操作を比較する
+HOST-172	未対応	ソース確認	scripts/build-app.sh:31|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Device hub や agent-device の版検査と更新がない。	試験ツールの版を検査し、必要な更新後に要求版と一致する
+HOST-173	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sidecar/worker.mjs:156	端末、シミュレータ、エミュレータを列挙・起動・操作・撮影してセッションを閉じる統合機能がない。	Mac の試験シミュレータで open、画面取得、close の状態を確認する
+HOST-174	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:652|Sidecar/worker.mjs:156|Sidecar/worker.mjs:159	シェルツールの選択はある。ブラウザ操作ツールやその専用アクセス設定がない。	許可前後で新しい試験セッションの操作可否を比較する
+HOST-175	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:173|Sidecar/worker.mjs:143	選択会話のアプリ管理 Pi JSONL を開く。ACP 履歴を検出し取り込む機能がない。	既存試験セッションを取り込み T3 で内容を開く
+HOST-176	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:173|Sources/PiWorkspace/WorkspaceView.swift:329	アーカイブはできる。外部 ACP セッションを選択して削除する機能がない。	セッション削除の前後を再一覧で比較する
+HOST-177	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:5|Sidecar/worker.mjs:110	ACP エージェントが列挙する内部プロバイダーの有効状態を編集できない。	無効化した供給元の状態を再取得する
+HOST-178	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sidecar/worker.mjs:129	定期的なプロバイダー更新の確認とその設定がない。	無効化と既定値のリセットを試し保存設定を比較する
+HOST-179	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:21|Sources/PiWorkspace/PiWorkspaceApp.swift:27|Sources/PiWorkspace/PiProcess.swift:83	アプリ起動用とモデルキー管理用の引数はある。CLI でホスト管理用の権限付き接続資格情報を発行できない。	試験資格情報で許可範囲を確認し、失効後に接続できない
+HOST-180	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:21|Sources/PiWorkspace/PiWorkspaceApp.swift:27|Sources/PiWorkspace/PiProcess.swift:83	CLI で T3 Connect にログインし、ホストをリンク・解除・診断する機能がない。	ログイン・リンク・解除を行い各段階の status を比較する
+HOST-181	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sidecar/worker.mjs:159	Peer 接続を許可し、権限付きの環境 RPC を提供する処理がない。	許可範囲内の接続が成立し、その範囲外の RPC が拒否される
+HOST-182	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sources/PiWorkspace/WorkspaceModel.swift:410	ローカル Pi helper の切断を表示する。Relay を登録したまま到達不能の状態を診断できない。	トンネルを一時遮断して有効かつ到達不能の結果を確認し復旧する
+HOST-183	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/WorkspaceView.swift:113	ローカルプロジェクトのグループ表示はある。保存済み環境の接続アイコンを編集する機能がない。	アイコンを変更して一覧・再読込後の表示を確認する
+HOST-184	未対応	ソース確認	Sidecar/worker.mjs:78|Sidecar/worker.mjs:186|Sources/PiWorkspace/WorkspaceView.swift:524	ローカルターミナルとツール名表示はある。ゲスト共有に限定したコマンド出力の取得 API がない。	共有内の出力だけ取得でき、共有外の ID は拒否される
+HOST-185	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:230	環境別の予定タスクと配信履歴の一覧がない。	2 環境のタスクを比較し選択先だけが表示される
+HOST-186	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:166|Sidecar/worker.mjs:230	ネイティブの新規スレッドは作れる。予定タスクの各実行から新規スレッドを起動する処理がない。	複数回の実行結果に異なる thread ID が付く
+HOST-187	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:294|Sidecar/worker.mjs:230	アクティブ会話の手動送信はできる。予定タスクが指定の既存スレッドへ入力を加える処理がない。	2 回の実行が同じスレッドに記録される
+HOST-188	未対応	ソース確認	Sidecar/worker.mjs:230|Sources/PiWorkspace/PiProcess.swift:83	Workflow 用 webhook の URL、応答と run 生成件数を確認する機能がない。	正しい URL と存在しない URL の応答と run 件数を比較する
+HOST-189	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/WorkspaceView.swift:454	Workflow で人の回答を待つ質問の一覧と kind による絞り込みがない。	異なる kind の質問を作ってフィルター後の結果を比較する
+HOST-190	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/Workspace.swift:169	Workflow の永続キーに対応する値の上書き機能がない。	同じキーの値を上書きして読取り結果を比較する
+HOST-191	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sources/PiWorkspace/Workspace.swift:169	Workflow 保存値をキー指定で削除する機能がない。	対象キーだけが削除され別キーは残る
+HOST-192	未対応	ソース確認	Sidecar/worker.mjs:161|Sidecar/worker.mjs:214	Pi の provider retry を無効にしてエラーを表示する。使用制限解除後の予約再開・Snooze がない。	制限 fixture で予約後の時刻と Snooze による変更を確認する
+HOST-193	未対応	ソース確認	Sidecar/worker.mjs:214|Sources/PiWorkspace/WorkspaceView.swift:628	モデルの失敗を表示する。組織の利用制限を識別し、管理者向け文面を生成してコピーしない。	試験 workspace limit で操作し、想定文面がコピーされる
+HOST-194	未対応	ソース確認	Sources/PiWorkspace/SourceControlView.swift:80|Sources/PiWorkspace/PiWorkspaceApp.swift:122	モデル API キーの削除はある。アプリからソース管理サービスのアカウントをサインアウトする機能がない。	サインアウト前後の接続可否を比較する
+HOST-195	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/PiProcess.swift:74	別マシンを SSH デバイスホストとして登録・試験する機能がない。	設定前後でリモート試験端末の一覧を比較する
+HOST-196	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/PiWorkspaceApp.swift:122	Expo EAS の専用資格情報とデバイス用プロジェクトを設定できない。	有効な認証でプロジェクトが選べ、無効な認証が拒否される
+HOST-197	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/PiWorkspaceApp.swift:86	Simlock の Labs 設定と専用認証で端末ソースを登録する機能がない。	Lab 有効時にソースを登録し、別の試験トークンで拒否を確認する
+HOST-198	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/Workspace.swift:126	デバイスソースを削除し、ローカル端末ソースを維持する設定がない。	対象ソースだけを除去し、ローカル端末が残る
+HOST-199	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:410|Sources/PiWorkspace/WorkspaceModel.swift:468|Sources/PiWorkspace/PiWorkspaceApp.swift:86	helper の切断・失敗は会話に出る。対象ホストのプロセス一覧、リソース履歴、trace ID の診断 UI がない。	試験プロセスと失敗トレースを発生させ一覧の内容を比較する
+HOST-200	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:124|Sources/PiWorkspace/ThreadTerminal.swift:34	自アプリの helper と PTY を終了できる。対象ホストの検査済み PID を指定してシグナルを送る操作がない。	選んだ試験プロセスだけに作用し、古い対象では失敗する
+HOST-201	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:173|Sources/PiWorkspace/Workspace.swift:169	専用ストアに履歴を置く。artifact の保持期限と掃除・結果集計の操作がない。	期限を超えた artifact と期限内 artifact の扱いを比較する
+HOST-202	構成差	ソース確認	Sources/PiWorkspace/Workspace.swift:161|Sources/PiWorkspace/Workspace.swift:169|Sidecar/worker.mjs:143	ネイティブは JSON と Pi JSONL に直接保存するため、内部 DB の空き領域回収とは保存構成が異なる。	専用ストアに試験会話を保存し、再起動後に同じ履歴が読める。DB を運用する構成でのみ領域回収前後の使用量と再接続を検査する。
+HOST-203	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:219|Sidecar/worker.mjs:156	利用者がプロジェクト単位でツールを選択する。管理された組織ポリシー、ロックと限定ホストセッションへの強制適用がない。	同じ操作を許可・不許可のセッションで試して差を確認する
+HOST-204	未対応	ソース確認	Sidecar/worker.mjs:156|Sidecar/worker.mjs:159	選択したモードに従う固定ツール集合を渡す。権限付き MCP カタログの検索と遅延公開がない。	新規セッションで検索前後のツール一覧と権限外ツールの有無を比較する
+HOST-205	未対応	ソース確認	Sidecar/worker.mjs:159|Sources/PiWorkspace/WorkspaceView.swift:558	ローカル会話のメッセージ表示はある。MCP App の埋め込みと提供元固有リソースへの橋渡しがない。	ローカル fixture の UI が公開したリソースを読み、別セッションからは利用できない
+HOST-206	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/PiWorkspaceApp.swift:86	iOS・Android 端末の列挙と再スキャンがない。	iOS または Android の試験端末を追加し再一覧する
+HOST-207	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sidecar/worker.mjs:156	Device hub から端末画面を取得し画像化する機能がない。	既知の画面が画像に入る
+HOST-208	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sources/PiWorkspace/ThreadTerminal.swift:34	Terminal の閉じる操作はローカル PTY 用。Device hub の端末セッション指定と終了がない。	開いた端末セッションだけが閉じる
+HOST-209	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:394|Sidecar/worker.mjs:156	シミュレータや端末を選んでシャットダウンし状態を再一覧する機能がない。	稼働中の試験機を停止して一覧状態を比較する
+HOST-210	未対応	ソース確認	Sidecar/worker.mjs:159|Sources/PiWorkspace/WorkspaceView.swift:558	選択会話に通常の回答を表示する。MCP の send_to_user が指定スレッドへ構造化 UI payload を送る操作がない。	ローカル試験環境だけで操作し、対象以外のスレッドに表示されない
+HOST-211	未対応	ソース確認	Sources/PiWorkspace/WorkspaceModel.swift:197|Sources/PiWorkspace/WorkspaceModel.swift:211|Sidecar/worker.mjs:159	タイトルや棚はネイティブ UI で変更できる。MCP 経由の属性変更と read での照合がない。	試験スレッドの値を変更し、read で結果を照合する
+HOST-212	未対応	ソース確認	Sidecar/worker.mjs:143|Sidecar/worker.mjs:230	同じ Swift スレッドには同じ Pi セッション ID を割り当てる。予定実行のたびに新しい供給元セッションを使う処理がない。	2 回実行し T3 スレッド ID は同じでプロバイダーセッションが異なる
+HOST-213	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:454|Sources/PiWorkspace/PiProcess.swift:83	他環境へのリンクをカードで提案して承認待ちにする機能がない。	カード表示と pending を確認し、承認した場合だけリンクが一覧へ追加される
+HOST-214	未対応	ソース確認	Sources/PiWorkspace/WorkspaceView.swift:628|Sources/PiWorkspace/WorkspaceModel.swift:6|Sidecar/worker.mjs:230	Working 表示に近い現在ターンの進行表示はある。独立した背景タスクと表示だけを解除する MCP 待機契約がない。	待機解除後に背景タスク自体は実行を続ける
+HOST-215	未対応	ソース確認	Sidecar/worker.mjs:230|Sidecar/worker.mjs:110	プロバイダーのスレッドに理由を付けて feedback を送る操作、対応プロバイダーの検査がない。	ローカル fixture で対応時に理由が渡り、停止中と未対応では拒否される
+HOST-216	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Antigravity の Gemini Enterprise 認証方式と Status がない。	設定切替後に Status の種別と利用可否を検査する
+HOST-217	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:115	Antigravity の Vertex AI Agent Platform に対するプロジェクト設定と権限認証がない。	試験プロジェクトを設定し有効・無効権限でターン開始可否を比較する
+HOST-218	未対応	ソース確認	Sidecar/worker.mjs:110|Sidecar/worker.mjs:154	Claude Code の圧縮閾値・idle 方針を設定するドライバーがない。	閾値の範囲外を拒否し、有効値を保存して再読込する
+HOST-219	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:83|Sidecar/worker.mjs:159	外部 MCP トークンの登録・失効と、失効済みトークンの再利用拒否がない。	同一トークンの再失効を試し、RPC へのアクセスは復活しない
+HOST-220	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:122|Sources/PiWorkspace/KeyVault.swift:59	モデル推論キーは削除できる。クラウド音声認識の専用キーと configured 状態がない。	キー削除前後の configured 状態を確認する
+HOST-221	未対応	ソース確認	Sidecar/worker.mjs:110|Sources/PiWorkspace/PiWorkspaceApp.swift:86	OpenRouter の音声認識経路と、送信する音声モデルの変更がない。	モデル切替後に試験要求の model と UI の選択を確認する
+HOST-222	未対応	ソース確認	Sources/PiWorkspace/PiWorkspaceApp.swift:86|Sources/PiWorkspace/Workspace.swift:126	Workflow テンプレートの選択、下書き生成、取り消し後に保存しない処理がない。	候補から読み込んだ下書きを確認し、取消時に新規定義が残らない
+HOST-223	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:126|Sidecar/worker.mjs:159	MCP による予定タスク部分更新がなく、他フィールドを維持する保存契約もない。	タイトルのみ変更し、時刻とプロンプトが維持される
+HOST-224	未対応	ソース確認	Sources/PiWorkspace/Workspace.swift:97|Sources/PiWorkspace/PiProcess.swift:83	ゲストセッションの有効期限、差し替え、失効確認の処理がない。	期限切れまたは差替え後に以前のセッションで取得できない
+HOST-225	未対応	ソース確認	Sources/PiWorkspace/PiProcess.swift:42|Sidecar/worker.mjs:230|Sidecar/worker.mjs:159	現在のローカルセッションに入力できる。環境と子タスクを指定して追加指示を送るピア契約がない。	試験用追加指示が対象子に入り、別の子には入らない
