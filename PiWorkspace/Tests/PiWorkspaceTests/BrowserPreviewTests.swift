@@ -32,6 +32,107 @@ final class BrowserPreviewTests: XCTestCase {
         XCTAssertEqual(avoidingBoth.size, result.size)
     }
 
+    func testAddressResolutionMatchesSearchAndNavigationDefaults() {
+        let settings = BrowserSearchSettings()
+        for (input, expected) in [
+            ("localhost:5173", "http://localhost:5173/"),
+            ("127.0.0.2:443/path", "http://127.0.0.2:443/path"),
+            ("[::1]:3000", "http://[::1]:3000/"),
+            ("0.0.0.0:3000", "http://0.0.0.0:3000/"),
+            ("devbox:8080", "https://devbox:8080/"),
+            ("192.168.1.5:3000", "https://192.168.1.5:3000/"),
+            ("fixture.example/https://next.example", "https://fixture.example/https://next.example"),
+            (" https://fixture.example/a b ", "https://fixture.example/a%20b"),
+            ("weather", "https://duckduckgo.com/?q=weather"),
+            ("note: café & #/?+%", "https://duckduckgo.com/?q=note%3A%20caf%C3%A9%20%26%20%23%2F%3F%2B%25")
+        ] {
+            XCTAssertEqual(BrowserAddress.resolve(input, searchSettings: settings)?.absoluteString, expected, input)
+        }
+        let google = BrowserSearchSettings(engine: .google)
+        XCTAssertEqual(BrowserAddress.resolve("fixture & terms", searchSettings: google)?.absoluteString,
+                       "https://www.google.com/search?q=fixture%20%26%20terms")
+        let invalidCustom = BrowserSearchSettings(engine: .custom, customURL: "file:///%s")
+        XCTAssertEqual(BrowserAddress.resolve("fixture terms", searchSettings: invalidCustom)?.absoluteString,
+                       "https://duckduckgo.com/?q=fixture%20terms")
+    }
+
+    @MainActor
+    func testAddressSubmissionUsesSavedEngineAndPreservesLoopbackURL() async throws {
+        _ = NSApplication.shared
+        let fixture = try LoopbackBrowserPage()
+        defer { fixture.listener.cancel() }
+        let origin = try await start(fixture)
+        let port = try XCTUnwrap(origin.port)
+
+        let suite = "BrowserPreviewTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(BrowserSearchSettings(engine: .brave, customURL: "\(origin)original?q=%s").save(to: defaults))
+        let original = BrowserSearchSettings.load(from: defaults)
+        let tab = BrowserPreviewSession(profile: .standard, dataStore: .nonPersistent(), searchDefaults: defaults)
+        let rulesDirectory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: rulesDirectory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: rulesDirectory) }
+        let ruleStore = try XCTUnwrap(WKContentRuleListStore(url: rulesDirectory))
+        let compiledRules = try await ruleStore.compileContentRuleList(forIdentifier: "loopback-only", encodedContentRuleList: """
+        [
+          {"trigger":{"url-filter":".*"},"action":{"type":"block"}},
+          {"trigger":{"url-filter":"^http://127[.]0[.]0[.]1:\(port)/"},"action":{"type":"ignore-previous-rules"}}
+        ]
+        """)
+        tab.webView.configuration.userContentController.add(try XCTUnwrap(compiledRules))
+
+        let path = "path%20with%20spaces?next=https://fixture.example/a%2Fb&raw=%2B#section"
+        let direct = try XCTUnwrap(URL(string: origin.absoluteString + path))
+        tab.address = "127.0.0.1:\(port)/\(path)"
+        XCTAssertNil(tab.webView.url)
+        tab.openAddress()
+        try await waitFor("bare loopback URL with its path and query") {
+            tab.pageURL == direct && tab.webView.title == "/path%20with%20spaces" && !tab.isLoading
+        }
+
+        let configured = BrowserSearchSettings(engine: .custom, customURL: " \(origin)search/%s?q=%s&lang=en ")
+        XCTAssertTrue(configured.save(to: defaults))
+        for template in [
+            "\(origin)search?q=", "file:///tmp/%s", "https://%s.example/",
+            "http://%s@127.0.0.1:\(port)/?q=%s", "http://user:password@127.0.0.1:\(port)/?q=%s",
+            "http://127.0.0.1:99999999999999999999/?q=%s", "/search?q=%s"
+        ] {
+            XCTAssertFalse(BrowserSearchSettings(engine: .custom, customURL: template).save(to: defaults), template)
+        }
+
+        let escaped = "fixture%20caf%C3%A9%20%26%20%23%2F%3F%2B%25"
+        tab.address = "  fixture café & #/?+%  "
+        XCTAssertEqual(tab.pageURL, direct)
+        tab.openAddress()
+        let search = try XCTUnwrap(URL(string: "\(origin)search/\(escaped)?q=\(escaped)&lang=en"))
+        try await waitFor("loopback search with the escaped term") {
+            tab.pageURL == search && tab.webView.title == "/search/\(escaped)" && tab.canGoBack && !tab.isLoading
+        }
+        let receivedQuery = try await tab.webView.evaluateJavaScript("new URLSearchParams(location.search).get('q')")
+        XCTAssertEqual(receivedQuery as? String, "fixture café & #/?+%")
+        XCTAssertEqual(tab.webView.backForwardList.backItem?.url, direct)
+
+        for address in [
+            "file:///tmp/fixture", "mailto:fixture@example.test", "tel:5551234", "fixture+app://open",
+            "javascript:alert('fixture text')", "http://user:password@127.0.0.1:\(port)/fixture", " "
+        ] {
+            tab.address = address
+            tab.openAddress()
+            XCTAssertTrue(tab.message?.hasPrefix("Could not open this address") == true, address)
+            XCTAssertEqual(tab.pageURL, search, address)
+            XCTAssertFalse(tab.isLoading, address)
+        }
+
+        let otherEngine = BrowserSearchSettings(engine: .bing, customURL: "https://%s.example/")
+        XCTAssertTrue(otherEngine.save(to: defaults))
+        XCTAssertEqual(BrowserSearchSettings.load(from: defaults),
+                       BrowserSearchSettings(engine: .bing, customURL: "\(origin)search/%s?q=%s&lang=en"))
+
+        XCTAssertTrue(original.save(to: defaults))
+        XCTAssertEqual(BrowserSearchSettings.load(from: defaults), original)
+    }
+
     @MainActor
     func testTabSelectionAndClosingFollowTheThread() throws {
         var preview = ThreadBrowserPreview()

@@ -9,6 +9,7 @@ import SwiftUI
 struct PiWorkspaceApp: App {
     @StateObject private var model: WorkspaceModel
     @State private var launched = false
+    @State private var showingBrowserSettings = false
     private let launchProject: URL?
     private let termination: AnyCancellable
 
@@ -60,6 +61,7 @@ struct PiWorkspaceApp: App {
                         .onAppear(perform: launchWorkspace)
                 }
             }
+                .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView() }
                 .frame(minWidth: 800, minHeight: 540)
         }
         .defaultSize(width: 1080, height: 720)
@@ -68,7 +70,10 @@ struct PiWorkspaceApp: App {
             CommandGroup(after: .appSettings) {
                 Button("Model Settings…") { model.showingSettings = true }
                     .keyboardShortcut(",")
-                    .disabled(model.startupFailure != nil || model.phase.isRunning)
+                    .disabled(model.startupFailure != nil || model.phase.isRunning || showingBrowserSettings)
+                Button("Browser Settings…") { showingBrowserSettings = true }
+                    .accessibilityIdentifier("browser-settings-menu")
+                    .disabled(model.showingSettings || showingBrowserSettings)
             }
             CommandGroup(after: .help) {
                 Button("Show Welcome") { model.showingWelcome = true }

@@ -130,10 +130,10 @@ struct BrowserSessionView: View {
                         session.isLoading ? "xmark" : "arrow.clockwise",
                         id: "browser-reload", action: session.reloadOrStop)
                     .disabled(!session.canReload)
-                TextField("Enter URL", text: $session.address)
+                TextField("Search or enter URL", text: $session.address)
                     .accessibilityIdentifier("browser-address")
                     .onSubmit(session.openAddress)
-                control("Open URL", "arrow.right", id: "browser-go", action: session.openAddress)
+                control("Go", "arrow.right", id: "browser-go", action: session.openAddress)
                     .disabled(session.address.isEmpty)
                 switch location {
                 case let .panel(miniPlayer, popOut):
@@ -178,7 +178,7 @@ struct BrowserSessionView: View {
                     .accessibilityIdentifier("browser-error")
                 Divider()
             }
-            BrowserPageContent(session: session, surface: location.surface, emptyHint: "Enter an HTTP or HTTPS URL to preview a page.")
+            BrowserPageContent(session: session, surface: location.surface, emptyHint: "Search or enter a URL to open a page.")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser-preview")

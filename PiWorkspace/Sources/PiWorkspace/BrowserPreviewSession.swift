@@ -155,9 +155,11 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     @Published private var retryURL: URL?
     private var pendingURL: URL?
     private var urlObservation: AnyCancellable?
+    private let searchDefaults: UserDefaults
 
-    init(profile: BrowserProfile, dataStore: WKWebsiteDataStore) {
+    init(profile: BrowserProfile, dataStore: WKWebsiteDataStore, searchDefaults: UserDefaults = .standard) {
         self.profile = profile
+        self.searchDefaults = searchDefaults
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -177,9 +179,9 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     var canZoomOut: Bool { zoom > 50 }
 
     func openAddress() {
-        let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: text, encodingInvalidCharacters: false), Self.isWebURL(url) else {
-            problem = .notice("Enter a valid URL starting with http:// or https://.")
+        let searchSettings = BrowserSearchSettings.load(from: searchDefaults)
+        guard let url = BrowserAddress.resolve(address, searchSettings: searchSettings) else {
+            problem = .notice("Could not open this address. Enter a valid HTTP or HTTPS URL.")
             return
         }
         load(url)
@@ -218,17 +220,10 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         webView.load(URLRequest(url: url))
     }
 
-    private static func isWebURL(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = url.host(), !host.isEmpty,
-              url.user() == nil, url.password() == nil else { return false }
-        return url.port.map { (1...65535).contains($0) } ?? true
-    }
-
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let frame = action.targetFrame else { return .cancel }
         if !frame.isMainFrame { return .allow }
-        guard let url = action.request.url, Self.isWebURL(url) else {
+        guard let url = action.request.url, BrowserAddress.isWebURL(url) else {
             problem = .notice("Browser preview can open HTTP and HTTPS pages.")
             return .cancel
         }
@@ -238,7 +233,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         if !response.isForMainFrame { return .allow }
-        guard let url = response.response.url, Self.isWebURL(url) else { return .cancel }
+        guard let url = response.response.url, BrowserAddress.isWebURL(url) else { return .cancel }
         guard response.canShowMIMEType else {
             problem = .notice("Browser preview can’t display this file type.")
             return .cancel
@@ -273,7 +268,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         if failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled { return }
         let attemptedURL = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? pendingURL ?? pageURL
         pendingURL = nil
-        if let url = attemptedURL, Self.isWebURL(url) {
+        if let url = attemptedURL, BrowserAddress.isWebURL(url) {
             retryURL = url
             address = url.absoluteString
             problem = .unreachable(url: url, message: failure.localizedDescription, domain: failure.domain, code: failure.code)
