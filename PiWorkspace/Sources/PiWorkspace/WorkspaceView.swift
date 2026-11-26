@@ -1399,17 +1399,19 @@ struct WorkspaceView: View {
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
         let target = model.attachmentTarget(for: threadID)
+        let drop = AttachmentDropDestination(canDrop: model.canEditAttachments, perform: { items in
+            let attachments = ComposerAttachmentInput.readAttachments(from: items)
+            return !attachments.isEmpty && model.canEditAttachments && model.attach(attachments, to: target)
+        }, isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments })
         return VStack(alignment: .leading, spacing: 0) {
             ComposerAttachmentsView(model: model, threadID: threadID)
                 .id(threadID)
                 .padding(.bottom, 6)
-            TextField(model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
+            ComposerTextField(placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { model.conversation?.id == threadID ? model.draft : "" },
                 set: { model.editDraft($0, in: threadID) }
-            ), axis: .vertical)
+            ), drop: drop)
                 .id(threadID)
-                .lineLimit(2...7)
-                .textFieldStyle(.plain)
                 .focused($focusedComposer, equals: threadID)
                 .task(id: threadID) {
                     await Task.yield()
@@ -1441,10 +1443,7 @@ struct WorkspaceView: View {
                 .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(0.11))
                 .allowsHitTesting(false)
         }
-        .attachmentDropDestination(canDrop: model.canEditAttachments) { items in
-            let attachments = ComposerAttachmentInput.readAttachments(from: items)
-            return !attachments.isEmpty && model.canEditAttachments && model.attach(attachments, to: target)
-        } isTargeted: { targetingComposerDrop = $0 && model.canEditAttachments }
+        .background { drop.accessibilityHidden(true) }
         .onPasteCommand(of: ComposerAttachmentInput.contentTypes) { providers in
             guard model.canEditAttachments else { return }
             Task {

@@ -3,7 +3,7 @@ import SwiftUI
 extension View {
     func attachmentDropDestination(canDrop: Bool, perform: @escaping ([NSPasteboardItem]) -> Bool,
                                    isTargeted: @escaping (Bool) -> Void) -> some View {
-        overlay {
+        background {
             AttachmentDropDestination(canDrop: canDrop, perform: perform, isTargeted: isTargeted)
                 .accessibilityHidden(true)
         }
@@ -16,9 +16,29 @@ struct AttachmentDropDestination: NSViewRepresentable {
     let perform: ([NSPasteboardItem]) -> Bool
     let isTargeted: (Bool) -> Void
 
+    static let types = ComposerAttachmentInput.contentTypes.map { NSPasteboard.PasteboardType($0.identifier) }
+
+    func operation(for sender: NSDraggingInfo) -> NSDragOperation? {
+        guard sender.draggingPasteboard.availableType(from: Self.types) != nil else { return nil }
+        let accepts = sender.draggingSourceOperationMask.contains(.copy) && canDrop
+        isTargeted(accepts)
+        return accepts ? .copy : []
+    }
+
+    func receive(_ sender: NSDraggingInfo) -> Bool? {
+        guard let operation = operation(for: sender) else { return nil }
+        defer { isTargeted(false) }
+        return !operation.isEmpty && receiveItems(from: sender.draggingPasteboard)
+    }
+
+    func receiveItems(from pasteboard: NSPasteboard) -> Bool {
+        guard canDrop, let items = pasteboard.pasteboardItems, !items.isEmpty else { return false }
+        return perform(items)
+    }
+
     func makeNSView(context: Context) -> Destination {
         let view = Destination()
-        view.registerForDraggedTypes(ComposerAttachmentInput.contentTypes.map { .init($0.identifier) })
+        view.registerForDraggedTypes(Self.types)
         view.setAccessibilityElement(false)
         return view
     }
@@ -33,9 +53,7 @@ struct AttachmentDropDestination: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-            let accepts = sender.draggingSourceOperationMask.contains(.copy) && target?.canDrop == true
-            target?.isTargeted(accepts)
-            return accepts ? .copy : []
+            target?.operation(for: sender) ?? []
         }
 
         override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -43,10 +61,7 @@ struct AttachmentDropDestination: NSViewRepresentable {
         }
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-            defer { target?.isTargeted(false) }
-            guard sender.draggingSourceOperationMask.contains(.copy), let target, target.canDrop,
-                  let items = sender.draggingPasteboard.pasteboardItems, !items.isEmpty else { return false }
-            return target.perform(items)
+            target?.receive(sender) ?? false
         }
     }
 }

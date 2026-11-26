@@ -6,7 +6,11 @@ import XCTest
 @MainActor
 final class ComposerFieldDropTests: XCTestCase {
     func testFileDropOnActiveComposerAndQueueFieldPreservesTextAndAttachmentOwner() async throws {
-        _ = NSApplication.shared
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let queued = QueuedMessage(text: "Queued prompt")
@@ -19,17 +23,35 @@ final class ComposerFieldDropTests: XCTestCase {
         }
         defer { model.terminate() }
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
-                              styleMask: [.titled], backing: .buffered, defer: true)
+        let screenLeft = NSScreen.screens.map(\.frame.minX).min() ?? 0
+        let window = OffscreenPanel(contentRect: NSRect(x: screenLeft - 2200, y: 0, width: 1100, height: 720),
+                                    styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable))
         window.contentView = host
+        window.setFrameOrigin(NSPoint(x: screenLeft - 2200, y: 0))
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        window.orderBack(nil)
+        try await Task.sleep(for: .milliseconds(150))
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         let drag = FileDrag(board: board)
 
-        func dropPNG(_ name: String, color: NSColor, onto destination: AttachmentDropDestination.Destination) throws -> Data {
+        func assertAXHit(_ id: String, in view: NSView, fraction: CGFloat = 0.5) {
+            let point = NSPoint(x: view.bounds.width * fraction, y: view.bounds.midY)
+            let screenPoint = window.convertPoint(toScreen: view.convert(point, to: nil))
+            var node = host.accessibilityHitTest(screenPoint) as AnyObject?
+            var path: [String] = []
+            while let current = node, path.count < 20 {
+                if current.accessibilityIdentifier?() == id { return }
+                path.append("\(type(of: current))")
+                node = current.accessibilityParent?() as AnyObject?
+            }
+            XCTFail("Expected \(id) at \(screenPoint), got \(path)")
+        }
+
+        func dropPNG(_ name: String, color: NSColor, onto destination: NSView) throws -> Data {
             let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
                                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -42,6 +64,7 @@ final class ComposerFieldDropTests: XCTestCase {
             board.clearContents()
             XCTAssertTrue(board.writeObjects([url as NSURL]))
             XCTAssertEqual(destination.draggingEntered(drag), .copy)
+            XCTAssertTrue(destination.prepareForDragOperation(drag))
             XCTAssertTrue(destination.performDragOperation(drag))
             return bytes
         }
@@ -72,6 +95,7 @@ final class ComposerFieldDropTests: XCTestCase {
 
             XCTAssertTrue(window.makeFirstResponder(composer))
             let editor = try XCTUnwrap(composer.currentEditor() as? NSTextView)
+            for fraction in [0.25, 0.5, 0.75] { assertAXHit("composer", in: composer, fraction: fraction) }
             let original = editor.string
             let range = NSRange(location: 1, length: 2)
             editor.setSelectedRange(range)
@@ -81,7 +105,7 @@ final class ComposerFieldDropTests: XCTestCase {
             let selection = editor.selectedRange()
             let markedRange = editor.markedRange()
             let draftBeforeDrop = model.draft
-            let bytes = try dropPNG(file, color: .red, onto: destination)
+            let bytes = try dropPNG(file, color: .red, onto: file == "queue.png" ? composer : editor)
             host.layoutSubtreeIfNeeded()
             XCTAssertTrue(window.firstResponder === editor)
             XCTAssertEqual(editor.selectedRange(), selection)
@@ -90,16 +114,34 @@ final class ComposerFieldDropTests: XCTestCase {
             XCTAssertEqual(model.draft, draftBeforeDrop)
             editor.insertText((original as NSString).substring(with: range), replacementRange: markedRange)
             XCTAssertEqual(editor.string, original)
+            XCTAssertEqual(model.draft, original)
+            board.clearContents()
+            let pastedText = "/tmp/ordinary plain text.png"
+            XCTAssertTrue(board.setString(pastedText, forType: .string))
+            editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
+            XCTAssertTrue(editor.readSelection(from: board, type: .string))
+            XCTAssertEqual(model.draft, pastedText)
+            editor.insertText(original, replacementRange: NSRange(location: 0, length: pastedText.utf16.count))
+            XCTAssertEqual(model.draft, original)
             XCTAssertEqual(model.composerAttachments.map(\.name), [file])
             XCTAssertEqual(model.composerAttachments.first?.payload?.data, bytes)
+            if file == "queue.png" {
+                board.clearContents()
+                XCTAssertTrue(board.setData(bytes, forType: .png))
+                XCTAssertTrue(editor.readSelection(from: board, type: .png))
+                XCTAssertEqual(model.composerAttachments.last?.name, "Pasted Image.png")
+                XCTAssertEqual(model.composerAttachments.last?.payload?.data, bytes)
+                XCTAssertEqual(model.draft, original)
+            }
         }
         // The sidebar row always owns the thread draft, including while its queue editor is open.
         let row = try XCTUnwrap(descendant(in: host) { view in
             view is AttachmentDropDestination.Destination &&
                 view.convert(view.bounds, to: host).maxX <= WorkspaceLayout.defaultSidebarWidth
         } as? AttachmentDropDestination.Destination)
+        assertAXHit("thread-row-\(draft.id)", in: row)
         let blue = try dropPNG("blue.png", color: .blue, onto: row)
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["queue.png"])
+        XCTAssertEqual(model.composerAttachments.map(\.name), ["queue.png", "Pasted Image.png"])
         model.updateQueuedMessage()
         let data = try Data(contentsOf: root.appendingPathComponent("workspace.json"))
         let saved = try XCTUnwrap(JSONDecoder().decode(Workspace.self, from: data).projects.first?.conversations.first)
@@ -108,7 +150,7 @@ final class ComposerFieldDropTests: XCTestCase {
         XCTAssertEqual(saved.composerAttachments?.last?.payload?.data, blue)
         XCTAssertNotEqual(saved.composerAttachments?.first?.payload?.data, blue)
         XCTAssertEqual(saved.queuedMessages?.first?.text, "Queued prompt")
-        XCTAssertEqual(saved.queuedMessages?.first?.attachments?.map(\.name), ["queue.png"])
+        XCTAssertEqual(saved.queuedMessages?.first?.attachments?.map(\.name), ["queue.png", "Pasted Image.png"])
 
         let folder = root.appendingPathComponent("Dropped Project", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -144,6 +186,12 @@ final class ComposerFieldDropTests: XCTestCase {
         }
         return nil
     }
+}
+
+private final class OffscreenPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 private final class FileDrag: NSObject, NSDraggingInfo {
