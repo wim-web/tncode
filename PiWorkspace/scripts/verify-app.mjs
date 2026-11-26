@@ -330,9 +330,11 @@ async function openProject() {
   await chooseLocalFolder();
   const missingChild = join(project, "missing folder");
   await setField("project-path", missingChild);
-  async function finishFolderPicker(button) {
+  async function finishFolderPicker(button, folder) {
     press("browse-project");
-    await until(() => visible("open-panel") && visible(button).includes("enabled=true"), "system folder picker");
+    await until(() => visible("open-panel"), "system folder picker");
+    if (folder) await until(() => { drive("select-folder", [folder]); return true; }, "select the exact fixture folder in the native browser");
+    await until(() => visible(button).includes("enabled=true"), "enabled native picker button");
     try {
       press(button);
     } catch (error) {
@@ -342,7 +344,8 @@ async function openProject() {
   }
   await finishFolderPicker("CancelButton");
   assert(drive("get", ["project-path", "--values"]).includes(missingChild));
-  await finishFolderPicker("OKButton");
+  await setField("project-path", join(directory, "missing folder"));
+  await finishFolderPicker("OKButton", project);
   const returnedPath = drive("get", ["project-path", "--values"]);
   assert(returnedPath.includes("value=" + JSON.stringify(project)), "Browse did not return the selected folder");
   press("confirm-project");
@@ -456,6 +459,28 @@ async function openDraftActions() {
       if (attempt === 2) throw error;
     }
   }
+}
+
+async function verifyExistingDraft(projectID, savedID, checkout) {
+  const requestCount = targets.length;
+  press("new-conversation");
+  await until(() => visible("new-thread-project-" + projectID), "project chooser for a new draft");
+  press("new-thread-project-" + projectID);
+  await until(() => visible("composer").includes("focused=true"), "chosen project's draft");
+  const index = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  assert.equal(index.selectedProject, projectID);
+  assert.notEqual(index.projects.find(p => p.id === projectID).selectedConversation, savedID);
+  press("choose-workspace");
+  const option = "existing-worktree-" + checkout;
+  await until(() => visible(option), "existing worktree in the picker");
+  press(option);
+  await until(() => !tree().includes('id="worktree-base"') && visible("choose-workspace").includes("Worktree"), "existing checkout selected");
+  await verifyDraftCopy("draft-copy-path", checkout);
+  await verifyDraftCopy("draft-copy-branch", git(checkout, "branch", "--show-current"));
+  assert.equal(targets.length, requestCount);
+  press("thread-row-" + savedID);
+  await until(() => tree().includes(firstPrompt), "resume the submitted conversation");
+  record("The new-thread project chooser opened a separate draft in the selected project. Copy on its existing worktree returned that checkout's path and current branch without sending a model request.");
 }
 
 async function verifyCheckout(checkout) {
@@ -586,6 +611,15 @@ async function verifySidebar(savedID) {
   await until(() => visible("thread-row-" + last.selectedConversation), "All Projects restores third draft");
   record("The project filter showed both checked projects, excluded the third, and restored all three on reset.");
   await focusSearch();
+  for (const clear of ["button", "escape"]) {
+    await setField("thread-search", "Not a fixture thread");
+    await until(() => visible("clear-thread-search") && !tree().includes(row(savedID)), "no matching fixture threads");
+    if (clear === "button") press("clear-thread-search");
+    else drive("key-focused", ["thread-search", "53"]);
+    await until(() => visible("thread-row-" + savedID) && visible("thread-row-" + second.selectedConversation) &&
+                      drive("get", ["thread-search", "--values"]).includes('value=""'), "clear search by " + clear);
+  }
+  record("Clear and the Escape key each restored the submitted thread and unsent drafts to the sidebar.");
   await setField("thread-search", "Second Project");
   await until(() => !tree().includes(row(savedID)) && visible("thread-row-" + second.selectedConversation), "matching project in search");
   drive("confirm", ["thread-search"]);
@@ -823,6 +857,7 @@ try {
     record("Stop closed the model stream, restored Send and kept the partial reply in the same conversation.");
     await verifyApprovals(checkout ?? project);
     await verifySidebar(threadID);
+    if (worktreeTest) await verifyExistingDraft(previous.selectedProject, threadID, checkout);
     await verifyScratch(threadID);
   }
   rejectNextRequest = true;

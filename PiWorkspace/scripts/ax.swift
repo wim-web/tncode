@@ -19,6 +19,7 @@ Usage:
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
   ax press PID IDENTIFIER
   ax close-window PID WINDOW_IDENTIFIER
+  ax select-folder PID ABSOLUTE_PATH
   ax confirm PID IDENTIFIER
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
@@ -75,6 +76,7 @@ private enum Operation {
     case drag(String, CGPoint, CGSize)
     case press(String)
     case closeWindow(String)
+    case selectFolder(String)
     case confirm(String)
     case set(String)
     case type(String, replace: Bool)
@@ -115,6 +117,8 @@ private enum Operation {
             self = .press(id)
         case ("close-window", let id?) where arguments.count == 1:
             self = .closeWindow(id)
+        case ("select-folder", let path?) where arguments.count == 1 && path.hasPrefix("/"):
+            self = .selectFolder(path)
         case ("confirm", let id?) where arguments.count == 1:
             self = .confirm(id)
         case ("set", let id?) where arguments.count == 1:
@@ -255,6 +259,26 @@ private func frame(of element: AXUIElement) throws -> CGRect {
         throw Failure("The element has no accessible frame.")
     }
     return CGRect(origin: point, size: size)
+}
+
+private func selectFolder(_ path: String, in panel: AXUIElement) throws {
+    let requested = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    for node in Tree(root: panel) {
+        let raw = attribute(kAXURLAttribute, on: node.element)
+        let url = (raw as? URL) ?? (raw as? String).flatMap { URL(string: $0) }
+        guard let url, url.isFileURL, url.resolvingSymlinksInPath().standardizedFileURL.path == requested else { continue }
+        var item = node.element
+        while !CFEqual(item, panel), let raw = attribute(kAXParentAttribute, on: item),
+              CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            let parent = unsafeBitCast(raw, to: AXUIElement.self)
+            let role = attribute(kAXRoleAttribute, on: parent) as? String
+            let selection = role == kAXOutlineRole || role == kAXTableRole ? kAXSelectedRowsAttribute : kAXSelectedChildrenAttribute
+            if [kAXListRole, kAXTableRole, kAXOutlineRole].contains(role),
+               AXUIElementSetAttributeValue(parent, selection as CFString, [item] as CFArray) == .success { return }
+            item = parent
+        }
+    }
+    throw Failure("The requested folder is not selectable in the open panel.")
 }
 
 private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to pid: pid_t) throws {
@@ -443,6 +467,8 @@ private func run(_ arguments: [String]) throws {
             throw Failure("The specified window has no close button.")
         }
         try requireSuccess(AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXPressAction as CFString), "Close window")
+    case .selectFolder(let path):
+        try selectFolder(path, in: element(withID: "open-panel", in: app))
     case .confirm(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXConfirmAction as CFString), "AXConfirm")

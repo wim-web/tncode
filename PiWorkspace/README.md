@@ -16,7 +16,7 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 ## Start a conversation
 
 1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
-2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
+2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. In the path field, use the arrow keys to highlight a folder and Tab to enter it. With several matches, Tab completes their shared prefix. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
 3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app reopens the selected conversation if it has unfinished text. Select a conversation in the sidebar to continue it.
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
@@ -43,7 +43,7 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
 
-Open **Browser** in the thread header to preview an HTTP or HTTPS page. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
+Open **Browser** in the thread header. Enter a URL, a host such as `localhost:5173`, or search terms, then press Return. **Pi Workspace → Browser Settings…** selects the search engine. A custom HTTP or HTTPS search URL uses `%s` for the query. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
 
 Choose **Open Mini Player** to keep the page over the conversation. Drag the arrow handle to move it or drag an edge to resize it. **Open in Browser Panel** returns the page to its tab. **Open in Floating Window** moves it to a separate macOS window.
 

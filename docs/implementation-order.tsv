@@ -3,9 +3,9 @@ stage	id	title	audit_status	result	evidence_ref
 01	CFG-122	Add project starts in	未対応	未評価	-
 01	CFG-135	Welcome page	未対応	未評価	-
 01	CHAT-002	下書きを開く	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 別プロジェクトの未送信下書きに戻り、コンポーザーに同じ入力を確認
-01	CHAT-003	下書きを破棄	未対応	未評価	-
+01	CHAT-003	下書きを破棄	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 下書きメニューから破棄し、対応する UUID が保存一覧から消え、他プロジェクトの未送信本文が残ることを確認
 01	CHAT-004	下書きのパスをコピー	部分	未評価	-
-01	CHAT-005	下書きのブランチ名をコピー	未対応	未評価	-
+01	CHAT-005	下書きのブランチ名をコピー	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 作成予定 worktree の下書きで Copy → Branch を操作し、専用の macOS ペーストボードから選択済みの base 名 main を取得
 01	CHAT-013	プロジェクトフォルダから新規作成	同等候補	未評価	-
 01	CHAT-022	ホームへ移動	未対応	未評価	-
 01	CHAT-053	プロジェクトを選んで下書きを作成	同等候補	未評価	-
@@ -32,7 +32,7 @@ stage	id	title	audit_status	result	evidence_ref
 01	NAV-133	プロジェクトなしで新規スレッドを始める	未対応	未評価	-
 01	NAV-159	選んだプロジェクトに新規スレッドを作る	部分	未評価	-
 01	NAV-169	既存ディレクトリをプロジェクトとして追加	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 Git プロジェクトから ../Sample Project を指定し、元の ID を開く。子フォルダー指定は ProjectSourcesTests
-01	NAV-186	フォルダーパスをキーで補完	未対応	未評価	-
+01	NAV-186	フォルダーパスをキーで補完	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / パス入力欄で Tab が空白を含む共通接頭辞を補完。矢印で選んだ階層と唯一の子へ Tab で移り、Return で既存プロジェクトに復帰
 01	NAV-195	新規作成から既存プロジェクトを開く	部分	未評価	-
 01	NAV-232	OS の選択ダイアログからフォルダーを追加	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / OS パネルの取消と確定の両方を実行し、登録後のプロジェクト・下書き ID を照合
 01	RPC-006	ローカル環境の有効化と起動進捗	構成差	未評価	-
@@ -72,7 +72,7 @@ stage	id	title	audit_status	result	evidence_ref
 02	CFG-105	Response streaming	未対応	未評価	-
 02	CFG-116	Continue threads after restarts	未対応	未評価	-
 02	CHAT-001	スレッドを開く	部分	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルの再起動・履歴再開は確認。異なる環境にある同名スレッドでの照合が残る
-02	CHAT-087	下書きの本文を保存・再開	未対応	未評価	-
+02	CHAT-087	下書きの本文を保存・再開	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 二つの未送信本文を別 UUID に入力。アプリ終了・再起動・スレッド切替後に各本文を復元し、モデル要求数が増えないことを確認
 02	CHAT-088	下書きの初回送信	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 初回の UUID が変わらず、送信文はモデル要求に1件。保存したサイドバー行から同じ履歴を開く
 02	CHAT-089	既存スレッドの新規ターンを送信	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 再起動後の2通目の要求に1往復目の履歴が入り、同じスレッドに応答を表示
 02	CHAT-100	実行を割り込んで止める	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 受信途中に Stop。ループバック接続が閉じ、Send と部分応答を同じ会話で確認
@@ -2014,7 +2014,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	CFG-164	Show key presses in recordings	未対応	未評価	-
 09	CFG-165	Show mouse presses in recordings	未対応	未評価	-
 09	CFG-166	Open links in	未対応	未評価	-
-09	CFG-167	Search engine	未対応	未評価	-
+09	CFG-167	Search engine	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Browser Settings で Custom を選び、専用 URL 欄を表示。設定後の検索がループバックの検索先に到達
 09	CFG-169	Auto-show floating preview	未対応	未評価	-
 09	CFG-214	Translate to English	未対応	未評価	-
 09	CFG-215	Unload model	未対応	未評価	-
@@ -2024,7 +2024,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	CFG-219	Cleanup instructions	未対応	未評価	-
 09	CFG-220	Cloud provider credentials	未対応	未評価	-
 09	CFG-221	Remove microphone	未対応	未評価	-
-09	CFG-222	Custom search URL	未対応	未評価	-
+09	CFG-222	Custom search URL	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / %s がないテンプレートの Save を無効化。有効なテンプレートで空白・非 ASCII・記号を含む検索語が一致
 09	CFG-223	Rename browser profile	未対応	未評価	-
 09	CFG-224	Clear cookies and cache	未対応	未評価	-
 09	CFG-225	Remove browser profile	未対応	未評価	-
@@ -2055,7 +2055,7 @@ stage	id	title	audit_status	result	evidence_ref
 09	DEV-147	ファイルをブラウザープレビューで開く	未対応	未評価	-
 09	DEV-179	ブラウザータブを作る	未対応	合格	a40fe3d PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規タブで空の URL 欄からページを開き、元タブに戻ると履歴と110%の倍率を保持
 09	DEV-180	ブラウザープロファイルを指定してタブを開く	未対応	合格	a40fe3d PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 同じ URL で Default と Alternate は別の保存状態。同じスレッド・同じプロファイルの2タブでは共有
-09	DEV-181	アドレスや検索語から移動する	未対応	未評価	-
+09	DEV-181	アドレスや検索語から移動する	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ポート付きアドレスを Enter で開き、検索語をカスタムエンジンへ送信。file スキームではエラーが出て現在の文書と履歴を保持
 09	DEV-182	ブラウザー履歴を戻る	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ループバックの2ページ目から Back で1ページ目を表示
 09	DEV-183	ブラウザー履歴を進む	未対応	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Back 後に Forward で2ページ目の見出しを再表示
 09	DEV-184	ページを更新する	未対応	合格	1f8cd25 PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / Refresh 後の実 WebKit に revision 1 から 2 へ更新したページを表示

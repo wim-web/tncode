@@ -60,6 +60,7 @@ struct ThreadLocationView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("existing-worktree-\(checkout.path)")
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
