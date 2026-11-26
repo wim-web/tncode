@@ -175,7 +175,7 @@ struct Conversation: Codable, Identifiable {
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
     var pullRequestLinks: [ThreadPullRequestLink] { linkedPullRequests ?? [] }
-    var hasComposerContent: Bool { composerText != nil || !(composerAttachments ?? []).isEmpty }
+    var hasDraftContent: Bool { composerText != nil || !(composerAttachments ?? []).isEmpty || !pullRequestLinks.isEmpty }
     var canDiscardDraft: Bool {
         isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil
     }
@@ -299,7 +299,7 @@ struct Project: Codable, Identifiable {
 
     mutating func selectDraft() {
         if let empty = conversations.first(where: {
-            $0.canDiscardDraft && !$0.hasComposerContent && $0.pullRequestLinks.isEmpty
+            $0.canDiscardDraft && !$0.hasDraftContent
         }) {
             selectedConversation = empty.id
             return

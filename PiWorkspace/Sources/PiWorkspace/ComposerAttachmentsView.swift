@@ -9,7 +9,7 @@ struct ComposerAttachmentsView: View {
     @State private var pickerTarget: ComposerAttachmentTarget?
     @State private var preview: ComposerAttachment?
     private var target: ComposerAttachmentTarget {
-        ComposerAttachmentTarget(threadID: threadID, queueID: model.editingQueuedMessageID)
+        model.attachmentTarget(for: threadID)
     }
 
     var body: some View {

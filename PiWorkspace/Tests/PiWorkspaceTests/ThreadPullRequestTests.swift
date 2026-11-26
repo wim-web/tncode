@@ -5,6 +5,36 @@ import XCTest
 
 @MainActor
 final class ThreadPullRequestTests: XCTestCase {
+    func testProjectSwitchMovesADraftContainingOnlyAPullRequestLink() async throws {
+        let fixture = try Fixture()
+        let source: ThreadPullRequestScope
+        let destination: UUID
+        do {
+            let model = fixture.open()
+            source = try XCTUnwrap(model.pullRequestScope)
+            let folder = fixture.root.appendingPathComponent("other-project", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            try model.openProject(folder)
+            destination = try XCTUnwrap(model.project?.id)
+            model.selectConversation(source.threadID, in: source.projectID)
+            let repository = try await model.pullRequestRepository(in: source)
+            try await model.linkPullRequest("#42", in: source, repository: repository)
+            XCTAssertNil(model.conversation?.composerText)
+            model.switchDraftProject(to: destination)
+            XCTAssertEqual(model.project?.id, destination)
+            XCTAssertEqual(model.conversation?.id, source.threadID)
+            XCTAssertEqual(model.conversation?.pullRequestLinks.first?.reference.url.absoluteString,
+                           "https://github.com/fixture/workspace/pull/42")
+            let prior = try XCTUnwrap(model.workspace.projects.first { $0.id == source.projectID })
+            XCTAssertFalse(prior.conversations.contains { $0.id == source.threadID })
+            XCTAssertTrue(model.terminate())
+        }
+        let reopened = fixture.open()
+        XCTAssertEqual(reopened.project?.id, destination)
+        XCTAssertEqual(reopened.conversation?.id, source.threadID)
+        XCTAssertEqual(reopened.conversation?.pullRequestLinks.first?.reference.number, 42)
+    }
+
     func testLinksPersistByThreadAndRepository() async throws {
         let fixture = try Fixture()
         let workspaceURL = fixture.workspace.appendingPathComponent("workspace.json")

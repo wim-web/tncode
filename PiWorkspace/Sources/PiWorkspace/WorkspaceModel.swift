@@ -15,6 +15,7 @@ final class WorkspaceModel: ObservableObject {
 
     private struct QueueEdit {
         let id: UUID
+        let sessionID = UUID()
         var text: String
         var attachments: [ComposerAttachment]?
     }
@@ -118,6 +119,9 @@ final class WorkspaceModel: ObservableObject {
     }
 
     var editingQueuedMessageID: UUID? { queueEdit?.id }
+    func attachmentTarget(for threadID: UUID) -> ComposerAttachmentTarget {
+        .init(threadID: threadID, queueEditID: conversation?.id == threadID ? queueEdit?.sessionID : nil)
+    }
     var composerAttachments: [ComposerAttachment] {
         if let queueEdit { return queueEdit.attachments ?? [] }
         return conversation?.composerAttachments ?? []
@@ -191,17 +195,17 @@ final class WorkspaceModel: ObservableObject {
         let project = workspace.projects[p]
         let thread = project.conversations[t]
         guard !thread.archived, thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
-        if let id = target.queueID {
-            guard conversation?.id == thread.id, queueEdit?.id == id else { return false }
+        if let id = target.queueEditID {
+            guard conversation?.id == thread.id, queueEdit?.sessionID == id else { return false }
         }
-        let original = target.queueID == nil ? thread.composerAttachments ?? [] : queueEdit?.attachments ?? []
+        let original = target.queueEditID == nil ? thread.composerAttachments ?? [] : queueEdit?.attachments ?? []
         var attachments = original
         error = nil
         do { try edit(&attachments, project.modelOverride ?? workspace.model) }
         catch { self.error = error.localizedDescription }
         guard attachments != original else { return false }
         let updated = attachments.isEmpty ? nil : attachments
-        if target.queueID != nil {
+        if target.queueEditID != nil {
             queueEdit?.attachments = updated
         } else {
             workspace.projects[p].conversations[t].composerAttachments = updated
@@ -234,7 +238,7 @@ final class WorkspaceModel: ObservableObject {
     private var hasPrompt: Bool { !promptText.isEmpty || !composerAttachments.isEmpty }
 
     func showsInSidebar(_ thread: Conversation) -> Bool {
-        thread.isDraft != true || thread.hasComposerContent || thread.worktreeLaunch != nil || !thread.pullRequestLinks.isEmpty
+        thread.isDraft != true || thread.hasDraftContent || thread.worktreeLaunch != nil
     }
 
     func searchMessages(_ search: SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match] {
@@ -357,9 +361,9 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil else { return }
-        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasComposerContent ||
+        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasDraftContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
-            !(conversation.queuedMessages ?? []).isEmpty || !conversation.pullRequestLinks.isEmpty {
+            !(conversation.queuedMessages ?? []).isEmpty {
             showArchive = conversation.archived
             connect()
             return
@@ -685,7 +689,7 @@ final class WorkspaceModel: ObservableObject {
               var thread = conversation, project.id != projectID else { return }
         let target = workspace.projects.firstIndex { $0.id == projectID && !$0.isScratch && $0.detached != true }
         guard projectID == nil ? !project.isScratch : target != nil else { return }
-        if !thread.hasComposerContent {
+        if !thread.hasDraftContent {
             if let projectID {
                 addConversation(in: projectID)
             } else {

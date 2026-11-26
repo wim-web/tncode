@@ -1385,7 +1385,7 @@ struct WorkspaceView: View {
     }
 
     private func inputCard(_ project: Project, threadID: UUID) -> some View {
-        let target = ComposerAttachmentTarget(threadID: threadID, queueID: model.editingQueuedMessageID)
+        let target = model.attachmentTarget(for: threadID)
         return VStack(alignment: .leading, spacing: 0) {
             ComposerAttachmentsView(model: model, threadID: threadID)
                 .id(threadID)

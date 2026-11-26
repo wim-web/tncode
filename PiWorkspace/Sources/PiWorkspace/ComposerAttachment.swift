@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 struct ComposerAttachmentTarget {
     let threadID: UUID
-    var queueID: UUID?
+    var queueEditID: UUID?
 }
 
 enum ComposerAttachmentInput: Transferable {
