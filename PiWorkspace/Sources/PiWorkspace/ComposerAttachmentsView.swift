@@ -55,9 +55,11 @@ struct ComposerAttachmentsView: View {
             case .success(let urls):
                 guard let pickerTarget else { return }
                 model.attach(urls.map(ComposerAttachmentInput.file), to: pickerTarget, replacing: replacementID)
-            case .failure(let error): model.error = error.localizedDescription
+            case .failure(let error):
+                if (error as? CocoaError)?.code != .userCancelled { model.error = error.localizedDescription }
             }
         }
+        .fileDialogDefaultDirectory(model.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) })
         .sheet(item: $preview) { attachment in
             VStack(alignment: .trailing, spacing: 12) {
                 HStack {
@@ -77,6 +79,7 @@ struct ComposerAttachmentsView: View {
             }
             .padding()
             .frame(width: 640, height: 460)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("attachment-image-preview")
         }
     }
