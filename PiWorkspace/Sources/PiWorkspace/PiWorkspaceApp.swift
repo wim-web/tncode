@@ -201,7 +201,6 @@ private struct WorkspaceSidebarCommands: Commands {
                 .accessibilityIdentifier("open-command-palette")
                 .disabled(!model.canOpenCommandPalette || model.showingCommandPalette)
             Button("Search Threads") { model.sidebarCommand.send(.search) }
-                .keyboardShortcut("f")
                 .disabled(!workspaceOpen)
         }
     }

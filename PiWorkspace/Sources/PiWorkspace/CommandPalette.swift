@@ -9,6 +9,7 @@ enum CommandPaletteAction: Hashable {
     case home
     case settings
     case searchThreads
+    case findInCurrentThread(SidebarMessageSearch.Thread)
     case openProject(UUID)
     case openThread(UUID, project: UUID)
     case openMessage(UUID, project: UUID, messageID: String, term: TranscriptSearchTerm)
@@ -22,6 +23,7 @@ enum CommandPaletteAction: Hashable {
         case .home: "home"
         case .settings: "settings"
         case .searchThreads: "search-threads"
+        case .findInCurrentThread: "find-current-thread"
         case .openProject(let id): "project-\(id)"
         case .openThread(let id, _): "thread-\(id)"
         case .openMessage(let id, _, let messageID, _): "message-\(id)-\(messageID)"
@@ -81,6 +83,7 @@ struct CommandPaletteContents {
     let threads: [SidebarThread]
     let activeThread: UUID?
     let canStartScratchThread: Bool
+    var findThread: SidebarMessageSearch.Thread? = nil
 
     var commands: [CommandPaletteRow] {
         var rows: [CommandPaletteRow] = []
@@ -98,6 +101,10 @@ struct CommandPaletteContents {
                           searchTerms: "open local folder directory repository new project"))
         rows.append(.init(action: .searchThreads, title: "Search threads", icon: "magnifyingglass",
                           searchTerms: "find messages"))
+        if let findThread {
+            rows.append(.init(action: .findInCurrentThread(findThread), title: "Find in current thread",
+                              icon: "text.magnifyingglass", searchTerms: "search messages"))
+        }
         if preferredProject != nil {
             rows.append(.init(action: .home, title: "Go to home", icon: "house"))
         }

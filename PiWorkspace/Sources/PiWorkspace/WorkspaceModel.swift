@@ -253,6 +253,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var showArchive = false
     @Published var projectPicker: ProjectPickerRequest?
     @Published var showingCommandPalette = false
+    @Published var threadFind: ThreadFindSession?
 
     let root: URL
     private var store: WorkspaceStore?
@@ -296,6 +297,14 @@ final class WorkspaceModel: ObservableObject {
     var conversation: Conversation? {
         guard let project else { return nil }
         return project.conversations.first { $0.id == project.selectedConversation }
+    }
+    var threadFindScope: SidebarMessageSearch.Thread? {
+        guard let project, let thread = conversation, thread.isDraft != true || thread.archived else { return nil }
+        return .init(projectID: project.id, threadID: thread.id)
+    }
+    var activeThreadFind: ThreadFindSession? {
+        guard threadFind?.thread == threadFindScope else { return nil }
+        return threadFind
     }
     var workingDirectory: String? {
         guard let project, let conversation else { return nil }

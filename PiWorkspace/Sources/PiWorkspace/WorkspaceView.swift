@@ -1,6 +1,9 @@
 import AppKit
+import Carbon
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 
 struct DroppedProjectFolder: Transferable {
     let url: URL
@@ -32,8 +35,8 @@ struct WorkspaceView: View {
     @State private var showingSidebarFilters = false
     @State private var highlightedSearchThread: UUID?
     @State private var messageSearchResult: (key: MessageSearchKey, matches: [UUID: SidebarMessageSearch.Match])?
-    @State private var messageJump: MessageJump?
     @FocusState private var searchFocused: Bool
+    @FocusState private var findFocused: Bool
     @State private var showingDetails = false
     @State private var showingChanges = false
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
@@ -70,6 +73,7 @@ struct WorkspaceView: View {
     private enum PaletteReturnFocus {
         case search
         case composer(UUID)
+        case threadFind
     }
 
     private enum WelcomeFocus: Hashable {
@@ -90,14 +94,6 @@ struct WorkspaceView: View {
         let thread: SidebarThread
         let match: SidebarMessageSearch.Match?
         var id: String { thread.id.uuidString + "/" + (match?.messageID ?? "") }
-    }
-
-    private struct MessageJump: Equatable {
-        let requestID = UUID()
-        let projectID: UUID
-        let threadID: UUID
-        let messageID: String?
-        var find: TranscriptSearchTerm? = nil
     }
 
     private enum TranscriptAnchor: Hashable {
@@ -121,6 +117,7 @@ struct WorkspaceView: View {
     private let accent = Color(red: 0.24, green: 0.48, blue: 0.70)
 
     var body: some View {
+        let findRequest = model.activeThreadFind?.request
         ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
@@ -144,6 +141,7 @@ struct WorkspaceView: View {
         .tint(accent)
         .background {
             WindowKeyMonitor { event, window in
+                if handleFindKey(event, in: window) { return true }
                 guard !event.isARepeat else { return false }
                 if case .toggle? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window)
@@ -189,8 +187,14 @@ struct WorkspaceView: View {
                     }
             }
         }
-        .onChange(of: model.conversation?.id) { _, id in
-            if messageJump?.threadID != id { messageJump = nil }
+        .onChange(of: model.threadFindScope) { _, scope in
+            if model.threadFind?.thread != scope { model.threadFind = nil }
+        }
+        .onChange(of: model.messages.last?.id) { _, _ in
+            if model.activeThreadFind != nil { model.threadFind?.refresh() }
+        }
+        .task(id: findRequest) {
+            if let findRequest { await loadFindMatches(findRequest) }
         }
         .onChange(of: model.showingWelcome) { _, showing in
             if showing {
@@ -199,9 +203,6 @@ struct WorkspaceView: View {
             } else if model.projectPicker == nil {
                 focusCurrentComposer()
             }
-        }
-        .onChange(of: model.phase.isRunning) { _, running in
-            if running { messageJump = nil }
         }
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
@@ -762,6 +763,13 @@ struct WorkspaceView: View {
         if thread.isDraft == true && !thread.archived {
             draftActions(thread, project: project)
         } else {
+            Button("Find in thread") {
+                openThread(SidebarThread(project: project, thread: thread))
+                let scope = SidebarMessageSearch.Thread(projectID: project.id, threadID: thread.id)
+                if model.threadFindScope == scope { openFind(in: scope) }
+            }
+            .accessibilityIdentifier("find-in-thread")
+            .disabled(model.operationsInProgress && model.conversation?.id != thread.id)
             submittedThreadActions(thread, project: project)
         }
     }
@@ -1146,10 +1154,11 @@ struct WorkspaceView: View {
     }
 
     private func conversation(_ project: Project, _ thread: Conversation, layout: WorkspaceLayout) -> some View {
-        let jump = messageJump.flatMap { $0.projectID == project.id && $0.threadID == thread.id ? $0 : nil }
+        let find = model.activeThreadFind
         let legacyDraft = model.phase == .ready && model.messages.isEmpty && thread.worktreeLaunch == nil
-        let drafting = jump == nil && !thread.archived && (thread.isDraft ?? legacyDraft)
+        let drafting = !thread.archived && (thread.isDraft ?? legacyDraft)
         return VStack(spacing: 0) {
+            if let find { transcriptFind(find) }
             if drafting {
                 DraftComposerLayout {
                     Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
@@ -1160,8 +1169,7 @@ struct WorkspaceView: View {
                         .reservesRoomAboveTerminal(terminalIsVisible)
                 }
             } else {
-                if let jump, let find = jump.find { transcriptFind(jump, find: find) }
-                transcript(jump, project: project, thread: thread)
+                transcript(find?.selection, project: project, thread: thread)
                 composer(project, thread).padding(.vertical, 12)
                     .reservesRoomAboveTerminal(terminalIsVisible)
             }
@@ -1230,15 +1238,15 @@ struct WorkspaceView: View {
         }
     }
 
-    private func transcript(_ jump: MessageJump?, project: Project, thread: Conversation) -> some View {
-        let target = jump.flatMap { request in model.messages.contains { $0.id == request.messageID } ? request : nil }
+    private func transcript(_ selection: ThreadFindSession.Selection?, project: Project, thread: Conversation) -> some View {
+        let target = selection.flatMap { match in model.messages.contains { $0.id == match.messageID } ? match : nil }
         let forks = Dictionary(grouping: project.conversations.filter { $0.forkOrigin?.threadID == thread.id }) {
             $0.forkOrigin?.messageID
         }
         return ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 23) {
-                    if jump?.messageID != nil, target == nil, model.phase == .ready {
+                    if selection != nil, target == nil, model.phase != .connecting {
                         Text("The matching message is no longer available.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -1306,49 +1314,51 @@ struct WorkspaceView: View {
         }
     }
 
-    private func transcriptFind(_ jump: MessageJump, find: TranscriptSearchTerm) -> some View {
-        let matches = find.text.isEmpty ? [] : model.messages.filter { find.range(in: $0.text) != nil }
-        let index = matches.firstIndex { $0.id == jump.messageID }
-        return HStack(spacing: 8) {
-            TextField("Find in thread", text: Binding(get: { find.text }, set: { query in
-                let term = TranscriptSearchTerm.literal(query)
-                let first = model.messages.first { !query.isEmpty && term.range(in: $0.text) != nil }
-                setTranscriptFind(jump, term, messageID: first?.id)
+    private func transcriptFind(_ find: ThreadFindSession) -> some View {
+        HStack(spacing: 8) {
+            TextField("Find in thread", text: Binding(get: { model.activeThreadFind?.query ?? "" }, set: { text in
+                if model.activeThreadFind?.thread == find.thread { model.threadFind?.editQuery(text) }
             }))
             .textFieldStyle(.roundedBorder)
+            .focused($findFocused)
             .accessibilityIdentifier("thread-find-query")
-            if model.phase == .ready {
-                Text(index.map { "\($0 + 1) of \(matches.count)" } ?? "\(matches.count) matches")
+            if let label = find.status.label {
+                Text(label)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("thread-find-match-count")
             }
+            if find.status == .failed {
+                Button("Retry") { model.threadFind?.refresh() }
+                    .accessibilityIdentifier("thread-find-retry")
+            }
             Button {
-                let previous = ((index ?? 0) + matches.count - 1) % matches.count
-                setTranscriptFind(jump, find, messageID: matches[previous].id)
+                model.threadFind?.step(backward: true)
             } label: { Image(systemName: "chevron.up") }
                 .accessibilityLabel("Previous match")
-                .disabled(matches.isEmpty)
+                .accessibilityIdentifier("thread-find-previous")
+                .disabled(!find.canStep)
             Button {
-                let next = ((index ?? -1) + 1) % matches.count
-                setTranscriptFind(jump, find, messageID: matches[next].id)
+                model.threadFind?.step(backward: false)
             } label: { Image(systemName: "chevron.down") }
                 .accessibilityLabel("Next match")
-                .disabled(matches.isEmpty)
-            Button {
-                messageJump = nil
-                if model.conversation?.archived == false { focusCurrentComposer() }
-            } label: { Image(systemName: "xmark") }
-                .accessibilityLabel("Close thread find")
-                .accessibilityIdentifier("thread-find-close")
+                .accessibilityIdentifier("thread-find-next")
+                .disabled(!find.canStep)
+            Button(action: closeFind) {
+                Image(systemName: "xmark")
+            }
+            .accessibilityLabel("Close find")
+            .accessibilityIdentifier("thread-find-close")
         }
         .font(.callout)
         .padding(.horizontal, WorkspaceLayout.editorInset)
         .padding(.top, 8)
-    }
-
-    private func setTranscriptFind(_ jump: MessageJump, _ term: TranscriptSearchTerm, messageID: String?) {
-        messageJump = MessageJump(projectID: jump.projectID, threadID: jump.threadID, messageID: messageID, find: term)
+        .task(id: find.focusRequest) {
+            await Task.yield()
+            guard !Task.isCancelled, model.activeThreadFind?.focusRequest == find.focusRequest,
+                  !model.showingSettings, !model.showingCommandPalette else { return }
+            findFocused = true
+        }
     }
 
     private func forkHistoryLink(_ title: String, threadID: UUID, source: Bool) -> some View {
@@ -1483,7 +1493,7 @@ struct WorkspaceView: View {
                 .task(id: threadID) {
                     await Task.yield()
                     if !Task.isCancelled && !model.showingWelcome && model.projectPicker == nil &&
-                        !model.showingSettings && !model.showingCommandPalette {
+                        !model.showingSettings && !model.showingCommandPalette && model.activeThreadFind == nil {
                         focusedComposer = threadID
                     }
                 }
@@ -1631,7 +1641,7 @@ struct WorkspaceView: View {
         return CommandPaletteContents(
             projects: projects, availableProjects: projects.filter(availableForNewThread),
             preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
-            canStartScratchThread: model.canStartScratchThread
+            canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope
         )
     }
 
@@ -1640,17 +1650,96 @@ struct WorkspaceView: View {
     }
 
     private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
-        !model.showingWelcome && !model.showingCommandPalette && window === NSApp.mainWindow &&
+        window === NSApp.mainWindow && acceptsWorkspaceKeys(in: window)
+    }
+
+    private func acceptsWorkspaceKeys(in window: NSWindow) -> Bool {
+        !model.showingWelcome && !model.showingSettings && !model.showingCommandPalette &&
+            !model.showingQuitSaveFailure && model.projectPicker == nil &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
             rename == nil && removingProject == nil
+    }
+
+    private func handleFindKey(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard acceptsWorkspaceKeys(in: window) else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
+        let editor = window.firstResponder as? NSTextView
+        guard (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+        if event.charactersIgnoringModifiers?.lowercased() == "f", modifiers == [.command, .shift] {
+            searchFocused = true
+            return true
+        }
+
+        let editingOtherField = editor?.isFieldEditor == true && !(editor is ComposerTextField.Editor)
+        if editingOtherField, !findFocused { return false }
+        var focusedView = window.firstResponder as? NSView
+        while let view = focusedView {
+            if view is WKWebView || view is PDFView { return false }
+            focusedView = view.superview
+        }
+
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "f" {
+            guard let scope = model.threadFindScope else { return false }
+            if editingOtherField, let editor {
+                editor.selectAll(nil)
+            } else {
+                openFind(in: scope)
+            }
+            return true
+        }
+        guard model.activeThreadFind != nil else { return false }
+        switch Int(event.keyCode) {
+        case kVK_Escape where modifiers.isEmpty:
+            closeFind()
+            return true
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            guard editingOtherField, modifiers.isEmpty || modifiers == .shift else { return false }
+            model.threadFind?.step(backward: modifiers == .shift)
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func loadFindMatches(_ request: ThreadFindSession.Request) async {
+        do {
+            try await Task.sleep(for: .milliseconds(120))
+            let ids = try await SidebarMessageSearch.matchingMessageIDs(in: model.root, thread: request.thread,
+                                                                        term: request.term)
+            guard !Task.isCancelled, model.activeThreadFind?.request == request else { return }
+            model.threadFind?.receive(ids, for: request)
+        } catch {
+            guard !Task.isCancelled, model.activeThreadFind?.request == request else { return }
+            model.threadFind?.fail(request)
+        }
+    }
+
+    private func openFind(in scope: SidebarMessageSearch.Thread, term: TranscriptSearchTerm? = nil,
+                          messageID: String? = nil) {
+        guard model.threadFindScope == scope else { return }
+        if model.threadFind?.thread == scope, term == nil {
+            model.threadFind?.refocus()
+        } else {
+            model.threadFind = ThreadFindSession(thread: scope, term: term, messageID: messageID)
+        }
+    }
+
+    private func closeFind() {
+        findFocused = false
+        model.threadFind = nil
+        if model.conversation?.archived == false { focusCurrentComposer() }
     }
 
     @discardableResult
     private func openCommandPalette(in eventWindow: NSWindow? = nil) -> Bool {
         guard model.canOpenCommandPalette, let window = eventWindow ?? NSApp.keyWindow,
               acceptsWorkspaceCommands(in: window) else { return false }
-        paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
+        if findFocused {
+            paletteReturnFocus = .threadFind
+        } else {
+            paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
+        }
         model.showingCommandPalette = true
         return true
     }
@@ -1664,6 +1753,7 @@ struct WorkspaceView: View {
             switch previousFocus {
             case .search: searchFocused = true
             case .composer(let id) where model.conversation?.id == id: focusedComposer = id
+            case .threadFind: model.threadFind?.refocus()
             default: break
             }
             return
@@ -1689,13 +1779,15 @@ struct WorkspaceView: View {
             model.showHome()
         case .searchThreads:
             searchFocused = true
+        case .findInCurrentThread(let scope):
+            openFind(in: scope)
         case .settings:
             model.openSettings()
         case .openProject(let id):
             guard filteredProjects.contains(where: { $0.id == id }) else { return }
             model.selectProjectFromPalette(id)
             if model.project?.id == id {
-                messageJump = nil
+                model.threadFind = nil
                 clearSearch()
                 collapsed.remove(id)
                 focusCurrentComposer()
@@ -1706,8 +1798,7 @@ struct WorkspaceView: View {
             if model.conversation?.id == id { focusCurrentComposer() }
         case .openMessage(let id, let project, let messageID, let term):
             guard let target = threads.first(where: { $0.id == id && $0.project.id == project }) else { return }
-            openThread(target, messageID: messageID, find: term)
-            if model.conversation?.id == id, !target.thread.archived { focusCurrentComposer() }
+            openThread(target, messageID: messageID, term: term)
         }
     }
 
@@ -1780,15 +1871,13 @@ struct WorkspaceView: View {
     }
 
     private func openThread(_ item: SidebarThread, messageMatch: SidebarMessageSearch.Match? = nil) {
-        openThread(item, messageID: messageMatch?.messageID)
+        openThread(item, messageID: messageMatch?.messageID, term: messageMatch.map { _ in .literal(searchTerm) })
     }
 
-    private func openThread(_ item: SidebarThread, messageID: String?, find: TranscriptSearchTerm? = nil) {
+    private func openThread(_ item: SidebarThread, messageID: String?, term: TranscriptSearchTerm?) {
         model.selectConversation(item.id, in: item.project.id)
         guard model.project?.id == item.project.id, model.conversation?.id == item.id else { return }
-        messageJump = messageID.map {
-            MessageJump(projectID: item.project.id, threadID: item.id, messageID: $0, find: find)
-        }
+        if let term { openFind(in: .init(projectID: item.project.id, threadID: item.id), term: term, messageID: messageID) }
         collapsed.remove(item.project.id)
         if !item.thread.archived, item.thread.threadShelf == .settled { settledExpanded = true }
         guard !searchTerm.isEmpty else { return }

@@ -54,7 +54,7 @@ enum TranscriptSearchTerm: Hashable, Sendable {
 }
 
 struct SidebarMessageSearch: Equatable, Sendable {
-    struct Thread: Equatable, Sendable {
+    struct Thread: Hashable, Sendable {
         let projectID: UUID
         let threadID: UUID
     }
@@ -79,7 +79,29 @@ struct SidebarMessageSearch: Equatable, Sendable {
     func matches(in root: URL) async throws -> [UUID: Match] {
         try Task.checkCancellation()
         guard !term.text.isEmpty, !threads.isEmpty else { return [:] }
-        let worker = Task.detached(priority: .userInitiated) { try scan(root) }
+        return try await Self.readOffMain { try scan(root) }
+    }
+
+    static func matchingMessageIDs(in root: URL, thread: Thread, term: TranscriptSearchTerm) async throws -> [String] {
+        try await readOffMain {
+            let rootFD = open(root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            guard rootFD >= 0 else { throw WorkspaceHistory.accessError(errno) }
+            defer { close(rootFD) }
+            guard let file = try WorkspaceHistory.open(in: rootFD, projectID: thread.projectID,
+                                                       threadID: thread.threadID) else { return [] }
+            defer { try? file.close() }
+            var matches: [String] = []
+            let valid = try visitBranch(in: file, threadID: thread.threadID) { id, message in
+                if term.range(in: message.workspaceText ?? message.text) != nil { matches.append(id) }
+            }
+            guard valid else { throw WorkspaceError("The thread history is incomplete.") }
+            return Array(matches.reversed())
+        }
+    }
+
+    private static func readOffMain<T: Sendable>(_ read: @escaping @Sendable () throws -> T) async throws -> T {
+        try Task.checkCancellation()
+        let worker = Task.detached(priority: .userInitiated, operation: read)
         return try await withTaskCancellationHandler {
             let matches = try await worker.value
             try Task.checkCancellation()
@@ -111,6 +133,21 @@ struct SidebarMessageSearch: Equatable, Sendable {
     }
 
     private func match(in file: FileHandle, threadID: UUID) throws -> Match? {
+        var match: Match?
+        let valid = try Self.visitBranch(in: file, threadID: threadID) { id, message in
+            let text = message.text
+            guard match == nil, let range = term.range(in: text) else { return }
+            let start = text.index(range.lowerBound, offsetBy: -24, limitedBy: text.startIndex) ?? text.startIndex
+            let end = text.index(range.upperBound, offsetBy: 48, limitedBy: text.endIndex) ?? text.endIndex
+            let excerpt = text[start..<end].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            match = Match(messageID: id, excerpt: (start == text.startIndex ? "" : "…") +
+                          excerpt + (end == text.endIndex ? "" : "…"))
+        }
+        return valid ? match : nil
+    }
+
+    private static func visitBranch(in file: FileHandle, threadID: UUID,
+                                    visit: (String, Message) -> Void) throws -> Bool {
         let decoder = JSONDecoder()
         var hasHeader = false
         var leaf: String?
@@ -130,24 +167,17 @@ struct SidebarMessageSearch: Equatable, Sendable {
             }
         }
 
-        guard hasHeader else { return nil }
+        guard hasHeader else { return false }
 
         // Pi reopens at the last entry and renders the path through parentId.
         var visited = Set<String>()
-        var match: Match?
         while let id = leaf, let entry = entries[id] {
             try Task.checkCancellation()
-            guard visited.insert(id).inserted else { return nil }
-            if match == nil, let text = entry.message?.text, let range = term.range(in: text) {
-                let start = text.index(range.lowerBound, offsetBy: -24, limitedBy: text.startIndex) ?? text.startIndex
-                let end = text.index(range.upperBound, offsetBy: 48, limitedBy: text.endIndex) ?? text.endIndex
-                let excerpt = text[start..<end].split(whereSeparator: \.isWhitespace).joined(separator: " ")
-                match = Match(messageID: id, excerpt: (start == text.startIndex ? "" : "…") +
-                              excerpt + (end == text.endIndex ? "" : "…"))
-            }
+            guard visited.insert(id).inserted else { return false }
+            if let message = entry.message { visit(id, message) }
             leaf = entry.parentID
         }
-        return match
+        return leaf == nil
     }
 
     private struct Entry: Decodable {
@@ -171,8 +201,10 @@ struct SidebarMessageSearch: Equatable, Sendable {
 
     private struct Message: Decodable {
         let text: String
+        let workspaceText: String?
 
-        private enum Field: String, CodingKey { case role, content }
+        private enum Field: String, CodingKey { case role, content, workspaceInput }
+        private struct WorkspaceInput: Decodable { let text: String }
         private struct Block: Decodable {
             let text: String?
 
@@ -188,6 +220,7 @@ struct SidebarMessageSearch: Equatable, Sendable {
         init(from decoder: Decoder) throws {
             let fields = try decoder.container(keyedBy: Field.self)
             _ = try fields.decode(ChatMessage.Role.self, forKey: .role)
+            workspaceText = (try? fields.decode(WorkspaceInput.self, forKey: .workspaceInput))?.text
             if let plain = try? fields.decode(String.self, forKey: .content) {
                 text = plain
             } else {
