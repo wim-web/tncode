@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import os
 
 private let usage = """
 Usage:
@@ -18,6 +19,7 @@ Usage:
   ax web-frame PID DOM_IDENTIFIER
   ax size-window PID WINDOW_IDENTIFIER WIDTH HEIGHT
   ax drag PID IDENTIFIER FRACTION_X FRACTION_Y DELTA_X DELTA_Y
+  ax drop-fixture PID WORKSPACE WINDOW_IDENTIFIER TARGET_IDENTIFIER FIXTURE_PATH
   ax press PID IDENTIFIER
   ax close-window PID WINDOW_IDENTIFIER
   ax select-folder PID ABSOLUTE_PATH
@@ -31,7 +33,7 @@ Usage:
 dump/get show roles, identifiers, and labels. --values includes AXValue
 where available, except for secure text fields. --no-labels hides AXTitle,
 AXDescription, and AXPlaceholderValue. set/type read UTF-8 stdin verbatim.
-type and key target PID. drag requires the target window to be frontmost along the entire path.
+type and key target PID. drag and drop-fixture require an unobstructed frontmost window.
 Common keycodes: Return 36, Escape 53,
 Tab 48, Space 49, Left 123, Right 124, Down 125, Up 126, G 5.
 """
@@ -77,6 +79,7 @@ private enum Operation {
     case webFrame(String)
     case sizeWindow(String, CGSize)
     case drag(String, CGPoint, CGSize)
+    case dropFixture(workspace: String, window: String, target: String, path: String)
     case press(String)
     case closeWindow(String)
     case selectFolder(String)
@@ -118,6 +121,9 @@ private enum Operation {
                 throw Failure("drag requires two fractions and two distances in points.")
             }
             self = .drag(id, CGPoint(x: values[0], y: values[1]), CGSize(width: values[2], height: values[3]))
+        case ("drop-fixture", let workspace?) where arguments.count == 4 && workspace.hasPrefix("/") && arguments.last?.hasPrefix("/") == true:
+            self = .dropFixture(workspace: workspace, window: arguments[arguments.startIndex + 1],
+                                target: arguments[arguments.startIndex + 2], path: arguments[arguments.startIndex + 3])
         case ("press", let id?) where arguments.count == 1:
             self = .press(id)
         case ("close-window", let id?) where arguments.count == 1:
@@ -329,6 +335,259 @@ private func drag(in rect: CGRect, from fraction: CGPoint, by delta: CGSize, to 
     }
 }
 
+private func processArguments(_ pid: pid_t) throws -> [String] {
+    var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+    var size = 0
+    guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
+        throw Failure("Could not read the destination process arguments.")
+    }
+    var bytes = [UInt8](repeating: 0, count: size)
+    guard sysctl(&mib, 3, &bytes, &size, nil, 0) == 0 else {
+        throw Failure("Could not read the destination process arguments.")
+    }
+    let count = bytes.withUnsafeBytes { Int($0.loadUnaligned(as: Int32.self)) }
+    let strings = bytes[MemoryLayout<Int32>.size..<size].split(separator: 0, omittingEmptySubsequences: false)
+    return strings.dropFirst().drop(while: \.isEmpty).prefix(count).map { String(decoding: $0, as: UTF8.self) }
+}
+
+private func dropFixtureURL(pid: pid_t, workspace: String, path: String) throws -> URL {
+    func canonical(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+    let workspaceURL = URL(fileURLWithPath: workspace, isDirectory: true)
+    let root = workspaceURL.deletingLastPathComponent()
+    let values = try FileManager.default.attributesOfItem(atPath: root.path)
+    let args = try processArguments(pid)
+    guard canonical(workspace) == workspace, workspaceURL.lastPathComponent == "workspace",
+          root.deletingLastPathComponent().path == "/private/tmp", root.lastPathComponent.hasPrefix("pi-drag-"),
+          values[.ownerAccountID] as? UInt32 == getuid(),
+          (values[.posixPermissions] as? UInt16) == 0o700,
+          NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "dev.piworkspace.app",
+          let index = args.firstIndex(of: "--workspace"), args.dropFirst(index + 1).first == workspace else {
+        throw Failure("The destination must be a Pi Workspace process using this private drag fixture workspace.")
+    }
+    let url = URL(fileURLWithPath: path)
+    let type = try url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+    guard canonical(path) == path, url.deletingLastPathComponent().path == root.path,
+          path != workspace, type.isRegularFile == true || type.isDirectory == true else {
+        throw Failure("The source must be a file or folder directly inside the private fixture root.")
+    }
+    return url
+}
+
+private struct DragWindow {
+    let id: CGWindowID
+    let pid: pid_t
+    let frame: CGRect
+
+    static func at(_ point: CGPoint) -> DragWindow? {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        for info in windows {
+            guard let layer = info[kCGWindowLayer as String] as? CGWindowLevel,
+                  layer >= CGWindowLevelForKey(.normalWindow), layer < CGWindowLevelForKey(.draggingWindow),
+                  (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.contains(point),
+                  let id = info[kCGWindowNumber as String] as? CGWindowID,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t else { continue }
+            return DragWindow(id: id, pid: pid, frame: frame)
+        }
+        return nil
+    }
+}
+
+private final class FixtureDragSource: NSView, NSDraggingSource {
+    let url: URL
+    let didStart = DispatchSemaphore(value: 0)
+    let didEnd = DispatchSemaphore(value: 0)
+    private var down: NSEvent?
+    private(set) var started = false
+    private(set) var operation: NSDragOperation?
+
+    init(url: URL, size: CGSize) {
+        self.url = url
+        super.init(frame: CGRect(origin: .zero, size: size))
+        let label = NSTextField(labelWithString: url.lastPathComponent)
+        label.alignment = .center
+        label.lineBreakMode = .byTruncatingMiddle
+        label.frame = bounds.insetBy(dx: 5, dy: 10)
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? { bounds.contains(point) ? self : nil }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { down = event }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let down, !started else { return }
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        item.setDraggingFrame(bounds.insetBy(dx: 8, dy: 5), contents: NSImage(named: NSImage.multipleDocumentsName))
+        beginDraggingSession(with: [item], event: down, source: self).animatesToStartingPositionsOnCancelOrFail = false
+    }
+
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        started = true
+        didStart.signal()
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : []
+    }
+
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        self.operation = operation
+        didEnd.signal()
+    }
+}
+
+private func hitTest(_ target: AXUIElement, at point: CGPoint) -> Bool {
+    let system = AXUIElementCreateSystemWide()
+    AXUIElementSetMessagingTimeout(system, 1.5)
+    var hit: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success else {
+        return false
+    }
+    var seen: Set<AXUIElement> = []
+    while let current = hit, seen.insert(current).inserted {
+        if CFEqual(current, target) { return true }
+        guard let parent = attribute(kAXParentAttribute, on: current), CFGetTypeID(parent) == AXUIElementGetTypeID() else {
+            return false
+        }
+        hit = unsafeBitCast(parent, to: AXUIElement.self)
+    }
+    return false
+}
+
+private func dropFixture(_ url: URL, in window: AXUIElement, target: AXUIElement, pid: pid_t) throws {
+    let sourcePID = getpid()
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+          ![CGMouseButton.left, .right, .center].contains(where: { CGEventSource.buttonState(.combinedSessionState, button: $0) }),
+          let savedPosition = CGEvent(source: nil)?.location,
+          let mainScreen = NSScreen.screens.first else {
+        throw Failure("A frontmost fixture window and idle pointer are required.")
+    }
+    let windowFrame = try frame(of: window)
+    let targetFrame = try frame(of: target).intersection(windowFrame)
+    let end = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+    guard !targetFrame.isEmpty, hitTest(target, at: end),
+          let destination = DragWindow.at(end), destination.pid == pid, destination.frame.integral == windowFrame.integral else {
+        throw Failure("The destination must be visible and unobstructed in the named workspace window.")
+    }
+    let desktopTop = mainScreen.frame.maxY
+    func flip(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: desktopTop - rect.maxY, width: rect.width, height: rect.height)
+    }
+    let panelSize = CGSize(width: 100, height: 40)
+    guard let screen = NSScreen.screens.first(where: { flip($0.visibleFrame).contains(end) }),
+          let panelFrame = [(96.0, 0.0), (-96, 0), (0, 68), (0, -68)].map({ dx, dy in
+              CGRect(x: end.x + dx - panelSize.width / 2, y: end.y + dy - panelSize.height / 2,
+                     width: panelSize.width, height: panelSize.height)
+          }).first(where: { windowFrame.insetBy(dx: 8, dy: 8).contains($0) && flip(screen.visibleFrame).contains($0) }) else {
+        throw Failure("There is no room for a fixture source beside the drop target.")
+    }
+    let source = FixtureDragSource(url: url, size: panelSize)
+    let panel = NSPanel(contentRect: flip(panelFrame), styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+    panel.title = "Pi Workspace Drag Fixture"
+    panel.isReleasedWhenClosed = false
+    panel.level = .normal
+    panel.contentView = source
+    let start = CGPoint(x: panelFrame.midX, y: panelFrame.midY)
+    let startDrag = CGPoint(x: start.x + 8, y: start.y)
+    func pump(_ seconds: TimeInterval) {
+        let deadline = Date(timeIntervalSinceNow: seconds)
+        while Date() < deadline {
+            guard let event = NSApp.nextEvent(matching: .any, until: deadline, inMode: .default, dequeue: true) else { break }
+            NSApp.sendEvent(event)
+        }
+    }
+    @Sendable func sendMouse(_ type: CGEventType, at point: CGPoint, to sourceOnly: Bool = false) throws {
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else {
+            throw Failure("Could not create a fixture mouse event.")
+        }
+        event.flags = []
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        if sourceOnly { event.postToPid(sourcePID) }
+        else { event.post(tap: .cghidEventTap) }
+    }
+    @Sendable func fixtureIsFrontmost() -> Bool {
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        return front == pid || front == sourcePID
+    }
+    defer { panel.close() }
+    panel.orderFrontRegardless()
+    pump(0.15)
+    let panelID = CGWindowID(panel.windowNumber)
+    @Sendable func check(_ point: CGPoint, windows: Set<CGWindowID>) throws {
+        guard fixtureIsFrontmost(), let hit = DragWindow.at(point), windows.contains(hit.id),
+              hit.id != destination.id || hit.frame == destination.frame else {
+            throw Failure("The fixture lost its unobstructed drag path.")
+        }
+    }
+    let steps = 12
+    let path = (1...steps).map { step in
+        let fraction = CGFloat(step) / CGFloat(steps)
+        return CGPoint(x: startDrag.x + fraction * (end.x - startDrag.x), y: startDrag.y + fraction * (end.y - startDrag.y))
+    }
+    try check(start, windows: [panelID])
+    try check(startDrag, windows: [panelID])
+    try check(end, windows: [destination.id])
+    for point in path { try check(point, windows: [panelID, destination.id]) }
+
+    let outcome = OSAllocatedUnfairLock(initialState: Optional<Result<Void, Error>>.none)
+    let started = source.didStart, ended = source.didEnd
+    // AppKit can enter a nested tracking loop when the source starts the drag.
+    DispatchQueue.global(qos: .userInitiated).async {
+        let result = Result {
+            var needsRelease = false
+            defer {
+                if needsRelease {
+                    try? postKey(53, to: sourcePID)
+                    let safe = fixtureIsFrontmost() && DragWindow.at(start)?.id == panelID
+                    try? sendMouse(.leftMouseUp, at: start, to: !safe)
+                    _ = ended.wait(timeout: .now() + 0.5)
+                }
+                CGWarpMouseCursorPosition(savedPosition)
+            }
+            try check(start, windows: [panelID])
+            try sendMouse(.leftMouseDown, at: start)
+            needsRelease = true
+            Thread.sleep(forTimeInterval: 0.1)
+            try check(startDrag, windows: [panelID])
+            try sendMouse(.leftMouseDragged, at: startDrag)
+            guard started.wait(timeout: .now() + 1) == .success else {
+                throw Failure("AppKit did not start a drag session in the fixture source window.")
+            }
+            for point in path {
+                try check(point, windows: [panelID, destination.id])
+                try sendMouse(.leftMouseDragged, at: point)
+                Thread.sleep(forTimeInterval: 0.035)
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+            guard hitTest(target, at: end) else { throw Failure("The drop point no longer hits the named AX target.") }
+            try check(end, windows: [destination.id])
+            try sendMouse(.leftMouseUp, at: end)
+            guard ended.wait(timeout: .now() + 2) == .success else {
+                throw Failure("The drag session did not end.")
+            }
+            needsRelease = false
+        }
+        outcome.withLock { $0 = result }
+    }
+    while outcome.withLock({ $0 == nil }) { pump(0.05) }
+    try outcome.withLock { $0! }.get()
+    guard source.operation?.contains(.copy) == true else {
+        throw Failure("AppKit reported no accepted copy at the drop target.")
+    }
+    print("Native file drop copied \(url.lastPathComponent)")
+}
+
 private func requireKeyboardAccess() throws {
     guard CGPreflightPostEventAccess() else {
         throw Failure("This process cannot post keyboard events in the current macOS session.")
@@ -486,6 +745,17 @@ private func run(_ arguments: [String]) throws {
     case .drag(let id, let fraction, let delta):
         try requireKeyboardAccess()
         try drag(in: frame(of: element(withID: id, in: app)), from: fraction, by: delta, to: pid)
+    case .dropFixture(let workspace, let windowID, let targetID, let path):
+        try requireKeyboardAccess()
+        let url = try dropFixtureURL(pid: pid, workspace: workspace, path: path)
+        let window = try element(withID: windowID, in: app)
+        guard attribute(kAXRoleAttribute, on: window) as? String == kAXWindowRole else {
+            throw Failure("drop-fixture requires a window identifier.")
+        }
+        let target = try element(withID: targetID, in: window)
+        NSApplication.shared.setActivationPolicy(.accessory)
+        NSApp.finishLaunching()
+        try dropFixture(url, in: window, target: target, pid: pid)
     case .press(let id):
         var target = try? element(withID: id, in: app)
         if target == nil {
