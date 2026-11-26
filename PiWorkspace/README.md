@@ -23,9 +23,17 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
+To start from an existing Git repository, choose **Add Project → Git URL**, enter its URL and choose a new destination folder. **Clone** opens the resulting checkout and its draft.
+
 During a turn, choose **Queue** or press ⌘Return to send a follow-up after Pi finishes. **Steer** sends an instruction into the current run. A queued row’s menu lets you edit, reorder, or remove it. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
 
+Use **Attach Files** to add PNG, JPEG, or UTF-8 text files to a draft. You can also paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local model that accepts images, enable image input in **Model Settings**.
+
+Choose **Fork from this response** on a completed reply to start a separate conversation with the messages through that reply. **Open source conversation** and **Open fork** take you between the two histories.
+
 Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
+
+Choose a hit under **In messages** to open the conversation at that message. The Find field keeps the search, and the arrows move to other matches in that conversation.
 
 If a project folder moves, use **Relink Folder** in its context menu to point the project at the new path and retain its conversations.
 
@@ -39,6 +47,8 @@ The macOS app keeps API keys in Keychain. The workspace index and Pi conversatio
 
 In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
 
+Open **Settings** from the sidebar or press ⌘, to search the available controls. For example, search for **Model ID** and press Return to edit the selected project's model, or search for **Open source licenses** to read the packaged notices.
+
 If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
 
 **Pi Workspace → Appearance Settings…** changes the color scheme and conversation width across projects. **Restore Defaults** returns to the system appearance and Comfortable width.
@@ -49,15 +59,23 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch. Before Pi starts the turn, **Cancel** returns the text to the draft. **Work locally** sends it from the project folder.
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
-5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
+5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Use **New Terminal** for another tab or split a tab horizontally or vertically. Press ⌘⇧[ or ⌘⇧] to move between panes. Hiding the drawer keeps its shells running. Confirm **Close Terminal** to end the selected shell.
 
 Open **Files** to search or browse the selected checkout. Small text files save after a short pause in typing. **Save** writes immediately. A read-only file keeps pending edits until write access returns. If another program replaces or edits the file, copy your pending text or choose **Discard Edits** to reload the disk version.
+
+If a worktree moves while an edit is pending, select its new path in the draft's workspace menu. The editor reconnects the draft to the same checkout. **Folder Actions → Unsaved Files** also lets you copy or discard pending text from an old location.
+
+Select an image to see its dimensions, change its zoom, or open the expanded preview. Select a PDF to page through it, fit its width, or search its text. **Retry** reloads a file after you replace a damaged copy.
+
+For text files over 1 MiB, enter a line number in **Go to Line** or use **Next Page** and **Previous Page**. Each page holds up to 32 lines. Lines longer than 16 KiB show their first 16 KiB, up to a complete UTF-8 character.
 
 Open **Browser** in the thread header. Enter a URL, a host such as `localhost:5173`, or search terms, then press Return. **Pi Workspace → Browser Settings…** selects the search engine. A custom HTTP or HTTPS search URL uses `%s` for the query. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
 
 Choose **Open Mini Player** to keep the page over the conversation. Drag the arrow handle to move it or drag an edge to resize it. **Open in Browser Panel** returns the page to its tab. **Open in Floating Window** moves it to a separate macOS window.
 
-Open **Pull Requests** in the header to inspect up to 50 pull requests for the selected checkout. Select a state and a PR to see its description, branches, and checks. Use **Refresh pull requests** to reload the list and selected PR. Open the PR or a check with its link.
+Open **Pull Requests** in the header and choose **Pull Requests** or **Issues** for the selected checkout. Search by text or a filter such as `label:bug`, choose a state, and use **Load more** for the next page. Choose a PR to read its description, branches, and checks, or an Issue to read its author, labels, and body.
+
+In **Linked items**, choose **Link pull request** and enter a PR number or URL for the checkout's GitHub repository. The link stays with the selected thread across relaunch. Its menu can copy the URL or number, open GitHub, or unlink the PR from that thread.
 
 Pull Requests uses the GitHub CLI (`gh`) on the app's PATH or in a standard Homebrew or MacPorts location. Sign in to GitHub CLI from Terminal before opening the list. The app uses the checkout's GitHub.com `origin` fetch remote or its sole GitHub.com fetch repository.
 
@@ -79,6 +97,8 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model --worktree
 ```
 
 The verifier writes its report under `dist/verification-*/logs`. It uses an isolated workspace and a disposable Keychain item. The worktree run also checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
+
+To test which network connections the packaged Pi helper attempts during startup, idle time, an explicit local turn, and shutdown, run `node scripts/verify-default-telemetry.mjs`. It checks the Node network and child-process APIs against a loopback receiver and applies a macOS process sandbox. Native app and WebKit traffic require separate observation.
 
 ### Verify GitHub reads
 

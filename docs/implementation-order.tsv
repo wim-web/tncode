@@ -30,7 +30,7 @@ stage	id	title	audit_status	result	evidence_ref
 01	NAV-131	新規スレッドを始める	部分	未評価	-
 01	NAV-132	ローカル新規スレッドを始める	部分	未評価	-
 01	NAV-133	プロジェクトなしで新規スレッドを始める	未対応	未評価	-
-01	NAV-159	選んだプロジェクトに新規スレッドを作る	部分	未評価	-
+01	NAV-159	選んだプロジェクトに新規スレッドを作る	部分	合格	e583877, e52add2 PiWorkspace/scripts/verify-command-palette.mjs / New thread in... から別プロジェクトを選んで Return。新規下書きは1件で、既存の下書きと本文を保持。
 01	NAV-169	既存ディレクトリをプロジェクトとして追加	部分	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 新規 Git プロジェクトから ../Sample Project を指定し、元の ID を開く。子フォルダー指定は ProjectSourcesTests
 01	NAV-186	フォルダーパスをキーで補完	未対応	合格	b9cea7a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / パス入力欄で Tab が空白を含む共通接頭辞を補完。矢印で選んだ階層と唯一の子へ Tab で移り、Return で既存プロジェクトに復帰
 01	NAV-195	新規作成から既存プロジェクトを開く	部分	未評価	-
@@ -103,7 +103,7 @@ stage	id	title	audit_status	result	evidence_ref
 02	UI-230	チャット・スレッド・ChatCanvas（操作候補）	構成差	未評価	-
 02	UI-305	チャット・スレッド・StopGenerationButton	部分	未評価	-
 02	UI-306	チャット・スレッド・CollapsedComposerStopAction	部分	未評価	-
-02	UI-307	チャット・スレッド・ComposerPrimaryActions	部分	未評価	-
+02	UI-307	チャット・スレッド・ComposerPrimaryActions	部分	未検証	原本 ca81b7b ComposerPrimaryActions.tsx:400–402 / Swift 76041dc WorkspaceView / PiWorkspace/scripts/verify-message-queue.mjs / 応答中に Queue と Steer を押し、Pi 履歴の先頭に直接 Steer、次に昇格行、続いて待機3件を ID・本文順で照合。修飾クリックによる既定動作の反転、圧縮切替は未検証
 02	UI-356	チャット・スレッド・MessagesTimeline（操作候補）	部分	未評価	-
 02	UI-357	チャット・スレッド・ConversationTimeline	部分	未評価	-
 02	UI-358	チャット・スレッド・TimelineHistoryControl	未対応	未評価	-
@@ -231,17 +231,17 @@ stage	id	title	audit_status	result	evidence_ref
 04	CFG-112	Send shortcut	部分	未評価	-
 04	CFG-113	Follow-up behavior	未対応	未評価	-
 04	CFG-114	Open subagents and side chats in	未対応	未評価	-
-04	CHAT-090	実行中に次のメッセージをキュー	未対応	未評価	-
-04	CHAT-091	進行中のターンを Steer	未対応	未評価	-
-04	CHAT-092	キュー済み入力を現在のターンへ送る	未対応	未評価	-
-04	CHAT-093	キュー済み入力から新ターンをすぐ始める	未対応	未評価	-
-04	CHAT-094	compaction を待たずにキュー済み入力を送る	未対応	未評価	-
-04	CHAT-095	キュー内コマンドを先頭へ動かす	未対応	未評価	-
-04	CHAT-096	キュー済み入力を編集して更新	未対応	未評価	-
-04	CHAT-097	キュー入力の編集を取り消す	未対応	未評価	-
-04	CHAT-098	キュー済み入力を削除	未対応	未評価	-
-04	CHAT-099	キューの表示件数を切り替え	未対応	未評価	-
-04	CHAT-102	保留されたキューを再開	未対応	未評価	-
+04	CHAT-090	実行中に次のメッセージをキュー	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 実行中の Queue と ⌘Return で入力を追加し、実行完了後に一度ずつ送信。
+04	CHAT-091	進行中のターンを Steer	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 実行中に Steer した本文と受付 ID が同じ Pi セッションに一度だけ記録された。
+04	CHAT-092	キュー済み入力を現在のターンへ送る	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 選択行を実行中のターンに送り、待機列から外れた時点で同じターンが継続。
+04	CHAT-093	キュー済み入力から新ターンをすぐ始める	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / Stop と再起動の後、指定した保留行から新規ターンを開始。ループバックへの新しい要求を1回観測。
+04	CHAT-094	compaction を待たずにキュー済み入力を送る	未対応	未検証	edeb0d6 PiWorkspace/scripts/verify-queued-sidecar.mjs / Pi 1.6.1 の自動圧縮の中断と指定文の送信を確認。圧縮中の配布アプリでの行操作は未検証。
+04	CHAT-095	キュー内コマンドを先頭へ動かす	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 任意の行を先頭へ移すと保存順が変わり、配信順と一致した。
+04	CHAT-096	キュー済み入力を編集して更新	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 編集中の行を更新すると同じ ID に新しい本文を保存し、独立した下書きが入力欄に戻った。
+04	CHAT-097	キュー入力の編集を取り消す	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 行の編集を取り消すと従来のキュー本文と別の未送信下書きが残った。
+04	CHAT-098	キュー済み入力を削除	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 指定した行だけを削除。残る行の ID と順序を照合し、削除した文は送信されなかった。
+04	CHAT-099	キューの表示件数を切り替え	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / 5件のキューを2行に折り畳み、再展開。表示件数と保存項目を照合。
+04	CHAT-102	保留されたキューを再開	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-message-queue.mjs / Stop 後は再起動でも待機。Resume Queue からの残り2件を含め受付 ID 全8件が各1回だけ Pi 履歴に残った。
 04	CHAT-103	送信を予約中に取り消す	未対応	未評価	-
 04	CHAT-104	履歴を要約してから送信	未対応	未評価	-
 04	CHAT-105	次の送信で履歴を保持	未対応	未評価	-
@@ -252,21 +252,21 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-114	Auto-accept edits へ変更	構成差	未評価	-
 04	CHAT-115	Auto へ変更	構成差	未評価	-
 04	CHAT-116	Full access へ変更	構成差	未評価	-
-04	CHAT-117	ファイル選択で添付	未対応	未評価	-
-04	CHAT-118	ドラッグ・貼り付けで画像やファイルを添付	未対応	未評価	-
+04	CHAT-117	ファイル選択で添付	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-attachment-ui.mjs / 配布版の OS パネルで同名 PNG 2個と UTF-8 テキストを選択。選び残した画像の全バイトと本文全文をループバックで照合し、送信済み名前2件も確認。
+04	CHAT-118	ドラッグ・貼り付けで画像やファイルを添付	未対応	未検証	083e303 PiWorkspace/Tests/PiWorkspaceTests/ComposerAttachmentTests.swift / 転送表現と対象行・編集中のキューの所有権は検証。Finder からの実ドロップと macOS の貼り付け操作が残る。
 04	CHAT-119	巨大な貼り付けを添付に変換	未対応	未評価	-
 04	CHAT-120	ローカルフォルダを文脈として追加	未対応	未評価	-
 04	CHAT-121	アップロード失敗を再試行	未対応	未評価	-
-04	CHAT-122	読み込めなかった添付を再選択	未対応	未評価	-
-04	CHAT-123	添付を取り除く	未対応	未評価	-
-04	CHAT-124	送信前の画像を拡大	未対応	未評価	-
+04	CHAT-122	読み込めなかった添付を再選択	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-attachment-ui.mjs / 欠損した添付を含む下書きを再起動した。Send が無効になり、Attach Again で同じ ID に赤画像を復元。別の同名画像とメモの ID を保持。
+04	CHAT-123	添付を取り除く	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-attachment-ui.mjs / 同名の赤・青のうち赤だけを削除。再起動後も青とテキストの ID だけが残り、送信先に赤のバイトは届かなかった。
+04	CHAT-124	送信前の画像を拡大	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-attachment-ui.mjs, verify-attachments.mjs / 各画像のボタンで対応する ID の拡大画像を開き Close で復帰。画像デコードで赤と青を照合。
 04	CHAT-125	添付音声を試聴	未対応	未評価	-
 04	CHAT-127	他スレッドをドラッグして文脈に挿入	未対応	未評価	-
 04	CHAT-129	下書きを一時保管	未対応	未評価	-
 04	CHAT-130	一時保管した下書きを復元	未対応	未評価	-
 04	CHAT-131	一時保管項目を削除	未対応	未評価	-
 04	CHAT-134	スキル候補を挿入	未対応	未評価	-
-04	CHAT-141	応答から会話をフォーク	未対応	未評価	-
+04	CHAT-141	応答から会話をフォーク	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-fork-ui.mjs, verify-conversation-fork.mjs / 3往復ある親の2番目の応答から分岐。子の履歴はそこまでの元の ID と一致。子だけで1往復増え、親の履歴・下書きは保持。 9570f0c / Pi が文脈に含められる完了応答に新規分岐を限定し、旧中断フォークの読込・継続は維持。
 04	CHAT-142	入力を編集するために巻き戻す	未対応	未評価	-
 04	CHAT-143	独立したサイドチャットを開く	未対応	未評価	-
 04	CHAT-144	スラッシュコマンドでサイドチャットに質問	未対応	未評価	-
@@ -317,7 +317,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	CHAT-273	不足リポジトリのリンクをプロジェクトなしで使う	未対応	未評価	-
 04	CHAT-282	指定された構造化出力を提出	未対応	未評価	-
 04	CHAT-290	質問回答にファイルを添付	未対応	未評価	-
-04	CHAT-293	フォーク履歴の元・作成したスレッドを開く	未対応	未評価	-
+04	CHAT-293	フォーク履歴の元・作成したスレッドを開く	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-fork-ui.mjs / Open source conversation と Open fork の両リンクから往復し、親の下書きと子の続き、双方の履歴ファイルを照合。
 04	CHAT-296	書き込み可能なコンポーザーで入力を Undo	未判定	未評価	-
 04	CHAT-297	コンポーザーの Undo を Redo	未判定	未評価	-
 04	DEV-070	チャットを巻き戻して作業ファイルを保持する	未対応	未評価	-
@@ -343,7 +343,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	NAV-224	共有プロンプトのアプリリンクを開く	未対応	未評価	-
 04	RPC-021	キューの編集と順序変更	未対応	未評価	-
 04	RPC-024	質問と承認への回答	未対応	未評価	-
-04	RPC-025	スレッドのフォークと文脈移管	未対応	未評価	-
+04	RPC-025	スレッドのフォークと文脈移管	未対応	要修正	90f35cc PiWorkspace/scripts/verify-conversation-fork.mjs / Pi セッション間のフォーク、履歴の独立と再開を確認。別スレッドへの文脈移管が残る。
 04	RPC-030	エージェントからのシークレット要求	未対応	未評価	-
 04	RPC-053	実行出力と会話内のツール結果の表示	部分	未評価	-
 04	RPC-054	添付ファイルの追加・配信・削除	未対応	未評価	-
@@ -408,13 +408,13 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-247	チャット・スレッド・CompactComposerControlsMenu	部分	未評価	-
 04	UI-248	チャット・スレッド・ComposerVideoThumbnail（操作候補）	未対応	未評価	-
 04	UI-249	チャット・スレッド・SnapShotAttachmentFrame（操作候補）	未対応	未評価	-
-04	UI-250	チャット・スレッド・ComposerAttachmentMediaRow	未対応	未評価	-
+04	UI-250	チャット・スレッド・ComposerAttachmentMediaRow	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:235,341 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / 同名 PNG の別 ID をそれぞれ開き、該当 ID の拡大表示を確認。赤だけ削除し、再起動後の要求には青画像のバイト列だけが残る。動画再生・アップロード再試行は未検証
 04	UI-251	チャット・スレッド・ComposerAttachmentFileList	未対応	未評価	-
 04	UI-252	チャット・スレッド・ComposerFilePreviewDialog	未対応	未評価	-
 04	UI-253	チャット・スレッド・ComposerRestingImagePreviews	未対応	未評価	-
 04	UI-254	チャット・スレッド・ComposerQueuedAttachmentRow	未対応	未評価	-
-04	UI-255	チャット・スレッド・ComposerAttachInput	未対応	未評価	-
-04	UI-256	チャット・スレッド・ComposerAttachButton	未対応	未評価	-
+04	UI-255	チャット・スレッド・ComposerAttachInput	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:751 / Swift 76041dc ComposerAttachmentsView.fileImporter / PiWorkspace/scripts/verify-attachment-ui.mjs / 同じパスを別内容で2回選び直し、別 ID と赤・青の各バイト列を保存。1回のパネルで複数ファイルを同時選択する経路と挿入失敗時のフォーカスは未検証
+04	UI-256	チャット・スレッド・ComposerAttachButton	未対応	未検証	原本 ca81b7b ComposerAttachmentStrip.tsx:776 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / Attach Files から OS 選択パネルを開く。取消後の添付0件と、再度開いて確定した PNG の ID・内容を照合。対象は選択パネルを開くボタン。原本の pointer down 時に入力フォーカスを保つ動作は未検証
 04	UI-257	チャット・スレッド・Surface（操作候補）	構成差	未評価	-
 04	UI-258	チャット・スレッド・Attachment（操作候補）	構成差	未評価	-
 04	UI-259	チャット・スレッド・Dock（操作候補）	構成差	未評価	-
@@ -460,7 +460,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-315	チャット・スレッド・Main（操作候補）	構成差	未評価	-
 04	UI-316	チャット・スレッド・ContextStrip（操作候補）	構成差	未評価	-
 04	UI-321	チャット・スレッド・ExpandedVideo	未対応	未評価	-
-04	UI-322	チャット・スレッド・ExpandedImageDialog	未対応	未評価	-
+04	UI-322	チャット・スレッド・ExpandedImageDialog	未対応	要修正	原本 ca81b7b ExpandedImageDialog.tsx:200,212,293 / Swift 76041dc ComposerAttachmentsView / PiWorkspace/scripts/verify-attachment-ui.mjs / 同名 PNG 2個を別々に開き、各 ID の拡大画像と Close 後の閉じた状態を照合。表示中の前後移動・動画プレビューは未実装
 04	UI-323	チャット・スレッド・ExpandedImageDialogHost	未対応	未評価	-
 04	UI-338	チャット・スレッド・LinkedThread	未対応	未評価	-
 04	UI-339	チャット・スレッド・MarkdownCodeBlockFrame（操作候補）	未対応	未評価	-
@@ -481,7 +481,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-371	チャット・スレッド・OpenInPicker	部分	未評価	-
 04	UI-376	チャット・スレッド・ProposedPlanCard	未対応	未評価	-
 04	UI-377	チャット・スレッド・SavePlanToWorkspaceForm	未対応	未評価	-
-04	UI-383	チャット・スレッド・QueuedRunsControl	未対応	未評価	-
+04	UI-383	チャット・スレッド・QueuedRunsControl	未対応	未検証	原本 ca81b7b QueuedRunsControl.tsx:314,367,387,418,445 / Swift 76041dc QueuedMessagesView / PiWorkspace/scripts/verify-message-queue.mjs / 5件の表示が2行から5行へ展開。編集取消で元の2本文、更新で同一 ID、削除で4件。Send now を実行中と停止後に押し、再開を含む計8配達の順・ID が一致。圧縮中の Send now と保存中の無効化は未検証
 04	UI-384	チャット・スレッド・QueuedMessage	未対応	未評価	-
 04	UI-385	チャット・スレッド・ReadOnlyComposerStatus（操作候補）	部分	未評価	-
 04	UI-386	チャット・スレッド・ReadOnlyThreadTimeline	部分	未評価	-
@@ -505,7 +505,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-435	チャット・スレッド・ThreadTimeline（操作候補）	部分	未評価	-
 04	UI-436	チャット・スレッド・AssistantTimelineRow（操作候補）	部分	未評価	-
 04	UI-437	チャット・スレッド・SentMessageTimelineRow（操作候補）	部分	未評価	-
-04	UI-438	チャット・スレッド・AssistantForkButton	未対応	未評価	-
+04	UI-438	チャット・スレッド・AssistantForkButton	未対応	合格	原本 ca81b7b TimelineAssistantRows.tsx:157 / Swift 76041dc WorkspaceView / PiWorkspace/scripts/verify-fork-ui.mjs / 第2応答の分岐ボタンで子を選択し、forkOrigin の親 UUID・応答 ID と子 JSONL の全メッセージ ID が切断点まで一致。作成時のモデル要求増分0。対象は分岐可能な応答の起動操作
 04	UI-439	チャット・スレッド・AssistantMessageMeta	未対応	未評価	-
 04	UI-440	チャット・スレッド・AssistantReplyButton	未対応	未評価	-
 04	UI-441	チャット・スレッド・AssistantCopyButton	構成差	未評価	-
@@ -514,7 +514,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-447	チャット・スレッド・ScrollToEndButton	未対応	未評価	-
 04	UI-448	チャット・スレッド・TimelinePendingApprovalRow	未対応	未評価	-
 04	UI-449	チャット・スレッド・TimelineRowTimestamp（操作候補）	構成差	未評価	-
-04	UI-450	チャット・スレッド・TimelineSystemDivider	未対応	未評価	-
+04	UI-450	チャット・スレッド・TimelineSystemDivider	未対応	未検証	原本 ca81b7b TimelineSystemDivider.tsx:60 / Swift 76041dc WorkspaceView.forkHistoryLink / PiWorkspace/scripts/verify-fork-ui.mjs / 区切りの actionLabel と onAction に対応する履歴リンクを両向きに実行。親 UUID と未送信本文、子 UUID と続き本文が各到着先に一致。対象は操作付き区切りのリンク。操作のない区切り、詳細の折り返しと全体の配置は未検証
 04	UI-451	チャット・スレッド・ToolActivityImageIcon（操作候補）	構成差	未評価	-
 04	UI-452	チャット・スレッド・UserFileCard	未対応	未評価	-
 04	UI-453	チャット・スレッド・UserVideoAttachment	未対応	未評価	-
@@ -549,7 +549,7 @@ stage	id	title	audit_status	result	evidence_ref
 04	UI-488	チャット・スレッド・FetchedToolOutput（操作候補）	未対応	未評価	-
 04	UI-489	チャット・スレッド・ToolCallBody（操作候補）	未対応	未評価	-
 04	UI-490	チャット・スレッド・V2ItemInspector	未対応	未評価	-
-04	UI-491	チャット・スレッド・V2LifecycleRow	未対応	未評価	-
+04	UI-491	チャット・スレッド・V2LifecycleRow	未対応	要修正	原本 ca81b7b V2LifecycleRow.tsx:106–117 / Swift 76041dc WorkspaceView.forkHistoryLink / PiWorkspace/scripts/verify-fork-ui.mjs / 元会話を開く→分岐を開く→元会話を開く操作で親子各 UUID と各履歴を照合。handoff・サブエージェントの行は未実装
 04	UI-492	チャット・スレッド・EnvironmentSubagentAvatar（操作候補）	未対応	未評価	-
 04	UI-493	チャット・スレッド・SubagentNotificationLink	未対応	未評価	-
 04	UI-494	チャット・スレッド・SubagentTimelineLink	未対応	未評価	-
@@ -720,7 +720,7 @@ stage	id	title	audit_status	result	evidence_ref
 05	NAV-086	メインサイドバーを開閉	未対応	未評価	-
 05	NAV-087	ルート履歴を戻る	未対応	未評価	-
 05	NAV-088	ルート履歴を進む	未対応	未評価	-
-05	NAV-111	コマンドパレットを開閉	未対応	未評価	-
+05	NAV-111	コマンドパレットを開閉	未対応	合格	e583877, e52add2 PiWorkspace/scripts/verify-command-palette.mjs / 作業画面で ⌘K を送ると検索欄がフォーカスされ、再入力で閉じた。端末の実行時は端末のフォーカスを維持。
 05	NAV-134	スレッド内を検索する	未対応	未評価	-
 05	NAV-139	前のスレッドへ移動	未対応	未評価	-
 05	NAV-140	次のスレッドへ移動	未対応	未評価	-
@@ -736,11 +736,11 @@ stage	id	title	audit_status	result	evidence_ref
 05	NAV-176	プロジェクト検索からスレッドを開く	部分	未評価	-
 05	NAV-177	パレットから最近または一致したスレッドへ移動	部分	未評価	-
 05	NAV-178	リンク用のパレットから対象スレッドを選ぶ	未対応	未評価	-
-05	NAV-179	メッセージ検索結果を開く	未対応	未評価	-
+05	NAV-179	メッセージ検索結果を開く	未対応	合格	c3bd78f, 76041dc PiWorkspace/scripts/verify-command-palette.mjs / 別プロジェクトの下書きから本文だけに一致する語を検索。In messages の Pi 発言 ID を選ぶと元スレッドの Find に同じ語と 1 of 1 を表示し、移動前の下書きは保持。
 05	NAV-181	検索対象を操作候補に絞る	未対応	未評価	-
 05	NAV-182	パレットのサブメニューを開いて戻る	未対応	未評価	-
-05	NAV-184	パレット候補をキーで選ぶ	未対応	未評価	-
-05	NAV-185	パレットを閉じる	未対応	未評価	-
+05	NAV-184	パレット候補をキーで選ぶ	未対応	未検証	e583877, e52add2 PiWorkspace/scripts/verify-command-palette.mjs, CommandPaletteTests / 配布版で上下キーと Return から選択を1回実行。marked text ガードはモデル試験済み。実 IME 候補を確定する操作が残る。
+05	NAV-185	パレットを閉じる	未対応	合格	e583877, e52add2 PiWorkspace/scripts/verify-command-palette.mjs / Escape で検索を閉じると元のプロジェクトと未送信本文が復元。
 05	NAV-197	完了スレッドを再開	部分	未評価	-
 05	NAV-198	スレッドのピンを解除	部分	未評価	-
 05	NAV-199	設定済みの時刻までスレッドを休止	未対応	未評価	-
@@ -953,39 +953,39 @@ stage	id	title	audit_status	result	evidence_ref
 06	DEV-067	テストファイルを差分から隠す	未対応	未評価	-
 06	DEV-068	差分ファイルツリーを開閉して移動する	部分	未評価	-
 06	DEV-069	差分の行コメントをエージェントに渡す	未対応	未評価	-
-06	DEV-129	ファイル一覧を右パネルに開く	未対応	未評価	-
-06	DEV-130	ファイルツリーを検索する	未対応	未評価	-
-06	DEV-131	ファイルツリーを更新する	未対応	未評価	-
-06	DEV-132	ファイルのフォルダーを一括開閉する	未対応	未評価	-
-06	DEV-133	パンくずからファイルまたはフォルダーへ移る	未対応	未評価	-
-06	DEV-134	macOSの既定アプリでファイルを開く	部分	未評価	-
-06	DEV-135	Finderにファイルを表示する	部分	未評価	-
+06	DEV-129	ファイル一覧を右パネルに開く	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / Files を開いて選択した checkout のツリーと実ファイルを照合。
+06	DEV-130	ファイルツリーを検索する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 子ディレクトリの相対パスを検索し、該当ファイルと無関係な行の非表示を確認。
+06	DEV-131	ファイルツリーを更新する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 起動後にディスクで追加したファイルが Refresh 後に現れた。
+06	DEV-132	ファイルのフォルダーを一括開閉する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / Expand all で入れ子のファイルが現れ、Collapse all で隠れた。
+06	DEV-133	パンくずからファイルまたはフォルダーへ移る	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / パンくずの親フォルダーを選ぶと検索が解除され、その直下のファイルが表示された。
+06	DEV-134	macOSの既定アプリでファイルを開く	部分	未検証	a4899a0 PiWorkspace/Sources/PiWorkspace/WorkspaceFilesView.swift / 操作を実装。macOS の既定アプリ起動は配布アプリで未検証。
+06	DEV-135	Finderにファイルを表示する	部分	未検証	a4899a0 PiWorkspace/Sources/PiWorkspace/WorkspaceFilesView.swift / 操作を実装。Finder での実表示は配布アプリで未検証。
 06	DEV-136	選んだ外部エディターでファイルを開く	未対応	未評価	-
 06	DEV-137	ファイルメンションをクリップボードにコピーする	未対応	未評価	-
 06	DEV-138	ファイルメンションをcomposerに追加する	未対応	未評価	-
-06	DEV-139	小さいテキストファイルを編集して保存する	未対応	未評価	-
-06	DEV-140	書き込み権限のないファイルを表示する	未対応	未評価	-
-06	DEV-141	テキスト内容をコピーする	部分	未評価	-
-06	DEV-142	ファイル内容の横幅折り返しを切り替える	未対応	未評価	-
+06	DEV-139	小さいテキストファイルを編集して保存する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 入力後の自動保存で対象のバイトだけ更新。元の checkout と Git index は維持。外部置換時は保留した編集・ディスク双方を保護。
+06	DEV-140	書き込み権限のないファイルを表示する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 書込禁止で編集中の本文を保ち、パネルを閉じて戻しても保持。権限復帰後に自動保存。 9874e58, 89f8cf8 / worktree を移した後も別 checkout から保留本文をコピーでき、同じ実ファイルの権限を戻すと保存。置換時は明示破棄まで原本を保護。
+06	DEV-141	テキスト内容をコピーする	部分	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / 編集後の全文をコピーし、隔離した macOS ペーストボードの内容と改行を照合。
+06	DEV-142	ファイル内容の横幅折り返しを切り替える	未対応	未検証	a4899a0 PiWorkspace/Sources/PiWorkspace/WorkspaceFilesView.swift / 操作を実装。長い行を用いた折り返し切替の表示寸法は配布アプリで未検証。
 06	DEV-143	Markdownをレンダリング表示へ切り替える	未対応	未評価	-
 06	DEV-144	Mermaidの図とソースを切り替える	未対応	未評価	-
 06	DEV-145	CSVなどを表として表示する	未対応	未評価	-
 06	DEV-146	HTMLをファイルパネル内で表示する	未対応	未評価	-
-06	DEV-148	ファイルプレビューからエクスプローラーを開閉する	未対応	未評価	-
-06	DEV-149	PDFをプレビューする	未対応	未評価	-
-06	DEV-150	画像ファイルをプレビューする	未対応	未評価	-
+06	DEV-148	ファイルプレビューからエクスプローラーを開閉する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / プレビューから Explorer を閉じて開き、検索欄とツリーの再表示を確認。
+06	DEV-149	PDFをプレビューする	未対応	合格	608c930, 00a46f5 PiWorkspace/scripts/verify-media-files.mjs, WorkspaceFilesTests / 異なる本文の2ページを持つ PDF で前後移動、倍率・幅合わせ、2ページ目の文字列検索を配布版で確認。壊れたファイルを置換して Retry した後、保存ダイアログの取消で元の PDF 全バイトが一致。
+06	DEV-150	画像ファイルをプレビューする	未対応	合格	608c930, 00a46f5 PiWorkspace/scripts/verify-media-files.mjs, WorkspaceFilesTests / 配布版で 2×2 PNG の 100%・125% と拡大・閉じるを確認。別 checkout の同名画像から別の画素色を読み出し、置換・再試行をモデル試験で確認。
 06	DEV-151	対応Office文書やnotebookを表示する	未対応	未評価	-
 06	DEV-152	フォントをプレビューする	未対応	未評価	-
-06	DEV-153	大きなテキストをプレビューする	未対応	未評価	-
-06	DEV-154	バイナリファイルをプレビューする	未対応	未評価	-
+06	DEV-153	大きなテキストをプレビューする	未対応	合格	f41e8fa, 89f8cf8 PiWorkspace/scripts/verify-workspace-files.mjs, WorkspaceFilesTests / 先頭 1 MiB より先の6000行目へ Return と Go で到達し、選択範囲の全文を AX で照合。次・前ページで行範囲を復元し、再度開いて同じ行を選択。32行単位で表示し、1行は16 KiBまで。
+06	DEV-154	バイナリファイルをプレビューする	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / バイナリ表示の先頭 00 41 FF 10 が fixture の実バイトと一致。
 06	DEV-155	プレビュー中のファイルを保存またはダウンロードする	未対応	未評価	-
 06	DEV-156	チャット下部の端末を表示・非表示にする	同等候補	合格	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 端末を閉じずに非表示・再表示し、同一シェル PID と既存の出力を確認。Close 後はシェルが終了
 06	DEV-157	端末を右パネルに新規作成する	未対応	未評価	-
-06	DEV-158	新しい端末タブを作る	未対応	未評価	-
-06	DEV-159	端末を水平方向に分割する	未対応	未評価	-
-06	DEV-160	端末を垂直方向に分割する	未対応	未評価	-
-06	DEV-161	前後の端末にフォーカスを移す	未対応	未評価	-
-06	DEV-162	端末を閉じる	部分	未評価	-
+06	DEV-158	新しい端末タブを作る	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs / 新しいタブで別の PTY とシェル PID を確認し、元のタブへ戻ると同じ PID の出力を保持。
+06	DEV-159	端末を水平方向に分割する	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs, ThreadTerminalTests / 2個の別シェルを左右に表示し、AX の矩形と PID を照合。グループの4ペイン上限はモデルでも検証。
+06	DEV-160	端末を垂直方向に分割する	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs, ThreadTerminalTests / 垂直分割で同一グループの3シェルが上中下に並び、矩形と各 PID を照合。
+06	DEV-161	前後の端末にフォーカスを移す	未対応	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs / ⌘⇧[ と ⌘⇧] で選択した PID が切り替わり、3文字の入力は対象 PTY だけに現れた。
+06	DEV-162	端末を閉じる	部分	合格	8f5ba5d, 76041dc PiWorkspace/scripts/verify-terminal-panes.mjs / Close の取消で4個の PID は生存。順次確定して各回で指定した PID だけが消え、最後に drawer が閉じた。
 06	DEV-163	端末drawerの高さを変更する	未対応	未評価	-
 06	DEV-164	端末の選択内容をチャットに追加する	未対応	未評価	-
 06	DEV-165	端末テキストをコピーする	部分	未評価	-
@@ -1006,7 +1006,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	DEV-211	選択中以外の右パネルタブを閉じる	未対応	未評価	-
 06	DEV-212	右側の右パネルタブを閉じる	未対応	未評価	-
 06	DEV-213	右パネルタブをすべて閉じる	未対応	未評価	-
-06	DEV-216	右パネルのファイルタブからパスをコピーする	未対応	未評価	-
+06	DEV-216	右パネルのファイルタブからパスをコピーする	未対応	未検証	f36b7f1 PiWorkspace/scripts/verify-workspace-files.mjs / Files のメニューからコピーした相対パスが一致。原本のもう一つのファイルメニューは未検証。
 06	DEV-267	右パネルのタブを並べ替える	未対応	未評価	-
 06	DEV-268	右パネルを開閉する	部分	未評価	-
 06	DEV-269	右パネルを最大化して戻す	未対応	未評価	-
@@ -1050,7 +1050,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	NAV-183	ファイルや内容検索から親パレットへ戻る	未対応	未評価	-
 06	RPC-026	チェックポイント差分とロールバック	未対応	未評価	-
 06	RPC-039	プロジェクトファイルの検索・編集	未対応	未評価	-
-06	RPC-052	ターミナルを開く・操作する	部分	未評価	-
+06	RPC-052	ターミナルを開く・操作する	部分	合格	85d2106, 89f8cf8 PiWorkspace/scripts/verify-terminal-panes.mjs / 配布版のプロジェクトと linked worktree のシェルへ pwd をタイプして実体パスを照合。両方で foreground の cat の PID を確認し、Ctrl+C で終了して次の tty が端末デバイスを返した。Close 確定でシェル終了。
 06	RT-TERMINAL-INPUT	端末への入力	部分	未評価	-
 06	SRC-S07	狭い画面でサイドバー、右タブ領域、入力を使用する	構成差	未評価	-
 06	SRC-S09	狭い viewport で右パネルをシートとして表示する	未対応	未評価	-
@@ -1091,10 +1091,10 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-203	ターミナル・TerminalViewport（操作候補）	構成差	未評価	-
 06	UI-204	ターミナル・TerminalSessionViewport（操作候補）	構成差	未評価	-
 06	UI-205	ターミナル・TerminalSessionViewport › showTerminalContextMenu	未対応	未評価	-
-06	UI-206	ターミナル・TerminalActionButton	構成差	未評価	-
-06	UI-207	ターミナル・TerminalSplitPanes	未対応	未評価	-
-06	UI-208	ターミナル・TerminalSidebarGroup	未対応	未評価	-
-06	UI-209	ターミナル・ThreadTerminalDrawer	部分	未評価	-
+06	UI-206	ターミナル・TerminalActionButton	構成差	合格	原本 ca81b7b ThreadTerminalDrawer.tsx:1295,1886,1899,1908 / Swift 76041dc ThreadTerminalDrawer.toolbarButton / PiWorkspace/scripts/verify-terminal-panes.mjs / New と横・縦の各分割ボタンで別 PID にフォーカスし、Close の確定で選択 PID だけが終了。対象は有効なツールバーボタンから各操作への引き渡し
+06	UI-207	ターミナル・TerminalSplitPanes	未対応	未検証	原本 ca81b7b ThreadTerminalDrawer.tsx:1350–1390 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / 横2面の同じ Y と左右の境界、縦3面の先頭2面の X と上中下の Y を AX で比較。前後キーで選んだ PID だけに fff を入力。非選択面のポインター押下とシェルからの自発終了は未検証
+06	UI-208	ターミナル・TerminalSidebarGroup	未対応	未検証	原本 ca81b7b ThreadTerminalDrawer.tsx:1449,1481,1492 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / タブ1から2へ戻ると各グループ先頭の元 PID に再フォーカス。グループ内の各端末行を直接選択する操作と行単位の閉じるボタンは未検証
+06	UI-209	ターミナル・ThreadTerminalDrawer	部分	要修正	原本 ca81b7b ThreadTerminalDrawer.tsx:1706–1725,1823 / Swift 76041dc ThreadTerminalDrawer / PiWorkspace/scripts/verify-terminal-panes.mjs / 新規・横分割・縦分割で異なる4 PID。Close 取消は全 PID が生存し、確定ごとに指定 PID だけが終了。drawer の高さは固定で、原本のドラッグ調整は未実装
 06	UI-244	ターミナル・ChatTerminalDrawers（操作候補）	部分	未評価	-
 06	UI-246	チャット・スレッド・CommandOutputPanel	未対応	未評価	-
 06	UI-372	チャット・スレッド・PanelLayoutControls	部分	未評価	-
@@ -1143,7 +1143,7 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-602	ファイル・ドキュメント・FileBrowserPanel	未対応	未評価	-
 06	UI-603	ファイル・ドキュメント・FileExplorerPane	未対応	未評価	-
 06	UI-604	ファイル・ドキュメント・FileMarkdownPreview（操作候補）	未対応	未評価	-
-06	UI-605	ファイル・ドキュメント・WorkspacePdfSaveAction	未対応	未評価	-
+06	UI-605	ファイル・ドキュメント・WorkspacePdfSaveAction	未対応	未検証	原本 ca81b7b FilePreviewPanel.tsx:381–397 / Swift 76041dc WorkspaceFilesView.savePDF / PiWorkspace/scripts/verify-media-files.mjs / PDF の Save file で OS 保存パネルを開き、取消後にプレビューと元 PDF の全バイト一致を確認。保存先を確定した際の出力と書込失敗は未検証
 06	UI-606	ファイル・ドキュメント・WorkspaceVideoPreview	未対応	未評価	-
 06	UI-607	ファイル・ドキュメント・WorkspaceAudioPreview	未対応	未評価	-
 06	UI-608	ファイル・ドキュメント・useFileLineReveal	未対応	未評価	-
@@ -1168,16 +1168,16 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-627	ファイル・ドキュメント・ExtendedOfficeViewer	未対応	未評価	-
 06	UI-628	ファイル・ドキュメント・OfficeViewer（操作候補）	未対応	未評価	-
 06	UI-629	ファイル・ドキュメント・PdfPage	未対応	未評価	-
-06	UI-630	ファイル・ドキュメント・PdfViewer	未対応	未評価	-
+06	UI-630	ファイル・ドキュメント・PdfViewer	未対応	未検証	原本 ca81b7b PdfViewer.tsx:487,494,511,517,534 / Swift 76041dc WorkspacePDFView / PiWorkspace/scripts/verify-media-files.mjs / 表示は1/2→2/2→1/2。Zoom in 後は百分率、Fit 後は Fit width。本文検索で1/1件かつ2ページ目。複数一致の移動・スクロール位置復元・ズーム量は未検証
 06	UI-631	ファイル・ドキュメント・PreviewImage（操作候補）	未対応	未評価	-
-06	UI-632	ファイル・ドキュメント・PreviewImageContent	未対応	未評価	-
+06	UI-632	ファイル・ドキュメント・PreviewImageContent	未対応	未検証	原本 ca81b7b PreviewImageContent.tsx:60,68,75,82,100 / Swift 76041dc WorkspaceImageView / PiWorkspace/scripts/verify-media-files.mjs / PNG は2×2。原寸100%→125%→100%を照合し、拡大画面の開閉を確認。Fit は押下までで、大画像への適用倍率・不正画像の失敗分岐は未検証
 06	UI-633	ファイル・ドキュメント・OpenProjectFilePicker	未対応	未評価	-
 06	UI-634	ファイル・ドキュメント・ProjectFilePicker	未対応	未評価	-
 06	UI-635	ファイル・ドキュメント・ReadOnlySourcePreview	未対応	未評価	-
 06	UI-636	ファイル・ドキュメント・VirtualTablePreview	未対応	未評価	-
 06	UI-637	ファイル・ドキュメント・ScaledRows	未対応	未評価	-
 06	UI-638	ファイル・ドキュメント・FileSurfaceAction	構成差	未評価	-
-06	UI-639	ファイル・ドキュメント・FileSurfaceFailure	構成差	未評価	-
+06	UI-639	ファイル・ドキュメント・FileSurfaceFailure	構成差	合格	原本 ca81b7b fileSurfaceChrome.tsx:146（PdfViewer.tsx:589–593） / Swift 76041dc WorkspaceFilesView / WorkspacePDFView / PiWorkspace/scripts/verify-media-files.mjs / 壊れた PDF を開くとエラーと Retry。元ファイルを2ページの有効な PDF に置換し Retry を押すと1/2ページを表示。対象は再試行ボタン付きファイルエラー
 06	UI-640	ファイル・ドキュメント・OfficePages	未対応	未評価	-
 06	UI-641	ファイル・ドキュメント・OfficePage	未対応	未評価	-
 06	UI-642	ファイル・ドキュメント・Presentation	未対応	未評価	-
@@ -1195,14 +1195,14 @@ stage	id	title	audit_status	result	evidence_ref
 06	UI-729	プロジェクト・スクリプト・ProjectScriptEditorForm	未対応	未評価	-
 07	CFG-003	Appearance を開く	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / Pi Workspace メニューから Appearance Settings を開き、配色と会話幅の設定を操作
 07	CFG-005	/settings/beta → /settings/labs	構成差	未評価	-
-07	CFG-012	General を開く	未対応	未評価	-
+07	CFG-012	General を開く	未対応	合格	989cfc2, 76041dc PiWorkspace/scripts/verify-settings-panels.mjs / 設定の入口から General が開き、ほかのページへ移動した後にサイドバーの General で戻って閉じた。
 07	CFG-015	Labs を開く	未対応	未評価	-
 07	CFG-018	Projects を開く	未対応	未評価	-
 07	CFG-019	Providers を開く	部分	未評価	-
 07	CFG-025	Threads を開く	未対応	未評価	-
-07	CFG-026	/settings → /settings/general	部分	未評価	-
+07	CFG-026	/settings → /settings/general	部分	未検証	2fdc17b PiWorkspace/scripts/verify-settings-panels.mjs / 配布版のサイドバーから General が開いた。原本の /settings URL 経由の遷移は未検証。
 07	CFG-029	設定スコープ	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / ローカルプロジェクトの上書きと継承復元、再起動、Keychain 保持を確認。異なる環境間のスコープは未検証
-07	CFG-030	設定を検索	未対応	未評価	-
+07	CFG-030	設定を検索	未対応	合格	989cfc2, 76041dc PiWorkspace/scripts/verify-settings-panels.mjs, SettingsNavigationTests / 検索結果の Return から対象プロジェクトの Model ID に入力し、⌘F で検索へ復帰。ライセンス検索から同梱本文を開けた。該当なしの Escape、ペインを往復した未保存編集と保存値も照合。
 07	CFG-031	Advanced を開く	未対応	未評価	-
 07	CFG-037	Project defaults and overrides	未対応	未評価	-
 07	CFG-040	Fallback model	未対応	未評価	-
@@ -1427,7 +1427,7 @@ stage	id	title	audit_status	result	evidence_ref
 07	RPC-077	ローカルデスクトップ設定とテーマ	部分	未評価	-
 07	RT-TERMINAL-FONT-PREVIEW	端末フォントの試写入力	未対応	未評価	-
 07	SRC-S08	テーマと文字・幅の設定で共通スタイルを変更する	部分	未評価	-
-07	SRC-S40	設定タブ・対象スコープを切り替え、検索結果へ移動する	部分	未評価	-
+07	SRC-S40	設定タブ・対象スコープを切り替え、検索結果へ移動する	部分	未検証	2fdc17b PiWorkspace/Sources/PiWorkspace/SettingsView.swift / ネイティブ設定のタブ、検索とローカルのプロジェクトスコープを実装。別環境への切替と元の画面配置の照合が残る。
 07	SRC-S41	通知、サイドバー、確認、表示などの装置設定を変更する	部分	未評価	-
 07	SRC-S42	テーマ、色、幅、アニメーション、書体を変更する	部分	未評価	-
 07	SRC-S43	入力、フォローアップ、子スレッド、読み上げの設定を変更する	未対応	未評価	-
@@ -1701,20 +1701,20 @@ stage	id	title	audit_status	result	evidence_ref
 08	DEV-052	コミットとpushを連続実行する	未対応	未評価	-
 08	DEV-053	既定branchへの操作を確認してfeature branchへ振り替える	未対応	未評価	-
 08	DEV-054	リポジトリをforgeに公開する	未対応	未評価	-
-08	DEV-073	forge上のPR一覧を検索する	未対応	未検証	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 模擬 gh でチェックアウトを特定し、一覧・詳細・CI の失敗から成功への更新を確認。ラベル検索・ページ送り・実 forge は未検証
+08	DEV-073	forge上のPR一覧を検索する	未対応	合格	f36b7f1 PiWorkspace/scripts/verify-github-pull-requests.swift --public-cli, verify-panels.mjs / cli/cli で PR 検索・ラベル・先頭50件と続く別の50件・詳細を照合。配布版の模擬 gh で同じ checkout の操作とページ取得失敗後の Retry を確認。
 08	DEV-074	PR一覧を著者で絞る	未対応	未評価	-
-08	DEV-075	PR一覧をラベルで絞る	未対応	未評価	-
+08	DEV-075	PR一覧をラベルで絞る	未対応	要修正	f36b7f1 PiWorkspace/scripts/verify-github-pull-requests.swift --public-cli / 入力した label: 条件で実 GitHub を検索。原本の Labels 候補からの選択は未実装。
 08	DEV-076	branchからPRを作成する	未対応	未評価	-
 08	DEV-077	pushしてPRを開く	未対応	未評価	-
 08	DEV-078	コミット・push・PR作成を連続実行する	未対応	未評価	-
-08	DEV-079	既存PRをスレッドにリンクする	未対応	未評価	-
-08	DEV-080	スレッドからPRリンクを外す	未対応	未評価	-
+08	DEV-079	既存PRをスレッドにリンクする	未対応	合格	f2e3074, 8dd68b4 PiWorkspace/scripts/verify-linked-prs.mjs / 配布版の Linked items で同じ PR を #42 と URL で指定。正規化済みリンク1件だけが保存され、詳細を表示。別スレッドへの混入なし。
+08	DEV-080	スレッドからPRリンクを外す	未対応	合格	f2e3074, 8dd68b4 PiWorkspace/scripts/verify-linked-prs.mjs / 再起動と親子スレッド往復の後、親で Unlink from thread を選択。リンク行と保存済み参照が空になった。
 08	DEV-081	スレッドでPR変化の監視を始める	未対応	未評価	-
 08	DEV-082	PRの監視を解除する	未対応	未評価	-
 08	DEV-083	PR情報をforgeから再取得する	未対応	未評価	-
 08	DEV-084	PRのホストページを開く	未対応	未評価	-
-08	DEV-085	PR URLをコピーする	未対応	未評価	-
-08	DEV-086	PR番号をコピーする	未対応	未評価	-
+08	DEV-085	PR URLをコピーする	未対応	合格	f2e3074, 8dd68b4 PiWorkspace/scripts/verify-linked-prs.mjs / 表示中の PR の Copy link が github.com/fixture/workspace/pull/42 の HTTPS URL と一致。
+08	DEV-086	PR番号をコピーする	未対応	合格	f2e3074, 8dd68b4 PiWorkspace/scripts/verify-linked-prs.mjs / Copy PR number の結果を隔離ペーストボードで読み、表示中の #42 と照合。
 08	DEV-087	PRを別worktreeへチェックアウトする	未対応	未評価	-
 08	DEV-088	PRを現在のrepoにチェックアウトする	未対応	未評価	-
 08	DEV-089	PR情報を質問用のcomposerに渡す	未対応	未評価	-
@@ -1757,7 +1757,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	DEV-126	レビューしたファイルをViewedにする	未対応	未評価	-
 08	DEV-127	PR差分をコミットで絞る	未対応	未評価	-
 08	DEV-128	PRコメントの種類と並び順を変更する	未対応	未評価	-
-08	DEV-261	Git URLからプロジェクトをクローンする	未対応	未評価	-
+08	DEV-261	Git URLからプロジェクトをクローンする	未対応	要修正	970d252, 194ec4e, 89f8cf8 PiWorkspace/scripts/verify-project-clone.mjs / 配布版の Git URL にローカル bare リポジトリの file URL を入力。占有済みを拒否し、新しい保存先の HEAD・ブランチ・origin・ファイルを照合。再起動で同じプロジェクトと下書き ID へ復帰。外部の認証付き通信は未検証。 原本 ca81b7b SourceControlRepositoryService.ts:258–290 は空の既存保存先と欠けた親階層も扱う。これらの対応待ち。
 08	DEV-292	スレッドの関連PRを一括で把握する	未対応	未評価	-
 08	DEV-309	保留中のPR行コメントを破棄する	未対応	未評価	-
 08	DEV-311	PRの既存コメントを編集する	未対応	未評価	-
@@ -1802,8 +1802,8 @@ stage	id	title	audit_status	result	evidence_ref
 08	RPC-049	Issue の閲覧とスレッドとの関連付け	未対応	未評価	-
 08	RPC-050	Issue の作成・更新・コメント	未対応	未評価	-
 08	RPC-051	Issue トラッカーの接続とプロジェクト割り当て	未対応	未評価	-
-08	SRC-S18	PR、Issue とスレッドに関連する項目をタブで閲覧する	未対応	要修正	84e132a PiWorkspace/scripts/verify-app.mjs --fixture-model --worktree / 模擬ghでPR一覧・詳細・CI更新を確認。Issueタブとスレッドへのリンクは未実装
-08	SRC-S30	PR と Issue の一覧を検索し、詳細を開く	未対応	未評価	-
+08	SRC-S18	PR、Issue とスレッドに関連する項目をタブで閲覧する	未対応	要修正	f2e3074, 8dd68b4 PiWorkspace/scripts/verify-panels.mjs, verify-linked-prs.mjs / 配布版に PR・Issue・Linked items の3タブ。対象 checkout の検索・詳細・CI 更新とスレッドごとの PR リンクを確認。Issue の関連付けと MCP 入口が残る。
+08	SRC-S30	PR と Issue の一覧を検索し、詳細を開く	未対応	未検証	f36b7f1 PiWorkspace/scripts/verify-panels.mjs, verify-github-pull-requests.swift --public-cli / 選択した作業先から PR と Issue の検索、次ページ、詳細を確認。画面全体の原本との配置照合が残る。
 08	SRC-S44	差分の表示と PR リンクの扱いを変更する	未対応	未評価	-
 08	SRC-S54	ソース管理と Issue tracker の環境接続を構成する	未対応	未評価	-
 08	UI-1062	プルリクエスト・options（操作候補）	未対応	未評価	-
@@ -1833,13 +1833,13 @@ stage	id	title	audit_status	result	evidence_ref
 08	UI-656	イシュー・IssueAssigneePicker	未対応	未評価	-
 08	UI-657	イシュー・LinkedPullRequestRow	未対応	未評価	-
 08	UI-658	イシュー・IssueEventText	未対応	未評価	-
-08	UI-659	イシュー・IssueDetailPanel	未対応	未評価	-
+08	UI-659	イシュー・IssueDetailPanel	未対応	要修正	原本 ca81b7b IssueDetailPanel.tsx:451–457 / Swift 76041dc IssueDetailsView / PiWorkspace/scripts/verify-panels.mjs / 模擬 gh の #71 で報告者と本文を表示。詳細再読込で欠落エラーを出し、Retry で修復後の元本文が復帰。Issue の編集とコメント書き込みは未実装
 08	UI-660	イシュー・IssueLinkPreview	未対応	未評価	-
 08	UI-661	イシュー・IssueFiltersMenu	未対応	未評価	-
 08	UI-662	イシュー・ProjectChoices	未対応	未評価	-
 08	UI-663	イシュー・LabelChoices	未対応	未評価	-
 08	UI-664	イシュー・AssigneeChoices	未対応	未評価	-
-08	UI-665	イシュー・IssueRowImpl	未対応	未評価	-
+08	UI-665	イシュー・IssueRowImpl	未対応	合格	原本 ca81b7b IssueRow.tsx:54 / Swift 76041dc PullRequestsView.swift の row / PiWorkspace/scripts/verify-panels.mjs / 模擬 gh の一覧から #71 を押すと報告者・説明・外部リンクの入口が表示され、選択 checkout から issue view 71 を記録。対象は一覧行から選択 Issue を開く操作
 08	UI-666	イシュー・IssueThreadLinks	未対応	未評価	-
 08	UI-667	イシュー・STATE_TABS（操作候補）	未対応	未評価	-
 08	UI-668	イシュー・INVOLVEMENT_TABS（操作候補）	未対応	未評価	-
@@ -1848,8 +1848,8 @@ stage	id	title	audit_status	result	evidence_ref
 08	UI-671	イシュー・IssuesPage	未対応	未評価	-
 08	UI-672	イシュー・FilterMenu	未対応	未評価	-
 08	UI-673	イシュー・IssueStateGlyph（操作候補）	未対応	未評価	-
-08	UI-734	プルリクエスト・LinkPullRequestDialogHost	未対応	未評価	-
-08	UI-735	プルリクエスト・LinkPullRequestDialog	未対応	未評価	-
+08	UI-734	プルリクエスト・LinkPullRequestDialogHost	未対応	合格	原本 ca81b7b LinkPullRequestDialog.tsx:46–58 / Swift 76041dc ThreadPullRequestsView / PiWorkspace/scripts/verify-linked-prs.mjs / 同一スレッドでダイアログを2回開き、番号と URL の各送信成功後に入力欄が消え、リンク行へ復帰。対象はダイアログの提示・終了
+08	UI-735	プルリクエスト・LinkPullRequestDialog	未対応	未検証	原本 ca81b7b LinkPullRequestDialog.tsx:99–117,150,189 / Swift 76041dc LinkThreadPullRequestDialog / PiWorkspace/scripts/verify-linked-prs.mjs / checkout のリポジトリを表示し、#42 と完全 URL の確定で保存済み reference 配列は同じ URL 1件。無効入力・通信失敗・処理中の再送は未検証
 08	UI-736	プルリクエスト・PullRequestActionsMenu	未対応	未評価	-
 08	UI-737	プルリクエスト・PullRequestActivityUnavailableState	未対応	未評価	-
 08	UI-738	プルリクエスト・PullRequestBaseFreshnessWarning	未対応	未評価	-
@@ -1919,7 +1919,7 @@ stage	id	title	audit_status	result	evidence_ref
 08	UI-802	プルリクエスト・VERDICTS（操作候補）	未対応	未評価	-
 08	UI-803	プルリクエスト・PullRequestReviewForm	未対応	未評価	-
 08	UI-804	プルリクエスト・PullRequestReviewerPicker	未対応	未評価	-
-08	UI-805	プルリクエスト・PullRequestRowImpl	未対応	未評価	-
+08	UI-805	プルリクエスト・PullRequestRowImpl	未対応	未検証	原本 ca81b7b PullRequestRow.tsx:124–130,150,197 / Swift 76041dc PullRequestsView.swift の row / PiWorkspace/scripts/verify-panels.mjs / 模擬 gh の #42 行を選択すると詳細に fixture-branch と Failure。番号のコンテキストメニュー・ポインターによる事前読込・スタック内選択は未検証
 08	UI-806	プルリクエスト・PullRequestSpeedActions	未対応	未評価	-
 08	UI-807	プルリクエスト・PullRequestStackHeader（操作候補）	未対応	未評価	-
 08	UI-808	プルリクエスト・PullRequestStackLayers	未対応	未評価	-
@@ -1946,13 +1946,13 @@ stage	id	title	audit_status	result	evidence_ref
 08	UI-829	プルリクエスト・PullRequestTitleEditor	未対応	未評価	-
 08	UI-830	プルリクエスト・ExpandableSearch	未対応	未評価	-
 08	UI-831	プルリクエスト・PullRequestsColumn	未対応	未評価	-
-08	UI-832	プルリクエスト・PullRequestRefreshControl	未対応	未評価	-
+08	UI-832	プルリクエスト・PullRequestRefreshControl	未対応	合格	原本 ca81b7b PullRequestsColumn.tsx:298 / Swift 76041dc PullRequestsView.swift の一覧更新ボタン / PiWorkspace/scripts/verify-panels.mjs / 選択 checkout の模擬 gh の値を変更して一覧の Refresh を押すと、詳細の head・タイトルが更新され Failure が Success に変化。対象は一覧の更新要求
 08	UI-833	プルリクエスト・PullRequestsPage	未対応	未評価	-
 08	UI-834	プルリクエスト・PullRequestFiltersMenuInSidebarOrder（操作候補）	未対応	未評価	-
 08	UI-835	プルリクエスト・PullRequestsUnavailableState	未対応	未評価	-
 08	UI-836	プルリクエスト・ChecksGlyph（操作候補）	未対応	未評価	-
-08	UI-837	プルリクエスト・LinkRowImpl	未対応	未評価	-
-08	UI-838	プルリクエスト・EnabledThreadPullRequestsPanel	未対応	未評価	-
+08	UI-837	プルリクエスト・LinkRowImpl	未対応	要修正	原本 ca81b7b ThreadPullRequestsPanel.tsx:181,360,381 / Swift 76041dc ThreadPullRequestsView / PiWorkspace/scripts/verify-linked-prs.mjs / リンク行を開くと #42 Update checkout。Copy link の貼付値が完全 URL と一致し、Unlink で行と保存値が消失。Watch とスタック由来の Dismiss は未実装
+08	UI-838	プルリクエスト・EnabledThreadPullRequestsPanel	未対応	要修正	原本 ca81b7b ThreadPullRequestsPanel.tsx:478,526,577,607 / Swift 76041dc ThreadPullRequestsView / PiWorkspace/scripts/verify-linked-prs.mjs / 空状態・リンク済みの双方から追加を開始。再起動後の親に1行、子に0行、解除後の親に0行。リンク済み Issue と監視の切替は未実装
 08	UI-839	プルリクエスト・GuideExcerpt	未対応	未評価	-
 08	UI-840	プルリクエスト・ExcerptDiff	未対応	未評価	-
 08	UI-841	プルリクエスト・GuideCommentDraft	未対応	未評価	-
@@ -2754,7 +2754,7 @@ stage	id	title	audit_status	result	evidence_ref
 12	CFG-132	Update track	未対応	未評価	-
 12	CFG-133	t3 command	未対応	未評価	-
 12	CFG-136	Privacy policy	未対応	未評価	-
-12	CFG-137	OpenTelemetry export	未対応	未評価	-
+12	CFG-137	OpenTelemetry export	未対応	要修正	92dd917 PiWorkspace/scripts/verify-default-telemetry.mjs / 同梱 Pi ワーカーの既定起動・待機・終了で接続0、明示送信は loopback 1回。設定画面から指定した OTEL endpoint へ出力する機能が残る。
 12	CFG-138	Diagnostics	未対応	未評価	-
 12	CFG-139	Agent feedback	未対応	未評価	-
 12	CFG-140	Open source licenses	未対応	合格	6eabea5 PiWorkspace/scripts/verify-app.mjs --fixture-model / アプリ情報内のリンクから同梱ライセンス一覧・個別本文を表示し、実際の梱包データの著作権表記と照合
