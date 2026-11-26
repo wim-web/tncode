@@ -212,6 +212,13 @@ struct WorkspaceView: View {
                     return openCommandPalette(in: window)
                 }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                if modifiers == .command {
+                    switch event.charactersIgnoringModifiers {
+                    case "[": return navigate(.back, in: window)
+                    case "]": return navigate(.forward, in: window)
+                    default: break
+                    }
+                }
                 if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "s",
                    acceptsWorkspaceKeys(in: window),
                    (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true {
@@ -466,7 +473,7 @@ struct WorkspaceView: View {
         let visibleThreads = searchRows.map(\.thread)
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(spacing: 6) {
                 Button(action: model.showHome) {
                     Text("Pi Workspace")
                         .font(.system(size: 14, weight: .semibold))
@@ -475,7 +482,11 @@ struct WorkspaceView: View {
                 .accessibilityLabel("Pi Workspace home")
                 .accessibilityIdentifier("sidebar-home")
                 .disabled(model.operationsInProgress || model.editingQueuedMessageID != nil)
-                Spacer()
+                HStack(spacing: 0) {
+                    navigationButton(.back)
+                    navigationButton(.forward)
+                }
+                Spacer(minLength: 0)
                 Button { model.openFolder() } label: {
                     Image(systemName: "folder.badge.plus")
                         .frame(width: 25, height: 25)
@@ -632,6 +643,21 @@ struct WorkspaceView: View {
         } isTargeted: {
             targetingProjectDrop = $0
         }
+    }
+
+    private func navigationButton(_ direction: WorkspaceModel.NavigationDirection) -> some View {
+        let back = direction == .back
+        let label = back ? "Go back" : "Go forward"
+        return Button { model.navigate(direction) } label: {
+            Image(systemName: back ? "arrow.left" : "arrow.right")
+                .frame(width: 25, height: 25)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(back ? "Go back (⌘[)" : "Go forward (⌘])")
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(back ? "workspace-history-back" : "workspace-history-forward")
+        .disabled(!model.canNavigate(direction))
     }
 
     private func openDroppedProjects(_ urls: [URL]) -> Bool {
@@ -2110,6 +2136,23 @@ struct WorkspaceView: View {
             rename == nil && removingProject == nil
     }
 
+    private func navigate(_ direction: WorkspaceModel.NavigationDirection, in window: NSWindow) -> Bool {
+        guard acceptsWorkspaceKeys(in: window), !(window.firstResponder is NSTextView),
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true,
+              !documentHasFocus(in: window) else { return false }
+        model.navigate(direction)
+        return true
+    }
+
+    private func documentHasFocus(in window: NSWindow) -> Bool {
+        var focusedView = window.firstResponder as? NSView
+        while let view = focusedView {
+            if view is WKWebView || view is PDFView { return true }
+            focusedView = view.superview
+        }
+        return false
+    }
+
     private func handleFindKey(_ event: NSEvent, in window: NSWindow) -> Bool {
         guard acceptsWorkspaceKeys(in: window) else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
@@ -2122,11 +2165,7 @@ struct WorkspaceView: View {
 
         let editingOtherField = editor?.isFieldEditor == true && !(editor is ComposerTextField.Editor)
         if editingOtherField, !findFocused { return false }
-        var focusedView = window.firstResponder as? NSView
-        while let view = focusedView {
-            if view is WKWebView || view is PDFView { return false }
-            focusedView = view.superview
-        }
+        guard !documentHasFocus(in: window) else { return false }
 
         if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "f" {
             guard let scope = model.threadFindScope else { return false }

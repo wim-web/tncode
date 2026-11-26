@@ -7,6 +7,39 @@ final class WorkspaceModel: ObservableObject {
     enum SidebarCommand { case newThread, search, commandPalette }
     let sidebarCommand = PassthroughSubject<SidebarCommand, Never>()
 
+    enum NavigationDirection: Hashable {
+        case back, forward
+
+        var opposite: Self { self == .back ? .forward : .back }
+    }
+
+    private enum NavigationChange {
+        case visit, replace, traverse(NavigationDirection)
+    }
+
+    private enum NavigationDestination: Equatable {
+        case home
+        case thread(projectID: UUID, threadID: UUID)
+
+        init?(in workspace: Workspace) {
+            guard let project = workspace.activeProject else {
+                self = .home
+                return
+            }
+            guard let threadID = project.selectedConversation else { return nil }
+            self = .thread(projectID: project.id, threadID: threadID)
+        }
+
+        func isAvailable(in workspace: Workspace) -> Bool {
+            switch self {
+            case .home: true
+            case let .thread(projectID, threadID):
+                workspace.projects.first { $0.id == projectID && $0.detached != true }?
+                    .conversations.contains { $0.id == threadID && !$0.archived } == true
+            }
+        }
+    }
+
     enum Phase: Equatable {
         case closed, connecting, ready, running, stopping
 
@@ -72,6 +105,7 @@ final class WorkspaceModel: ObservableObject {
     private var composerDraftGenerations: [UUID: UUID] = [:]
     private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
     private var threadSelectionRevision = 0
+    private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
 
     private(set) var composerRevision = 0
     @Published private var queueEdit: QueueEdit? {
@@ -595,7 +629,7 @@ final class WorkspaceModel: ObservableObject {
             if lhs.lastActivity == rhs.lastActivity { return rhs.id == workspace.selectedProject && lhs.id != rhs.id }
             return lhs.lastActivity < rhs.lastActivity
         }
-        if let recent { addConversation(in: recent.id) }
+        if let recent { addConversation(in: recent.id, navigation: .replace) }
     }
 
     var canOpenWelcome: Bool {
@@ -651,11 +685,11 @@ final class WorkspaceModel: ObservableObject {
     }
 
     @discardableResult
-    private func save(_ edit: (inout Workspace) -> Void) -> Bool {
+    private func save(navigation: NavigationChange = .visit, _ edit: (inout Workspace) -> Void) -> Bool {
         var updated = workspace
         edit(&updated)
         do {
-            try persist(updated)
+            try persist(updated, navigation: navigation)
             return true
         } catch {
             self.error = error.localizedDescription
@@ -663,7 +697,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func persist(_ updated: Workspace) throws {
+    private func persist(_ updated: Workspace, navigation: NavigationChange = .visit) throws {
         guard let store else { throw WorkspaceError("Could not open the workspace.") }
         if queueEdit != nil, updated.selectedProject != workspace.selectedProject ||
             updated.activeProject?.selectedConversation != conversation?.id {
@@ -677,6 +711,7 @@ final class WorkspaceModel: ObservableObject {
         composerCredential = nil
         let previousScope = pullRequestScope
         let previousDraft = draft
+        recordNavigation(to: updated, change: navigation)
         workspace = updated
         if pullRequestScope != previousScope || !draft.utf8.elementsEqual(previousDraft.utf8) { composerRevision += 1 }
         if pullRequestScope != previousScope { threadSelectionRevision += 1 }
@@ -886,7 +921,61 @@ final class WorkspaceModel: ObservableObject {
         guard !operationsInProgress, workspace.selectedProject != nil,
               save({ $0.selectedProject = nil }) else { return }
         error = nil
+        showArchive = false
         connect()
+    }
+
+    func canNavigate(_ direction: NavigationDirection) -> Bool {
+        !operationsInProgress && navigationTarget(direction) != nil
+    }
+
+    @discardableResult
+    func navigate(_ direction: NavigationDirection) -> Bool {
+        guard !operationsInProgress, let target = navigationTarget(direction) else { return false }
+        let change = NavigationChange.traverse(direction)
+        do {
+            switch target {
+            case .home:
+                guard save(navigation: change, { $0.selectedProject = nil }) else { return false }
+            case let .thread(projectID, threadID):
+                guard let index = workspace.projects.firstIndex(where: { $0.id == projectID }) else { return false }
+                try persistSelection(threadID, at: index, navigation: change)
+            }
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        error = nil
+        showArchive = false
+        connect()
+        return true
+    }
+
+    private func navigationTarget(_ direction: NavigationDirection) -> NavigationDestination? {
+        let current = NavigationDestination(in: workspace)
+        return navigationHistory[direction]?.last { $0 != current && $0.isAvailable(in: workspace) }
+    }
+
+    private func recordNavigation(to updated: Workspace, change: NavigationChange) {
+        let previous = NavigationDestination(in: workspace)
+        let next = NavigationDestination(in: updated)
+        guard previous != next else { return }
+        let returnDirection: NavigationDirection
+        switch change {
+        case .replace:
+            return
+        case .visit:
+            if next?.isAvailable(in: updated) == true { navigationHistory[.forward] = nil }
+            returnDirection = .back
+        case let .traverse(direction):
+            if let next, let index = navigationHistory[direction]?.lastIndex(of: next) {
+                navigationHistory[direction]?.removeSubrange(index...)
+            }
+            returnDirection = direction.opposite
+        }
+        if let previous, previous.isAvailable(in: updated), navigationHistory[returnDirection]?.last != previous {
+            navigationHistory[returnDirection, default: []].append(previous)
+        }
     }
 
     func requestCommandPalette() {
@@ -953,6 +1042,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func addConversation(in requestedProject: UUID? = nil) {
+        addConversation(in: requestedProject, navigation: .visit)
+    }
+
+    private func addConversation(in requestedProject: UUID?, navigation: NavigationChange) {
         guard !operationsInProgress else { return }
         let projectID = requestedProject ?? project?.id ?? projects.first?.id
         if projectID == nil || threadProjects.contains(where: { $0.id == projectID && $0.isScratch }) {
@@ -963,7 +1056,7 @@ final class WorkspaceModel: ObservableObject {
             openFolder(startThread: true)
             return
         }
-        guard save({
+        guard save(navigation: navigation, {
             $0.selectedProject = $0.projects[index].id
             $0.projects[index].selectDraft()
         }) else { return }
@@ -1080,7 +1173,7 @@ final class WorkspaceModel: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
-    private func persistSelection(_ id: UUID, at projectIndex: Int) throws {
+    private func persistSelection(_ id: UUID, at projectIndex: Int, navigation: NavigationChange = .visit) throws {
         var updated = workspace
         updated.selectedProject = updated.projects[projectIndex].id
         updated.projects[projectIndex].selectedConversation = id
@@ -1088,7 +1181,7 @@ final class WorkspaceModel: ObservableObject {
            case .woke = updated.projects[projectIndex].conversations[index].snoozeStatus(at: now()) {
             updated.projects[projectIndex].conversations[index].snoozedUntil = nil
         }
-        try persist(updated)
+        try persist(updated, navigation: navigation)
     }
 
     func copyThreadReference(_ id: UUID, in projectID: UUID, to pasteboard: NSPasteboard) throws {

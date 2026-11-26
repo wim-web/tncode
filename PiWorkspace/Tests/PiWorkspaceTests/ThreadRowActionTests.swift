@@ -1,10 +1,189 @@
 import AppKit
+import Carbon
 import SwiftUI
+import WebKit
 import XCTest
 @testable import PiWorkspace
 
 @MainActor
 final class ThreadRowActionTests: XCTestCase {
+    func testSidebarHistoryReturnsToHomeWorktreeAndDraftAcrossProjects() async throws {
+        let queued = QueuedMessage(text: "Keep this queued follow-up")
+        let fixture = try Fixture(queuedMessages: [queued])
+        let model = fixture.open()
+        defer { model.terminate() }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        let back = "workspace-history-back"
+        let forward = "workspace-history-forward"
+
+        XCTAssertFalse(model.canNavigate(.back))
+        XCTAssertFalse(model.canNavigate(.forward))
+        try await host.press("thread-row-\(fixture.linked.id)")
+        XCTAssertEqual(model.workingDirectory, fixture.checkout.path)
+        XCTAssertEqual(model.messages.last?.text, "Keep the linked checkout history.")
+        model.startScratchThread()
+        let draft = try XCTUnwrap(model.conversation?.id)
+        let draftProject = try XCTUnwrap(model.project?.id)
+        model.draft = "Draft in a different project"
+        XCTAssertTrue(model.savePendingComposer())
+        model.connect()
+        model.showHome()
+        _ = try await host.waitFor("Home") { host.element("empty-open-project") }
+        model.showHome()
+
+        try await host.press(back)
+        XCTAssertEqual(model.project?.id, draftProject)
+        XCTAssertEqual(model.conversation?.id, draft)
+        XCTAssertEqual(model.draft, "Draft in a different project")
+        try await host.press(back)
+        XCTAssertEqual(model.project?.id, fixture.project.id)
+        XCTAssertEqual(model.conversation?.id, fixture.linked.id)
+        XCTAssertEqual(model.workingDirectory, fixture.checkout.path)
+        XCTAssertEqual(model.messages.last?.text, "Keep the linked checkout history.")
+        try await host.press(back)
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        XCTAssertEqual(model.queuedMessages, [queued])
+        XCTAssertEqual(model.draft, "Other draft")
+        XCTAssertFalse(model.canNavigate(.back))
+
+        for expected in [fixture.linked.id, draft, nil] {
+            try await host.press(forward)
+            XCTAssertEqual(model.conversation?.id, expected)
+        }
+        XCTAssertNil(model.project)
+        XCTAssertFalse(model.canNavigate(.forward))
+    }
+
+    func testHistoryShortcutsYieldToNativeTextTerminalAndBrowser() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        try await host.press("thread-row-\(fixture.linked.id)")
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
+        let terminal = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 360, height: 150))
+        let browserConfiguration = WKWebViewConfiguration()
+        browserConfiguration.websiteDataStore = .nonPersistent()
+        let browser = WKWebView(frame: NSRect(x: 0, y: 0, width: 120, height: 80), configuration: browserConfiguration)
+        for view in [text, terminal, browser] as [NSView] {
+            host.host.addSubview(view)
+            XCTAssertTrue(host.window.makeFirstResponder(view))
+            XCTAssertFalse(host.window.firstResponder === host.window)
+            try host.pressCommandBracket(back: true)
+            XCTAssertEqual(model.conversation?.id, fixture.linked.id)
+            view.removeFromSuperview()
+        }
+
+        XCTAssertTrue(host.window.makeFirstResponder(nil))
+        try host.pressCommandBracket(back: true)
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        try host.pressCommandBracket(back: false)
+        XCTAssertEqual(model.conversation?.id, fixture.linked.id)
+    }
+
+    func testHistorySkipsUnavailableEntriesAndTruncatesForwardOnNewVisit() throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        let project = fixture.project.id
+        model.selectConversation(fixture.linked.id, in: project)
+        model.addConversation(in: project)
+        let discarded = try XCTUnwrap(model.conversation?.id)
+        let otherFolder = fixture.root.appendingPathComponent("Second project")
+        try FileManager.default.createDirectory(at: otherFolder, withIntermediateDirectories: false)
+        try model.openProject(otherFolder)
+        let detached = try XCTUnwrap(model.project?.id)
+        model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+        model.archiveConversation(fixture.linked.id, in: project, archived: true)
+        model.discardDraft(discarded, in: project)
+        model.removeProject(detached)
+
+        XCTAssertTrue(model.navigate(.back))
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        XCTAssertFalse(model.canNavigate(.back))
+        XCTAssertTrue(model.canNavigate(.forward))
+        model.selectConversation(fixture.linked.id, in: project)
+        XCTAssertEqual(model.conversation?.id, fixture.linked.id)
+        XCTAssertTrue(model.navigate(.back))
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        XCTAssertTrue(model.canNavigate(.forward))
+        model.showHome()
+        XCTAssertFalse(model.canNavigate(.forward))
+        XCTAssertTrue(model.navigate(.back))
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+    }
+
+    func testHistoryRecordsAStagedLinkOnlyAfterTheWorkerOpensIt() async throws {
+        let queued = QueuedMessage(text: "Original queued message")
+        let fixture = try Fixture(queuedMessages: [queued])
+        let linkID = UUID()
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var workspace = try store.load()
+            workspace.threadLinkID = linkID
+            try store.save(workspace)
+        }
+        let target = fixture.linked.id
+        let link = ThreadLink(workspaceID: linkID, root: fixture.workspace, projectID: fixture.project.id, threadID: target)
+        try Data("{\"type\":\"session\",\"version\":3,\"id\":\"\(target)\"}\n".utf8).write(to: fixture.historyFile)
+        var opening: XCTestExpectation?
+        var candidate: ControlledConnection?
+        let model = WorkspaceModel(root: fixture.workspace, keychainService: fixture.root.lastPathComponent,
+                                   readCredential: { _ in nil }) { _, cwd in
+            if cwd != fixture.checkout.path { return Connection() }
+            let worker = ControlledConnection()
+            candidate = worker
+            opening?.fulfill()
+            return worker
+        }
+        defer { model.terminate() }
+        model.showHome()
+        XCTAssertTrue(model.navigate(.back))
+        XCTAssertTrue(model.canNavigate(.forward))
+        let invalid = await model.openThreadLink(link.text + "/invalid")
+        XCTAssertFalse(invalid)
+        XCTAssertTrue(model.canNavigate(.forward))
+
+        for accepted in [false, true] {
+            let started = expectation(description: "Opened a candidate connection")
+            opening = started
+            let pending = Task { await model.openThreadLink(link.text) }
+            await fulfillment(of: [started], timeout: 2)
+            opening = nil
+            let worker = try XCTUnwrap(candidate)
+            XCTAssertEqual(model.conversation?.id, fixture.local.id)
+            XCTAssertTrue(model.canNavigate(.forward))
+            worker.onEvent?(accepted ? .ready([]) : .fatal("Could not resume this thread"))
+            let result = await pending.value
+            XCTAssertEqual(result, accepted)
+            XCTAssertEqual(model.canNavigate(.forward), !accepted)
+            XCTAssertEqual(model.conversation?.id, accepted ? target : fixture.local.id)
+        }
+
+        let repeated = await model.openThreadLink(link.text)
+        XCTAssertTrue(repeated)
+        XCTAssertTrue(model.navigate(.back))
+        XCTAssertEqual(model.conversation?.id, fixture.local.id)
+        XCTAssertFalse(model.canNavigate(.back))
+        model.editQueuedMessage(queued.id)
+        model.draft = "Unfinished queue edit"
+        let blocked = await model.openThreadLink(link.text)
+        XCTAssertFalse(blocked)
+        XCTAssertFalse(model.navigate(.forward))
+        XCTAssertTrue(model.canNavigate(.forward))
+        XCTAssertEqual(model.draft, "Unfinished queue edit")
+        XCTAssertEqual(model.queuedMessages, [queued])
+        model.cancelQueuedMessageEdit()
+        XCTAssertTrue(model.navigate(.forward))
+        XCTAssertEqual(model.conversation?.id, target)
+    }
+
     func testCommandSSavesOnlyTheFocusedFile() async throws {
         let queue = QueuedMessage(text: "Keep queued")
         let fixture = try Fixture(queuedMessages: [queue])
@@ -800,10 +979,18 @@ final class ThreadRowActionTests: XCTestCase {
         }
 
         func pressCommandS() throws {
+            try pressCommand(kVK_ANSI_S, "s")
+        }
+
+        func pressCommandBracket(back: Bool) throws {
+            try pressCommand(back ? kVK_ANSI_LeftBracket : kVK_ANSI_RightBracket, back ? "[" : "]")
+        }
+
+        private func pressCommand(_ keyCode: Int, _ characters: String) throws {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
                                                        timestamp: 0, windowNumber: window.windowNumber, context: nil,
-                                                       characters: "s", charactersIgnoringModifiers: "s",
-                                                       isARepeat: false, keyCode: 1))
+                                                       characters: characters, charactersIgnoringModifiers: characters,
+                                                       isARepeat: false, keyCode: UInt16(keyCode)))
             NSApp.sendEvent(event)
         }
 
