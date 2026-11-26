@@ -16,8 +16,8 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 ## Start a conversation
 
 1. Open **Model Settings**. Select a provider, enter its model ID and API key, and select **Save**. For a local OpenAI-compatible provider, enter a loopback base URL and the model's context window. Enable coding tools for local models that support them.
-2. Select **Open Project**. Enter a folder path or select **Browse**, then select **Add Project**. Select **New Thread** to compose a message for that folder.
-3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. The app restores the selected conversation after relaunch.
+2. Select **Open Project**. Enter a folder path or select **Browse**, then select **Add Project**. The new project's draft opens with the message field focused.
+3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app opens a draft in the most recently active project. Select the previous conversation in the sidebar to continue it.
 4. Search or filter threads in the sidebar. Select **Group by Project** in the filter menu to organize them into collapsible folders.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
@@ -51,4 +51,4 @@ node scripts/verify-app.mjs "$PWD/.build/ax"
 node scripts/verify-app.mjs "$PWD/.build/ax" --worktree
 ```
 
-The verifier opens the packaged app, uses a disposable Keychain item and an isolated workspace, and saves its report under `dist/verification-*/logs`. The worktree run also exercises the terminal, diff, staging, and committing in a disposable repository.
+Add `--fixture-model` to either verifier command to use fixed streaming replies on loopback without Ollama. The verifier opens the packaged app, uses a disposable Keychain item and an isolated workspace, and saves its report under `dist/verification-*/logs`. The worktree run also exercises the terminal, diff, staging, and committing in a disposable repository.

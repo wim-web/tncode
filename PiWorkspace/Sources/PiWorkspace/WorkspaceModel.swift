@@ -17,7 +17,18 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
-    @Published var draft = ""
+    @Published private var composerText: [UUID: String] = [:]
+    var draft: String {
+        get { conversation.flatMap { composerText[$0.id] } ?? "" }
+        set {
+            guard let id = conversation?.id else { return }
+            composerText[id] = newValue.isEmpty ? nil : newValue
+        }
+    }
+
+    func showsInSidebar(_ thread: Conversation) -> Bool {
+        thread.isDraft != true || composerText[thread.id] != nil
+    }
     @Published var error: String?
     @Published var showingSettings = false
     @Published var showArchive = false
@@ -69,7 +80,12 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func start() {
-        if process == nil { connect() }
+        guard process == nil else { return }
+        let recent = projects.max { lhs, rhs in
+            if lhs.lastActivity == rhs.lastActivity { return rhs.id == workspace.selectedProject && lhs.id != rhs.id }
+            return lhs.lastActivity < rhs.lastActivity
+        }
+        if let recent { addConversation(in: recent.id) }
     }
 
     func shutdown() {
@@ -118,21 +134,26 @@ final class WorkspaceModel: ObservableObject {
             index = existing
         }
         let previous = project
+        let occupied = Set(composerText.keys)
         guard save({
             if let index {
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
                 $0.selectedProject = $0.projects[index].id
+                if request?.startThread == true || $0.projects[index].selectedConversation == nil ||
+                    (request?.relinking == nil && previous?.id != $0.selectedProject) {
+                    $0.projects[index].selectDraft(occupied: occupied)
+                }
             } else {
-                let project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent)
+                var project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date())
+                project.selectDraft(occupied: occupied)
                 $0.projects.append(project)
                 $0.selectedProject = project.id
             }
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
-        if request?.startThread == true {
-            addConversation()
-        } else if previous?.id != project?.id || previous?.path != project?.path {
-            draft = ""
+        if previous?.id != project?.id || previous?.path != project?.path ||
+            previous?.selectedConversation != project?.selectedConversation || process == nil {
+            showArchive = conversation?.archived == true
             connect()
         }
     }
@@ -140,7 +161,6 @@ final class WorkspaceModel: ObservableObject {
     func selectProject(_ id: UUID) {
         guard !operationsInProgress, workspace.selectedProject != id else { return }
         guard save({ $0.selectedProject = id }) else { return }
-        draft = ""
         connect()
     }
 
@@ -153,7 +173,6 @@ final class WorkspaceModel: ObservableObject {
             if selected { $0.selectedProject = $0.projects.first { $0.detached != true }?.id }
         }) else { return }
         if selected {
-            draft = ""
             connect()
         }
     }
@@ -170,13 +189,11 @@ final class WorkspaceModel: ObservableObject {
             openFolder(startThread: true)
             return
         }
-        let thread = Conversation(id: UUID(), title: "New thread", lastActiveAt: Date())
+        let occupied = Set(composerText.keys)
         guard save({
             $0.selectedProject = $0.projects[index].id
-            $0.projects[index].conversations.insert(thread, at: 0)
-            $0.projects[index].selectedConversation = thread.id
+            $0.projects[index].selectDraft(occupied: occupied)
         }) else { return }
-        draft = ""
         showArchive = false
         connect()
     }
@@ -190,7 +207,6 @@ final class WorkspaceModel: ObservableObject {
             $0.selectedProject = projectID
             $0.projects[index].selectedConversation = id
         }) else { return }
-        draft = ""
         connect()
     }
 
@@ -303,6 +319,10 @@ final class WorkspaceModel: ObservableObject {
                 draft = ""
                 error = "Enter your API key in Model Settings."
                 return
+            }
+            if conversation.isDraft == true, let p = selectedProjectIndex,
+               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == conversation.id }) {
+                guard save({ $0.projects[p].conversations[t].isDraft = nil }) else { return }
             }
             if case let .newWorktree(branch, base) = conversation.workingLocation {
                 startWorktree(branch: branch, base: base, thread: conversation.id, prompt: text)

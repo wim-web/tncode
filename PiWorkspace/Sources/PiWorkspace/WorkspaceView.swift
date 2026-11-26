@@ -19,6 +19,8 @@ struct WorkspaceView: View {
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
+    @FocusState private var focusedComposer: UUID?
+    @State private var focusAfterPicker = false
 
     private enum RenameTarget {
         case project(UUID)
@@ -45,7 +47,7 @@ struct WorkspaceView: View {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return filteredProjects.flatMap { project in
             project.conversations.filter {
-                $0.archived == model.showArchive &&
+                model.showsInSidebar($0) && $0.archived == model.showArchive &&
                 (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) ||
                     project.title.localizedCaseInsensitiveContains(search))
             }.map { ThreadItem(project: project, thread: $0) }
@@ -85,9 +87,13 @@ struct WorkspaceView: View {
                 Button(project.title) { startThread(in: project.id) }
             }
         }
-        .sheet(item: $model.projectPicker) { request in
+        .sheet(item: $model.projectPicker, onDismiss: {
+            if focusAfterPicker { focusedComposer = model.conversation?.id }
+            focusAfterPicker = false
+        }) { request in
             ProjectFolderView(request: request) { url, request in
                 try model.openProject(url, request: request)
+                focusAfterPicker = true
                 projectFilter = nil
                 if let id = model.project?.id { collapsed.remove(id) }
             }
@@ -381,7 +387,7 @@ struct WorkspaceView: View {
                 Menu("Project Actions") { projectActions(project) }
                     .fixedSize()
             } else {
-                Text("Open a project").font(.system(size: 26, weight: .semibold))
+                Text("What should we work on?").font(.system(size: 26, weight: .semibold))
                 Button("Add Project") { model.openFolder() }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("empty-open-project")
@@ -456,12 +462,8 @@ struct WorkspaceView: View {
         return VStack(spacing: 0) {
             if drafting {
                 Spacer()
-                Text("New thread")
+                Text("What should we build in \(project.title)?")
                     .font(.system(size: 27, weight: .semibold))
-                Text(project.title)
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-                    .padding(.top, 7)
                     .padding(.bottom, 12)
                 composer(project, thread)
                 Spacer(minLength: 45)
@@ -609,7 +611,7 @@ struct WorkspaceView: View {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
                 }
             } else {
-                inputCard(project)
+                inputCard(project, threadID: thread.id)
             }
             HStack {
                 if model.canChangeWorkspace {
@@ -638,11 +640,18 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func inputCard(_ project: Project) -> some View {
+    private func inputCard(_ project: Project, threadID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Ask Pi anything", text: $model.draft, axis: .vertical)
                 .lineLimit(2...7)
                 .textFieldStyle(.plain)
+                .focused($focusedComposer, equals: threadID)
+                .task(id: threadID) {
+                    await Task.yield()
+                    if !Task.isCancelled && model.projectPicker == nil && !model.showingSettings {
+                        focusedComposer = threadID
+                    }
+                }
                 .font(.system(size: 14))
                 .accessibilityIdentifier("composer")
                 .disabled(model.preparingWorktree)

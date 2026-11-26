@@ -126,6 +126,7 @@ private func line(for element: AXUIElement, options: DisplayOptions) -> String {
     if let enabled = attribute(kAXEnabledAttribute, on: element) as? Bool {
         parts.append("enabled=\(enabled)")
     }
+    if attribute(kAXFocusedAttribute, on: element) as? Bool == true { parts.append("focused=true") }
 
     if options.values {
         let subrole = attribute(kAXSubroleAttribute, on: element) as? String

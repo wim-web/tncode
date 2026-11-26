@@ -101,6 +101,7 @@ struct Conversation: Codable, Identifiable {
     var lastActiveAt: Date?
     var location: ThreadLocation?
     var shelf: ThreadShelf?
+    var isDraft: Bool?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -121,6 +122,23 @@ struct Project: Codable, Identifiable {
     var detached: Bool?
     var conversations: [Conversation] = []
     var selectedConversation: UUID?
+    var createdAt: Date?
+
+    var lastActivity: Date {
+        max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
+    }
+
+    mutating func selectDraft(occupied: Set<UUID>) {
+        if let empty = conversations.first(where: {
+            $0.isDraft == true && !$0.archived && !occupied.contains($0.id)
+        }) {
+            selectedConversation = empty.id
+            return
+        }
+        let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
+        conversations.insert(thread, at: 0)
+        selectedConversation = thread.id
+    }
 }
 
 struct Workspace: Codable {

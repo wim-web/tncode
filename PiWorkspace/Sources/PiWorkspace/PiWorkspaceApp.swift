@@ -57,8 +57,7 @@ struct PiWorkspaceApp: App {
                     if let launchProject {
                         do { try model.openProject(launchProject) }
                         catch { model.error = error.localizedDescription }
-                    }
-                    model.start()
+                    } else { model.start() }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     model.shutdown()

@@ -40,6 +40,7 @@ struct ProjectFolderView: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .accessibilityIdentifier("cancel-project")
                 Button(request.relinking == nil ? "Add Project" : "Relink", action: submit)
                     .keyboardShortcut(.defaultAction)
                     .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -54,9 +55,19 @@ struct ProjectFolderView: View {
         .fileImporter(isPresented: $browsing, allowedContentTypes: [.folder]) { result in
             switch result {
             case .success(let url): path = url.path
-            case .failure(let failure): error = failure.localizedDescription
+            case .failure(let failure):
+                if (failure as? CocoaError)?.code != .userCancelled { error = failure.localizedDescription }
             }
         }
+        .fileDialogDefaultDirectory(browseDirectory)
+    }
+
+    private var browseDirectory: URL? {
+        let value = (path as NSString).expandingTildeInPath
+        guard value.hasPrefix("/") else { return nil }
+        let url = URL(fileURLWithPath: value, isDirectory: true)
+        if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { return url }
+        return url.deletingLastPathComponent()
     }
 
     private func submit() {

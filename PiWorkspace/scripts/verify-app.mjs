@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -15,6 +15,7 @@ assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), /accessibility=t
 const directory = mkdtempSync(resolve(import.meta.dirname, "../dist/verification-"));
 const project = join(directory, "Sample Project");
 const worktreeTest = process.argv.includes("--worktree");
+const fixtureModel = process.argv.includes("--fixture-model");
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
 const logs = join(directory, "logs");
@@ -38,6 +39,17 @@ function record(text) {
   console.log(text);
 }
 
+function fixtureReply(index) {
+  const json = (delta, finish_reason = null) => "data: " + JSON.stringify({
+    id: "fixture-" + index, object: "chat.completion.chunk", created: 1, model: "smollm2:135m",
+    choices: [{ index: 0, delta, finish_reason }],
+  }) + "\n\n";
+  const words = index === 0 ? ["Paris", " is the capital."] : ["France", "."];
+  const body = json({ role: "assistant" }) + words.map(content => json({ content })).join("") +
+    json({}, "stop") + "data: [DONE]\n\n";
+  return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+}
+
 const server = createServer(async (request, response) => {
   const actual = Buffer.from(request.headers.authorization ?? "");
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
@@ -55,7 +67,7 @@ const server = createServer(async (request, response) => {
     const body = await new Response(request).text();
     const target = { body: JSON.parse(body), fragments: [] };
     targets.push(target);
-    const result = await fetch("http://127.0.0.1:18541/v1/chat/completions", {
+    const result = fixtureModel ? fixtureReply(targets.length - 1) : await fetch("http://127.0.0.1:18541/v1/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json" }, body,
       signal: AbortSignal.timeout(50_000),
     });
@@ -177,15 +189,53 @@ async function typePrompt(prompt) {
 async function openProject() {
   press("open-project");
   await until(() => visible("project-path"), "Add project dialog");
+  press("cancel-project");
+  await until(() => !tree().includes('id="project-path"'), "cancelled project picker");
+  const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  assert.equal(index().projects.length, 0);
+  press("empty-open-project");
+  await until(() => visible("project-path"), "empty home project picker");
   await setField("project-path", join(directory, "missing folder"));
   press("confirm-project");
   await until(() => visible("project-path-error"), "invalid path feedback");
+  assert.equal(index().projects.length, 0);
   await setField("project-path", project);
   press("confirm-project");
-  await until(() => tree().includes('value="Sample Project"') || tree().includes('description="Sample Project"'),
-              "selected project in the window");
-  const saved = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
-  assert.equal(saved.projects.find(item => item.id === saved.selectedProject)?.path, project);
+  await until(() => visible("composer").includes("focused=true"), "registered folder's focused composer");
+  const saved = index();
+  const added = saved.projects.find(item => item.id === saved.selectedProject);
+  assert.equal(added.path, project);
+  assert.ok(added.selectedConversation);
+  assert(!tree().includes("thread-row-"), "Empty drafts should not appear in the thread list.");
+  press("open-project");
+  await until(() => visible("project-path"), "folder picker for a duplicate");
+  const missingChild = join(project, "missing folder");
+  await setField("project-path", missingChild);
+  press("browse-project");
+  await until(() => visible("open-panel"), "system folder picker");
+  press("CancelButton");
+  await until(() => !tree().includes('id="open-panel"'), "system picker cancellation");
+  assert(drive("get", ["project-path", "--values"]).includes(missingChild));
+  press("browse-project");
+  await until(() => visible("OKButton").includes("enabled=true"), "Choose folder");
+  press("OKButton");
+  await until(() => !tree().includes('id="open-panel"'), "system folder selection");
+  const returnedPath = drive("get", ["project-path", "--values"]);
+  assert(returnedPath.includes("value=" + JSON.stringify(project)), "Browse did not return the selected folder");
+  press("confirm-project");
+  await until(() => !tree().includes('id="project-path"'), "confirmed OS folder");
+  assert.equal(index().projects.length, 1);
+  assert.equal(index().selectedProject, added.id);
+  assert.equal(index().projects[0].selectedConversation, added.selectedConversation);
+  press("open-project");
+  await until(() => visible("project-path"), "picker for a folder alias");
+  const alias = join(directory, "project-alias");
+  symlinkSync(project, alias);
+  await setField("project-path", alias);
+  press("confirm-project");
+  await until(() => !tree().includes('id="project-path"'), "confirmed folder alias");
+  assert.equal(index().projects.length, 1);
+  assert.equal(index().projects[0].id, added.id);
 }
 
 async function send(prompt) {
@@ -309,6 +359,7 @@ try {
   }), { mode: 0o600 });
 
   record("Verification folder: " + directory);
+  record(fixtureModel ? "Model endpoint: deterministic loopback fixture." : "Model endpoint: loopback Ollama.");
   updateKey("--set-api-key-from-stdin", secret);
   keySaved = true;
   const firstPID = await launch(true);
@@ -316,9 +367,7 @@ try {
   await until(() => visible("remove-api-key"), "saved Keychain entry");
   await closeSettings();
   await openProject();
-  record("Open Project opened the app dialog. An invalid path showed an error; the valid folder was added and selected through the UI.");
-  press("new-conversation");
-  await until(() => visible("conversation-title"), "new conversation");
+  record("Cancelling and an invalid path left the index empty. Registration focused the draft. Browse returned the same folder and kept its project and draft IDs.");
   record("App opened Sample Project, created a conversation, and found the Swift-provisioned Keychain item.");
   if (worktreeTest) {
     await chooseNewWorktree("main");
@@ -351,6 +400,13 @@ try {
   await quit();
   const secondPID = await launch(false);
   assert.notEqual(firstPID, secondPID);
+  await until(() => visible("composer").includes("focused=true"), "focused draft after relaunch");
+  const landing = JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
+  assert.equal(landing.selectedProject, previous.selectedProject);
+  assert.notEqual(landing.projects[0].selectedConversation, threadID);
+  assert.equal(landing.projects[0].conversations.filter(thread => thread.isDraft).length, 1);
+  assert(!replyVisible(targets[0]));
+  press("thread-row-" + threadID);
   await until(() => replyVisible(targets[0]), "previous reply in the reopened window");
   await send(secondPrompt);
   await until(() => targets[1]?.completed && replyVisible(targets[1]), "second reply on screen", 50_000);
