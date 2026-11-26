@@ -20,10 +20,11 @@ export async function verifyQueue(driver, { workspace, projectID, threadID, gate
   const hasCount = n => value("queue-count").includes(JSON.stringify(n + (n === 1 ? " queued message" : " queued messages")));
   const hasDraft = text => value("composer").includes("value=" + JSON.stringify(text));
   async function held(prompt) {
+    const before = requestCount();
     const release = gate();
     await send(prompt);
-    await until(() => visible("steer-message") && visible("composer").includes("enabled=true") &&
-                      driver.tree().includes("Queue fixture is waiting."), "running Pi turn with a recorded user entry");
+    await until(() => requestCount() === before + 1 && visible("steer-message") && visible("composer").includes("enabled=true") &&
+                      value("streaming-reply").includes("Queue fixture is waiting."), "current HTTP stream with a recorded user entry");
     return release;
   }
   async function enqueue(text, shortcut = false) {
@@ -69,6 +70,7 @@ export async function verifyQueue(driver, { workspace, projectID, threadID, gate
   await action("remove", remove);
   await until(() => hasCount(4) && !stored().some(item => item.id === remove), "removed queue row");
   await action("move-first", front);
+  await until(() => stored()[0]?.id === front, "move-to-front saved the selected ID");
   assert.deepEqual(stored().map(item => item.id), [front, first, second, steerRow]);
   await setField("composer", "Direct steer instruction");
   press("steer-message");
@@ -99,7 +101,8 @@ export async function verifyQueue(driver, { workspace, projectID, threadID, gate
   const added = await enqueue("Added while paused");
   gate();
   press("queue-send-now-" + picked);
-  await until(() => driver.tree().includes("Queue fixture is waiting.") && hasCount(2), "chosen paused item starts a fresh turn");
+  await until(() => requestCount() === beforeRestart + 1 && value("streaming-reply").includes("Queue fixture is waiting.") &&
+                    hasCount(2), "chosen paused item starts a fresh turn");
   press("stop-message");
   await until(() => visible("resume-queue") && stored().every(item => item.id !== picked), "recorded item acknowledged on Stop");
   press("resume-queue");

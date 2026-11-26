@@ -13,6 +13,10 @@ struct VerifyGitHubPullRequests {
         setenv("GIT_OPTIONAL_LOCKS", "0", 1)
 
         let manager = FileManager.default
+        if CommandLine.arguments.dropFirst().elementsEqual(["--public-cli"]) {
+            try await verifyPublicRepository()
+            return
+        }
         guard CommandLine.arguments.count == 2 else {
             throw Failure(message: "Pass the path to scripts/fixtures/github-read")
         }
@@ -346,6 +350,39 @@ struct VerifyGitHubPullRequests {
         command.waitUntilExit()
         try expect(command.terminationStatus == 0, "git \(arguments.joined(separator: " ")) succeeded")
         return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private static func verifyPublicRepository() async throws {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory.appendingPathComponent("pi-public-forge-" + UUID().uuidString)
+        try manager.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? manager.removeItem(at: directory) }
+        _ = try git(directory, "init", "--quiet", "--initial-branch=main")
+        _ = try git(directory, "remote", "add", "origin", "https://github.com/cli/cli.git")
+        let reader = GitHubReader(directory: directory.path)
+        for kind in [GitHubBrowseKind.pullRequests, .issues] {
+            let first = try await reader.list(.init(kind, .all))
+            guard first.repository.slug.lowercased() == "cli/cli", let sample = first.items.first else {
+                throw Failure(message: "No sample from the expected public repository")
+            }
+            let label = first.items.flatMap(\.labelNames).first { !$0.contains("\"") && !$0.contains("\\") } ?? "bug"
+            let query = GitHubListQuery(kind, .all, text: "label:\"\(label)\"")
+            let filtered = try await reader.list(query)
+            try expect(!filtered.items.isEmpty && filtered.items.contains { $0.labelNames.contains(label) }, "live label search")
+            var added = 0
+            if let next = filtered.next {
+                let more = try await reader.list(query, after: next)
+                let existing = Set(filtered.items.map(\.number))
+                added = more.items.filter { !existing.contains($0.number) }.count
+                try expect(added > 0, "another page adds new items")
+            }
+            let number = switch kind {
+            case .pullRequests: try await reader.pullRequestDetails(for: sample.number, in: first.repository).pullRequest.number
+            case .issues: try await reader.issueDetails(for: sample.number, in: first.repository).number
+            }
+            try expect(number == sample.number, "detail belongs to the selected item")
+            print("\(kind.rawValue) repo=\(first.repository.slug) first=\(first.items.count) labelMatches=\(filtered.items.count) nextNew=\(added) selectedDetailMatches=true")
+        }
     }
 
     private static func expectFailure<T>(_ message: String, read: () async throws -> T) async throws {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export async function verifyFiles(driver, checkout, project, git) {
@@ -25,10 +25,10 @@ export async function verifyFiles(driver, checkout, project, git) {
     await until(() => visible(action), action);
     press(action);
   }
-  async function showExplorer(open) {
-    try { press("files-toggle-explorer"); }
+  async function transition(id, ready, label) {
+    try { press(id); }
     catch (error) { if (!/AX error -(25200|25204)/.test(String(error.stderr))) throw error; }
-    await until(() => has("files-search") === open, open ? "restored explorer" : "hidden explorer");
+    await until(ready, label);
   }
   press("toggle-files");
   await until(() => visible(row("notes")) && visible(row("sample.bin")), "files in the selected checkout");
@@ -40,8 +40,7 @@ export async function verifyFiles(driver, checkout, project, git) {
   const fresh = "created-after-opening.txt";
   assert(!has(row(fresh)));
   writeFileSync(join(checkout, fresh), "Fresh\n");
-  press("files-refresh");
-  await until(() => visible(row(fresh)), "file created outside the app");
+  await transition("files-refresh", () => visible(row(fresh)), "file created outside the app");
 
   press(row("sample.bin"));
   await until(() => visible("files-binary-preview") && value("files-contents").includes("00 41 FF 10"), "binary prefix in hex");
@@ -54,15 +53,15 @@ export async function verifyFiles(driver, checkout, project, git) {
   await until(() => visible(row(relative)) && !has(row("long.txt")), "nested file search");
   press(row(relative));
   await until(() => editorIs("Current worktree\n"), "worktree file bytes");
-  await showExplorer(false);
-  await showExplorer(true);
-  press("files-breadcrumb-notes/weekly");
-  await until(() => visible(row(relative)), "breadcrumb parent folder");
+  await transition("files-toggle-explorer", () => !has("files-search"), "hidden explorer");
+  await transition("files-toggle-explorer", () => has("files-search"), "restored explorer");
+  await transition("files-breadcrumb-notes/weekly", () =>
+    visible("files-parent-folder").includes("notes/weekly") && value("files-search").includes('value=""') &&
+    visible(row(relative)), "breadcrumb opens the parent directory and clears its search");
 
   const edited = "Edited in the linked worktree\n";
   await setField("files-editor", edited);
-  if (visible("files-save").includes("enabled=true")) press("files-save");
-  await until(() => readFileSync(file, "utf8") === edited, "edited file saved");
+  await until(() => readFileSync(file, "utf8") === edited && !has("files-unsaved"), "idle editor saved the exact bytes");
   await actions("files-file-actions", "files-copy-contents");
   await until(() => checkCopy(edited), "copied the displayed file contents");
   await actions("files-file-actions", "files-copy-path");
@@ -74,24 +73,33 @@ export async function verifyFiles(driver, checkout, project, git) {
   try {
     await setField("files-editor", "Keep these unsaved edits");
     await until(() => visible("files-unsaved"), "pending editor text");
-    press("files-refresh");
-    await until(() => visible("files-save").includes("enabled=false") && editorIs("Keep these unsaved edits"), "read-only file retains the draft");
-    press("toggle-files");
-    await until(() => visible("browser-address"), "browser returned under Files");
-    press("toggle-files");
-    await until(() => editorIs("Keep these unsaved edits") && visible("files-unsaved"), "unsaved file after panel switch");
+    await transition("files-refresh", () => visible("files-read-only") && visible("files-save").includes("enabled=false") &&
+                     editorIs("Keep these unsaved edits"), "read-only file retains the draft");
+    await transition("terminate:", () => visible("keep-editing-draft") && driver.tree().includes("Couldn’t save " + relative),
+                     "quit blocked by the unsaved file");
+    await transition("keep-editing-draft", () => !has("keep-editing-draft") && editorIs("Keep these unsaved edits"), "keep editing the blocked file");
+    await transition("toggle-files", () => visible("browser-address"), "browser returned under Files");
+    await transition("toggle-files", () => editorIs("Keep these unsaved edits") && visible("files-unsaved"), "unsaved file after panel switch");
   } finally {
     chmodSync(file, 0o644);
   }
-  writeFileSync(file, "External edit\n");
-  press("files-refresh");
-  await until(() => visible("files-save-error") && visible("files-save").includes("enabled=false"), "external change protects disk");
-  assert(editorIs("Keep these unsaved edits"));
+  await until(() => readFileSync(file, "utf8") === "Keep these unsaved edits" && !has("files-unsaved"), "restored permission resumes autosave");
+  chmodSync(file, 0o444);
+  try {
+    await setField("files-editor", "Draft awaiting conflict resolution");
+    await until(() => visible("files-read-only") && has("files-unsaved"), "new draft blocked before replacement");
+    const replacement = join(checkout, "replacement.fixture");
+    writeFileSync(replacement, "External edit\n");
+    renameSync(replacement, file);
+  } finally {
+    chmodSync(file, 0o644);
+  }
+  await transition("files-refresh", () => visible("files-save-error") && visible("files-save").includes("enabled=false"), "external change protects disk");
+  assert(editorIs("Draft awaiting conflict resolution"));
   assert.equal(readFileSync(file, "utf8"), "External edit\n");
   await actions("files-file-actions", "files-discard");
   await until(() => visible("files-confirm-discard"), "explicit discard confirmation");
-  press("files-confirm-discard");
-  await until(() => editorIs("External edit\n") && !has("files-unsaved"), "discard reloads the external text");
+  await transition("files-confirm-discard", () => editorIs("External edit\n") && !has("files-unsaved"), "discard reloads the external text");
   assert.equal(git(checkout, "show", ":" + relative), "Staged original");
   assert.equal(readFileSync(parentFile, "utf8"), "Parent checkout\n");
   press("toggle-files");

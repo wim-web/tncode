@@ -23,6 +23,10 @@ The app bundles Node.js and Pi. The build uses the current Mac's architecture an
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
+During a turn, choose **Queue** or press ⌘Return to send a follow-up after Pi finishes. **Steer** sends an instruction into the current run. A queued row’s menu lets you edit, reorder, or remove it. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
+
+Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
+
 If a project folder moves, use **Relink Folder** in its context menu to point the project at the new path and retain its conversations.
 
 Choose **Start without a project** on the empty home screen to work in a private folder. The thread menu's **Turn into project** action registers that folder and keeps the conversation history.
@@ -46,6 +50,8 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
 4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds. The branch menu switches between existing local branches.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Hide the drawer to keep the shell running. Use **Close** to end the session.
+
+Open **Files** to search or browse the selected checkout. Small text files save after a short pause in typing. **Save** writes immediately. A read-only file keeps pending edits until write access returns. If another program replaces or edits the file, copy your pending text or choose **Discard Edits** to reload the disk version.
 
 Open **Browser** in the thread header. Enter a URL, a host such as `localhost:5173`, or search terms, then press Return. **Pi Workspace → Browser Settings…** selects the search engine. A custom HTTP or HTTPS search URL uses `%s` for the query. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
 
@@ -86,6 +92,8 @@ swiftc -module-cache-path .build/pr-test-cache \
     scripts/verify-github-pull-requests.swift -o .build/verify-github-pull-requests
 .build/verify-github-pull-requests "$PWD/scripts/fixtures/github-read"
 ```
+
+With a signed-in GitHub CLI, `.build/verify-github-pull-requests --public-cli` checks real list, label-search, pagination, and detail responses for the public `cli/cli` repository. It uses a temporary local checkout.
 
 For a packaged-app check, initialize a disposable checkout with fetch remote `git@github.com:fixture/workspace.git`. Launch the app binary with `scripts/fixtures/github-read` on the front of PATH. Pass the checkout with `--project` and a disposable app store with `--workspace`. Set `PI_GH_FIXTURE_STATE` to a file containing `initial`.
 

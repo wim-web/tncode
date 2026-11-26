@@ -529,6 +529,10 @@ async function verifyCheckout(checkout) {
 
   press("toggle-terminal");
   await until(() => visible("thread-terminal"), "PTY terminal in the app");
+  await until(() => visible("thread-terminal").includes("focused=true"), "terminal has keyboard focus");
+  panelDriver.keyFor("thread-terminal", 40, "cmd");
+  await delay(250);
+  assert(visible("thread-terminal").includes("focused=true") && !tree().includes('id="command-palette"'));
   const proof = join(checkout, "tty-proof.txt");
   await until(() => existsSync(proof), "PTY proof file in the selected worktree");
   assert.equal(realpathSync(readFileSync(proof, "utf8").trim()), checkout);

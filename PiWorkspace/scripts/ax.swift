@@ -428,6 +428,15 @@ private func run(_ arguments: [String]) throws {
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .keyFocused(let id, let code, let flags):
         try requireKeyboardAccess()
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            try requireSuccess(AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue),
+                               "Activate the designated keyboard target")
+            let deadline = ProcessInfo.processInfo.systemUptime + 1
+            while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure("The designated application did not gain focus.") }
+                Thread.sleep(forTimeInterval: 0.025)
+            }
+        }
         let field = try element(withID: id, in: app)
         guard attribute(kAXFocusedAttribute, on: field) as? Bool == true else { throw Failure("The target field lacks focus.") }
         let characters: [CGKeyCode: UInt16] = [3: 0x66, 36: 0x0D, 40: 0x6B, 48: 0x09, 51: 0x7F, 53: 0x1B,
