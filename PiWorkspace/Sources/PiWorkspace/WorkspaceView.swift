@@ -39,13 +39,12 @@ struct WorkspaceView: View {
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
     @State private var showingFiles: Set<UUID> = []
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
-    @State private var showingTerminal = false
     @State private var choosingWorkspace = false
-    @State private var confirmingTerminalClose = false
+    @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
-    @State private var openTerminals: [TerminalLocation] = []
+    @State private var openTerminals: [ThreadTerminalDrawerState] = []
     @State private var settledExpanded = false
     @State private var rename: RenameTarget?
     @State private var title = ""
@@ -65,12 +64,6 @@ struct WorkspaceView: View {
     private enum PaletteReturnFocus {
         case search
         case composer(UUID)
-    }
-
-    private struct TerminalLocation: Identifiable, Hashable {
-        let thread: UUID
-        let path: String
-        var id: Self { self }
     }
 
     private struct MessageSearchKey: Equatable {
@@ -133,6 +126,7 @@ struct WorkspaceView: View {
             if model.showingWelcome { welcome }
         }
         .tint(accent)
+        .background(ThreadTerminalKeyboard())
         .onReceive(model.sidebarCommand) { command in
             switch command {
             case .commandPalette: openCommandPalette()
@@ -188,15 +182,16 @@ struct WorkspaceView: View {
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
         }
-        .confirmationDialog("Close this thread’s terminal?", isPresented: $confirmingTerminalClose) {
+        .confirmationDialog("Close this thread’s terminals?", isPresented: Binding(
+            get: { terminalWorkspaceChange != nil },
+            set: { if !$0 { terminalWorkspaceChange = nil } }
+        ), presenting: terminalWorkspaceChange) { thread in
             Button("Close Terminal and Choose Workspace", role: .destructive) {
-                if let thread = model.conversation {
-                    openTerminals.removeAll { $0.thread == thread.id }
-                    showingTerminal = false
-                }
+                guard model.conversation?.id == thread else { return }
+                openTerminals.removeAll { $0.id.thread == thread }
                 choosingWorkspace = true
             }
-        } message: {
+        } message: { _ in
             Text("Workspace changes require a new terminal in the selected folder.")
         }
         .sheet(isPresented: $choosingThreadProject) {
@@ -934,7 +929,7 @@ struct WorkspaceView: View {
                         filesAreVisible: Bool, detailsFitInline: Bool) -> some View {
         return HStack(spacing: 8) {
             let canSwitchProject = model.canSwitchDraftProject &&
-                !openTerminals.contains { $0.thread == thread.id } &&
+                !openTerminals.contains { $0.id.thread == thread.id } &&
                 (!project.isScratch || !model.projects.isEmpty)
             if canSwitchProject || !project.isScratch {
                 Menu {
@@ -1108,56 +1103,32 @@ struct WorkspaceView: View {
         .accessibilityIdentifier("workspace-details")
     }
 
-    private var activeTerminal: TerminalLocation? {
+    private var activeTerminal: ThreadTerminalLocation? {
         guard let thread = model.conversation?.id, let path = model.workingDirectory else { return nil }
-        return TerminalLocation(thread: thread, path: path)
+        return ThreadTerminalLocation(thread: thread, path: path)
     }
 
     private var terminalIsVisible: Bool {
-        showingTerminal && activeTerminal.map(openTerminals.contains) == true
+        openTerminals.contains { $0.id == activeTerminal && $0.isOpen }
     }
 
     private func toggleTerminal() {
         guard let activeTerminal else { return }
-        if terminalIsVisible {
-            showingTerminal = false
+        if let index = openTerminals.firstIndex(where: { $0.id == activeTerminal }) {
+            openTerminals[index].isOpen.toggle()
         } else {
-            if !openTerminals.contains(activeTerminal) { openTerminals.append(activeTerminal) }
-            showingTerminal = true
+            openTerminals.append(ThreadTerminalDrawerState(id: activeTerminal))
         }
     }
 
     private var terminalDrawer: some View {
         VStack(spacing: 0) {
-            if terminalIsVisible {
-                Divider()
-                HStack {
-                    Label("Terminal", systemImage: "terminal").font(.caption.weight(.medium))
-                    Spacer()
-                    Button("Hide") { showingTerminal = false }
-                        .buttonStyle(.plain)
-                    Button("Close") {
-                        openTerminals.removeAll { $0 == activeTerminal }
-                        showingTerminal = false
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("close-terminal")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-            }
-            ZStack {
-                ForEach(openTerminals) { terminal in
-                    let visible = terminalIsVisible && terminal == activeTerminal
-                    ThreadTerminal(directory: terminal.path, visible: visible)
-                        .frame(height: 174)
-                        .opacity(visible ? 1 : 0)
-                        .accessibilityHidden(!visible)
-                        .allowsHitTesting(visible)
+            ForEach($openTerminals) { $drawer in
+                let location = drawer.id
+                ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal) {
+                    openTerminals.removeAll { $0.id == location }
                 }
             }
-            .frame(height: terminalIsVisible ? 174 : 0)
-            .clipped()
         }
     }
 
@@ -1440,7 +1411,7 @@ struct WorkspaceView: View {
         guard model.canOpenCommandPalette, !model.showingCommandPalette,
               let window = NSApp.keyWindow, window === NSApp.mainWindow,
               window.attachedSheet == nil, NSApp.modalWindow == nil, !ThreadTerminal.hasFocus(in: window),
-              !choosingWorkspace, !choosingThreadProject, !confirmingTerminalClose,
+              !choosingWorkspace, !choosingThreadProject, terminalWorkspaceChange == nil,
               draftSettingsProject == nil, rename == nil, removingProject == nil else { return }
         paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         model.showingCommandPalette = true
@@ -1496,8 +1467,8 @@ struct WorkspaceView: View {
     }
 
     private func chooseWorkspace() {
-        if let thread = model.conversation, openTerminals.contains(where: { $0.thread == thread.id }) {
-            confirmingTerminalClose = true
+        if let thread = model.conversation, openTerminals.contains(where: { $0.id.thread == thread.id }) {
+            terminalWorkspaceChange = thread.id
         } else {
             choosingWorkspace = true
         }
@@ -1552,6 +1523,7 @@ struct WorkspaceView: View {
     }
 
     private func switchDraftProject(to projectID: UUID?) {
+        guard !openTerminals.contains(where: { $0.id.thread == model.conversation?.id }) else { return }
         let previousProject = model.project?.id
         model.switchDraftProject(to: projectID)
         guard let project = model.project, project.id != previousProject else { return }

@@ -5,65 +5,136 @@ import SwiftUI
 
 struct ThreadTerminal: View {
     let directory: String
+    let number: Int
     let visible: Bool
+    let focusRequest: Int?
+    let onFocus: () -> Void
+    let onCycle: (Int) -> Bool
 
     static func hasFocus(in window: NSWindow) -> Bool {
         window.firstResponder is TerminalSessionView
     }
 
     var body: some View {
-        TerminalHost(directory: directory, visible: visible)
+        TerminalHost(terminal: self)
     }
 
     private struct TerminalHost: NSViewRepresentable {
-        let directory: String
-        let visible: Bool
+        let terminal: ThreadTerminal
 
         func makeNSView(context: Context) -> TerminalSessionView {
-            let terminal = TerminalSessionView(frame: .zero)
-            terminal.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-            terminal.setAccessibilityElement(true)
-            terminal.setAccessibilityRole(.textArea)
-            terminal.setAccessibilityLabel("Thread terminal")
-            terminal.setAccessibilityIdentifier("thread-terminal")
-            terminal.start(in: directory)
-            return terminal
+            let view = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 360, height: ThreadTerminalDrawer.contentHeight))
+            view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            view.isHidden = true
+            view.setAccessibilityRole(.textArea)
+            view.setAccessibilityLabel("Terminal \(terminal.number)")
+            view.start(in: terminal.directory)
+            return view
         }
 
-        func updateNSView(_ terminal: TerminalSessionView, context: Context) {
-            terminal.setPresented(visible)
+        func sizeThatFits(_ proposal: ProposedViewSize, nsView: TerminalSessionView, context: Context) -> CGSize? {
+            proposal.replacingUnspecifiedDimensions()
+        }
+
+        func updateNSView(_ view: TerminalSessionView, context: Context) {
+            view.onFocus = terminal.onFocus
+            view.onCycle = terminal.onCycle
+            view.setAccessibilityIdentifier(terminal.focusRequest != nil ? "thread-terminal" : "terminal-pane-\(terminal.number)")
+            view.setPresentation(terminal.visible, focusRequest: terminal.focusRequest)
         }
 
         static func dismantleNSView(_ terminal: TerminalSessionView, coordinator: ()) {
+            terminal.onFocus = nil
+            terminal.onCycle = nil
+            terminal.setPresentation(false, focusRequest: nil)
             terminal.closeSession()
         }
     }
 }
 
-private final class TerminalSessionView: LocalProcessTerminalView {
+struct ThreadTerminalKeyboard: NSViewRepresentable {
+    final class Coordinator { var monitor: Any? }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let anchor = NSView()
+        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak anchor] event in
+            guard let window = anchor?.window, event.window === window,
+                  let terminal = window.firstResponder as? TerminalSessionView,
+                  terminal.cycleFocus(for: event) else { return event }
+            return nil
+        }
+        return anchor
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
+    }
+}
+
+final class TerminalSessionView: LocalProcessTerminalView {
+    var onFocus: (() -> Void)?
+    var onCycle: ((Int) -> Bool)?
     private var presented = false
+    private var focusRequest: Int?
 
     func closeSession() {
         if case let .success(descriptor?) = process.duplicatePrimaryDescriptor() {
+            let shell = process.shellPid
+            let foreground = tcgetpgrp(descriptor)
             _ = ioctl(descriptor, TIOCSIG, SIGHUP)
+            // The shell can ignore SIGTERM while another job owns the foreground.
+            if shell > 0, foreground != shell, getsid(shell) == shell {
+                _ = kill(-shell, SIGHUP)
+            }
             Darwin.close(descriptor)
         }
         terminate()
     }
 
-    func setPresented(_ presented: Bool) {
-        guard self.presented != presented else { return }
+    func setPresentation(_ presented: Bool, focusRequest: Int?) {
+        guard self.presented != presented || self.focusRequest != focusRequest else { return }
         self.presented = presented
+        self.focusRequest = focusRequest
+        isHidden = !presented
         setAccessibilityElement(presented)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.presented == presented else { return }
-            self.setAccessibilityFocused(presented)
-        }
+        updateFocus()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if presented { setAccessibilityFocused(true) }
+        if window != nil { updateFocus() }
+    }
+
+    private func updateFocus() {
+        let request = focusRequest
+        let shown = presented
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presented == shown, self.focusRequest == request else { return }
+            if shown && request != nil {
+                self.window?.makeFirstResponder(self)
+            } else if !shown {
+                self.setAccessibilityFocused(false)
+            }
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        setAccessibilityFocused(true)
+        super.mouseDown(with: event)
+    }
+
+    func cycleFocus(for event: NSEvent) -> Bool {
+        guard presented, window?.firstResponder === self,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] else { return false }
+        switch event.charactersIgnoringModifiers {
+        case "[", "{": return onCycle?(-1) ?? false
+        case "]", "}": return onCycle?(1) ?? false
+        default: return false
+        }
     }
 
     override func isAccessibilityFocused() -> Bool {
@@ -71,8 +142,8 @@ private final class TerminalSessionView: LocalProcessTerminalView {
     }
 
     override func setAccessibilityFocused(_ focused: Bool) {
-        if focused && presented {
-            window?.makeFirstResponder(self)
+        if focused {
+            if presented && window?.makeFirstResponder(self) == true { onFocus?() }
         } else if window?.firstResponder === self {
             window?.makeFirstResponder(nil)
         }
