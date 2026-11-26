@@ -59,7 +59,8 @@ struct WorkspaceView: View {
     @State private var title = ""
     @State private var removingProject: Project?
     @State private var createdProject: UUID?
-    @State private var draftCheckoutBranches: [String: String] = [:]
+    @State private var checkoutsWithBranches: Set<String> = []
+    @State private var copyTask: Task<Void, Never>?
     @FocusState private var focusedComposer: UUID?
     @State private var showingComposerStash = false
     @FocusState private var welcomeFocus: WelcomeFocus?
@@ -71,6 +72,13 @@ struct WorkspaceView: View {
     private enum RenameTarget {
         case project(UUID)
         case conversation(UUID, project: UUID)
+
+        var fieldLabel: String {
+            switch self {
+            case .project: "Project name"
+            case .conversation: "Thread title"
+            }
+        }
     }
 
     private enum PaletteReturnFocus {
@@ -96,6 +104,11 @@ struct WorkspaceView: View {
 
     private struct BranchReadRequest: Equatable {
         let scope: WorkspaceModel.BranchPickerScope?
+        let revision: Int
+    }
+
+    private struct CopyBranchReadRequest: Equatable {
+        let paths: Set<String>
         let revision: Int
     }
 
@@ -127,6 +140,7 @@ struct WorkspaceView: View {
 
     var body: some View {
         let findRequest = model.activeThreadFind?.request
+        let branchRequest = copyBranchReadRequest
         ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
@@ -243,17 +257,15 @@ struct WorkspaceView: View {
                 model.showingCommandPalette = false
             }
         }
-        .task(id: model.repositoryRevision) {
-            var branches: [String: String] = [:]
-            let paths = Set(model.threadProjects.flatMap(\.conversations).compactMap { thread -> String? in
-                guard thread.isDraft == true, case let .worktree(path, _) = thread.workingLocation else { return nil }
-                return path
-            })
-            for path in paths {
+        .task(id: branchRequest) {
+            var checkouts: Set<String> = []
+            for path in branchRequest.paths {
                 if Task.isCancelled { return }
-                branches[path] = try? await GitWorkspace(path: path).currentBranch()
+                if let branch = try? await GitWorkspace(path: path).currentBranch(), !branch.isEmpty {
+                    checkouts.insert(path)
+                }
             }
-            if !Task.isCancelled { draftCheckoutBranches = branches }
+            if !Task.isCancelled { checkoutsWithBranches = checkouts }
         }
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
@@ -335,9 +347,13 @@ struct WorkspaceView: View {
             }
         }
         .alert("Rename", isPresented: Binding(get: { rename != nil }, set: { if !$0 { rename = nil } })) {
-            TextField("Name", text: $title)
+            TextField(rename?.fieldLabel ?? "Name", text: $title)
+                .accessibilityIdentifier("rename-title")
             Button("Cancel", role: .cancel) { rename = nil }
+                .accessibilityIdentifier("cancel-rename")
             Button("Save") { saveTitle() }
+                .accessibilityIdentifier("save-rename")
+                .keyboardShortcut(.defaultAction)
         }
         .confirmationDialog("Remove project from the sidebar?",
                             isPresented: Binding(get: { removingProject != nil },
@@ -474,6 +490,7 @@ struct WorkspaceView: View {
                                     .buttonStyle(.plain)
                                     .disabled(model.operationsInProgress && model.conversation?.id != result.thread.id)
                                     .accessibilityIdentifier("message-search-result-\(result.thread.id)-\(match.messageID)")
+                                    .contextMenu { threadActions(result.thread.thread, project: result.thread.project) }
                                 } else {
                                     threadRow(result.thread, showProject: true, highlighted: result.thread.id == highlightedID)
                                 }
@@ -810,20 +827,7 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private func draftActions(_ thread: Conversation, project: Project) -> some View {
-        let path = thread.workingLocation.directory(in: project)
-        let branch = draftBranch(in: thread.workingLocation)
-        Menu("Copy") {
-            if !path.isEmpty {
-                Button("Path") { copyToPasteboard(path) }
-                    .accessibilityIdentifier("draft-copy-path")
-            }
-            if let branch, !branch.isEmpty {
-                Button("Branch") { copyToPasteboard(branch) }
-                    .accessibilityIdentifier("draft-copy-branch")
-            }
-        }
-        .accessibilityIdentifier("draft-copy")
-        .disabled(path.isEmpty && (branch ?? "").isEmpty)
+        threadCopyMenu(thread, project: project)
         if project.isScratch {
             turnIntoProject(thread, project: project)
         } else {
@@ -837,17 +841,50 @@ struct WorkspaceView: View {
             .disabled(model.operationsInProgress || !thread.canDiscardDraft)
     }
 
-    private func draftBranch(in location: ThreadLocation) -> String? {
-        switch location {
-        case .project: nil
-        case let .newWorktree(_, base): GitBranchRef.displayName(base)
-        case let .worktree(path, _): draftCheckoutBranches[path]
+    private var copyBranchReadRequest: CopyBranchReadRequest {
+        var paths = Set(threads.compactMap {
+            ThreadCopyTarget(root: model.root, project: $0.project, thread: $0.thread).branchReadPath
+        })
+        if let project = model.project, let thread = model.conversation,
+           let path = ThreadCopyTarget(root: model.root, project: project, thread: thread).branchReadPath {
+            paths.insert(path)
+        }
+        return CopyBranchReadRequest(paths: paths, revision: model.repositoryRevision)
+    }
+
+    private func copy(_ field: ThreadCopyTarget.Field, from target: ThreadCopyTarget) {
+        copyTask?.cancel()
+        copyTask = Task {
+            do {
+                try await target.copy(field, to: workspacePasteboard)
+            } catch {
+                if !Task.isCancelled { model.error = error.localizedDescription }
+            }
         }
     }
 
-    private func copyToPasteboard(_ text: String) {
-        workspacePasteboard.clearContents()
-        workspacePasteboard.setString(text, forType: .string)
+    private func threadCopyMenu(_ thread: Conversation, project: Project) -> some View {
+        let target = ThreadCopyTarget(root: model.root, project: project, thread: thread)
+        let hasBranch = target.branchReadPath.map(checkoutsWithBranches.contains) ?? (target.draftBase?.isEmpty == false)
+        let prefix = target.isDraft ? "draft-copy" : "thread-copy"
+        return Menu("Copy") {
+            if !target.isDraft || !target.path.isEmpty {
+                Button("Path") { copy(.path, from: target) }
+                    .accessibilityIdentifier(prefix + "-path")
+            }
+            if hasBranch {
+                Button("Branch") { copy(.branch, from: target) }
+                    .accessibilityIdentifier(prefix + "-branch")
+            }
+            if !target.isDraft {
+                Button("Thread") { copy(.reference, from: target) }
+                    .accessibilityIdentifier("thread-copy-reference")
+                Button("Thread ID") { copy(.id, from: target) }
+                    .accessibilityIdentifier("thread-copy-id")
+            }
+        }
+        .accessibilityIdentifier(prefix)
+        .disabled(target.isDraft && target.path.isEmpty && !hasBranch)
     }
 
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
@@ -866,6 +903,7 @@ struct WorkspaceView: View {
             Button("Filter by \(project.title)") { projectFilter.selectOnly(project.id) }
         }
         Button("Rename Thread…") { beginRename(.conversation(thread.id, project: project.id), title: thread.title) }
+            .accessibilityIdentifier("rename-thread")
         if project.isScratch {
             turnIntoProject(thread, project: project)
         }
@@ -881,10 +919,12 @@ struct WorkspaceView: View {
             }
             .disabled(model.operationsInProgress)
         }
+        threadCopyMenu(thread, project: project)
         Button(thread.archived ? "Restore Thread" : "Archive Thread") {
             model.archiveConversation(thread.id, in: project.id, archived: !thread.archived)
         }
-        .disabled(model.operationsInProgress)
+        .accessibilityIdentifier(thread.archived ? "restore-thread" : "archive-thread")
+        .disabled(!model.canChangeArchive(for: thread.id))
     }
 
     private func detail(viewport: CGSize) -> some View {
@@ -1489,6 +1529,7 @@ struct WorkspaceView: View {
                 Button("Restore Thread") {
                     model.archiveConversation(thread.id, in: project.id, archived: false)
                 }
+                .accessibilityIdentifier("restore-open-thread")
             } else if thread.worktreeLaunch == nil || model.phase.isRunning {
                 if let approval = model.pendingToolApproval, let directory = model.workingDirectory {
                     ToolApprovalCard(approval: approval, directory: directory) {

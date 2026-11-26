@@ -878,11 +878,16 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func startScratchThread() {
+        startScratchThread(updating: { _ in })
+    }
+
+    private func startScratchThread(updating edit: (inout Workspace) -> Void) {
         guard !operationsInProgress, let store else { return }
         do {
             let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
             let scratch = try store.makeScratchProject(for: thread)
             guard save({
+                edit(&$0)
                 $0.projects.append(scratch)
                 $0.selectedProject = scratch.id
             }) else {
@@ -1119,17 +1124,31 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func renameConversation(_ id: UUID, in projectID: UUID, title: String) {
-        guard let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }) else { return }
         save { $0.projects[p].conversations[t].title = title }
     }
 
+    func canChangeArchive(for id: UUID) -> Bool {
+        conversation?.id != id || !operationsInProgress
+    }
+
     func archiveConversation(_ id: UUID, in projectID: UUID, archived: Bool) {
-        guard !operationsInProgress, let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
-              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }) else { return }
-        if save({ $0.projects[p].conversations[t].archived = archived }), conversation?.id == id {
-            showArchive = archived
+        guard canChangeArchive(for: id), let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }),
+              workspace.projects[p].conversations[t].archived != archived else { return }
+        let isOpen = project?.id == projectID && conversation?.id == id
+        if archived && isOpen && workspace.projects[p].isScratch {
+            startScratchThread(updating: { $0.projects[p].conversations[t].archived = true })
+            return
         }
+        guard save({
+            $0.projects[p].conversations[t].archived = archived
+            if archived && isOpen { $0.projects[p].selectDraft() }
+        }), isOpen else { return }
+        showArchive = false
+        if archived { connect() }
     }
 
     func moveConversation(_ id: UUID, in projectID: UUID, to shelf: ThreadShelf) {

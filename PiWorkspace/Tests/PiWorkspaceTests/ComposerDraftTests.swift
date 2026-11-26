@@ -424,11 +424,15 @@ final class ComposerDraftTests: XCTestCase {
             XCTAssertTrue(model.draft.isEmpty)
             model.draft = "Unsent follow-up"
             model.archiveConversation(threadID, in: projectID, archived: true)
+            XCTAssertNotEqual(model.conversation?.id, threadID)
+            XCTAssertFalse(model.showArchive)
             model.terminate()
         }
         let reopened = fixture.open()
         defer { reopened.terminate() }
         reopened.start()
+        reopened.showArchive = true
+        reopened.selectConversation(threadID, in: projectID)
         XCTAssertEqual(reopened.conversation?.archived, true)
         XCTAssertTrue(reopened.showArchive)
         XCTAssertFalse(reopened.canSend)
