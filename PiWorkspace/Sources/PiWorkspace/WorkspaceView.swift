@@ -39,7 +39,6 @@ struct WorkspaceView: View {
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
     @State private var showingFiles: Set<UUID> = []
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
-    @State private var fileDrafts = WorkspaceFileDrafts()
     @State private var showingTerminal = false
     @State private var choosingWorkspace = false
     @State private var confirmingTerminalClose = false
@@ -888,7 +887,7 @@ struct WorkspaceView: View {
     @ViewBuilder
     private func filesPanel(_ project: Project, _ thread: Conversation) -> some View {
         if let location = WorkspaceFilesLocation(thread: thread, project: project) {
-            WorkspaceFilesView(location: location, drafts: fileDrafts, pasteboard: workspacePasteboard,
+            WorkspaceFilesView(location: location, saves: model.fileSaves, pasteboard: workspacePasteboard,
                                activeLocation: { showingFiles.contains(thread.id) ? selectedFilesLocation : nil },
                                close: { showingFiles.remove(thread.id) },
                                selection: Binding(get: { selectedFiles[location] },

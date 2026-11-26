@@ -22,7 +22,6 @@ enum WorkspaceFileError: LocalizedError, Equatable {
     case unsupportedPath
     case readOnly
     case changed
-    case inactive
     case tooLarge
 
     var errorDescription: String? {
@@ -31,7 +30,6 @@ enum WorkspaceFileError: LocalizedError, Equatable {
         case .unsupportedPath: "This path cannot be opened from the workspace."
         case .readOnly: "This file is read-only."
         case .changed: "The file changed on disk. Copy your edits or discard them to reload the file."
-        case .inactive: "Return to the file’s thread and checkout before saving."
         case .tooLarge: "This edit exceeds the 1 MiB save limit."
         }
     }
@@ -80,8 +78,7 @@ struct WorkspaceFileDraft {
 
     var isEdited: Bool { !text.utf8.elementsEqual(original.text.utf8) }
 
-    func save(whileActive active: WorkspaceFileTarget?) throws -> WorkspaceFileText {
-        guard target == active else { throw WorkspaceFileError.inactive }
+    func save() throws -> WorkspaceFileText {
         guard isEdited else { return original }
         return try WorkspaceFiles(directory: target.location.directory).save(self)
     }
@@ -139,8 +136,8 @@ struct WorkspaceFiles: Sendable {
         return try withParent(of: draft.target.path) { folder, name in
             let file = try openFile(in: folder, name: name)
             defer { close(file) }
-            try verify(file, matches: draft.original)
             guard canWrite(in: folder, name: name) else { throw WorkspaceFileError.readOnly }
+            try verify(file, matches: draft.original)
 
             let temporaryName = ".pi-workspace-save-\(UUID().uuidString)"
             let temporary = openat(folder, temporaryName, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)

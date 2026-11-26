@@ -1,23 +1,9 @@
 import AppKit
 import SwiftUI
 
-@Observable
-final class WorkspaceFileDrafts {
-    private var drafts: [WorkspaceFileTarget: WorkspaceFileDraft] = [:]
-
-    subscript(target: WorkspaceFileTarget) -> WorkspaceFileDraft? {
-        get { drafts[target] }
-        set { drafts[target] = newValue }
-    }
-
-    func paths(in location: WorkspaceFilesLocation) -> [String] {
-        drafts.keys.filter { $0.location == location }.map(\.path).sorted()
-    }
-}
-
 struct WorkspaceFilesView: View {
     let location: WorkspaceFilesLocation
-    let drafts: WorkspaceFileDrafts
+    let saves: WorkspaceFileSaves
     let pasteboard: NSPasteboard
     let activeLocation: () -> WorkspaceFilesLocation?
     let close: () -> Void
@@ -67,7 +53,7 @@ struct WorkspaceFilesView: View {
                             Divider()
                         }
                         WorkspaceFilePreviewView(
-                            target: target, drafts: drafts, pasteboard: pasteboard, refreshing: refreshing,
+                            target: target, saves: saves, pasteboard: pasteboard, refreshing: refreshing,
                             activeTarget: { activeLocation() == location ? self.target : nil },
                             showingExplorer: $showingExplorer, goToFolder: goToFolder,
                             folderEntries: { parent in entries.filter { $0.parent == parent && $0.kind != .link } },
@@ -111,13 +97,15 @@ struct WorkspaceFilesView: View {
                     .accessibilityIdentifier("files-expand-all")
                     Button("Collapse All Folders") { expanded.removeAll() }
                         .accessibilityIdentifier("files-collapse-all")
-                    let unsaved = drafts.paths(in: location)
+                    let unsaved = saves.paths(in: location)
                     if !unsaved.isEmpty {
                         Menu("Unsaved Files") {
                             ForEach(unsaved, id: \.self) { path in
                                 Button(path) { openFile(path) }
+                                    .accessibilityIdentifier("files-unsaved-row-" + path)
                             }
                         }
+                        .accessibilityIdentifier("files-unsaved-files")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -219,7 +207,7 @@ struct WorkspaceFilesView: View {
             HStack(spacing: 5) {
                 Image(systemName: symbol).frame(width: 12)
                 Text(name).lineLimit(1).truncationMode(.middle)
-                if drafts[WorkspaceFileTarget(location: location, path: entry.path)] != nil {
+                if saves.hasDraft(for: WorkspaceFileTarget(location: location, path: entry.path)) {
                     Circle().fill(.orange).frame(width: 5, height: 5)
                         .accessibilityLabel("Unsaved")
                 }
@@ -251,7 +239,7 @@ struct WorkspaceFilesView: View {
 
 private struct WorkspaceFilePreviewView: View {
     let target: WorkspaceFileTarget
-    let drafts: WorkspaceFileDrafts
+    let saves: WorkspaceFileSaves
     let pasteboard: NSPasteboard
     let refreshing: Int
     let activeTarget: () -> WorkspaceFileTarget?
@@ -261,29 +249,19 @@ private struct WorkspaceFilePreviewView: View {
     let openFile: (String) -> Void
     let close: () -> Void
 
-    @State private var preview: Result<WorkspaceFilePreview, Error>?
-    @State private var saveError: String?
+    @State private var session: WorkspaceFileSaveSession?
+    @State private var actionError: String?
     @State private var confirmDiscard = false
     @State private var wraps = true
     @State private var reload = 0
 
     private struct ReadRequest: Equatable {
+        let session: ObjectIdentifier?
         let refresh: Int
         let reload: Int
     }
 
-    private var draft: WorkspaceFileDraft? { drafts[target] }
-
-    private var diskText: WorkspaceFileText? {
-        if case .success(.text(let text)) = preview { return text }
-        return nil
-    }
-
-    private var changedOnDisk: Bool {
-        guard let draft, let preview else { return false }
-        guard case .success(.text(let diskText)) = preview else { return true }
-        return !diskText.matches(draft.original)
-    }
+    private var draft: WorkspaceFileDraft? { session?.draft }
 
     private var pathComponents: [String] { target.path.components(separatedBy: "/") }
 
@@ -300,42 +278,43 @@ private struct WorkspaceFilePreviewView: View {
                         .accessibilityIdentifier("files-unsaved")
                 }
                 previewMenu
-                Button("Save", action: save)
-                    .disabled(draft == nil || diskText?.writable != true || changedOnDisk)
+                Button("Save") { session?.flush() }
+                    .disabled(draft == nil || session?.isEditable != true)
                     .accessibilityIdentifier("files-save")
             }
             .font(.caption)
             .padding(.horizontal, 8)
             .padding(.bottom, 6)
             Divider()
-            if let message = saveError ?? (changedOnDisk ? WorkspaceFileError.changed.localizedDescription : nil) {
+            if session?.isReadOnly == true {
+                let message = draft == nil ? "Read-only" : "Read-only. Unsaved edits are kept until write access returns."
+                status(message, id: "files-read-only")
+            } else if let message = actionError ?? session?.saveError?.localizedDescription ??
+                        (session?.changedOnDisk == true ? WorkspaceFileError.changed.localizedDescription : nil) {
                 status(message, id: "files-save-error")
-            } else if diskText?.writable == false {
-                status("Read-only", id: "files-read-only")
             }
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("files-preview")
-        .onChange(of: refreshing) { _, _ in saveError = nil }
-        .task(id: ReadRequest(refresh: refreshing, reload: reload)) {
-            let target = target
-            do {
-                let result = try await loadWorkspaceFiles {
-                    try WorkspaceFiles(directory: target.location.directory).preview(target.path)
-                }
-                try Task.checkCancellation()
-                preview = .success(result)
-            } catch {
-                if !Task.isCancelled { preview = .failure(error) }
-            }
+        .onAppear {
+            if session == nil { session = saves.acquire(target) }
+        }
+        .onDisappear {
+            guard let session else { return }
+            self.session = nil
+            saves.release(session)
+        }
+        .onChange(of: refreshing) { _, _ in actionError = nil }
+        .task(id: ReadRequest(session: session.map(ObjectIdentifier.init), refresh: refreshing, reload: reload)) {
+            await session?.refresh()
         }
         .alert("Discard unsaved edits?", isPresented: $confirmDiscard) {
             Button("Keep Editing", role: .cancel) {}
             Button("Discard Edits", role: .destructive) {
-                drafts[target] = nil
-                saveError = nil
+                session?.discard()
+                actionError = nil
                 reload += 1
             }
             .accessibilityIdentifier("files-confirm-discard")
@@ -390,7 +369,7 @@ private struct WorkspaceFilePreviewView: View {
         Menu {
             Button("Copy Path") { copy(target.path) }
                 .accessibilityIdentifier("files-copy-path")
-            if let text = draft?.text ?? diskText?.text {
+            if let text = draft?.text ?? session?.diskText?.text {
                 Button("Copy Contents") { copy(text) }
                     .accessibilityIdentifier("files-copy-contents")
             }
@@ -418,10 +397,14 @@ private struct WorkspaceFilePreviewView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let file = draft?.original ?? diskText {
-            editor(draft?.text ?? file.text, original: file, editable: diskText?.writable == true && !changedOnDisk)
+        if let session, let source = session.editorSource {
+            FileTextView(text: draft?.text ?? source.text, editable: session.isEditable, wraps: wraps,
+                         identifier: "files-editor") { text in
+                guard self.session === session else { return }
+                session.edit(text, from: source)
+            }
         } else {
-            switch preview {
+            switch session?.preview {
             case .none:
                 ProgressView().controlSize(.small).padding(12)
             case .failure(let error):
@@ -438,33 +421,12 @@ private struct WorkspaceFilePreviewView: View {
         }
     }
 
-    private func editor(_ text: String, original: WorkspaceFileText, editable: Bool) -> some View {
-        FileTextView(text: text, editable: editable, wraps: wraps, identifier: "files-editor") { text in
-            let draft = WorkspaceFileDraft(target: target, original: original, text: text)
-            drafts[target] = draft.isEdited ? draft : nil
-            saveError = nil
-        }
-    }
-
     private func status(_ message: String, id: String) -> some View {
         Text(message)
             .font(.callout)
             .foregroundStyle(.secondary)
             .padding(8)
             .accessibilityIdentifier(id)
-    }
-
-    private func save() {
-        guard let draft else { return }
-        do {
-            preview = .success(.text(try draft.save(whileActive: activeTarget())))
-            drafts[target] = nil
-            saveError = nil
-            reload += 1
-        } catch {
-            saveError = error.localizedDescription
-            reload += 1
-        }
     }
 
     private func openExternally(reveal: Bool) {
@@ -477,7 +439,7 @@ private struct WorkspaceFilePreviewView: View {
                 throw WorkspaceError("The default app could not open this file.")
             }
         } catch {
-            saveError = error.localizedDescription
+            actionError = error.localizedDescription
         }
     }
 
@@ -506,15 +468,6 @@ private func fileButton(_ label: String, _ symbol: String, id: String,
         .help(label)
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
-}
-
-private func loadWorkspaceFiles<Value: Sendable>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
-    let task = Task.detached(priority: .userInitiated, operation: operation)
-    return try await withTaskCancellationHandler {
-        try await task.value
-    } onCancel: {
-        task.cancel()
-    }
 }
 
 private struct FileTextView: NSViewRepresentable {
@@ -548,13 +501,14 @@ private struct FileTextView: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let textView = scroll.documentView as? NSTextView else { return }
-        context.coordinator.edit = edit
+        context.coordinator.edit = nil
         textView.isEditable = editable
         textView.setAccessibilityIdentifier(identifier)
         if !textView.string.utf8.elementsEqual(text.utf8) {
             textView.string = text
             textView.undoManager?.removeAllActions(withTarget: textView)
         }
+        context.coordinator.edit = edit
         if let container = textView.textContainer, container.widthTracksTextView != wraps {
             scroll.hasHorizontalScroller = !wraps
             textView.isHorizontallyResizable = !wraps
@@ -567,6 +521,10 @@ private struct FileTextView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
+
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.edit = nil
+    }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var edit: ((String) -> Void)?

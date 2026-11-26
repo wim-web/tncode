@@ -75,13 +75,14 @@ struct PiWorkspaceApp: App {
             }
                 .sheet(isPresented: $showingBrowserSettings) { BrowserSettingsView(defaults: browserDefaults) }
                 .sheet(isPresented: $showingAppearanceSettings) { AppearanceSettingsView(settings: appearance) }
-                .alert("Your draft couldn’t be saved", isPresented: $model.showingQuitSaveFailure) {
+                .alert(model.quitFileSaveError == nil ? "Your draft couldn’t be saved" : "A file couldn’t be saved",
+                       isPresented: $model.showingQuitSaveFailure) {
                     Button("Keep Editing", role: .cancel) {}
                         .accessibilityIdentifier("keep-editing-draft")
                     Button("Retry and Quit") { NSApp.terminate(nil) }
                         .accessibilityIdentifier("retry-save-and-quit")
                 } message: {
-                    Text(model.composerSaveError ?? "Restore write access to the workspace and try again.")
+                    Text(model.quitFileSaveError ?? model.composerSaveError ?? "Restore write access to the workspace and try again.")
                 }
                 .onChange(of: appearance.colorScheme, initial: true) { _, scheme in
                     scheme.apply(to: NSApplication.shared)
@@ -137,7 +138,7 @@ final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var model: WorkspaceModel?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model, !model.savePendingComposer() else { return .terminateNow }
+        guard let model, !model.savePendingEditsForQuit() else { return .terminateNow }
         model.showingQuitSaveFailure = true
         return .terminateCancel
     }

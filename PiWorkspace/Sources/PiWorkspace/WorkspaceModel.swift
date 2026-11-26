@@ -36,6 +36,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var repositoryRevision = 0
     @Published private(set) var composerSaveError: String?
     @Published var showingQuitSaveFailure = false
+    @Published private(set) var quitFileSaveError: String?
+    let fileSaves = WorkspaceFileSaves()
     private var composerDirty = false
     private var worktreeTask: Task<Void, Never>?
     private var composerSave: Task<Void, Never>?
@@ -97,6 +99,12 @@ final class WorkspaceModel: ObservableObject {
             composerSaveError = error.localizedDescription
             return false
         }
+    }
+
+    func savePendingEditsForQuit() -> Bool {
+        let composerSaved = savePendingComposer()
+        quitFileSaveError = fileSaves.flushAll()
+        return composerSaved && quitFileSaveError == nil
     }
 
     var editingQueuedMessageID: UUID? { queueEdit?.id }
@@ -260,7 +268,7 @@ final class WorkspaceModel: ObservableObject {
 
     @discardableResult
     func terminate() -> Bool {
-        guard savePendingComposer() else { return false }
+        guard savePendingEditsForQuit() else { return false }
         worktreeTask?.cancel()
         worktreeTask = nil
         preparingWorktree = false
