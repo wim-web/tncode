@@ -27,12 +27,14 @@ final class ComposerModelPickerTests: XCTestCase {
         let invalidProject = Project(id: UUID(), path: path, title: "Missing provider model",
                                      conversations: [invalidDraft], selectedConversation: invalidDraft.id,
                                      modelOverride: unsupported)
-        try WorkspaceStore(root: workspaceRoot).save(Workspace(projects: [project, invalidProject],
-                                                                selectedProject: project.id,
-                                                                model: alpha, welcomeCompleted: true))
+        let initial = Workspace(projects: [project, invalidProject], selectedProject: project.id,
+                                model: alpha, welcomeCompleted: true)
+        try FileManager.default.createDirectory(at: workspaceRoot, withIntermediateDirectories: true)
+        let index = workspaceRoot.appendingPathComponent(WorkspaceStore.indexName)
+        try JSONEncoder().encode(initial).write(to: index, options: .withoutOverwriting)
 
         func savedWorkspace() throws -> Workspace {
-            try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: workspaceRoot.appendingPathComponent("workspace.json")))
+            try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
         }
 
         var credentialReads: [String] = []
