@@ -44,7 +44,21 @@ if (mode === "--check") {
   console.log("Signed attachment build, AX driver, and preference sandbox are ready.");
   process.exit(0);
 }
-assert.equal(run(ax, ["desktop-ready", "0"]), "ready", "The foreground run needs an unlocked macOS desktop.");
+const minimumIdle = Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS ?? 0);
+assert(Number.isFinite(minimumIdle) && minimumIdle >= 0);
+let interrupted;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => { interrupted = new Error("Verification interrupted by " + signal); });
+}
+
+async function waitForDesktop() {
+  while (run(ax, ["desktop-ready", String(minimumIdle)]) !== "ready") {
+    if (interrupted) throw interrupted;
+    assert(minimumIdle > 0, "The foreground run needs an unlocked macOS desktop.");
+    await delay(1000);
+  }
+  if (interrupted) throw interrupted;
+}
 
 process.umask(0o077);
 const root = mkdtempSync("/private/tmp/pi-text-attachments-");
@@ -104,7 +118,8 @@ function record(message) {
   appendFileSync(join(root, "report.txt"), message + "\n");
   console.log(message);
 }
-const drive = (action, ...args) => run(ax, [action, String(child.pid), ...args]);
+const drive = (action, ...args) => run(ax, [action, String(child.pid), ...args],
+  action === "save-fixture-file" ? { timeout: 60_000 } : {});
 const value = id => drive("get", id, "--values", "--depth", "0");
 const tree = () => drive("dump", "--values").split('  role="AXMenuBar"')[0];
 const enabled = id => value(id).includes("enabled=true");
@@ -125,6 +140,7 @@ async function until(read, description) {
   const deadline = performance.now() + 20_000;
   let lastError;
   do {
+    if (interrupted) throw interrupted;
     if (fixtureError) throw fixtureError;
     try {
       const value = read();
@@ -135,6 +151,7 @@ async function until(read, description) {
   throw new Error("Timed out waiting for " + description, { cause: lastError });
 }
 async function launch() {
+  await waitForDesktop();
   const log = openSync(join(root, "app-" + ++launchNumber + ".log"), "wx");
   child = spawn(sandbox, [...sandboxArgs, executable, ...launchArgs], {
     cwd: root, env: appEnv, stdio: ["ignore", log, log],
@@ -182,9 +199,11 @@ function checkDraft(expected) {
 }
 async function attach(sample, expected) {
   run(writer, [pasteboard, "file", sample.path]);
-  drive("type", "composer", "--replace");
-  drive("key-focused", "composer", "9", "cmd", "--no-activate");
-  const attachments = await until(() => checkDraft([...expected, sample]), "native file paste into the draft");
+  drive("focus-field", "composer");
+  drive("open-menu", "Edit");
+  await until(() => enabled("paste:"), "Edit menu accepting the file URL from the named pasteboard");
+  press("paste:");
+  const attachments = await until(() => checkDraft([...expected, { bytes: sample.bytes }]), "native file paste into the draft");
   return attachments.at(-1).id;
 }
 async function preview(sample, origin) {
@@ -297,8 +316,12 @@ try {
   checkHistory();
 
   await launch();
+  const row = "thread-row-" + threadID;
+  await until(() => has(row), "the submitted thread in the sidebar");
+  press(row);
   await until(() => samples.every(sample => has("sent-attachment-" + sample.id)) && tree().includes(reply),
     "the submitted attachments and reply after reopening Pi history");
+  assert.equal(JSON.parse(readFileSync(index, "utf8")).projects[0].selectedConversation, threadID);
   assert(samples.every(sample => !existsSync(sample.path)));
   await preview(samples[0], "Sent");
   await closePreview();

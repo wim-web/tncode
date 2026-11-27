@@ -16,7 +16,7 @@ const workspace = join(root, "workspace"), indexPath = join(workspace, "workspac
 const repo = join(root, "Project"), board = "dev.piworkspace.verification." + randomUUID();
 const writer = join(root, "write-pasteboard");
 const uuid = () => randomUUID().toUpperCase();
-const projectID = uuid(), draftID = uuid(), submittedID = uuid(), scratchID = uuid(), scratchProject = uuid();
+const projectID = uuid(), draftID = uuid(), submittedID = uuid(), finishedID = uuid(), scratchID = uuid(), scratchProject = uuid();
 const scratch = join(workspace, "scratch", scratchProject);
 const queued = { id: uuid(), text: "Queued follow-up" };
 const attachment = name => ({ id: uuid(), name, payload: {
@@ -66,9 +66,10 @@ const press = id => drive("press", id, "--no-activate");
 const row = id => "thread-row-" + id;
 const openURL = url => drive("open-thread-link", url, "--no-activate");
 const openClipboard = () => drive("menu-item", "Open Thread Link from Clipboard", "--no-activate");
-async function launch() {
+async function launch(url) {
   execFileSync("/usr/bin/open", ["-g", "-n", "-a", app, "--stdout", join(root, "launch-" + ++attempt + ".out"),
-    "--stderr", join(root, "launch-" + attempt + ".err"), "--env", "PI_WORKSPACE_TEST_PASTEBOARD=" + board, "--args", ...launchArgs]);
+    "--stderr", join(root, "launch-" + attempt + ".err"), "--env", "PI_WORKSPACE_TEST_PASTEBOARD=" + board,
+    ...(url ? [url] : []), "--args", ...launchArgs]);
   await until(() => {
     const processes = execFileSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8" });
     const process = processes.split("\n").find(line => line.includes(binary + " --workspace " + workspace + " "));
@@ -125,7 +126,8 @@ try {
     projects: [
       { id: projectID, title: "Draft link project", path: repo, allowEdits: false, selectedConversation: draftID,
         conversations: [projectDraft, { id: submittedID, title: "Submitted", isDraft: false, archived: false,
-          composerText: "Keep the ordinary follow-up", queuedMessages: [queued] }] },
+          composerText: "Keep the ordinary follow-up", queuedMessages: [queued] },
+          { id: finishedID, title: "Completed turn", isDraft: false, archived: false }] },
       { id: scratchProject, kind: "scratch", title: "No project", path: scratch, allowEdits: false,
         selectedConversation: scratchID, conversations: [scratchDraft] },
     ],
@@ -134,6 +136,9 @@ try {
   const sidecar = join(app, "Contents/Resources/Sidecar");
   const history = await seedPaletteMessageHistory({
     sidecar, workspace, projectID, threadID: submittedID, cwd: repo, keyword: "submitted fixture",
+  });
+  const finished = await seedPaletteMessageHistory({
+    sidecar, workspace, projectID, threadID: finishedID, cwd: repo, keyword: "completed fixture",
   });
   await launch();
   await expectDraft(projectID, projectDraft);
@@ -168,11 +173,15 @@ try {
 
     openClipboard();
     await expectDraft(scratchProject, scratchDraft);
+    press(row(finishedID));
+    await until(() => selected()[1] === finishedID && has("transcript-message-" + finished.latestID), "a completed thread with no unsent text");
     await quit();
-    await launch();
-    openURL(projectURL);
+    await launch(projectURL);
     await expectDraft(projectID, projectDraft);
     assert.deepEqual(ids(), originalIDs);
+    assert.deepEqual(thread(submittedID).queuedMessages, [queued]);
+    assert.equal(thread(submittedID).composerText, "Keep the ordinary follow-up");
+    console.log("Cold-opening the draft URL from a completed thread kept the original thread IDs, attachment bytes and other thread’s queue.");
     assert.equal(git("worktree", "list", "--porcelain"), worktrees);
     await rejectURL(link(uuid()), "linked draft is unavailable");
     const workspaceID = index().threadLinkID;

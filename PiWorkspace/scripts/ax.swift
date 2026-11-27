@@ -129,8 +129,9 @@ private enum Operation {
                   let host = target.host, ["thread", "draft"].contains(host) else { throw Failure("Expected a thread or draft link.") }
             self = .openWorkspaceLink(target)
         case ("open-settings-link", let url?) where arguments.count == 1:
-            guard ["pi-workspace://settings/open-source-licenses", "pi-workspace://settings/about#app-version"].contains(url),
-                  let target = URL(string: url) else { throw Failure("Expected an About settings link.") }
+            guard let parts = URLComponents(string: url), parts.scheme == "pi-workspace", let host = parts.host,
+                  ["settings", "projects", "usage"].contains(host), parts.user == nil, parts.password == nil,
+                  parts.port == nil, let target = parts.url else { throw Failure("Expected a local settings link.") }
             self = .openWorkspaceLink(target)
         case ("open-prompt-link", let url?) where arguments.count == 1:
             guard let parts = URLComponents(string: url), parts.scheme == "pi-workspace", parts.host == "new",
@@ -347,18 +348,19 @@ private struct Tree: Sequence, IteratorProtocol {
 }
 
 private func element(withID identifier: String, in app: AXUIElement) throws -> AXUIElement {
-    if identifier.hasPrefix("sheet-field=") {
-        let label = String(identifier.dropFirst("sheet-field=".count))
+    if identifier.hasPrefix("sheet-field=") || identifier.hasPrefix("sheet-button=") {
+        let button = identifier.hasPrefix("sheet-button=")
+        let label = String(identifier.dropFirst(button ? "sheet-button=".count : "sheet-field=".count))
         let sheets = Tree(root: app, maxDepth: 5, skipMenuBar: true).map(\.element).filter {
             attribute(kAXRoleAttribute, on: $0) as? String == kAXSheetRole
         }
         let fields = sheets.flatMap { sheet in
             Tree(root: sheet, maxDepth: 6).map(\.element).filter {
-                attribute(kAXRoleAttribute, on: $0) as? String == kAXTextFieldRole &&
-                    attribute(kAXPlaceholderValueAttribute, on: $0) as? String == label
+                attribute(kAXRoleAttribute, on: $0) as? String == (button ? kAXButtonRole : kAXTextFieldRole) &&
+                    attribute(button ? kAXTitleAttribute : kAXPlaceholderValueAttribute, on: $0) as? String == label
             }
         }
-        guard fields.count == 1, let field = fields.first else { throw Failure("Expected one matching text field in the sheet.") }
+        guard fields.count == 1, let field = fields.first else { throw Failure("Expected one matching control in the sheet.") }
         return field
     }
     let panelControl = ["open-panel", "save-panel", "OKButton", "CancelButton", "where popup"].contains(identifier)
@@ -776,7 +778,8 @@ private func activateForInput(_ app: AXUIElement, pid: pid_t) throws {
 }
 
 private func postKey(
-    _ code: CGKeyCode, to pid: pid_t, flags: CGEventFlags = [], units: [UInt16] = [], frontmost: Bool = false
+    _ code: CGKeyCode, to pid: pid_t, flags: CGEventFlags = [], units: [UInt16] = [], frontmost: Bool = false,
+    systemPanel: AXUIElement? = nil
 ) throws {
     guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
           let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) else {
@@ -794,7 +797,16 @@ private func postKey(
             up.postToPid(pid)
             throw Failure("The selected application lost focus.")
         }
-        event.postToPid(pid)
+        if let systemPanel {
+            guard frontmost, desktopAllowsInput(),
+                  attribute(kAXIdentifierAttribute, on: systemPanel) as? String == "save-panel" else {
+                up.postToPid(pid)
+                throw Failure("The fixture Save panel lost the keyboard.")
+            }
+            event.post(tap: .cghidEventTap)
+        } else {
+            event.postToPid(pid)
+        }
         if frontmost && event.type == .keyDown { Thread.sleep(forTimeInterval: 0.035) }
     }
 }
@@ -839,7 +851,13 @@ private func saveFixtureFile(in app: AXUIElement, pid: pid_t, workspace: String,
         return control
     }
     func focusedField() -> AXUIElement? {
-        Tree(root: panel).map(\.element).first {
+        if let raw = attribute(kAXFocusedUIElementAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() {
+            let field = unsafeBitCast(raw, to: AXUIElement.self)
+            if [kAXTextFieldRole, "AXComboBox"].contains(attribute(kAXRoleAttribute, on: field) as? String ?? "") {
+                return field
+            }
+        }
+        return Tree(root: panel).lazy.map(\.element).first {
             [kAXTextFieldRole, "AXComboBox"].contains(attribute(kAXRoleAttribute, on: $0) as? String ?? "") &&
                 attribute(kAXFocusedAttribute, on: $0) as? Bool == true
         }
@@ -855,26 +873,37 @@ private func saveFixtureFile(in app: AXUIElement, pid: pid_t, workspace: String,
     }
 
     _ = try wait("The native Save button was not enabled.") { button("OKButton", title: "Save") }
+    if let disclosure = try? element(withID: "NS_OPEN_SAVE_DISCLOSURE_TRIANGLE", in: panel),
+       (attribute(kAXValueAttribute, on: disclosure) as? NSNumber)?.boolValue == false {
+        try requireSuccess(AXUIElementPerformAction(disclosure, kAXPressAction as CFString), "Expand the fixture Save panel")
+        _ = try wait("The fixture Save panel stayed collapsed.") {
+            (attribute(kAXValueAttribute, on: disclosure) as? NSNumber)?.boolValue == true ? true : nil
+        }
+    }
     let original = focusedField()
     func goField() -> AXUIElement? {
         guard let field = focusedField(), field != original,
               attribute(kAXSubroleAttribute, on: field) as? String != kAXSearchFieldSubrole else { return nil }
         return field
     }
-    try postKey(5, to: pid, flags: [.maskCommand, .maskShift], frontmost: true)
+    func panelKey(_ code: CGKeyCode, flags: CGEventFlags = [], units: [UInt16] = []) throws {
+        try checkFocus()
+        try postKey(code, to: pid, flags: flags, units: units, frontmost: true, systemPanel: panel)
+    }
+    try panelKey(5, flags: [.maskCommand, .maskShift])
     let field: AXUIElement
     do {
         field = try wait("Command-Shift-G did not open Go to Folder.", seconds: 1, goField)
     } catch {
         try checkFocus()
-        try postKey(44, to: pid, frontmost: true)
+        try panelKey(44)
         field = try wait("The native Go to Folder field is unavailable.", goField)
     }
-    try postKey(0, to: pid, flags: .maskCommand, frontmost: true)
+    try panelKey(0, flags: .maskCommand)
     let path = Array(directory.utf16)
     for offset in stride(from: 0, to: path.count, by: 10) {
         guard goField() == field else { throw Failure("The Go to Folder field lost keyboard focus.") }
-        try postKey(0, to: pid, units: Array(path.dropFirst(offset).prefix(10)), frontmost: true)
+        try panelKey(0, units: Array(path.dropFirst(offset).prefix(10)))
     }
     _ = try wait("Go to Folder did not show the exact disposable path.") {
         guard goField() == field,
@@ -882,8 +911,13 @@ private func saveFixtureFile(in app: AXUIElement, pid: pid_t, workspace: String,
               value == directory || value == directory + "/" else { return nil as String? }
         return value
     }
-    try postKey(36, to: pid, units: [0x0D], frontmost: true)
+    try panelKey(36, units: [0x0D])
 
+    if let name = try? element(withID: "saveAsNameTextField", in: panel),
+       attribute(kAXValueAttribute, on: name) as? String == destination.deletingPathExtension().lastPathComponent {
+        try requireSuccess(AXUIElementSetAttributeValue(name, kAXValueAttribute as CFString, destination.lastPathComponent as CFString),
+                           "Enter the full fixture filename")
+    }
     let control = try wait("The Save panel did not expose the fixture directory URL and original filename.") {
         guard let wherePopup = try? element(withID: "where popup", in: panel),
               attribute(kAXValueAttribute, on: wherePopup) as? String == folder.lastPathComponent else { return nil as AXUIElement? }
@@ -907,9 +941,10 @@ private func saveFixtureFile(in app: AXUIElement, pid: pid_t, workspace: String,
     }
     print("Verified Save panel destination: \(destination.path)")
     let result = AXUIElementPerformAction(control, kAXPressAction as CFString)
-    // Sheet dismissal can invalidate the AX element before the action reply arrives.
-    if ![.cannotComplete, .invalidUIElement, .invalidUIElementObserver].contains(result) {
-        try requireSuccess(result, cancel ? "Cancel fixture save" : "Confirm fixture save")
+    if result != .success {
+        _ = try wait("The Save panel stayed open after AXPress (error \(result.rawValue)).") {
+            (try? element(withID: "save-panel", in: app)) == nil ? true : nil
+        }
     }
 }
 
