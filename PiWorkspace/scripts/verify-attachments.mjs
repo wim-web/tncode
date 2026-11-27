@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { images, note } from "./fixtures/attachments.mjs";
 import { withComposerModelFixture } from "./fixtures/composer-models.mjs";
+import { withComposerShortcutFixture } from "./fixtures/composer-shortcuts.mjs";
 import { withModelRoutingFixture } from "./fixtures/model-routing.mjs";
 import { withSideChatFixture } from "./fixtures/side-chat.mjs";
 
@@ -103,7 +104,7 @@ try {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   if (values["release-suite"]) {
-    await runReleaseSuite([withComposerModelFixture, withModelRoutingFixture, withSideChatFixture]);
+    await runReleaseSuite([withComposerModelFixture, withComposerShortcutFixture, withModelRoutingFixture, withSideChatFixture]);
   } else {
     await runSwiftTests({});
   }
