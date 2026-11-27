@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import XCTest
 @testable import PiWorkspace
@@ -147,6 +148,7 @@ final class GitChangesTests: XCTestCase {
         _ = try fixture.git(unborn, "init", "-q", "-b", "main")
         let unbornGit = GitWorkspace(path: unborn.path)
         let emptyCheckout = try await unbornGit.changesCheckout()
+        XCTAssertNil(emptyCheckout.repository)
         let emptyTarget = try await unbornGit.changesTarget(.changes, checkout: emptyCheckout, selectedBase: nil)
         let (emptyFiles, emptyPatch) = try await comparison(unbornGit, emptyTarget)
         XCTAssertTrue(emptyFiles.isEmpty)
@@ -168,6 +170,11 @@ final class GitChangesTests: XCTestCase {
     func testNativeChangesComparisonReplay() async throws {
         let fixture = try ChangesFixture()
         defer { fixture.remove() }
+        _ = try fixture.git(fixture.repo, "config", "extensions.worktreeConfig", "true")
+        _ = try fixture.git(fixture.alpha, "config", "--worktree",
+                            "url.git@github.com:Alpha/Changes.git.insteadOf", fixture.repo.path)
+        let beforeRefs = try fixture.git(fixture.repo, "show-ref")
+        let beforeIndexes = try [fixture.alpha, fixture.beta].map(fixture.index)
         let alpha = Conversation(id: UUID(), title: "Alpha", location: .worktree(path: fixture.alpha.path, base: nil), isDraft: false)
         let beta = Conversation(id: UUID(), title: "Beta", location: .worktree(path: fixture.beta.path, base: nil), isDraft: false)
         let project = Project(id: UUID(), path: fixture.repo.path, title: "Comparison Fixture",
@@ -179,9 +186,23 @@ final class GitChangesTests: XCTestCase {
                                    readCredential: { _ in nil },
                                    makeProcess: { _, _ in throw WorkspaceError("Comparison fixture has no agent.") })
         defer { model.shutdown() }
-        let ui = try ChangesReplay(model)
+        var opened: [String] = []
+        let ui = try ChangesReplay(model, openURL: OpenURLAction { url in
+            opened.append(url.absoluteString)
+            return .handled
+        })
         defer { ui.close() }
 
+        try await ui.waitForText("toggle-changes", containing: "Changes")
+        try ui.pressChangesShortcut()
+        try await ui.waitForText("git-review-base", containing: "Automatic (origin/main)")
+        try ui.pressChangesShortcut(modifiers: [.command, .shift])
+        try ui.pressChangesShortcut(isRepeat: true)
+        try ui.assertTerminalOwnsChangesShortcut()
+        XCTAssertNotNil(ui.element("git-review-scope"))
+        try ui.pressChangesShortcut()
+        try await ui.wait("Changes closes with ⌘D") { ui.element("git-review-scope") == nil }
+        try ui.assertComposerCompositionOwnsChangesShortcut()
         try await ui.press("toggle-changes")
         try await ui.waitForText("git-review-base", containing: "Automatic (origin/main)")
         try await ui.press("git-review-file-alpha-base.txt")
@@ -191,7 +212,24 @@ final class GitChangesTests: XCTestCase {
         try await ui.waitForPatch("+alpha-head-marker")
         XCTAssertNil(ui.element("git-review-file-alpha-base.txt"))
         XCTAssertNotNil(ui.element("git-commit-message"))
+
+        let remoteSwitch = "git-review-base-remote-refs/heads/integration"
         try await ui.press("git-review-base")
+        try await ui.press(remoteSwitch)
+        try await ui.waitForText("git-review-base", containing: "origin/integration (Remote)")
+        try await ui.press("git-review-file-alpha-base.txt")
+        try await ui.waitForPatch("+alpha-base-marker")
+        try await ui.press(remoteSwitch)
+        try await ui.waitForText("git-review-base", containing: "Currently integration")
+        try await ui.waitForPatch("+alpha-head-marker")
+        XCTAssertFalse(ui.text().contains("+alpha-base-marker"))
+        // Change the selected ref twice without waiting for either diff to arrive.
+        try await ui.press(remoteSwitch)
+        try await ui.waitForText("git-review-base", containing: "origin/integration (Remote)")
+        try await ui.press(remoteSwitch)
+        try await ui.waitForPatch("+alpha-head-marker")
+        XCTAssertNil(ui.element("git-review-file-alpha-base.txt"))
+        XCTAssertFalse(ui.text().contains("+alpha-base-marker"))
         try await ui.press("git-review-base-automatic")
         try await ui.press("git-review-file-alpha-base.txt")
         try await ui.waitForPatch("+alpha-base-marker")
@@ -217,6 +255,10 @@ final class GitChangesTests: XCTestCase {
         try await ui.waitForPatch("+refreshed-alpha-marker")
 
         try await ui.press("git-review-scope")
+        let alphaBaseURL = "https://github.com/alpha/changes/commit/" + fixture.alphaBase
+        try await ui.press("git-review-open-commit-" + fixture.alphaBase)
+        try await ui.wait("commit picker opens the full base SHA") { opened == [alphaBaseURL] }
+        try await ui.waitForText("git-review-scope", containing: "Uncommitted")
         try await ui.press("git-review-commit-" + fixture.alphaBase)
         try await ui.waitForText("git-review-scope", containing: String(fixture.alphaBase.prefix(7)))
         try await ui.waitForPatch("+alpha-base-marker")
@@ -226,6 +268,9 @@ final class GitChangesTests: XCTestCase {
         try await ui.waitForText("git-review-scope", containing: String(fixture.alphaHead.prefix(7)))
         try await ui.waitForPatch("+alpha-head-marker")
         XCTAssertFalse(ui.text().contains("+alpha-base-marker"))
+        let alphaHeadURL = "https://github.com/alpha/changes/commit/" + fixture.alphaHead
+        try await ui.press("git-review-open-selected-commit")
+        try await ui.wait("selected commit opens the full head SHA") { opened == [alphaBaseURL, alphaHeadURL] }
         try await ui.press("git-review-scope")
         try await ui.press("git-review-scope-changes")
         try await ui.press("git-refresh")
@@ -237,10 +282,20 @@ final class GitChangesTests: XCTestCase {
         try await ui.waitForPatch("+beta-head-marker")
         XCTAssertFalse(ui.text().contains("+alpha-head-marker"))
         XCTAssertNil(ui.element("git-review-file-alpha-base.txt"))
+
+        try await ui.press("git-review-scope")
+        try await ui.waitForText("git-review-commit-" + fixture.betaHead, containing: "Beta topic")
+        XCTAssertNil(ui.element("git-review-open-commit-" + fixture.betaHead))
+        try await ui.press("git-review-commit-" + fixture.betaHead)
+        try await ui.waitForPatch("+beta-head-marker")
+        XCTAssertNil(ui.element("git-review-open-selected-commit"))
+        XCTAssertEqual(opened, [alphaBaseURL, alphaHeadURL])
+        XCTAssertEqual(try fixture.git(fixture.repo, "show-ref"), beforeRefs)
+        XCTAssertEqual(try [fixture.alpha, fixture.beta].map(fixture.index), beforeIndexes)
         XCTAssertEqual(draft.draft?.text, "unsaved editor marker\n")
         XCTAssertEqual(try String(contentsOf: fixture.alpha.appendingPathComponent("disk.txt"), encoding: .utf8),
                        "disk-edited\nexternal edit\n")
-        print("AX replay: Changes → integration → Automatic → Uncommitted → staged/untracked file → refresh → commits \(fixture.alphaBase.prefix(7)), \(fixture.alphaHead.prefix(7)) → linked topic-beta")
+        print("AX replay verified ⌘D with terminal and IME focus, local/cached origin integration, two full-SHA GitHub URLs, and linked topic-beta with a local-path remote.")
     }
 
     private func comparison(_ git: GitWorkspace, _ target: GitChangesTarget) async throws -> ([GitChangesFile], String) {
@@ -361,7 +416,7 @@ private final class ChangesReplay {
     private let suite = "dev.piworkspace.changes.\(UUID())"
     private let defaults: UserDefaults
 
-    init(_ model: WorkspaceModel) throws {
+    init(_ model: WorkspaceModel, openURL: OpenURLAction) throws {
         policy = app.activationPolicy()
         defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         app.setActivationPolicy(.prohibited)
@@ -372,7 +427,8 @@ private final class ChangesReplay {
         window.isReleasedWhenClosed = false
         host = NSHostingView(rootView: AnyView(WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                              browserDefaults: defaults, workspacePasteboard: pasteboard)
-            .defaultAppStorage(defaults)))
+            .defaultAppStorage(defaults)
+            .environment(\.openURL, openURL)))
         host.sizingOptions = []
         window.contentView = host
         window.setFrameOrigin(origin)
@@ -408,6 +464,48 @@ private final class ChangesReplay {
         await Task.yield()
     }
 
+    func pressChangesShortcut(modifiers: NSEvent.ModifierFlags = .command, isRepeat: Bool = false) throws {
+        host.layoutSubtreeIfNeeded()
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "d",
+            charactersIgnoringModifiers: "d", isARepeat: isRepeat, keyCode: UInt16(kVK_ANSI_D)
+        ))
+        app.sendEvent(event)
+    }
+
+    func assertTerminalOwnsChangesShortcut() throws {
+        let terminal = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        var splits = 0
+        terminal.onCommand = { command in
+            if case .split = command { splits += 1 }
+        }
+        terminal.setPresentation(true, focusRequest: nil)
+        host.addSubview(terminal)
+        defer { terminal.removeFromSuperview() }
+        XCTAssertTrue(window.makeFirstResponder(terminal))
+        XCTAssertTrue(window.firstResponder === terminal)
+        try pressChangesShortcut()
+        XCTAssertEqual(splits, 1)
+    }
+
+    func assertComposerCompositionOwnsChangesShortcut() throws {
+        func composer(in view: NSView) -> ComposerTextField.Field? {
+            (view as? ComposerTextField.Field) ?? view.subviews.lazy.compactMap(composer).first
+        }
+        let field = try XCTUnwrap(composer(in: host))
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(field.currentEditor() as? ComposerTextField.Editor)
+        editor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0),
+                             replacementRange: editor.selectedRange())
+        XCTAssertTrue(editor.hasMarkedText())
+        let composition = editor.markedRange()
+        defer { editor.insertText("", replacementRange: composition) }
+        try pressChangesShortcut()
+        XCTAssertEqual(editor.markedRange(), composition)
+        XCTAssertNil(element("git-review-scope"))
+    }
+
     func waitForText(_ id: String, containing marker: String) async throws {
         try await wait("\(id) containing \(marker)") {
             guard let node = element(id) else { return false }
@@ -419,7 +517,7 @@ private final class ChangesReplay {
         try await wait("patch line \(marker)") { text().contains(marker) }
     }
 
-    private func wait(_ label: String, condition: () -> Bool) async throws {
+    func wait(_ label: String, condition: () -> Bool) async throws {
         for _ in 0..<200 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(20))

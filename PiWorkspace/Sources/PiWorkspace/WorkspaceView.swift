@@ -1774,16 +1774,12 @@ struct WorkspaceView: View {
                     .id(scope)
             }
             Button {
-                if panel.visibleTab == .changes {
-                    closeRightPanelTabs([.changes], in: thread.id)
-                } else {
-                    rightPanels[thread.id, default: .init()].show(.changes)
-                }
+                toggleChanges(in: thread.id)
             } label: {
                 Image(systemName: panel.visibleTab == .changes ? "doc.text.fill" : "doc.text")
             }
             .buttonStyle(.plain)
-            .help("Changes")
+            .help("Changes (⌘D)")
             .accessibilityLabel("Changes")
             .accessibilityIdentifier("toggle-changes")
             .disabled(thread.workingLocation.needsWorktree)
@@ -2173,10 +2169,29 @@ struct WorkspaceView: View {
         rightPanels[thread]?.close(Array(panel.terminals.keys))
     }
 
+    private func toggleChanges(in thread: UUID) {
+        if rightPanels[thread]?.visibleTab == .changes {
+            closeRightPanelTabs([.changes], in: thread)
+        } else {
+            rightPanels[thread, default: .init()].show(.changes)
+        }
+    }
+
     private func handleRightPanelKey(_ event: NSEvent, modifiers: NSEvent.ModifierFlags, in window: NSWindow) -> Bool {
         guard let thread = model.conversation?.id, window.attachedSheet == nil, !model.showingSettings,
               NSApp.modalWindow == nil, !model.showingWelcome, !model.showingCommandPalette,
               model.projectPicker == nil else { return false }
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "d" {
+            guard model.conversation?.workingLocation.needsWorktree == false, acceptsWorkspaceKeys(in: window),
+                  closingPanelTerminals == nil, !documentHasFocus(in: window),
+                  (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+            if case .sideChat(let sideChat) = rightPanels[thread]?.visibleTab,
+               (window.firstResponder as? ComposerTextField.Editor)?.owner?.composerTarget?.threadID == sideChat {
+                return false
+            }
+            toggleChanges(in: thread)
+            return true
+        }
         if addingPanelSurface == thread, modifiers.isEmpty {
             switch event.keyCode {
             case UInt16(kVK_Escape):

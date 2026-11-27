@@ -197,6 +197,9 @@ struct SourceControlView: View {
                 }
                 .accessibilityLabel("Diff scope: \(scope.label)")
                 .accessibilityIdentifier("git-review-scope")
+                if case .commit(let commit) = scope {
+                    commitLink(commit, id: "git-review-open-selected-commit")
+                }
                 Spacer()
             }
             if scope == .changes {
@@ -244,7 +247,12 @@ struct SourceControlView: View {
                 if let historyRequest {
                     if historyResult?.0 == historyRequest, let commits = historyResult?.1 {
                         ForEach(commits) { commit in
-                            choice(commit.label, id: "git-review-commit-" + commit.id) { selectScope(.commit(commit)) }
+                            HStack {
+                                choice(commit.label, id: "git-review-commit-" + commit.id) {
+                                    selectScope(.commit(commit))
+                                }
+                                commitLink(commit, id: "git-review-open-commit-" + commit.id)
+                            }
                         }
                     } else if historyError?.0 == historyRequest, let message = historyError?.1 {
                         Text(message).foregroundStyle(.red)
@@ -258,22 +266,65 @@ struct SourceControlView: View {
         .frame(maxHeight: 124)
     }
 
+    @ViewBuilder
+    private func commitLink(_ commit: GitChangesCommit, id: String) -> some View {
+        if let repository = checkout?.repository, let url = commit.webURL(in: repository) {
+            Link(destination: url) {
+                Image(systemName: "arrow.up.right.square")
+            }
+            .help(url.absoluteString)
+            .accessibilityLabel("Open commit \(commit.shortID)")
+            .accessibilityIdentifier(id)
+        }
+    }
+
     private var baseChoices: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let query = refSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidates = checkout?.baseChoices.filter { $0.matches(query) } ?? []
+        return VStack(alignment: .leading, spacing: 4) {
             TextField("Search refs…", text: $refSearch)
                 .accessibilityIdentifier("git-review-ref-search")
+            if candidates.contains(where: { $0.remote != nil }) {
+                HStack {
+                    Text("Branch")
+                    Spacer()
+                    Text("Remote")
+                }
+                .foregroundStyle(.secondary)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    choice("Automatic", id: "git-review-base-automatic") { selectBase(nil) }
-                    ForEach(checkout?.refs.filter { refSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(refSearch) } ?? []) { ref in
-                        choice(ref.isRemote ? ref.name + " (Remote)" : ref.name, id: "git-review-base-" + ref.id) {
-                            selectBase(ref.id)
-                        }
+                    if query.isEmpty {
+                        choice("Automatic", id: "git-review-base-automatic") { selectBase(nil) }
+                    } else if candidates.isEmpty {
+                        Text("No matching refs.").foregroundStyle(.secondary)
                     }
+                    ForEach(candidates, content: baseChoice)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 124)
+        }
+    }
+
+    private func baseChoice(_ candidate: GitChangesBaseChoice) -> some View {
+        let primary = candidate.primary
+        let useRemote = candidate.remote.map { baseRef?.utf8.elementsEqual($0.id.utf8) == true } ?? false
+        return HStack {
+            choice(candidate.label, id: "git-review-base-" + primary.id) {
+                selectBase(((useRemote ? candidate.remote : nil) ?? primary).id)
+            }
+            if let remote = candidate.remote {
+                let label = "Use remote version of \(primary.name)"
+                Toggle(label, isOn: Binding(get: { useRemote }, set: { remoteOn in
+                    selectBase(remoteOn ? remote.id : primary.id, keepChooser: true)
+                }))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .help(label)
+                .accessibilityLabel(label)
+                .accessibilityIdentifier("git-review-base-remote-" + primary.id)
+            }
         }
     }
 
@@ -296,9 +347,10 @@ struct SourceControlView: View {
         chooser = nil
     }
 
-    private func selectBase(_ ref: String?) {
+    private func selectBase(_ ref: String?, keepChooser: Bool = false) {
         baseRef = ref
         selectScope(.changes)
+        if keepChooser { chooser = .base }
     }
 
     private func comparisonFiles(_ files: [GitChangesFile]) -> some View {

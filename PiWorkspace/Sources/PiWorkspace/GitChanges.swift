@@ -6,8 +6,47 @@ struct GitChangesCheckout: Sendable {
     let head: String?
     let refs: [GitBranchRef]
     let automaticRef: String?
+    let baseChoices: [GitChangesBaseChoice]
+    let repository: GitHubRepository?
 
     var headLabel: String { branch ?? head.map { String($0.prefix(7)) } ?? "HEAD" }
+}
+
+struct GitChangesBaseChoice: Identifiable, Sendable {
+    let primary: GitBranchRef
+    let remote: GitBranchRef?
+
+    var id: Data { Data(primary.id.utf8) }
+    var label: String { primary.isRemote ? primary.name + " (Remote)" : primary.name }
+
+    func matches(_ query: String) -> Bool {
+        query.isEmpty || primary.name.localizedCaseInsensitiveContains(query)
+            || remote?.name.localizedCaseInsensitiveContains(query) == true
+    }
+
+    static func list(refs: [GitBranchRef], remotes: [String], branch: String?) -> [Self] {
+        let remoteRefs = refs.filter(\.isRemote)
+        let remotePrefixes = remotes.sorted { $0.utf8.count > $1.utf8.count }.map { $0 + "/" }
+        let byBranch = Dictionary(grouping: remoteRefs) { ref in
+            let name = ref.name
+            if let prefix = remotePrefixes.first(where: { name.utf8.starts(with: $0.utf8) }) {
+                return Data(name.utf8.dropFirst(prefix.utf8.count))
+            }
+            return Data((name.split(separator: "/", maxSplits: 1).last ?? name[...]).utf8)
+        }
+        let currentBranch = branch.map { Data($0.utf8) }
+        var paired: Set<Data> = []
+        let localChoices = refs.filter { !$0.isRemote && Data($0.name.utf8) != currentBranch }
+            .map { local in
+                let matches = byBranch[Data(local.name.utf8)] ?? []
+                let originRef = "refs/remotes/origin/" + local.name
+                let remote = matches.first { $0.id.utf8.elementsEqual(originRef.utf8) } ?? matches.first
+                if let remote { paired.insert(Data(remote.id.utf8)) }
+                return Self(primary: local, remote: remote)
+            }
+        return localChoices + remoteRefs.filter { !paired.contains(Data($0.id.utf8)) }
+            .map { Self(primary: $0, remote: nil) }
+    }
 }
 
 struct GitChangesCommit: Identifiable, Hashable, Sendable {
@@ -16,6 +55,16 @@ struct GitChangesCommit: Identifiable, Hashable, Sendable {
 
     var shortID: String { String(id.prefix(7)) }
     var label: String { subject.isEmpty ? "Commit \(shortID)" : "\(shortID) · \(subject)" }
+
+    var hasFullObjectID: Bool {
+        [40, 64].contains(id.utf8.count) &&
+            id.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
+    func webURL(in repository: GitHubRepository) -> URL? {
+        guard hasFullObjectID else { return nil }
+        return URL(string: "https://\(repository.cliName)/commit/\(id)")
+    }
 }
 
 enum GitChangesScope: Hashable, Sendable {
@@ -80,16 +129,21 @@ extension GitWorkspace {
 
     func changesCheckout() async throws -> GitChangesCheckout {
         let root = try await repositoryRoot()
+        async let repository = try? GitHubReader(directory: root).repository()
         let branch = try await currentBranch()
         let head = try await headObjectID()
         let refs = try await branchRefs()
-        let automatic = try await automaticComparisonRef(branch: branch, refs: refs, root: root)
-        let checkout = GitChangesCheckout(root: root, branch: branch, head: head, refs: refs, automaticRef: automatic)
+        let remotes = try await remoteNames(in: root)
+        let automatic = try await automaticComparisonRef(branch: branch, refs: refs, remotes: remotes, root: root)
+        let choices = GitChangesBaseChoice.list(refs: refs, remotes: remotes, branch: branch)
+        let checkout = await GitChangesCheckout(root: root, branch: branch, head: head, refs: refs,
+                                                automaticRef: automatic, baseChoices: choices, repository: repository)
         try await verifyChangesCheckout(checkout)
         return checkout
     }
 
-    private func automaticComparisonRef(branch: String?, refs: [GitBranchRef], root: String) async throws -> String? {
+    private func automaticComparisonRef(branch: String?, refs: [GitBranchRef], remotes: [String],
+                                        root: String) async throws -> String? {
         guard let branch else { return nil }
         func ref(_ id: String) -> GitBranchRef? {
             refs.first { $0.id.utf8.elementsEqual(id.utf8) }
@@ -119,7 +173,6 @@ extension GitWorkspace {
             if configured != branch, let tracked = upstream(of: configured) { return tracked }
         }
 
-        let remotes = try await remoteNames(in: root)
         let primary = remotes.contains("origin") ? "origin" : remotes.first
         let remotePrefix = primary.map { "refs/remotes/" + $0 + "/" }
         let defaultName = refs.first { $0.isRemote && $0.isDefault }.flatMap { ref in
@@ -164,8 +217,7 @@ extension GitWorkspace {
         case .uncommitted:
             before = try await changesHeadTree(checkout)
         case .commit(let commit):
-            guard [40, 64].contains(commit.id.utf8.count),
-                  commit.id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+            guard commit.hasFullObjectID,
                   let sha = try await changesObjectID(commit.id, root: root) else {
                 throw GitChangesError.unavailableCommit
             }
