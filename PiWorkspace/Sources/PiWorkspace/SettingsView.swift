@@ -65,20 +65,8 @@ struct SettingsView: View {
 
     private var results: [SettingsSearchResult] {
         guard search.isSearching else { return [] }
-        let modelDraft = modelDraft.wrappedValue
-        let scopedOverride: Bool
-        if case .project(let id) = modelDraft.scope {
-            scopedOverride = model.projects.contains { $0.id == id && $0.modelOverride != nil }
-        } else {
-            scopedOverride = false
-        }
         return search.results(available: SettingsSearchAvailability(
-            canEditModels: model.canOpenModelSettings,
-            hasProjectScope: scopedProject != nil,
-            usesLocalProvider: modelDraft.settings.provider == .local,
-            hasSavedKey: model.canOpenModelSettings && model.hasKey(for: modelDraft.settings),
-            canResetModelOverride: scopedOverride,
-            usesCustomSearch: browserDraft.engine == .custom
+            model: model, project: scopedProject, draft: modelDraft.wrappedValue, browser: browserDraft
         ))
     }
 

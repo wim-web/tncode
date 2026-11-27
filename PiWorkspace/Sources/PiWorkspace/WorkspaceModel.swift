@@ -683,11 +683,13 @@ final class WorkspaceModel: ObservableObject {
     var showingSettings: Bool { settingsRequest != nil }
     var canOpenModelSettings: Bool { startupFailure == nil && !phase.isRunning }
 
-    func openSettings(_ page: SettingsPage = .general, anchor: SettingsAnchor? = nil, projectID: UUID? = nil) {
+    func openSettings(_ page: SettingsPage = .general, anchor: SettingsAnchor? = nil, projectID: UUID? = nil,
+                      focusDestination: Bool = false) {
         guard settingsRequest == nil else { return }
         let project = projects.first { $0.id == (projectID ?? self.project?.id) }
         guard page != .project || project != nil else { return }
-        settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id)
+        settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id,
+                                          focusDestination: focusDestination)
     }
 
     func openSettingsLink(_ url: URL) -> Bool {

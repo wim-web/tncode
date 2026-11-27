@@ -507,7 +507,7 @@ struct WorkspaceView: View {
         let branchRequest = copyBranchReadRequest
         return workspaceContent
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
-            CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
+            CommandPaletteView(contents: paletteContents(includeSettings: true), latestMessageID: model.messages.last?.id,
                                startingAt: paletteStart,
                                filesLocation: paletteFilesLocation, activeFilesLocation: { paletteFilesLocation },
                                searchMessages: model.searchMessages) { action in
@@ -3264,15 +3264,24 @@ struct WorkspaceView: View {
         }
     }
 
-    private var paletteContents: CommandPaletteContents {
-        CommandPaletteContents(
+    private func paletteContents(includeSettings: Bool = false) -> CommandPaletteContents {
+        let settingsProject = model.projects.first { $0.id == model.project?.id }
+        var contents = CommandPaletteContents(
             projects: filteredProjects, availableProjects: orderedProjects.filter(\.folderIsAvailable),
             preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
             canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope,
             findBrowserTab: paletteBrowserTab?.id,
-            settingsProject: model.project.flatMap { $0.isScratch ? nil : $0 },
+            settingsProject: settingsProject,
             defaultProject: model.workspace.lastUsedProject
         )
+        if includeSettings {
+            contents.settings = SettingsSearch.availableResults(SettingsSearchAvailability(
+                model: model, project: settingsProject,
+                draft: ModelSettingsDraft(workspace: model.workspace.model, project: settingsProject),
+                browser: BrowserSearchSettings.load(from: browserDefaults)
+            ))
+        }
+        return contents
     }
 
     private var paletteBrowserTab: BrowserPreviewSession? {
@@ -3300,7 +3309,7 @@ struct WorkspaceView: View {
 
     @discardableResult
     private func openNewThread(in window: NSWindow, local: Bool = false) -> Bool {
-        let contents = paletteContents
+        let contents = paletteContents()
         if (local || contents.availableProjects.count == 1), let project = contents.localThreadProject {
             startThread(in: project.id)
             return true
@@ -3475,6 +3484,9 @@ struct WorkspaceView: View {
             model.openSettings()
         case .projectSettings(let id):
             openProjectSettings(id)
+        case .openSetting(let page, let anchor, let projectID):
+            guard projectID == nil || model.projects.contains(where: { $0.id == projectID }) else { return }
+            model.openSettings(page, anchor: anchor, projectID: projectID, focusDestination: true)
         case .openProject(let id):
             guard filteredProjects.contains(where: { $0.id == id }) else { return }
             model.selectProjectFromPalette(id)

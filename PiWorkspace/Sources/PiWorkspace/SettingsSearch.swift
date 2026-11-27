@@ -168,8 +168,9 @@ final class SettingsRequest: ObservableObject, Identifiable {
     var page: SettingsPage { destination.page }
     var projectID: UUID? { destination.projectID }
 
-    init(page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
-        destination = Destination(navigationID: nil, page: page, anchor: anchor, projectID: projectID)
+    init(page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?, focusDestination: Bool = false) {
+        destination = Destination(navigationID: focusDestination ? UUID() : nil,
+                                  page: page, anchor: anchor, projectID: projectID)
     }
 
     func navigate(to page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
@@ -213,6 +214,17 @@ struct SettingsSearchAvailability {
     }
 }
 
+extension SettingsSearchAvailability {
+    @MainActor
+    init(model: WorkspaceModel, project: Project?, draft: ModelSettingsDraft, browser: BrowserSearchSettings) {
+        let hasOverride = project.map { draft.scope == .project($0.id) && $0.modelOverride != nil } ?? false
+        self.init(canEditModels: model.canOpenModelSettings, hasProjectScope: project != nil,
+                  usesLocalProvider: draft.settings.provider == .local,
+                  hasSavedKey: model.canOpenModelSettings && model.hasKey(for: draft.settings),
+                  canResetModelOverride: hasOverride, usesCustomSearch: browser.engine == .custom)
+    }
+}
+
 struct SettingsSearch {
     var query = "" { didSet { selectedIndex = 0 } }
     private var selectedIndex = 0
@@ -232,8 +244,7 @@ struct SettingsSearch {
         let words = Self.fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         let phrase = words.joined(separator: " ")
-        return Self.index.compactMap { result -> (rank: Int, result: SettingsSearchResult)? in
-            guard available.includes(result) else { return nil }
+        return Self.availableResults(available).compactMap { result -> (rank: Int, result: SettingsSearchResult)? in
             let title = Self.fold(result.title)
             if title == phrase { return (0, result) }
             if title.hasPrefix(phrase) { return (1, result) }
@@ -241,6 +252,10 @@ struct SettingsSearch {
             let fields = Self.fold("\(result.title) \(result.page.title) \(result.keywords)")
             return words.allSatisfy(fields.contains) ? (3, result) : nil
         }.sorted { $0.rank < $1.rank }.map(\.result)
+    }
+
+    static func availableResults(_ availability: SettingsSearchAvailability) -> [SettingsSearchResult] {
+        index.filter(availability.includes)
     }
 
     private static func fold(_ text: String) -> String {

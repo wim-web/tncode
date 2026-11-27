@@ -9,6 +9,7 @@ enum CommandPaletteAction: Hashable {
     case home
     case settings
     case projectSettings(UUID)
+    case openSetting(SettingsPage, anchor: SettingsAnchor?, projectID: UUID?)
     case searchThreads
     case findInCurrentThread(SidebarMessageSearch.Thread)
     case findInBrowser(UUID)
@@ -27,6 +28,7 @@ enum CommandPaletteAction: Hashable {
         case .home: "home"
         case .settings: "settings"
         case .projectSettings(let id): "project-settings-\(id)"
+        case .openSetting(let page, let anchor, _): "setting-\(anchor?.rawValue ?? page.rawValue)"
         case .searchThreads: "search-threads"
         case .findInCurrentThread: "find-current-thread"
         case .findInBrowser: "find-in-browser-page"
@@ -80,6 +82,7 @@ struct CommandPaletteGroup: Identifiable {
         case projects = "Projects"
         case recentThreads = "Recent Threads"
         case threads = "Threads"
+        case settings = "Settings"
         case messages = "In messages"
         case files = "Files"
         case contents = "Matches"
@@ -100,6 +103,7 @@ struct CommandPaletteContents {
     var findBrowserTab: UUID? = nil
     var settingsProject: Project? = nil
     var defaultProject: UUID? = nil
+    var settings: [SettingsSearchResult] = []
 
     var localThreadProject: Project? {
         availableProjects.first { $0.id == preferredProject }
@@ -196,12 +200,18 @@ struct CommandPaletteContents {
         let projectRows = searching ? projects.map {
             CommandPaletteRow(action: .openProject($0.id), title: $0.title, icon: "folder", detail: $0.path)
         } : []
-        let rows = CommandPaletteRow.matching(query, in: commands + visibleThreads.map(threadRow) + projectRows)
+        let settingsRows = searching ? settings.map { result in
+            CommandPaletteRow(action: .openSetting(result.page, anchor: result.anchor, projectID: settingsProject?.id),
+                              title: result.title, icon: result.page.icon,
+                              detail: result.anchor == nil ? nil : result.page.title, searchTerms: result.keywords)
+        } : []
+        let rows = CommandPaletteRow.matching(query, in: commands + visibleThreads.map(threadRow) + projectRows + settingsRows)
         var groups = rows.reduce(into: [CommandPaletteGroup]()) { groups, row in
             let kind: CommandPaletteGroup.Kind
             switch row.action {
             case .openProject: kind = .projects
             case .openThread: kind = searching ? .threads : .recentThreads
+            case .openSetting: kind = .settings
             default: kind = .actions
             }
             if let index = groups.firstIndex(where: { $0.id == kind }) {
