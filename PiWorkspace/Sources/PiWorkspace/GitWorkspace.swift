@@ -491,7 +491,7 @@ struct GitWorkspace: Sendable {
         throw WorkspaceError.commandFailed(command: "fetch", status: fetched.status, message: fetched.errorMessage)
     }
 
-    func createWorktree(_ checkout: PendingCheckout, legacy: Bool = false) async throws -> String {
+    func createWorktree(_ checkout: PendingCheckout, legacy: Bool = false, requireClean: Bool = false) async throws -> String {
         let target = checkout.path
         guard Self.isCanonicalWorktree(target) else { throw WorkspaceError.worktreeChanged }
         let prepared = try await worktrees().first { $0.path == target }
@@ -503,6 +503,13 @@ struct GitWorkspace: Sendable {
         if let prepared {
             guard try await ownsCheckout(prepared, for: checkout) else {
                 throw WorkspaceError.worktreeChanged
+            }
+            if requireClean {
+                let status = try await run(["status", "--porcelain=v1", "-z", "--untracked-files=all",
+                                            "--ignored", "--ignore-submodules=none"], in: target, outputLimit: 1)
+                guard status.output.bytes.isEmpty, !status.output.truncated else {
+                    throw WorkspaceError.dirtyCheckout
+                }
             }
         } else {
             var entry = stat()
@@ -1015,6 +1022,7 @@ extension GitWorkspace {
         case invalidBranch
         case branchExists(String)
         case worktreeChanged
+        case dirtyCheckout
         case branchCheckoutChanged
         case refUnavailable(String)
         case ambiguousTrackingBranch(String)
@@ -1041,6 +1049,7 @@ extension GitWorkspace {
             case .invalidBranch: return "Enter a local branch name."
             case .branchExists(let branch): return "A branch named '\(branch)' already exists."
             case .worktreeChanged: return "The prepared worktree no longer matches the selected base. Choose an existing worktree to use it."
+            case .dirtyCheckout: return "The prepared worktree contains changes. Save them elsewhere and clean the worktree before retrying."
             case .branchCheckoutChanged: return "Git could not confirm a single checkout for this branch. Refresh the picker and try again."
             case .refUnavailable(let ref): return "The branch '\(GitBranchRef.displayName(ref))' is no longer available."
             case .ambiguousTrackingBranch(let branch): return "Multiple local branches track '\(branch)'. Choose the local branch you want to use."

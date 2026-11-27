@@ -20,10 +20,24 @@ final class PromptLinkTests: XCTestCase {
         XCTAssertTrue(link.removedHiddenCharacters)
     }
 
+    func testParsesOriginalPullRequestParameterFormsInNativeLinks() throws {
+        for reference in ["Owner/Repo/42", "owner/repo%2342", "https%3A%2F%2Fwww.github.com%2FOwner%2FRepo.git%2Fpull%2F42%2Ffiles%23diff"] {
+            let link = try parse("pr=\(reference)&prompt=Inspect+this&repo=other/repo&provider=openai")
+            XCTAssertEqual(link.pullRequest?.url.absoluteString, "https://github.com/owner/repo/pull/42")
+            XCTAssertEqual(link.repository?.slug, "owner/repo")
+            XCTAssertEqual(link.prompt, "Inspect this")
+            XCTAssertNil(link.modelHint)
+        }
+        XCTAssertEqual(try parse("pr=owner/repo/42").prompt, "")
+        XCTAssertEqual(try parse("pr=owner/repo/42&prompt=+").prompt, "")
+    }
+
     func testRejectsMalformedAndHostedCheckoutLinks() throws {
         for query in ["repo=owner/repo", "prompt=%20", "prompt=%E2%80%8B", "prompt=%FF",
                       "prompt=one&prompt=two", "prompt=ok&repo=../repo", "prompt=ok&repo=owner/...",
-                      "prompt=ok&repo=file:///tmp/repo", "prompt=ok&pr=owner/repo/1"] {
+                      "prompt=ok&repo=file:///tmp/repo", "pr=owner/repo/0", "pr=owner/repo/9007199254740992",
+                      "pr=https://github.com.invalid/owner/repo/pull/42", "pr=owner/repo/42&pr=other/repo/42",
+                      "pr=owner/repo/42&prompt=%E2%80%8B"] {
             XCTAssertThrowsError(try parse(query), query)
         }
         XCTAssertThrowsError(try parse("prompt=" + String(repeating: "%F0%9F%8C%B1", count: 4_001)))

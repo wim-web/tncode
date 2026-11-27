@@ -1038,6 +1038,15 @@ final class WorkspaceModel: ObservableObject {
         let draftOrigin = request?.draftOrigin
         let promptLink = request?.promptLink
         if let promptLink { try validatePromptLinkReview(promptLink) }
+        if promptLink?.link.pullRequest != nil {
+            guard !workspace.projects.contains(where: { $0.path == folder.path }) else {
+                throw WorkspaceError("That folder already belongs to a project.")
+            }
+            var updated = workspace
+            updated.projects.append(Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date()))
+            try persist(updated)
+            return
+        }
         let relinking = request?.relinking
         let startThread = request?.startThread == true
         let existing = workspace.projects.firstIndex { $0.path == folder.path }
@@ -1452,7 +1461,7 @@ final class WorkspaceModel: ObservableObject {
         for project in projects.sorted(by: { $0.lastActivity > $1.lastActivity }) {
             try Task.checkCancellation()
             guard let candidate = PromptLinkProject(project, review: review) else { continue }
-            if (try? await makeGitHubReader(candidate.path).checkPromptRepository(repository)) != nil,
+            if (try? await makeGitHubReader(candidate.path).repository(matching: repository, scope: .promptLink)) != nil,
                projects.contains(where: candidate.matches) {
                 matches.append(candidate)
             }
@@ -1464,7 +1473,7 @@ final class WorkspaceModel: ObservableObject {
     func promptLinkCloneRequest(for review: PromptLinkReview) throws -> (ProjectPickerRequest, ProjectCloneRemote) {
         try requirePromptLinkReview(review)
         guard let repository = review.link.repository else { throw WorkspaceError("This link has no repository.") }
-        let request = ProjectPickerRequest(relinking: nil, startThread: true,
+        let request = ProjectPickerRequest(relinking: nil, startThread: review.link.pullRequest == nil,
                                            initialPath: ProjectFolder.addProjectInitialPath(workspace.addProjectBaseDirectory),
                                            basePath: project?.path, promptLink: review)
         let remote = try ProjectCloneRemote("https://github.com/\(repository.slug).git", relativeTo: nil)
@@ -1473,11 +1482,14 @@ final class WorkspaceModel: ObservableObject {
 
     func openPromptLinkDraft(_ review: PromptLinkReview, in candidate: PromptLinkProject) async throws {
         try requirePromptLinkReview(review)
+        guard review.link.pullRequest == nil else {
+            throw WorkspaceError("Confirm the pull request checkout to open its draft.")
+        }
         let changed = WorkspaceError("The linked project changed. Find the registered project again.")
         guard let repository = review.link.repository, candidate.reviewID == review.id,
               projects.contains(where: candidate.matches) else { throw changed }
         do {
-            try await makeGitHubReader(candidate.path).checkPromptRepository(repository)
+            _ = try await makeGitHubReader(candidate.path).repository(matching: repository, scope: .promptLink)
         } catch {
             try Task.checkCancellation()
             throw changed
@@ -1499,7 +1511,11 @@ final class WorkspaceModel: ObservableObject {
 
     func openPromptLinkDraft(_ review: PromptLinkReview) throws {
         try requirePromptLinkReview(review)
-        try openScratchDraft(linkedPromptDraft(review.link, in: nil), updating: { $0.welcomeCompleted = true })
+        var draft = linkedPromptDraft(review.link, in: nil)
+        if let reference = review.link.pullRequest {
+            draft.composerText = [draft.composerText, reference.url.absoluteString].compactMap { $0 }.joined(separator: "\n\n")
+        }
+        try openScratchDraft(draft, updating: { $0.welcomeCompleted = true })
         lastOpenedPromptLink = review
         showingWelcome = false
     }
@@ -1518,7 +1534,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func linkedPromptDraft(_ link: PromptLink, in project: Project?) -> Conversation {
-        var draft = Conversation(id: UUID(), title: "New thread", isDraft: true, composerText: link.prompt)
+        var draft = Conversation(id: UUID(), title: "New thread", isDraft: true,
+                                 composerText: link.prompt.isEmpty ? nil : link.prompt)
         if let hint = link.modelHint {
             let inherited = project?.modelOverride ?? workspace.model
             let profiles = [inherited, workspace.model].filter { $0.provider.rawValue == hint.provider }
@@ -1530,6 +1547,173 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         return draft
+    }
+
+    func resolvePullRequestPromptLink(_ review: PromptLinkReview) async throws -> PullRequestPromptLinkTarget {
+        try validatePromptLinkReview(review)
+        let reference = try pullRequestReference(for: review)
+        if let thread = try linkedPullRequestThread(for: reference) { return .thread(thread) }
+        guard let project = try await matchingPromptLinkProjects(for: review).first else {
+            return .missingProject
+        }
+        let checkout = try await pullRequestPromptCheckout(for: reference, project: project)
+        return .checkout(checkout)
+    }
+
+    func openPullRequestPromptLinkThread(_ review: PromptLinkReview, target: PullRequestPromptLinkTarget.Thread,
+                                         replaceDraft: Bool) throws {
+        try requirePromptLinkReview(review)
+        let reference = try pullRequestReference(for: review)
+        guard try linkedPullRequestThread(for: reference) == target,
+              let p = workspace.projects.firstIndex(where: { $0.id == target.projectID }),
+              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == target.threadID }) else {
+            throw WorkspaceError("The linked thread or its draft changed. Refresh the link before opening it.")
+        }
+        var updated = workspace
+        if !review.link.prompt.isEmpty, replaceDraft || !target.needsReplacement(for: review.link.prompt) {
+            updated.projects[p].conversations[t].composerText = review.link.prompt
+        }
+        updated.projects[p].selectedConversation = target.threadID
+        updated.selectedProject = target.projectID
+        try finishPullRequestPromptLink(review, with: updated)
+    }
+
+    /// A returned checkout needs fresh confirmation because the pull request moved.
+    func preparePullRequestPromptLink(_ review: PromptLinkReview, target: PullRequestPromptLinkTarget.Checkout)
+        async throws -> PullRequestPromptLinkTarget.Checkout? {
+        try requirePromptLinkReview(review)
+        let reference = try pullRequestReference(for: review)
+        let project = target.project
+        guard target.details.reference == reference, project.reviewID == review.id, let store,
+              projects.contains(where: project.matches) else {
+            throw WorkspaceError("The selected project changed. Refresh the link before checking out.")
+        }
+        return try await runGitMutation {
+            let current = try await pullRequestPromptCheckout(for: reference, project: project)
+            guard current.root == target.root else {
+                throw WorkspaceError("The selected Git checkout changed. Refresh the link before checking out.")
+            }
+            if current.details.headOID != target.details.headOID || current.details.headRef != target.details.headRef {
+                return current
+            }
+            try validatePromptLinkReview(review)
+            guard try linkedPullRequestThread(for: reference) == nil else {
+                throw WorkspaceError("A thread is already linked to this pull request. Refresh the link to open it.")
+            }
+            let git = GitWorkspace(path: current.root)
+            try await git.fetchPullRequestCommit(current.details.headOID, from: reference)
+            _ = try await makeGitHubReader(project.path).repository(
+                matching: reference.repository, scope: .promptLink)
+            guard current.root == (try await GitWorkspace(path: project.path).repositoryRoot()) else {
+                throw WorkspaceError("The selected Git checkout changed. Refresh the link before checking out.")
+            }
+            try validatePromptLinkReview(review)
+            let checkout = try await pendingPullRequestCheckout(current, store: store, git: git)
+            let path = try await git.createWorktree(checkout, requireClean: true)
+            try validatePromptLinkReview(review)
+
+            let draft = Conversation(id: checkout.owner, title: "New thread", location: .worktree(path: path, base: checkout.head),
+                                 isDraft: true, composerText: review.link.prompt.isEmpty ? nil : review.link.prompt,
+                                 linkedPullRequests: [.init(reference: reference, title: current.details.pullRequest.title)])
+            var updated = workspace
+            let index = try pullRequestProjectIndex(current.project)
+            let pending = updated.projects[index].pendingPullRequestCheckouts?.filter { $0.reference != reference }
+            updated.projects[index].pendingPullRequestCheckouts = pending?.isEmpty == false ? pending : nil
+            updated.projects[index].selectDraft(seed: draft)
+            updated.selectedProject = project.id
+            try finishPullRequestPromptLink(review, with: updated)
+            return nil
+        }
+    }
+
+    private func pullRequestReference(for review: PromptLinkReview) throws -> GitHubPullRequestReference {
+        guard let reference = review.link.pullRequest else { throw WorkspaceError("This link has no pull request.") }
+        return reference
+    }
+
+    private func linkedPullRequestThread(for reference: GitHubPullRequestReference) throws -> PullRequestPromptLinkTarget.Thread? {
+        let linked = projects.flatMap { project in
+            project.conversations.filter { !$0.archived && $0.pullRequestLinks.contains { $0.reference == reference } }
+                .map { (project, $0) }
+        }.max { ($0.1.lastActiveAt ?? .distantPast) < ($1.1.lastActiveAt ?? .distantPast) }
+        guard let (project, thread) = linked else { return nil }
+        let directory = thread.workingLocation.directory(in: project)
+        guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil, thread.composerSubmission == nil,
+              let folder = try? ProjectFolder.existing(at: URL(fileURLWithPath: directory, isDirectory: true)) else {
+            throw WorkspaceError("The linked thread’s checkout or composer is unavailable.")
+        }
+        return .init(projectID: project.id, threadID: thread.id, title: thread.title,
+                     directory: folder.path, composerText: thread.composerText)
+    }
+
+    private func pullRequestPromptCheckout(for reference: GitHubPullRequestReference, project: PromptLinkProject)
+        async throws -> PullRequestPromptLinkTarget.Checkout {
+        _ = try pullRequestProjectIndex(project)
+        let git = GitWorkspace(path: project.path)
+        let root = try await git.repositoryRoot()
+        let details = try await makeGitHubReader(project.path).pullRequestDetails(
+            for: reference.number, in: reference.repository, scope: .promptLink)
+        guard root == (try await git.repositoryRoot()),
+              details.headOID.wholeMatch(of: #/[0-9a-f]{40}/#) != nil, !details.headRef.isEmpty,
+              !details.headRef.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+            throw WorkspaceError("GitHub didn’t provide a valid head for this checkout.")
+        }
+        _ = try pullRequestProjectIndex(project)
+        try Task.checkCancellation()
+        return .init(project: project, root: root, details: details)
+    }
+
+    private func pullRequestProjectIndex(_ project: PromptLinkProject) throws -> Int {
+        guard let index = workspace.projects.firstIndex(where: project.matches) else { throw WorkspaceError("The selected project’s folder is unavailable.") }
+        return index
+    }
+
+    private func pendingPullRequestCheckout(_ target: PullRequestPromptLinkTarget.Checkout,
+                                            store: WorkspaceStore, git: GitWorkspace) async throws -> GitWorkspace.PendingCheckout {
+        let reference = target.details.reference
+        let head = target.details.headOID
+        let index = try pullRequestProjectIndex(target.project)
+        var pending = workspace.projects[index].pendingPullRequestCheckouts ?? []
+        if let old = pending.first(where: { $0.reference == reference }) {
+            let path = GitWorkspace.canonicalCheckoutPath(old.checkout.path)
+            let isInUse = workspace.projects.contains { project in
+                GitWorkspace.canonicalCheckoutPath(project.path) == path || project.conversations.contains { thread in
+                    GitWorkspace.canonicalCheckoutPath(thread.workingLocation.directory(in: project)) == path
+                }
+            }
+            guard !isInUse else {
+                throw WorkspaceError("The earlier pull request checkout at \(path) belongs to another thread or project.")
+            }
+            if old.checkout.head == head { return old.checkout }
+            try await git.discardPendingCheckout(old.checkout, attached: false)
+            guard try await !git.worktrees().contains(where: { $0.path == old.checkout.path }) else {
+                throw WorkspaceError("The earlier worktree at \(old.checkout.path) could not be safely removed. Review it before retrying.")
+            }
+            pending.removeAll { $0.reference == reference }
+        }
+
+        let id = UUID()
+        let targetPath = try store.worktree(project: target.project.id, conversation: id, directory: workspace.worktreesDirectory)
+        let branch = "pi/pr-\(reference.number)-\(id.uuidString.lowercased())"
+        let checkout = try await git.pinWorktree(at: targetPath.path, branch: branch, base: head, owner: id)
+        guard checkout.head == head else { throw WorkspaceError("The local commit differs from the reviewed pull request head.") }
+        try Task.checkCancellation()
+        var updated = workspace
+        pending.append(.init(reference: reference, checkout: checkout))
+        updated.projects[try pullRequestProjectIndex(target.project)].pendingPullRequestCheckouts = pending
+        try persist(updated)
+        return checkout
+    }
+
+    private func finishPullRequestPromptLink(_ review: PromptLinkReview, with state: Workspace) throws {
+        var updated = state
+        updated.welcomeCompleted = true
+        try persist(updated)
+        lastOpenedPromptLink = review
+        showingWelcome = false
+        showArchive = false
+        failedStartupDraftProject = nil
+        connect()
     }
 
     @discardableResult
@@ -2351,12 +2535,14 @@ final class WorkspaceModel: ObservableObject {
         }
         if let reason = branchChangeBlocked { throw WorkspaceError(reason) }
 
-        let pending = Set(workspace.projects.flatMap(\.conversations).flatMap { thread -> [String] in
+        let launches = workspace.projects.flatMap(\.conversations).flatMap { thread -> [String] in
             guard let launch = thread.worktreeLaunch else { return [] }
             if let checkout = launch.checkout { return [checkout.path] }
             if case let .worktree(path, _) = thread.workingLocation { return [path] }
             return []
-        }.map(GitWorkspace.canonicalCheckoutPath))
+        }
+        let pullRequestCheckouts = workspace.projects.flatMap { $0.pendingPullRequestCheckouts ?? [] }
+        let pending = Set((launches + pullRequestCheckouts.map(\.checkout.path)).map(GitWorkspace.canonicalCheckoutPath))
         let git = GitWorkspace(path: scope.directory)
         try await performGitMutation {
             switch choice {

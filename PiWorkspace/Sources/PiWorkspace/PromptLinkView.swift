@@ -20,7 +20,9 @@ struct PromptLinkView: View {
     private var isSearching: Bool { if case .searching = lookup { true } else { false } }
 
     var body: some View {
-        if let (request, remote) = clone {
+        if let reference = review.link.pullRequest {
+            PullRequestPromptLinkView(model: model, review: review, reference: reference, didOpen: didOpen)
+        } else if let (request, remote) = clone {
             ProjectFolderView(request: request, cloneRemote: remote) { source in
                 try await model.openProject(source, request: request)
                 didOpen()
@@ -34,18 +36,7 @@ struct PromptLinkView: View {
                     Text("Repository: \(repository.slug)")
                         .accessibilityIdentifier("prompt-link-repository")
                 }
-                ScrollView {
-                    Text(verbatim: review.link.prompt)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("prompt-link-preview")
-                }
-                .frame(maxHeight: 160)
-                if review.link.removedHiddenCharacters {
-                    Label("Hidden characters were removed. Review the prompt before sending it.",
-                          systemImage: "exclamationmark.triangle")
-                        .accessibilityIdentifier("prompt-link-hidden-warning")
-                }
+                PromptLinkPreview(link: review.link)
                 if review.link.modelHint != nil {
                     Text("If the requested model isn’t configured here, the draft uses the default model.")
                         .foregroundStyle(.secondary)
@@ -151,6 +142,27 @@ struct PromptLinkView: View {
             dismiss()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+struct PromptLinkPreview: View {
+    let link: PromptLink
+
+    var body: some View {
+        if !link.prompt.isEmpty {
+            ScrollView {
+                Text(verbatim: link.prompt)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("prompt-link-preview")
+            }
+            .frame(maxHeight: 160)
+        }
+        if link.removedHiddenCharacters {
+            Label("Hidden characters were removed. Review the prompt before sending it.",
+                  systemImage: "exclamationmark.triangle")
+                .accessibilityIdentifier("prompt-link-hidden-warning")
         }
     }
 }

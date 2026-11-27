@@ -6,10 +6,31 @@ struct PromptLink: Equatable {
         let model: String?
     }
 
+    enum Destination: Equatable {
+        case new(repository: GitHubRepository?, modelHint: ModelHint?)
+        case pullRequest(GitHubPullRequestReference)
+    }
+
     let prompt: String
     let removedHiddenCharacters: Bool
-    let repository: GitHubRepository?
-    let modelHint: ModelHint?
+    let destination: Destination
+
+    var repository: GitHubRepository? {
+        switch destination {
+        case let .new(repository, _): repository
+        case let .pullRequest(reference): reference.repository
+        }
+    }
+
+    var modelHint: ModelHint? {
+        guard case let .new(_, hint) = destination else { return nil }
+        return hint
+    }
+
+    var pullRequest: GitHubPullRequestReference? {
+        guard case let .pullRequest(reference) = destination else { return nil }
+        return reference
+    }
 
     static func handles(_ url: URL) -> Bool {
         url.scheme?.lowercased() == ThreadLink.scheme && url.host?.lowercased() == "new"
@@ -27,18 +48,24 @@ struct PromptLink: Equatable {
             guard pair.count == 2, let key = Self.decode(pair[0]), let value = Self.decode(pair[1]),
                   fields.updateValue(value, forKey: key) == nil else { throw malformed }
         }
-        guard fields["pr"] == nil else {
-            throw WorkspaceError("This link requires a pull request checkout.")
-        }
-        guard let raw = fields["prompt"] else { throw WorkspaceError("This link has no prompt.") }
+        let raw = fields["prompt"] ?? ""
         guard raw.utf16.count <= 8_000 else { throw WorkspaceError("This prompt exceeds the 8,000 character limit.") }
         let (prompt, removedHiddenCharacters) = Self.sanitize(raw)
-        guard !prompt.isEmpty else {
-            throw WorkspaceError(removedHiddenCharacters ? "This prompt contains only hidden characters." : "This link has no prompt.")
+        if prompt.isEmpty && removedHiddenCharacters {
+            throw WorkspaceError("This prompt contains only hidden characters.")
         }
         self.prompt = prompt
         self.removedHiddenCharacters = removedHiddenCharacters
 
+        if let pr = fields["pr"] {
+            guard let reference = Self.parsePullRequest(pr) else {
+                throw WorkspaceError("This link names a pull request Pi Workspace couldn’t read.")
+            }
+            destination = .pullRequest(reference)
+            return
+        }
+        guard !prompt.isEmpty else { throw WorkspaceError("This link has no prompt.") }
+        let repository: GitHubRepository?
         if let repo = fields["repo"] {
             guard let parsed = Self.parseRepository(repo) else {
                 throw WorkspaceError("This link names a repository Pi Workspace couldn’t read.")
@@ -47,9 +74,19 @@ struct PromptLink: Equatable {
         } else {
             repository = nil
         }
-        modelHint = Self.nonempty(fields["provider"]).map {
+        let modelHint = Self.nonempty(fields["provider"]).map {
             ModelHint(provider: $0.lowercased(), model: Self.nonempty(fields["model"]))
         }
+        destination = .new(repository: repository, modelHint: modelHint)
+    }
+
+    private static func parsePullRequest(_ raw: String) -> GitHubPullRequestReference? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = value.wholeMatch(of: #/(?i:https?:\/\/(?:www\.)?github\.com\/([^\/?#]+)\/([^\/?#]+)\/pull\/([0-9]+)(?:[\/?#].*)?)/#)
+            ?? value.wholeMatch(of: #/([^\/\s#]+)\/([^\/\s#]+)[\/#]([0-9]+)/#),
+              let repository = parseRepository("\(match.1)/\(match.2)"),
+              let number = Int(match.3), number <= 9_007_199_254_740_991 else { return nil }
+        return GitHubPullRequestReference(repository: repository, number: number)
     }
 
     private static func decode(_ value: Substring) -> String? {

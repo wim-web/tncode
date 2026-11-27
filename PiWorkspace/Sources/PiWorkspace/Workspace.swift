@@ -333,6 +333,7 @@ struct Project: Codable, Identifiable {
     var createdAt: Date?
     var modelOverride: ModelSettings?
     var kind: Kind?
+    var pendingPullRequestCheckouts: [PendingPullRequestCheckout]?
 
     var isScratch: Bool { kind == .scratch }
 

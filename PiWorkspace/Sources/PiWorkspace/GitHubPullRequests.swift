@@ -205,6 +205,8 @@ enum GitHubCheckLogError: LocalizedError {
 }
 
 struct GitHubReader: Sendable {
+    enum RepositoryScope { case checkout, promptLink }
+
     let directory: String
     private let environment: [String: String]
     private let timeout: DispatchTimeInterval
@@ -222,11 +224,12 @@ struct GitHubReader: Sendable {
         }
     }
 
-    func pullRequestDetails(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubPullRequestDetails {
+    func pullRequestDetails(for number: Int, in expectedRepository: GitHubRepository,
+                            scope: RepositoryScope = .checkout) async throws -> GitHubPullRequestDetails {
         guard let reference = GitHubPullRequestReference(repository: expectedRepository, number: number) else {
             throw ReadError.invalidResponse(.pullRequests)
         }
-        let repository = try await repository(matching: expectedRepository)
+        let repository = try await repository(matching: expectedRepository, scope: scope)
         let response: DetailResponse = try await read(
             ["pr", "view", String(number), "--json",
              GitHubPullRequest.fields + ",headRefName,headRefOid,baseRefName,body,statusCheckRollup,url", "--repo", repository.cliName],
@@ -236,7 +239,7 @@ struct GitHubReader: Sendable {
               GitHubPullRequestReference(url: response.url) == reference else {
             throw ReadError.invalidResponse(.pullRequests)
         }
-        _ = try await self.repository(matching: repository)
+        _ = try await self.repository(matching: repository, scope: scope)
         return GitHubPullRequestDetails(
             pullRequest: response.pullRequest,
             reference: reference,
@@ -377,21 +380,15 @@ struct GitHubReader: Sendable {
         return log
     }
 
-    func repository(matching expected: GitHubRepository? = nil, hosts: Set<String> = ["github.com"]) async throws -> GitHubRepository {
-        let repository = try await checkoutRepository(hosts: hosts)
+    func repository(matching expected: GitHubRepository? = nil, scope: RepositoryScope = .checkout) async throws -> GitHubRepository {
+        let repository = try await checkoutRepository(scope: scope)
         try Task.checkCancellation()
         guard expected == nil || repository == expected else { throw ReadError.repositoryChanged }
         return repository
     }
 
-    func checkPromptRepository(_ expected: GitHubRepository) async throws {
-        let repository = try await checkoutRepository(hosts: ["github.com", "git.cafe", "staging.git.cafe"],
-                                                      allowConfiguredRemote: true)
-        try Task.checkCancellation()
-        guard repository == expected else { throw ReadError.repositoryChanged }
-    }
-
-    private func checkoutRepository(hosts: Set<String>, allowConfiguredRemote: Bool = false) async throws -> GitHubRepository {
+    private func checkoutRepository(scope: RepositoryScope) async throws -> GitHubRepository {
+        let hosts: Set<String> = scope == .promptLink ? ["github.com", "git.cafe", "staging.git.cafe"] : ["github.com"]
         try Task.checkCancellation()
         let git = GitWorkspace(path: directory)
         let remotes: [(name: String, url: String)]
@@ -403,7 +400,7 @@ struct GitHubReader: Sendable {
         var repositories: [GitHubRepository] = []
         for remote in remotes {
             var path = GitHubRepository.remotePath(remote.url, hosts: hosts)
-            if path == nil, allowConfiguredRemote, let original = try await git.configuredFetchURL(for: remote.name) {
+            if path == nil, scope == .promptLink, let original = try await git.configuredFetchURL(for: remote.name) {
                 path = GitHubRepository.remotePath(original, hosts: hosts)
             }
             guard let path, let repository = GitHubRepository(remotePath: path) else { continue }
