@@ -407,6 +407,9 @@ async function open(command) {
   if (forkMessageID && !hasForkHistory(manager, forkMessageID)) {
     throw new Error("The fork history is incomplete.");
   }
+  if (command.requireHistory && !sideChatSource && !manager.getBranch().some((entry) => entry.type === "message")) {
+    throw new Error(missingHistory);
+  }
   if (inheritedCutoff && !hasForkHistory(manager, inheritedCutoff)) {
     throw new Error("The side chat’s starting history is incomplete.");
   }

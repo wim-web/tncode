@@ -120,18 +120,29 @@ final class PullRequestPromptLinkTests: XCTestCase {
     }
 
     func testOffscreenLinkedThreadKeepsDraftUntilExplicitReplacement() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"] else {
+            throw XCTSkip("Set PI_PROMPT_LINK_TEST_APP to exercise a saved Pi session.")
+        }
+        try await checkDraftReplacement(app: URL(fileURLWithPath: path), isDraft: false)
+    }
+
+    func testOffscreenUnsentPRDraftKeepsDraftUntilExplicitReplacement() async throws {
+        let app = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"].map { URL(fileURLWithPath: $0) }
+        try await checkDraftReplacement(app: app, isDraft: true)
+    }
+
+    private func checkDraftReplacement(app: URL?, isDraft: Bool) async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
         let reference = try XCTUnwrap(GitHubPullRequestReference(url: fixture.prURL))
-        var linked = Conversation(id: UUID(), title: "Existing PR thread", isDraft: false,
+        var linked = Conversation(id: UUID(), title: "Existing PR thread", isDraft: isDraft,
                                   composerText: "Keep this follow-up",
                                   linkedPullRequests: [.init(reference: reference, title: "Fixture pull request")])
         let attachment = ComposerAttachment(id: UUID(), name: "review.txt",
                                             payload: .init(mimeType: "text/plain", data: Data("draft bytes".utf8)))
         linked.composerAttachments = [attachment]
         linked.queuedMessages = [.init(id: UUID(), text: "An earlier follow-up")]
-        let app = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"].map { URL(fileURLWithPath: $0) }
-        let history = try app.map { try fixture.seedHistory(app: $0, thread: linked.id) }
+        let history = try isDraft ? nil : app.map { try fixture.seedHistory(app: $0, thread: linked.id) }
         let savedMessages = try history?.messages()
         do {
             let store = try WorkspaceStore(root: fixture.workspace)
@@ -158,6 +169,21 @@ final class PullRequestPromptLinkTests: XCTestCase {
         try panel.check("prompt-link-pr-thread", includes: linked.title)
         try panel.check("prompt-link-pr-folder", includes: GitWorkspace.canonicalCheckoutPath(fixture.repo.path))
         XCTAssertEqual(try fixture.saved(), index)
+
+        if let history {
+            let file = URL(fileURLWithPath: history.historyPath)
+            let original = try Data(contentsOf: file)
+            let header = original.prefix(through: try XCTUnwrap(original.firstIndex(of: 10)))
+            try header.write(to: file, options: .atomic)
+            try panel.press("prompt-link-pr-open-thread")
+            try await panel.waitUntil("empty submitted history rejected") {
+                panel.element("prompt-link-action-error") != nil || model.promptLinkReview == nil
+            }
+            XCTAssertEqual(model.conversation?.id, fixture.unrelatedDraft.id)
+            XCTAssertEqual(try fixture.saved(), index)
+            XCTAssertEqual(try Data(contentsOf: file), header)
+            try original.write(to: file, options: .atomic)
+        }
 
         try panel.press("prompt-link-pr-open-thread")
         try await panel.waitUntil("linked thread") { model.promptLinkReview == nil }
@@ -263,6 +289,71 @@ final class PullRequestPromptLinkTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: parentFile), parentBytes)
         XCTAssertEqual(try Data(contentsOf: child), original)
         XCTAssertEqual(model.projects.first { $0.id == sourceProject.id }?.conversations.first?.queuedMessages, [queued])
+    }
+
+    func testLateReadyKeepsNewComposerTextAndNewSelection() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let reference = try XCTUnwrap(GitHubPullRequestReference(url: fixture.prURL))
+        var linked = Conversation(id: UUID(), title: "Linked draft", isDraft: true, composerText: "Original follow-up")
+        linked.linkedPullRequests = [.init(reference: reference, title: "Fixture PR")]
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var workspace = try store.load()
+            workspace.projects[0].conversations.append(linked)
+            try store.save(workspace)
+        }
+        let candidate = FixtureWorker()
+        let model = WorkspaceModel(root: fixture.workspace, keychainService: "unused", readCredential: { _ in nil }) { _, _ in
+            candidate.onOpen == nil ? FixtureWorker() : candidate
+        }
+        defer { model.terminate() }
+        model.connect()
+        XCTAssertTrue(model.openPromptLink(try fixture.link(prompt: "Replace+this")))
+        let review = try XCTUnwrap(model.promptLinkReview)
+        guard case let .thread(target) = try await model.resolvePullRequestPromptLink(review) else {
+            return XCTFail("Expected a linked draft")
+        }
+        for changeSelection in [false, true] {
+            let opened = expectation(description: "Pi received the open command")
+            candidate.onOpen = { opened.fulfill() }
+            let attempt = Task {
+                try await model.openPullRequestPromptLinkThread(review, target: target, replaceDraft: true)
+            }
+            await fulfillment(of: [opened], timeout: 5)
+            let lateEvent = try XCTUnwrap(candidate.onEvent)
+            candidate.onOpen = nil
+            if changeSelection {
+                model.selectConversation(fixture.mainDraft.id, in: fixture.project.id)
+            } else {
+                model.draft = "Edited while opening"
+            }
+            lateEvent(.ready([]))
+            do {
+                try await attempt.value
+                XCTFail("A stale Pi callback opened the linked draft")
+            } catch {}
+            let expectedDraft = changeSelection ? fixture.mainDraft.composerText : "Edited while opening"
+            XCTAssertEqual(model.draft, expectedDraft)
+            XCTAssertEqual(model.conversation?.id, changeSelection ? fixture.mainDraft.id : fixture.unrelatedDraft.id)
+            XCTAssertEqual(model.projects.flatMap(\.conversations).first { $0.id == linked.id }?.composerText, linked.composerText)
+            XCTAssertEqual(model.phase, .ready)
+        }
+        var opens = 0
+        candidate.onOpen = { opens += 1 }
+        model.selectConversation(linked.id, in: fixture.project.id)
+        XCTAssertEqual(model.phase, .connecting)
+        Task {
+            model.draft = "Updated the linked draft while Pi was opening"
+            candidate.onEvent?(.ready([]))
+        }
+        do {
+            try await model.openPullRequestPromptLinkThread(review, target: target, replaceDraft: true)
+            XCTFail("The already-connecting thread lost its newer draft")
+        } catch {}
+        XCTAssertEqual(opens, 1)
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(model.draft, "Updated the linked draft while Pi was opening")
     }
 
     func testWrongRepositoryResponseAndChangedLocalRemoteCannotConfirm() async throws {
@@ -380,7 +471,7 @@ private final class Fixture {
                 self?.latestWorker = worker
                 return worker
             }
-            throw WorkspaceError("This fixture does not start Pi.")
+            return FixtureWorker()
         }, makeGitHubReader: { GitHubReader(directory: $0, environment: environment, timeout: .seconds(5)) })
     }
 
@@ -577,4 +668,17 @@ private final class OffscreenPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+private final class FixtureWorker: PiConnection {
+    var onEvent: ((PiEvent) -> Void)?
+    var onClose: (() -> Void)?
+    var onOpen: (() -> Void)?
+    func send(_ command: any Encodable) throws {
+        guard command is OpenConversation else { return }
+        if let onOpen { onOpen() }
+        else { onEvent?(.ready([])) }
+    }
+    func close() { onEvent = nil }
 }

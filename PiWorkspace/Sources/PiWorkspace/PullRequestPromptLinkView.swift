@@ -172,11 +172,17 @@ struct PullRequestPromptLinkView: View {
     }
 
     private func openThread(_ thread: PullRequestPromptLinkTarget.Thread, replaceDraft: Bool) {
-        do {
-            try model.openPullRequestPromptLinkThread(review, target: thread, replaceDraft: replaceDraft)
-            finish()
-        } catch {
-            self.error = error.localizedDescription
+        guard !preparing else { return }
+        preparing = true
+        error = nil
+        Task {
+            defer { preparing = false }
+            do {
+                try await model.openPullRequestPromptLinkThread(review, target: thread, replaceDraft: replaceDraft)
+                finish()
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 

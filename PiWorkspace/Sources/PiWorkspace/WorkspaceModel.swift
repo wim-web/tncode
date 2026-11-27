@@ -614,7 +614,7 @@ final class WorkspaceModel: ObservableObject {
     private var process: (any PiConnection)?
     private var connectedModel: ModelSettings?
     private var modelCatalog: [Provider: [String: String]] = [:]
-    private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Never>)?
+    private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Error>)?
     private var sentAttachmentRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
     private var stopTimeout: Task<Void, Never>?
@@ -1564,21 +1564,48 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func openPullRequestPromptLinkThread(_ review: PromptLinkReview, target: PullRequestPromptLinkTarget.Thread,
-                                         replaceDraft: Bool) throws {
+                                         replaceDraft: Bool) async throws {
         try requirePromptLinkReview(review)
+        guard let store else { throw WorkspaceError("Could not open the workspace.") }
         let reference = try pullRequestReference(for: review)
-        guard try linkedPullRequestThread(for: reference) == target,
-              let p = workspace.projects.firstIndex(where: { $0.id == target.projectID }),
-              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == target.threadID }) else {
-            throw WorkspaceError("The linked thread or its draft changed. Refresh the link before opening it.")
+        let revision = composerRevision
+        func resolve() throws -> (Int, Conversation) {
+            guard promptLinkReview?.id == review.id, composerRevision == revision,
+                  try linkedPullRequestThread(for: reference) == target,
+                  let p = workspace.projects.firstIndex(where: { $0.id == target.projectID }),
+                  let thread = workspace.projects[p].conversations.first(where: { $0.id == target.threadID }) else {
+                throw WorkspaceError("The linked thread or its draft changed. Refresh the link before opening it.")
+            }
+            return (p, thread)
         }
-        var updated = workspace
-        if !review.link.prompt.isEmpty, replaceDraft || !target.needsReplacement(for: review.link.prompt) {
-            updated.projects[p].conversations[t].composerText = review.link.prompt
+        func select(_ p: Int, _ thread: Conversation) throws {
+            var updated = workspace
+            if !review.link.prompt.isEmpty, replaceDraft || !target.needsReplacement(for: review.link.prompt),
+               let t = updated.projects[p].conversations.firstIndex(where: { $0.id == thread.id }) {
+                updated.projects[p].conversations[t].composerText = review.link.prompt
+            }
+            updated.projects[p].selectedConversation = thread.id
+            updated.selectedProject = target.projectID
+            updated.welcomeCompleted = true
+            try persist(updated)
+            lastOpenedPromptLink = review
         }
-        updated.projects[p].selectedConversation = target.threadID
-        updated.selectedProject = target.projectID
-        try finishPullRequestPromptLink(review, with: updated)
+        if project?.id == target.projectID, conversation?.id == target.threadID, phase != .closed {
+            if phase == .connecting, let process {
+                guard try await waitForOpeningThread(process) else { throw CancellationError() }
+                try requirePromptLinkReview(review)
+            }
+            let (p, thread) = try resolve()
+            guard thread.isDraft == true || !messages.isEmpty else {
+                throw WorkspaceError("The linked thread’s history is missing.")
+            }
+            try select(p, thread)
+            finishOpeningThreadLink()
+            return
+        }
+        guard try await stageThreadLink(store: store, resolve: resolve, select: select) else {
+            throw WorkspaceError("The current thread changed. Open the link again.")
+        }
     }
 
     /// A returned checkout needs fresh confirmation because the pull request moved.
@@ -1766,15 +1793,36 @@ final class WorkspaceModel: ObservableObject {
         let project = workspace.projects[index]
         if self.project?.id == project.id, conversation?.id == thread.id, phase != .closed {
             if phase == .connecting, let process {
-                return await withCheckedContinuation { pendingThreadLink = (process, $0) }
+                return try await waitForOpeningThread(process)
             }
             finishOpeningThreadLink()
             return true
         }
+        return try await stageThreadLink(store: store, resolve: { try self.linkedThread(link) }) { index, thread in
+            try self.persistSelection(thread.id, at: index)
+        }
+    }
+
+    private func waitForOpeningThread(_ worker: any PiConnection) async throws -> Bool {
+        try await withCheckedThrowingContinuation { pendingThreadLink = (worker, $0) }
+    }
+
+    private func stageThreadLink(store: WorkspaceStore, resolve: @escaping () throws -> (Int, Conversation),
+                                 select: @escaping (Int, Conversation) throws -> Void) async throws -> Bool {
+        let (index, thread) = try resolve()
+        let project = workspace.projects[index]
         let command = try linkedOpenCommand(project: project, thread: thread, store: store)
-        try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
+        if command.requireHistory {
+            try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
+        }
+        func selectWhenReady() throws {
+            let (index, thread) = try resolve()
+            let current = try linkedOpenCommand(project: workspace.projects[index], thread: thread, store: store)
+            guard current == command else { throw WorkspaceError("The linked thread changed. Open the link again.") }
+            try select(index, thread)
+        }
         let worker = try makeProcess(store.config, command.cwd)
-        return await withCheckedContinuation { result in
+        return try await withCheckedThrowingContinuation { result in
             pendingThreadLink = (worker, result)
             worker.onClose = { [weak self, weak worker] in
                 guard let self, let worker, self.pendingThreadLink?.worker === worker else { return }
@@ -1782,15 +1830,15 @@ final class WorkspaceModel: ObservableObject {
             }
             worker.onEvent = { [weak self, weak worker] event in
                 guard let self, let worker else { return }
-                self.receiveOpeningThreadLink(event, link: link, command: command, store: store, worker: worker)
+                self.receiveOpeningThreadLink(event, command: command, worker: worker, select: selectWhenReady)
             }
             do { try worker.send(command) }
             catch { rejectPendingThreadLink(error.localizedDescription) }
         }
     }
 
-    private func receiveOpeningThreadLink(_ event: PiEvent, link: ThreadLink, command: OpenConversation,
-                                          store: WorkspaceStore, worker: any PiConnection) {
+    private func receiveOpeningThreadLink(_ event: PiEvent, command: OpenConversation, worker: any PiConnection,
+                                          select: () throws -> Void) {
         guard let pending = pendingThreadLink, pending.worker === worker else { return }
         do {
             switch event {
@@ -1799,11 +1847,7 @@ final class WorkspaceModel: ObservableObject {
             case let .modelCatalog(catalog):
                 modelCatalog = catalog
             case .ready:
-                let (index, thread) = try linkedThread(link)
-                guard try linkedOpenCommand(project: workspace.projects[index], thread: thread, store: store) == command else {
-                    throw WorkspaceError("The linked thread changed. Open the link again.")
-                }
-                try persistSelection(thread.id, at: index)
+                try select()
                 pendingThreadLink = nil
                 resetConnection()
                 error = nil
@@ -1822,8 +1866,8 @@ final class WorkspaceModel: ObservableObject {
         guard let pending = pendingThreadLink else { return }
         pendingThreadLink = nil
         if pending.worker !== process { pending.worker.close() }
-        if let message { threadLinkError = message }
-        pending.result.resume(returning: false)
+        if let message { pending.result.resume(throwing: WorkspaceError(message)) }
+        else { pending.result.resume(returning: false) }
     }
 
     private func finishOpeningThreadLink() {
@@ -1856,7 +1900,7 @@ final class WorkspaceModel: ObservableObject {
         }
         try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "thread")
         var command = try openCommand(project: project, thread: thread, store: store)
-        command.requireHistory = true
+        command.requireHistory = thread.isDraft != true
         return command
     }
 
