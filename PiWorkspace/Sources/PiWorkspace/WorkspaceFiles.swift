@@ -80,8 +80,24 @@ enum WorkspaceFilePreview: Sendable {
     case largeText(WorkspaceLargeTextFile)
     case binary(prefix: Data, size: Int64)
     case sqlite(WorkspaceSQLiteFile)
+    case archive(WorkspaceArchiveFile)
     case image(WorkspaceImageFile)
     case pdf(WorkspacePDFFile)
+}
+
+struct WorkspaceArchiveFile: Sendable {
+    let id = UUID()
+    let entries: [WorkspaceArchive.Entry]
+    fileprivate let files: WorkspaceFiles
+    fileprivate let path: String
+    fileprivate let checkout: WorkspaceFileIdentity
+    fileprivate let revision: FileContentRevision
+
+    var size: Int64 { revision.file.size }
+
+    func validate() throws {
+        try files.validateArchive(self)
+    }
 }
 
 struct WorkspaceSQLiteFile: Sendable {
@@ -91,7 +107,7 @@ struct WorkspaceSQLiteFile: Sendable {
     fileprivate let files: WorkspaceFiles
     fileprivate let path: String
     fileprivate let checkout: WorkspaceFileIdentity
-    fileprivate let revision: SQLiteFileRevision
+    fileprivate let revision: FileContentRevision
 
     func page(table: Int, index: Int) throws -> WorkspaceSQLite.Page {
         guard tables.indices.contains(table) else { throw WorkspaceSQLiteError.unavailableTable }
@@ -192,12 +208,12 @@ struct WorkspaceFiles: Sendable {
             let metadata = try status(file)
             let header = try read(file, limit: WorkspaceSQLite.signatureLength, cancellable: true)
             if WorkspaceSQLite.recognizes(header, name: name) {
-                let revision = SQLiteFileRevision(metadata)
+                let revision = FileContentRevision(metadata)
                 guard metadata.st_size <= WorkspaceSQLite.byteLimit else { throw WorkspaceSQLiteError.tooLarge }
                 try checkSQLiteSideFiles(in: folder, name: name)
                 let bytes = try read(file, limit: WorkspaceSQLite.byteLimit + 1, after: header, cancellable: true)
                 try checkSQLiteSideFiles(in: folder, name: name)
-                guard bytes.count == metadata.st_size, SQLiteFileRevision(try status(file)) == revision else {
+                guard bytes.count == metadata.st_size, FileContentRevision(try status(file)) == revision else {
                     throw WorkspaceSQLiteError.changed
                 }
                 let database = try WorkspaceSQLite(bytes: bytes)
@@ -205,6 +221,18 @@ struct WorkspaceFiles: Sendable {
                                                  path: path, checkout: checkout, revision: revision)
                 try validateSQLite(source)
                 return .sqlite(source)
+            }
+            if let archive = WorkspaceArchive.Format(name: name) {
+                let revision = FileContentRevision(metadata)
+                guard metadata.st_size <= WorkspaceArchive.byteLimit else { throw WorkspaceArchiveError.tooLarge }
+                let bytes = try read(file, limit: WorkspaceArchive.byteLimit + 1, after: header, cancellable: true)
+                guard bytes.count == metadata.st_size, FileContentRevision(try status(file)) == revision else {
+                    throw WorkspaceArchiveError.changed
+                }
+                let result = Result { try archive.read(bytes, name: name) }
+                try validateArchive(path: path, checkout: checkout, revision: revision)
+                return .archive(WorkspaceArchiveFile(entries: try result.get(), files: self, path: path,
+                                                     checkout: checkout, revision: revision))
             }
             let media = WorkspaceMediaFormat(fileName: name)
             let limit = media == nil ? Self.textLimit : WorkspaceMediaFormat.byteLimit
@@ -233,12 +261,28 @@ struct WorkspaceFiles: Sendable {
                 let file = try openFile(in: folder, name: name)
                 defer { close(file) }
                 try checkSQLiteSideFiles(in: folder, name: name)
-                guard SQLiteFileRevision(try status(file)) == source.revision else {
+                guard FileContentRevision(try status(file)) == source.revision else {
                     throw WorkspaceSQLiteError.changed
                 }
             }
         } catch WorkspaceFileError.changed {
             throw WorkspaceSQLiteError.changed
+        }
+    }
+
+    fileprivate func validateArchive(_ archive: WorkspaceArchiveFile) throws {
+        try validateArchive(path: archive.path, checkout: archive.checkout, revision: archive.revision)
+    }
+
+    private func validateArchive(path: String, checkout: WorkspaceFileIdentity, revision: FileContentRevision) throws {
+        do {
+            try withParent(of: path, checkout: checkout) { folder, name in
+                let file = try openFile(in: folder, name: name)
+                defer { close(file) }
+                guard FileContentRevision(try status(file)) == revision else { throw WorkspaceArchiveError.changed }
+            }
+        } catch WorkspaceFileError.changed, WorkspaceFileError.missing, WorkspaceFileError.unsupportedPath {
+            throw WorkspaceArchiveError.changed
         }
     }
 
@@ -612,7 +656,7 @@ private struct FileRevision: Equatable, Sendable {
     }
 }
 
-private struct SQLiteFileRevision: Equatable, Sendable {
+private struct FileContentRevision: Equatable, Sendable {
     let file: FileRevision
     let changedSeconds: Int
     let changedNanoseconds: Int

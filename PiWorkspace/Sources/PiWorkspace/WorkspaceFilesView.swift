@@ -591,6 +591,9 @@ private struct WorkspaceFilePreviewView: View {
             case .success(.sqlite(let file)):
                 WorkspaceSQLiteView(file: file, retry: { reload += 1 })
                     .id(file.id)
+            case .success(.archive(let file)):
+                WorkspaceArchiveView(file: file, retry: { reload += 1 })
+                    .id(file.id)
             case .success(.image(let file)):
                 WorkspaceImageView(file: file, name: pathComponents.last ?? target.path)
                     .id(file.id)
