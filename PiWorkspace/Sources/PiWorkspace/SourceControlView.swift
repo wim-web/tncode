@@ -607,6 +607,7 @@ struct SourceControlView: View {
                 HStack {
                     CommitMessageField(message: $commitMessage)
                         .disabled(busy)
+                        .accessibilityIdentifier("git-commit-message")
                     Button("Commit") {
                         if message.isEmpty, let checkout {
                             generateAndCommit(paths, checkout: checkout)

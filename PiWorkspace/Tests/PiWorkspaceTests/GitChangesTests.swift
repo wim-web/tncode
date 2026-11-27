@@ -243,7 +243,7 @@ final class GitChangesTests: XCTestCase {
         try await ui.press("git-review-base-refs/heads/integration")
         try await ui.waitForPatch("+alpha-head-marker")
         XCTAssertNil(ui.element("git-review-file-alpha-base.txt"))
-        XCTAssertNotNil(ui.element("git-commit-message"))
+        XCTAssertEqual(ui.element("git-commit-message")?.accessibilityRole?(), .textField)
 
         let remoteSwitch = "git-review-base-remote-refs/heads/integration"
         try await ui.press("git-review-base")
