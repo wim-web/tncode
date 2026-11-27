@@ -111,3 +111,27 @@ struct PromptLinkReview: Identifiable {
     let link: PromptLink
     let alreadyOpened: Bool
 }
+
+struct PromptLinkProject: Identifiable {
+    let id: UUID
+    let title: String
+    let path: String
+    let reviewID: UUID
+    private let directory: FileHandle
+
+    init?(_ project: Project, review: PromptLinkReview) {
+        guard project.folderIsAvailable else { return nil }
+        let fd = open(project.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        id = project.id
+        title = project.title
+        path = project.path
+        reviewID = review.id
+        directory = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    }
+
+    func matches(_ project: Project) -> Bool {
+        project.id == id && project.path == path && !project.isScratch && project.detached != true &&
+            GitWorkspace.matches(directory, at: path)
+    }
+}

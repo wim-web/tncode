@@ -3,6 +3,77 @@ import XCTest
 
 @MainActor
 final class ModelRoutingWireTests: XCTestCase {
+    func testPromptLinksUseTheDestinationCatalogAndSendOnlyFromTheComposer() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let endpoint = env["PI_ROUTING_OWNER"], let foreign = env["PI_ROUTING_OTHER"],
+              let node = env["PI_ROUTING_NODE"], let worker = env["PI_ROUTING_WORKER"] else {
+            throw XCTSkip("Run scripts/verify-model-routing.mjs for the loopback integration.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceModel = ModelSettings(provider: .local, model: "route-foreign", endpoint: foreign)
+        let sourceDraft = Conversation(id: UUID(), title: "Original", isDraft: true, composerText: "Keep editing")
+        let source = Project(id: UUID(), path: root.path, title: "Source", conversations: [sourceDraft],
+                             selectedConversation: sourceDraft.id, modelOverride: sourceModel)
+        try WorkspaceStore(root: root).save(.init(projects: [source], selectedProject: source.id, welcomeCompleted: true))
+        let owner = ModelSettings(provider: .local, model: "route-b", endpoint: endpoint)
+        var reads: [String] = []
+        let model = WorkspaceModel(root: root, keychainService: "unused", credentialExists: {
+            $0 == owner.account || $0 == "openai"
+        }, readCredential: { account in
+            reads.append(account)
+            return account == owner.account ? "routing-fixture-key" : nil
+        }, makeProcess: { config, cwd in
+            try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: node), arguments: [worker])
+        })
+        defer { model.shutdown() }
+        XCTAssertNil(model.startupFailure)
+
+        func waitForReady() async throws {
+            for _ in 0..<500 {
+                if let error = model.error { throw WorkspaceError(error) }
+                if model.phase == .ready { return }
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            throw WorkspaceError("Timed out opening \(model.effectiveModel.model) (\(model.phase)).")
+        }
+        func openScratch(_ hint: String) throws {
+            model.promptLinkReview = nil
+            let url = try XCTUnwrap(URL(string: "pi-workspace://new/v1?prompt=prompt-link-marker&" + hint))
+            XCTAssertTrue(model.openPromptLink(url))
+            try model.openPromptLinkDraft(XCTUnwrap(model.promptLinkReview))
+            XCTAssertTrue(model.project?.isScratch == true)
+            XCTAssertEqual(model.draft, "prompt-link-marker")
+        }
+        model.connect()
+        try await waitForReady()
+        XCTAssertFalse(reads.contains(owner.account))
+        reads.removeAll()
+        XCTAssertTrue(model.composerModelOptions().contains { $0.settings.model == "gpt-5" && $0.unavailableReason == nil })
+        try openScratch("provider=openai&model=gpt-5")
+        try await waitForReady()
+        XCTAssertEqual(model.effectiveModel.model, "gpt-5")
+        XCTAssertEqual(model.conversation?.modelSelection?.account, "openai")
+
+        try model.applySettings(owner, in: .workspace, newKey: "", removeKey: false)
+        try openScratch("provider=local&model=route-foreign")
+        try await waitForReady()
+        XCTAssertNil(model.conversation?.modelSelection)
+        XCTAssertEqual(model.effectiveModel, owner)
+        XCTAssertTrue(model.messages.isEmpty)
+        model.send()
+        for _ in 0..<500 where model.messages.last?.role != .assistant {
+            if let error = model.error { throw WorkspaceError(error) }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertEqual(model.messages.last?.text, "Fixture reply")
+        XCTAssertTrue(reads.contains(owner.account))
+        XCTAssertFalse(reads.contains(sourceModel.account))
+        let restored = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: root.appendingPathComponent("workspace.json")))
+        XCTAssertEqual(restored.projects.first?.conversations.first?.composerText, sourceDraft.composerText)
+        XCTAssertEqual(restored.projects.first?.modelOverride, sourceModel)
+    }
+
     func testInheritedRouteSurvivesSettingsResetRelaunchAndSideChat() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let endpoint = env["PI_ROUTING_OWNER"], let otherEndpoint = env["PI_ROUTING_OTHER"],

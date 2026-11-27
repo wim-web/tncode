@@ -23,7 +23,8 @@ export async function withModelRoutingFixture(node, worker, runTests) {
     ["route-b", "inherited-resumed-marker", "inherited-first-marker"],
     ["route-b", "inherited-side-marker", "inherited-first-marker"],
   ];
-  const markers = new Set([...expected, ...inherited].map(([, marker]) => marker));
+  const promptLink = [["route-b", "prompt-link-marker", "prompt-link-marker"]];
+  const markers = new Set([...expected, ...inherited, ...promptLink].map(([, marker]) => marker));
   const routes = [];
   const sideQuestion = "You are in a side chat beside the main thread. Answer the user's question without continuing the main thread's task.\n\ninherited-side-marker";
   let sideHistory;
@@ -45,6 +46,7 @@ export async function withModelRoutingFixture(node, worker, runTests) {
       // Pi waits for this summary until the test selects the row and aborts compaction.
       return;
     }
+    if (marker === "prompt-link-marker") assert.equal(request.headers.authorization, "Bearer routing-fixture-key");
     routes.push([body.model, marker, users[0]]);
     if (marker === "normal-active-marker") {
       while (!response.destroyed && !existsSync(release)) await delay(20);
@@ -76,10 +78,10 @@ export async function withModelRoutingFixture(node, worker, runTests) {
     assert.equal(foreignRequests, 0);
     assert.equal(selectedMarkerOnA, 0);
     assert.deepEqual(sideHistory, ["inherited-first-marker", "inherited-model-marker", "inherited-resumed-marker", sideQuestion]);
-    for (const sequence of [expected, inherited]) {
+    for (const sequence of [expected, inherited, promptLink]) {
       assert.deepEqual(routes.filter(([, marker]) => sequence.some(([, text]) => text === marker)), sequence);
     }
-    console.log("Verified ten model requests across queue delivery, settings reset, relaunch and side chat; zero foreign requests.");
+    console.log("Verified eleven requests across queue delivery, settings reset, relaunch, side chat and prompt links. Zero foreign requests.");
   } finally {
     for (const server of [owner, foreign]) {
       server.closeAllConnections();

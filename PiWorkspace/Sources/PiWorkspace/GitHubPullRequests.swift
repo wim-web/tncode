@@ -21,19 +21,19 @@ struct GitHubRepository: Hashable, Sendable {
         return components.percentEncodedPath
     }
 
-    fileprivate init?(remote: String, hosts: Set<String>) {
-        let path: String
-        if let ssh = remote.wholeMatch(of: #/(?i:git)@([^:\/]+):(.+)/#),
-           hosts.contains(ssh.1.lowercased()) {
-            path = String(ssh.2)
-        } else {
-            guard let url = URLComponents(string: remote),
-                  let scheme = url.scheme?.lowercased(),
-                  let host = url.host?.lowercased(),
-                  (hosts.contains(host) && ["https", "http", "ssh", "git"].contains(scheme))
-                    || (scheme == "ssh" && host == "ssh.github.com" && hosts.contains("github.com")) else { return nil }
-            path = url.path
+    fileprivate static func remotePath(_ remote: String, hosts: Set<String>) -> String? {
+        if let ssh = remote.wholeMatch(of: #/(?i:git)@([^:\/]+):(.+)/#), hosts.contains(ssh.1.lowercased()) {
+            return String(ssh.2)
         }
+        guard let url = URLComponents(string: remote),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              (hosts.contains(host) && ["https", "http", "ssh", "git"].contains(scheme))
+                || (scheme == "ssh" && host == "ssh.github.com" && hosts.contains("github.com")) else { return nil }
+        return url.path
+    }
+
+    fileprivate init?(remotePath path: String) {
         let parts = path.split(separator: "/")
         guard parts.count == 2 else { return nil }
         let name = parts[1].lowercased().hasSuffix(".git") ? parts[1].dropLast(4) : parts[1]
@@ -384,17 +384,29 @@ struct GitHubReader: Sendable {
         return repository
     }
 
-    private func checkoutRepository(hosts: Set<String>) async throws -> GitHubRepository {
+    func checkPromptRepository(_ expected: GitHubRepository) async throws {
+        let repository = try await checkoutRepository(hosts: ["github.com", "git.cafe", "staging.git.cafe"],
+                                                      allowConfiguredRemote: true)
         try Task.checkCancellation()
+        guard repository == expected else { throw ReadError.repositoryChanged }
+    }
+
+    private func checkoutRepository(hosts: Set<String>, allowConfiguredRemote: Bool = false) async throws -> GitHubRepository {
+        try Task.checkCancellation()
+        let git = GitWorkspace(path: directory)
         let remotes: [(name: String, url: String)]
         do {
-            remotes = try await GitWorkspace(path: directory).fetchRemotes()
+            remotes = try await git.fetchRemotes()
         } catch {
             throw ReadError.checkoutUnavailable
         }
         var repositories: [GitHubRepository] = []
         for remote in remotes {
-            guard let repository = GitHubRepository(remote: remote.url, hosts: hosts) else { continue }
+            var path = GitHubRepository.remotePath(remote.url, hosts: hosts)
+            if path == nil, allowConfiguredRemote, let original = try await git.configuredFetchURL(for: remote.name) {
+                path = GitHubRepository.remotePath(original, hosts: hosts)
+            }
+            guard let path, let repository = GitHubRepository(remotePath: path) else { continue }
             if remote.name == "origin" { return repository }
             if !repositories.contains(repository) {
                 repositories.append(repository)

@@ -255,7 +255,7 @@ struct GitWorkspace: Sendable {
         return current
     }
 
-    private static func matches(_ directory: FileHandle, at path: String) -> Bool {
+    static func matches(_ directory: FileHandle, at path: String) -> Bool {
         var held = stat(), current = stat()
         return fstat(directory.fileDescriptor, &held) == 0 && lstat(path, &current) == 0 &&
             held.st_dev == current.st_dev && held.st_ino == current.st_ino
@@ -290,6 +290,13 @@ struct GitWorkspace: Sendable {
             }
         }
         return remotes
+    }
+
+    func configuredFetchURL(for remote: String) async throws -> String? {
+        let result = try await run(["config", "--null", "--get-all", "--", "remote.\(remote).url"],
+                                   outputLimit: 64 * 1024, acceptedStatuses: [0, 1])
+        guard !result.output.truncated, let end = result.output.bytes.firstIndex(of: 0) else { return nil }
+        return String(data: result.output.bytes[..<end], encoding: .utf8)
     }
 
     func state() async throws -> GitRepositoryState {

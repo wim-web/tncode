@@ -1445,16 +1445,19 @@ final class WorkspaceModel: ObservableObject {
         return true
     }
 
-    func matchingPromptLinkProjects(for repository: GitHubRepository) async throws -> [Project] {
-        var matches: [Project] = []
-        let hosts: Set<String> = ["github.com", "git.cafe", "staging.git.cafe"]
-        for project in projects.sorted(by: { $0.lastActivity > $1.lastActivity }) where project.folderIsAvailable {
+    func matchingPromptLinkProjects(for review: PromptLinkReview) async throws -> [PromptLinkProject] {
+        try validatePromptLinkReview(review)
+        guard let repository = review.link.repository else { return [] }
+        var matches: [PromptLinkProject] = []
+        for project in projects.sorted(by: { $0.lastActivity > $1.lastActivity }) {
             try Task.checkCancellation()
-            if (try? await makeGitHubReader(project.path).repository(matching: repository, hosts: hosts)) != nil {
-                matches.append(project)
+            guard let candidate = PromptLinkProject(project, review: review) else { continue }
+            if (try? await makeGitHubReader(candidate.path).checkPromptRepository(repository)) != nil,
+               projects.contains(where: candidate.matches) {
+                matches.append(candidate)
             }
+            try validatePromptLinkReview(review)
         }
-        try Task.checkCancellation()
         return matches
     }
 
@@ -1468,29 +1471,41 @@ final class WorkspaceModel: ObservableObject {
         return (request, remote)
     }
 
-    func openPromptLinkDraft(_ review: PromptLinkReview, in projectID: UUID? = nil) throws {
+    func openPromptLinkDraft(_ review: PromptLinkReview, in candidate: PromptLinkProject) async throws {
         try requirePromptLinkReview(review)
-        if let projectID {
-            guard let index = workspace.projects.firstIndex(where: {
-                $0.id == projectID && !$0.isScratch && $0.detached != true && $0.folderIsAvailable
-            }) else { throw WorkspaceError("The linked project’s folder is unavailable.") }
-            var updated = workspace
-            let draft = linkedPromptDraft(review.link, in: updated.projects[index])
-            updated.projects[index].selectDraft(seed: draft)
-            updated.selectedProject = projectID
-            updated.welcomeCompleted = true
-            try persist(updated)
-            failedStartupDraftProject = nil
-            showArchive = false
-            connect()
-        } else {
-            try openScratchDraft(linkedPromptDraft(review.link, in: nil), updating: { $0.welcomeCompleted = true })
+        let changed = WorkspaceError("The linked project changed. Find the registered project again.")
+        guard let repository = review.link.repository, candidate.reviewID == review.id,
+              projects.contains(where: candidate.matches) else { throw changed }
+        do {
+            try await makeGitHubReader(candidate.path).checkPromptRepository(repository)
+        } catch {
+            try Task.checkCancellation()
+            throw changed
         }
-        showingWelcome = false
+        try requirePromptLinkReview(review)
+        guard let index = workspace.projects.firstIndex(where: candidate.matches) else { throw changed }
+        var updated = workspace
+        let draft = linkedPromptDraft(review.link, in: updated.projects[index])
+        updated.projects[index].selectDraft(seed: draft)
+        updated.selectedProject = candidate.id
+        updated.welcomeCompleted = true
+        try persist(updated)
         lastOpenedPromptLink = review
+        failedStartupDraftProject = nil
+        showArchive = false
+        showingWelcome = false
+        connect()
+    }
+
+    func openPromptLinkDraft(_ review: PromptLinkReview) throws {
+        try requirePromptLinkReview(review)
+        try openScratchDraft(linkedPromptDraft(review.link, in: nil), updating: { $0.welcomeCompleted = true })
+        lastOpenedPromptLink = review
+        showingWelcome = false
     }
 
     private func validatePromptLinkReview(_ review: PromptLinkReview) throws {
+        try Task.checkCancellation()
         guard promptLinkReview?.id == review.id, lastOpenedPromptLink?.id != review.id,
               queueEdit == nil, pendingThreadLink == nil else {
             throw WorkspaceError("Finish the current operation and open the prompt link again.")
@@ -1506,10 +1521,13 @@ final class WorkspaceModel: ObservableObject {
         var draft = Conversation(id: UUID(), title: "New thread", isDraft: true, composerText: link.prompt)
         if let hint = link.modelHint {
             let inherited = project?.modelOverride ?? workspace.model
-            let matching = [inherited, workspace.model].first {
-                $0.provider.rawValue == hint.provider && (hint.model == nil || $0.model == hint.model)
+            let profiles = [inherited, workspace.model].filter { $0.provider.rawValue == hint.provider }
+            let options = composerModelOptions(profiles: profiles, lockedAccount: nil, includeCatalog: hint.model != nil)
+            if let match = options.first(where: {
+                $0.unavailableReason == nil && (hint.model == nil || $0.settings.model == hint.model)
+            }), match.id != inherited.identity {
+                draft.modelSelection = match.settings
             }
-            if let matching, matching != inherited { draft.modelSelection = matching }
         }
         return draft
     }
@@ -2090,11 +2108,13 @@ final class WorkspaceModel: ObservableObject {
     private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
 
     func composerModelOptions() -> [ComposerModelOption] {
-        let profiles = [effectiveModel, inheritedModel, workspace.model]
+        composerModelOptions(profiles: [effectiveModel, inheritedModel, workspace.model], lockedAccount: lockedModelAccount)
+    }
+
+    private func composerModelOptions(profiles: [ModelSettings], lockedAccount: String?, includeCatalog: Bool = true) -> [ComposerModelOption] {
         var seen = Set<ModelSettings.Identity>()
         var hasCredential: [String: Bool] = [:]
         var options: [ComposerModelOption] = []
-        let locked = lockedModelAccount
 
         func add(_ profile: ModelSettings, name: String) {
             let validated = try? profile.validated()
@@ -2103,7 +2123,7 @@ final class WorkspaceModel: ObservableObject {
             let reason: String?
             if validated == nil {
                 reason = "Check this model’s configuration in Settings."
-            } else if locked != nil && settings.account != locked {
+            } else if let lockedAccount, settings.account != lockedAccount {
                 reason = "Start a new thread to switch providers."
             } else if settings.provider != .local, let catalog = modelCatalog[settings.provider],
                       catalog[settings.model] == nil {
@@ -2119,6 +2139,7 @@ final class WorkspaceModel: ObservableObject {
         for profile in profiles {
             add(profile, name: modelCatalog[profile.provider]?[profile.model] ?? profile.model)
         }
+        guard includeCatalog else { return options }
         for profile in profiles {
             guard let models = modelCatalog[profile.provider] else { continue }
             for (id, name) in models.sorted(by: { $0.key.localizedStandardCompare($1.key) == .orderedAscending }) {

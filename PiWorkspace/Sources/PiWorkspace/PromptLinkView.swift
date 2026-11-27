@@ -6,12 +6,13 @@ struct PromptLinkView: View {
     let didOpen: () -> Void
 
     private enum Lookup {
-        case idle, searching, found([Project])
+        case idle, searching, found([PromptLinkProject])
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var reopening = false
     @State private var lookup = Lookup.idle
+    @State private var selection: PromptLinkProject?
     @State private var clone: (ProjectPickerRequest, ProjectCloneRemote)?
     @State private var error: String?
 
@@ -59,15 +60,15 @@ struct PromptLinkView: View {
                 }
                 HStack {
                     Spacer()
-                    Button("Cancel", role: .cancel) { dismiss() }
+                    Button("Cancel", role: .cancel) { model.promptLinkReview = nil }
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("cancel-prompt-link")
                     if alreadyOpened {
                         Button("Open It Again") { reopening = true }
                             .accessibilityIdentifier("reopen-prompt-link")
                     } else {
-                        Button("Use without project") { openDraft() }
-                            .disabled(model.operationsInProgress)
+                        Button("Use without project") { openScratchDraft() }
+                            .disabled(model.operationsInProgress || selection != nil)
                             .accessibilityIdentifier("prompt-link-no-project")
                     }
                 }
@@ -75,14 +76,27 @@ struct PromptLinkView: View {
             .padding(20)
             .frame(width: 485)
             .task(id: isSearching) {
-                guard isSearching, let repository = review.link.repository else { return }
+                guard isSearching else { return }
                 do {
-                    lookup = .found(try await model.matchingPromptLinkProjects(for: repository))
+                    lookup = .found(try await model.matchingPromptLinkProjects(for: review))
                 } catch {
                     if !Task.isCancelled {
                         self.error = error.localizedDescription
                         lookup = .idle
                     }
+                }
+            }
+            .task(id: selection?.id) {
+                guard let selection else { return }
+                do {
+                    try await model.openPromptLinkDraft(review, in: selection)
+                    didOpen()
+                    dismiss()
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                    self.selection = nil
+                    lookup = .idle
                 }
             }
         }
@@ -107,13 +121,13 @@ struct PromptLinkView: View {
                     do { clone = try model.promptLinkCloneRequest(for: review) }
                     catch { self.error = error.localizedDescription }
                 }
-                .disabled(model.operationsInProgress)
+                .disabled(model.operationsInProgress || selection != nil)
                 .accessibilityIdentifier("prompt-link-clone")
             } else {
                 ScrollView {
                     VStack(alignment: .leading) {
                         ForEach(projects) { project in
-                            Button { openDraft(in: project.id) } label: {
+                            Button { selection = project } label: {
                                 VStack(alignment: .leading) {
                                     Text(project.title)
                                     Text(project.path).font(.caption).foregroundStyle(.secondary)
@@ -125,14 +139,14 @@ struct PromptLinkView: View {
                     }
                 }
                 .frame(maxHeight: 150)
-                .disabled(model.operationsInProgress)
+                .disabled(model.operationsInProgress || selection != nil)
             }
         }
     }
 
-    private func openDraft(in projectID: UUID? = nil) {
+    private func openScratchDraft() {
         do {
-            try model.openPromptLinkDraft(review, in: projectID)
+            try model.openPromptLinkDraft(review)
             didOpen()
             dismiss()
         } catch {
