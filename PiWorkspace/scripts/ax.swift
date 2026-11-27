@@ -9,6 +9,7 @@ private let usage = """
 Usage:
   ax trust
   ax idle-seconds
+  ax desktop-ready MINIMUM_IDLE_SECONDS
   ax workspace-path ABSOLUTE_PATH
   ax check-copy TEST_PASTEBOARD < expected.txt
   ax check-image TEST_PASTEBOARD < expected.png
@@ -20,7 +21,7 @@ Usage:
   ax menu-item PID TITLE [--no-activate]
   ax pick PID POPUP_IDENTIFIER OPTION_TITLE
   ax dump PID [--values] [--no-labels] [--depth N]
-  ax get PID IDENTIFIER [--values] [--no-labels]
+  ax get PID IDENTIFIER [--values] [--no-labels] [--depth N]
   ax selected-text PID TEXT_AREA_IDENTIFIER
   ax selection PID TEXT_IDENTIFIER [UTF16_OFFSET UTF16_LENGTH]
   ax frame PID IDENTIFIER [--popover]
@@ -60,7 +61,7 @@ private struct DisplayOptions {
     var labels = true
     var maxDepth: Int?
 
-    init(_ arguments: ArraySlice<String>, allowDepth: Bool) throws {
+    init(_ arguments: ArraySlice<String>) throws {
         var next = arguments.makeIterator()
         while let option = next.next() {
             switch option {
@@ -68,7 +69,7 @@ private struct DisplayOptions {
                 values = true
             case "--no-labels":
                 labels = false
-            case "--depth" where allowDepth:
+            case "--depth":
                 guard let rawDepth = next.next(), let depth = Int(rawDepth), depth >= 0 else {
                     throw Failure("--depth requires a nonnegative integer.")
                 }
@@ -123,9 +124,9 @@ private enum Operation {
         case ("pick", let id?) where arguments.count == 2:
             self = .pick(id, arguments[arguments.startIndex + 1])
         case ("dump", _):
-            self = try .dump(DisplayOptions(arguments, allowDepth: true))
+            self = try .dump(DisplayOptions(arguments))
         case ("get", let id?):
-            self = try .get(id, DisplayOptions(arguments.dropFirst(), allowDepth: false))
+            self = try .get(id, DisplayOptions(arguments.dropFirst()))
         case ("selected-text", let id?) where arguments.count == 1:
             self = .selectedText(id)
         case ("selection", let id?) where arguments.count == 1:
@@ -215,7 +216,17 @@ private func attribute(_ name: String, on element: AXUIElement) -> CFTypeRef? {
     return result
 }
 
-private func line(for element: AXUIElement, options: DisplayOptions) -> String {
+private let displayEncoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .withoutEscapingSlashes
+    return encoder
+}()
+
+private func quoted(_ value: String) throws -> String {
+    String(decoding: try displayEncoder.encode(value), as: UTF8.self)
+}
+
+private func line(for element: AXUIElement, options: DisplayOptions) throws -> String {
     let fields = [
         ("role", kAXRoleAttribute),
         ("subrole", kAXSubroleAttribute),
@@ -226,9 +237,9 @@ private func line(for element: AXUIElement, options: DisplayOptions) -> String {
         ("description", kAXDescriptionAttribute),
         ("placeholder", kAXPlaceholderValueAttribute)
     ]
-    var parts = (fields + (options.labels ? labelFields : [])).compactMap { label, name -> String? in
+    var parts = try (fields + (options.labels ? labelFields : [])).compactMap { label, name -> String? in
         guard let value = attribute(name, on: element) as? String, !value.isEmpty else { return nil }
-        return "\(label)=\(value.debugDescription)"
+        return "\(label)=\(try quoted(value))"
     }
     if let enabled = attribute(kAXEnabledAttribute, on: element) as? Bool {
         parts.append("enabled=\(enabled)")
@@ -246,13 +257,19 @@ private func line(for element: AXUIElement, options: DisplayOptions) -> String {
             parts.append("value=<secure>")
         } else if let value = attribute(kAXValueAttribute, on: element) {
             switch value {
-            case let string as String: parts.append("value=\(string.debugDescription)")
+            case let string as String: parts.append("value=\(try quoted(string))")
             case let number as NSNumber: parts.append("value=\(number)")
             default: parts.append("value=<non-scalar>")
             }
         }
     }
     return parts.isEmpty ? "(unnamed element)" : parts.joined(separator: " ")
+}
+
+private func printTree(_ root: AXUIElement, options: DisplayOptions, defaultDepth: Int? = nil) throws {
+    for (node, depth) in Tree(root: root, maxDepth: options.maxDepth ?? defaultDepth) {
+        print(try String(repeating: "  ", count: depth) + line(for: node, options: options))
+    }
 }
 
 private struct Tree: Sequence, IteratorProtocol {
@@ -685,12 +702,21 @@ private func hardwareIdleSeconds() throws -> Double {
     return value.doubleValue / 1_000_000_000
 }
 
+private func desktopAllowsInput() -> Bool {
+    guard let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+          session[kCGSessionOnConsoleKey as String] as? Bool == true else { return false }
+    return session["CGSSessionScreenIsLocked"] as? Bool != true && CGDisplayIsAsleep(CGMainDisplayID()) == 0
+}
+
 private func activateForInput(_ app: AXUIElement, pid: pid_t) throws {
-    guard NSWorkspace.shared.frontmostApplication?.processIdentifier != pid else { return }
-    if let input = ProcessInfo.processInfo.environment["PI_WORKSPACE_VERIFY_IDLE_SECONDS"], let minimum = Double(input),
-       try hardwareIdleSeconds() < minimum {
-        throw Failure("Another application is receiving input on the shared desktop.")
+    let needsFocus = NSWorkspace.shared.frontmostApplication?.processIdentifier != pid
+    if let input = ProcessInfo.processInfo.environment["PI_WORKSPACE_VERIFY_IDLE_SECONDS"], let minimum = Double(input), minimum > 0 {
+        guard desktopAllowsInput() else { throw Failure("The shared desktop is locked or asleep.") }
+        if needsFocus, try hardwareIdleSeconds() < minimum {
+            throw Failure("Another application is receiving input on the shared desktop.")
+        }
     }
+    guard needsFocus else { return }
     if let raw = attribute(kAXFocusedWindowAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() {
         _ = AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXRaiseAction as CFString)
     }
@@ -739,6 +765,11 @@ private func run(_ arguments: [String]) throws {
     }
     if arguments == ["idle-seconds"] {
         print(try hardwareIdleSeconds())
+        return
+    }
+    if arguments.count == 2, arguments[0] == "desktop-ready", let minimum = Double(arguments[1]), minimum.isFinite, minimum >= 0 {
+        if desktopAllowsInput(), try hardwareIdleSeconds() >= minimum { print("ready") }
+        else { print("waiting") }
         return
     }
     if arguments.count == 2, arguments[0] == "workspace-path", arguments[1].hasPrefix("/") {
@@ -883,11 +914,9 @@ private func run(_ arguments: [String]) throws {
         }
         throw Failure("The popup \(id) did not present an enabled choice labeled \(title).")
     case .dump(let options):
-        for (node, depth) in Tree(root: app, maxDepth: options.maxDepth) {
-            print(String(repeating: "  ", count: depth) + line(for: node, options: options))
-        }
+        try printTree(app, options: options)
     case .get(let id, let options):
-        print(try line(for: element(withID: id, in: app), options: options))
+        try printTree(element(withID: id, in: app), options: options, defaultDepth: 0)
     case .selectedText(let id):
         let target = try element(withID: id, in: app)
         guard attribute(kAXRoleAttribute, on: target) as? String == kAXTextAreaRole,

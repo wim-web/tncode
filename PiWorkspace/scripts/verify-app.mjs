@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readd
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { resetProjectModel, setProjectModel, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
+import { resetProjectModel, setProjectModel, verifyPRFilesCheckout, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
 import { restoreAppearance, verifyAbout, verifyAppearance, verifySettingsSearch } from "./verify-settings-panels.mjs";
 import { verifyFiles } from "./verify-workspace-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
@@ -27,7 +27,11 @@ import { verifySidebarPersistence } from "./verify-sidebar-persistence.mjs";
 import { verifyChatImages } from "./verify-chat-images.mjs";
 import { verifyProjectSettings } from "./verify-project-settings.mjs";
 import { verifyThreadSnooze } from "./verify-thread-snooze.mjs";
-import { verifyNewThreadRoutes } from "./verify-new-thread-routes.mjs";
+import { verifyNewThreadRoutes, verifyStartupRetry } from "./verify-new-thread-routes.mjs";
+import { verifyStartupRecovery } from "./verify-startup-recovery.mjs";
+import { verifyRightTerminal } from "./verify-right-terminal.mjs";
+import { verifyModelAccount } from "./verify-model-account.mjs";
+import { verifyLocalChanges } from "./verify-local-changes.mjs";
 
 const packagedApp = process.env.PI_WORKSPACE_VERIFY_APP
   ? resolve(process.env.PI_WORKSPACE_VERIFY_APP)
@@ -36,7 +40,13 @@ let app = packagedApp;
 let testBundleDirectory;
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
-assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), /accessibility=true keyboard=true/);
+const backgroundChecks = ["--startup-draft-only", "--recovery-actions-only", "--pr-files-only", "--right-terminal-only",
+  "--model-account-only", "--local-changes-only"];
+const backgroundScenario = process.argv.slice(3).find(flag => backgroundChecks.includes(flag));
+if (backgroundScenario) assert.equal(process.argv.length, 4, "Run a background scenario on its own.");
+assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), backgroundScenario ? /accessibility=true/ : /accessibility=true keyboard=true/);
+const minimumIdle = Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS ?? 0);
+assert(Number.isFinite(minimumIdle) && minimumIdle >= 0);
 
 const workspacePath = path => execFileSync(ax, ["workspace-path", path], { encoding: "utf8" }).trimEnd();
 const directory = workspacePath(mkdtempSync("/private/tmp/pi-workspace-verification-"));
@@ -73,6 +83,7 @@ let streamClosed = false;
 let requestedWrite;
 let rejected = 0;
 let appPID;
+let backgroundInput = Boolean(backgroundScenario);
 let launchNumber = 0;
 let keySaved = false;
 let keyAccount;
@@ -81,6 +92,23 @@ function record(text) {
   assert(!text.includes(secret), "A verification message contained the API key.");
   appendFileSync(report, text + "\n", { mode: 0o600 });
   console.log(text);
+}
+
+function recordVerifiedBundle(bundle) {
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle]);
+  const signature = spawnSync("/usr/bin/codesign", ["-d", "--verbose=4", bundle], { encoding: "utf8" });
+  assert.equal(signature.status, 0);
+  const codeDirectoryHash = signature.stderr.match(/^CDHash=([0-9a-f]+)$/m)?.[1];
+  assert(codeDirectoryHash, "The bundle has no readable code directory hash.");
+  const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
+  const sidecar = join(bundle, "Contents/Resources/Sidecar");
+  const sdk = JSON.parse(readFileSync(join(sidecar, "node_modules/@earendil-works/pi-coding-agent/package.json"), "utf8"));
+  writeFileSync(join(logs, "artifact.json"), JSON.stringify({
+    verifiedAt: new Date().toISOString(), codeDirectoryHash,
+    executableSHA256: digest(join(bundle, "Contents/MacOS/PiWorkspace")),
+    workerSHA256: digest(join(sidecar, "worker.mjs")), piVersion: sdk.version,
+    verifierSHA256: digest(import.meta.filename),
+  }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
 }
 
 function fixtureChunk(index, delta, finish_reason = null) {
@@ -241,7 +269,7 @@ async function until(check, label, timeout = 20_000) {
 
 const visible = (id) => drive("get", [id]);
 const tree = () => drive("dump", ["--values"]).split("  role=\"AXMenuBar\"")[0];
-const press = (id) => drive("press", [id]);
+const press = (id) => drive("press", backgroundInput ? [id, "--no-activate"] : [id]);
 function pressDismissal(id) {
   try { press(id); }
   catch (error) { if (!/AX error -2520[045]/.test(String(error.stderr))) throw error; }
@@ -249,17 +277,21 @@ function pressDismissal(id) {
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
   activate: () => drive("activate", []),
-  focus: id => drive("type", [id], ""),
+  focus: id => {
+    if (backgroundInput) assert(visible(id).includes("focused=true"), "The background field lacks focus: " + id);
+    else drive("type", [id], "");
+  },
   selection: (id, ...range) => drive("selection", [id, ...range.map(String)]).trim().split(/\s+/).map(Number),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
+  subtree: (id, depth) => drive("get", [id, "--values", "--depth", String(depth)]),
   selectedText: id => drive("selected-text", [id]),
   checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
   checkImage: png => { execFileSync(ax, ["check-image", pasteboard], { input: Buffer.from(png, "base64"), stdio: "pipe" }); return true; },
   closeWindow: id => drive("close-window", [id]),
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
-  menuItem: name => drive("menu-item", [name]),
+  menuItem: name => drive("menu-item", backgroundInput ? [name, "--no-activate"] : [name]),
   openThreadLink: link => drive("open-thread-link", [link]),
   escapeMenu: () => drive("key", ["53"]),
   showMenu: id => drive("show-menu", [id]),
@@ -267,11 +299,7 @@ const panelDriver = {
   pick: (id, title) => drive("pick", [id, title]),
   segment: (group, label) => drive("segment", [group, label]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
-  keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers]),
-  windowKey: (code, ...modifiers) => {
-    drive("activate", []);
-    drive("key", [String(code), ...modifiers]);
-  },
+  keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers, ...(backgroundInput ? ["--no-activate"] : [])]),
   frame: id => drive("frame", [id]).trim().split(/\s+/).map(Number),
   popoverFrame: id => drive("frame", [id, "--popover"]).trim().split(/\s+/).map(Number),
   webFrame: id => drive("web-frame", [id]).trim().split(/\s+/).map(Number),
@@ -284,15 +312,62 @@ function replyVisible(target) {
   return reply.length > 0 && plain(tree()).includes(reply);
 }
 
-async function launch(expectedControl = "model-settings", root = workspace, shell = worktreeTest ? terminalFixture : "/bin/sh") {
-  const minimumIdle = Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS ?? 0);
-  assert(Number.isFinite(minimumIdle) && minimumIdle >= 0);
-  if (minimumIdle > 0) {
-    while (Number(execFileSync(ax, ["idle-seconds"], { encoding: "utf8" })) < minimumIdle) await delay(1000);
+async function waitForIdle(pid) {
+  while (minimumIdle > 0 && execFileSync(ax, ["desktop-ready", String(minimumIdle)], { encoding: "utf8" }).trim() !== "ready") {
+    if (pid) process.kill(pid, 0);
+    await delay(1000);
   }
+}
+
+async function waitForFixtureWindow(control, pid) {
+  const label = "main window: " + control;
+  if (backgroundInput) {
+    try {
+      await until(() => visible(control), label, 2000);
+      return;
+    } catch {}
+    if (execFileSync(ax, ["desktop-ready", "0"], { encoding: "utf8" }).trim() !== "ready") {
+      record("WindowServer has not exposed the test window while the display is locked or asleep. Waiting for the window without activating it.");
+      while (execFileSync(ax, ["desktop-ready", "0"], { encoding: "utf8" }).trim() !== "ready") {
+        process.kill(pid, 0);
+        try { visible(control); return; } catch {}
+        await delay(3000);
+      }
+    }
+  }
+  await until(() => visible(control), label);
+}
+
+async function activateLaunchedApp() {
+  let deadline = Date.now() + 20_000;
+  let reportedWait = false;
+  for (;;) {
+    try {
+      drive("activate", []);
+      return;
+    } catch (error) {
+      const reason = String(error.stderr ?? error.message).trim();
+      if (minimumIdle > 0 && (reason.includes("Another application is receiving input") || reason.includes("shared desktop is locked or asleep"))) {
+        if (!reportedWait) {
+          record("The fixture window remained in the background while the desktop was in use.");
+          reportedWait = true;
+        }
+        await waitForIdle(appPID);
+        deadline = Date.now() + 20_000;
+      } else if (Date.now() >= deadline) {
+        throw new Error("Could not activate the fixture app. " + reason);
+      } else await delay(150);
+    }
+  }
+}
+
+async function launch(expectedControl = "model-settings", root = workspace, shell = worktreeTest ? terminalFixture : "/bin/sh",
+                      background = Boolean(backgroundScenario)) {
+  backgroundInput = background;
+  if (!background) await waitForIdle();
   launchNumber++;
   execFileSync("/usr/bin/open", [
-    "-n", "-a", app, "--stdout", join(logs, launchNumber + ".out"),
+    "-n", ...(background || minimumIdle > 0 ? ["-g"] : []), "-a", app, "--stdout", join(logs, launchNumber + ".out"),
     "--stderr", join(logs, launchNumber + ".err"),
     "--env", "SHELL=" + shell,
     "--env", "PATH=" + resolve(import.meta.dirname, "fixtures/github-read") + ":/usr/bin:/bin",
@@ -308,8 +383,8 @@ async function launch(expectedControl = "model-settings", root = workspace, shel
     return process && Number(process.trim().split(/\s+/)[0]);
   }, "app process");
   appPID = id;
-  await until(() => { drive("activate", []); return true; }, "activate isolated app");
-  await until(() => visible(expectedControl), "main window: " + expectedControl);
+  if (!background) await activateLaunchedApp();
+  await waitForFixtureWindow(expectedControl, id);
   return id;
 }
 
@@ -320,8 +395,8 @@ async function waitForExit(id) {
   }, "clean application exit");
 }
 
-async function quit() {
-  pressDismissal("terminate:");
+async function quit(control = "terminate:") {
+  pressDismissal(control);
   await waitForExit(appPID);
   appPID = undefined;
 }
@@ -343,7 +418,7 @@ async function closeSettings() {
 
 async function setField(id, text, ready = () => true) {
   const displayed = () => drive("get", [id, "--values"]).includes("value=" + JSON.stringify(text)) && ready();
-  for (const action of ["type", "set", "type"]) {
+  for (const action of backgroundInput ? ["set"] : ["type", "set", "type"]) {
     try {
       if (displayed()) return;
       drive(action, action === "type" ? [id, "--replace"] : [id], text);
@@ -928,8 +1003,20 @@ async function verifyConversations() {
     writeFileSync(obstruction, "fixture", { flag: "wx" });
     press("retry-worktree");
     await until(() => visible("worktree-launch-error") && visible("retry-worktree"), "worktree failure and Retry");
-    assert.equal(index().projects[0].conversations.find(t => t.id === draftID).worktreeLaunch.stage, "createCheckout");
+    const failedDraft = index().projects[0].conversations.find(t => t.id === draftID);
+    assert.equal(failedDraft.worktreeLaunch.stage, "createCheckout");
+    const selectedBase = failedDraft.location.newWorktree.base;
+    assert.equal(git(project, "rev-parse", selectedBase), git(project, "rev-parse", "main"));
     assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
+    async function openFailedSetupDetails() {
+      await until(() => panelDriver.value("worktree-launch-details").includes("value=0"), "setup details initially collapsed");
+      press("worktree-launch-details");
+      await until(() => panelDriver.value("worktree-launch-stage").includes("Create worktree") &&
+        panelDriver.value("worktree-launch-branch").includes("ui-worktree") &&
+        panelDriver.value("worktree-launch-base").includes(selectedBase) &&
+        panelDriver.value("worktree-launch-path").includes(obstruction), "actual failed step, ref, branch and pinned destination");
+    }
+    await openFailedSetupDetails();
     assert.equal(index().projects[0].selectedConversation, draftID);
     assert.equal(targets.length, 0);
     assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, 1);
@@ -938,6 +1025,7 @@ async function verifyConversations() {
     press("thread-row-" + draftID);
     await until(() => visible("retry-worktree"), "Retry after relaunch");
     assert(drive("get", ["worktree-launch-prompt", "--values"]).includes(firstPrompt));
+    await openFailedSetupDetails();
     if (fixtureModel) {
       assert.equal(index().worktreesDirectory, customWorktrees);
       await setWorktreeLocation(panelDriver, index, "");
@@ -1142,14 +1230,12 @@ try {
   const newThreadOnly = process.argv.includes("--new-thread-routes-only");
   const focused = [
     usageOnly, controlsOnly, conversationOnly, projectFlowsOnly, threadActionsOnly,
-    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly, snoozeOnly, newThreadOnly,
+    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly, snoozeOnly, newThreadOnly, backgroundScenario,
   ].some(Boolean);
-  if (threadActionsOnly || Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS) > 0) {
-    testBundleDirectory = mkdtempSync("/private/tmp/pi-workspace-test-app-");
-    app = join(testBundleDirectory, "Pi Workspace.app");
-    execFileSync("/bin/cp", ["-cR", packagedApp, app]);
-    execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
-  }
+  testBundleDirectory = mkdtempSync("/private/tmp/pi-workspace-test-app-");
+  app = join(testBundleDirectory, "Pi Workspace.app");
+  execFileSync("/bin/cp", ["-cR", packagedApp, app]);
+  recordVerifiedBundle(app);
   if (focused) {
     record("Verification folder: " + reportDirectory);
     record("Isolated fixture: " + directory);
@@ -1180,10 +1266,31 @@ try {
     await verifyProjectSettings(panelDriver, { root: join(directory, "project-settings"), git, launch, quit, record });
   }
   if (snoozeOnly) {
-    await verifyThreadSnooze(panelDriver, { root: join(directory, "snooze"), quit, launch, record });
+    await verifyThreadSnooze(panelDriver, { root: join(directory, "snooze"), quit, launch, record,
+      relaunch: (control, root) => launch(control, root, undefined, true) });
   }
   if (newThreadOnly) {
     await verifyNewThreadRoutes(panelDriver, { root: join(directory, "new-thread-routes"), quit, launch, record });
+  }
+  if (backgroundScenario === "--startup-draft-only") {
+    await verifyStartupRetry(panelDriver, { root: join(directory, "startup-draft"), quit, launch, record, background: true });
+  }
+  if (backgroundScenario === "--recovery-actions-only") {
+    await verifyStartupRecovery(panelDriver, { root: join(directory, "recovery-actions"), app, quit, launch, record });
+  }
+  if (backgroundScenario === "--right-terminal-only") {
+    await verifyRightTerminal(panelDriver, { root: join(directory, "right-terminal"), git, launch, quit, record });
+  }
+  if (backgroundScenario === "--model-account-only") {
+    await verifyModelAccount(panelDriver, { root: join(directory, "model-account"), launch, quit, record,
+      credential: updateKey, removeFixtureCredential });
+  }
+  if (backgroundScenario === "--local-changes-only") {
+    await verifyLocalChanges(panelDriver, { root: join(directory, "local-changes"), git, launch, quit, record });
+  }
+  if (backgroundScenario === "--pr-files-only") {
+    makeRepository();
+    await verifyPRFilesCheckout(panelDriver, { directory, project, workspace, git, launch, quit, record, forgeState, forgeLog });
   }
   if (terminalOnly) {
     makeRepository();

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export async function verifyThreadSnooze(driver, { root, launch, quit, record }) {
+export async function verifyThreadSnooze(driver, { root, launch, relaunch = launch, quit, record }) {
   const { press, dismiss, until, visible, value, tree, showMenu, segment, setField } = driver;
   const uuid = () => randomUUID().toUpperCase();
   const projectID = uuid(), draftID = uuid(), pinned = uuid(), expired = uuid();
@@ -52,7 +52,7 @@ export async function verifyThreadSnooze(driver, { root, launch, quit, record })
   const deadline = await until(() => thread(pinned).snoozedUntil >= chosen + 7198 && thread(pinned).snoozedUntil, "two-hour custom snooze");
   assert(deadline < now() + 7210);
   await quit();
-  await launch("model-settings", root);
+  await relaunch("model-settings", root);
   await until(() => visible("snoozed-shelf") && current(), "relaunch retained the future deadline and selected draft");
   assert.equal(thread(pinned).snoozedUntil, deadline);
   assert(!has("dismiss-woke-" + expired));

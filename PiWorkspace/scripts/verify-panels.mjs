@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
@@ -218,6 +220,36 @@ export async function verifyPRCode({ press, visible, value, tree, until }, state
   writeFileSync(stateFile, "initial\n");
   press("pr-tab-summary");
   await until(() => value("pr-detail-title").includes("#42"), "the same PR summary");
+}
+
+export async function verifyPRFilesCheckout(driver, { directory, project, workspace, git, launch, quit, record, forgeState, forgeLog }) {
+  const { press, dismiss, value, visible, until } = driver;
+  const checkout = join(directory, "PR checkout");
+  git(project, "worktree", "add", "-b", "review", checkout);
+  const projectID = randomUUID().toUpperCase(), threadID = randomUUID().toUpperCase();
+  const indexPath = join(workspace, "workspace.json");
+  writeFileSync(indexPath, JSON.stringify({ welcomeCompleted: true, selectedProject: projectID,
+    projects: [{ id: projectID, title: "PR workspace", path: project, allowEdits: false, selectedConversation: threadID,
+      conversations: [{ id: threadID, title: "PR draft", archived: false, isDraft: true, composerText: "Keep the PR draft.",
+        location: { worktree: { path: checkout, base: "main" } } }] }],
+    model: { provider: "local", model: "unused-pr-model", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 },
+  }), { mode: 0o600 });
+  const gitState = () => [project, checkout].map(cwd => [git(cwd, "rev-parse", "HEAD"), git(cwd, "diff"), git(cwd, "diff", "--cached")]);
+  const before = gitState();
+  writeFileSync(forgeState, "check-logs-denied\n");
+  await launch("pull-requests");
+  press("pull-requests");
+  await until(() => visible("pr-row-42"), "PR list in the selected worktree");
+  press("pr-row-42");
+  await until(() => visible("pr-check-log-1"), "checks for the selected PR");
+  await verifyCheckLog(driver, forgeState, forgeLog, checkout);
+  await verifyPRCode(driver, forgeState, forgeLog, checkout);
+  dismiss("pr-close");
+  await until(() => value("composer").includes("Keep the PR draft."), "unchanged composer after closing the PR");
+  await quit();
+  assert.deepEqual(gitState(), before);
+  assert.equal(JSON.parse(readFileSync(indexPath)).projects[0].selectedConversation, threadID);
+  record("PR #42's denied check log recovered to job 61002 in the linked checkout. Code displayed the right file and rename patches, cleared the prior patch for binary content, loaded all 31 paths and refreshed after a changed head. Both checkouts and the draft were preserved.");
 }
 
 export async function verifyPullRequests(driver, stateFile, logFile, checkout) {

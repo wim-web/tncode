@@ -6,7 +6,7 @@ import { join } from "node:path";
 const model = { provider: "local", model: "unused-route-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 };
 const uuid = () => randomUUID().toUpperCase();
 
-async function verifyStartupRetry(driver, { root, launch, quit, record }) {
+export async function verifyStartupRetry(driver, { root, launch, quit, record, background = false }) {
   const { press, visible, value, until, setField } = driver;
   const projects = ["Current", "More recent"].map((title, i) => {
     const path = join(root, title), id = uuid(), threadID = uuid();
@@ -29,8 +29,8 @@ async function verifyStartupRetry(driver, { root, launch, quit, record }) {
   assert.deepEqual(readFileSync(indexPath), original);
   renameSync(blocker, join(root, "repaired-blocker"));
   driver.dismiss("startup-draft-retry");
-  await until(() => index().selectedProject === recent.id && visible("composer").includes("focused=true"),
-    "repair opens one focused draft in the originally intended project");
+  await until(() => index().selectedProject === recent.id && visible("composer").includes(background ? "enabled=true" : "focused=true"),
+    "repair opens an editable draft in the originally intended project");
   const selected = index().projects.find(project => project.id === recent.id);
   const newID = selected.selectedConversation;
   assert.notEqual(newID, recent.selectedConversation);
@@ -45,12 +45,12 @@ async function verifyStartupRetry(driver, { root, launch, quit, record }) {
   assert.equal(index().projects.find(p => p.id === recent.id).selectedConversation, newID);
   assert.equal(index().projects.find(p => p.id === current.id).selectedConversation, current.selectedConversation);
   await quit();
-  record("Retry while the backup was blocked preserved every index byte. Repair opened exactly one draft in the newer project. Its UUID and typed text survived relaunch alongside the pre-existing drafts.");
+  record("Retry while the backup was blocked preserved every index byte. Repair opened exactly one draft in the newer project. Its UUID and edited text survived relaunch alongside the pre-existing drafts.");
 }
 
 export async function verifyNewThreadRoutes(driver, context) {
   const { launch, quit, record } = context;
-  const { press, dismiss, focus, visible, tree, until, keyFor, windowKey, setField, menuItem } = driver;
+  const { press, dismiss, focus, visible, tree, until, keyFor, setField, menuItem } = driver;
   const root = join(context.root, "shortcuts");
   const alpha = join(root, "Alpha"), beta = join(root, "Beta");
   for (const path of [alpha, beta]) mkdirSync(path, { recursive: true });
@@ -87,12 +87,14 @@ export async function verifyNewThreadRoutes(driver, context) {
   }
   await launch("empty-open-project", root);
   for (const keys of [keyN, keyChoose, keyLocal]) {
-    windowKey(...keys);
+    if (!focused("thread-search")) focus("thread-search");
+    keyFor("thread-search", ...keys);
     await until(() => focused(field) && visible("command-palette-no-project"), "No project choice on the empty workspace");
     keyFor(field, 53);
     await until(() => !has(field) && has("empty-open-project"), "Escape restored Home");
     assert.equal(index().projects.length, 0);
   }
+  record("With no project, Command-N, Command-Shift-O and Command-Shift-N opened the chooser. Escape returned Home with no new thread.");
   const alphaID = await openFolder(alpha, true);
   const first = active().selectedConversation;
   await fill("Keep Alpha's first draft.");
@@ -104,6 +106,7 @@ export async function verifyNewThreadRoutes(driver, context) {
   assert.equal(active().selectedConversation, second);
   assert.equal(await openFolder(alpha, true), alphaID);
   assert.equal(regular().length, 1);
+  record("With one project the two chooser shortcuts used Alpha. Add existing project reopened the same registered ID.");
   const betaID = await openFolder(beta);
   const originalBeta = active().selectedConversation;
   await fill("Keep Beta's first draft.");
@@ -116,6 +119,7 @@ export async function verifyNewThreadRoutes(driver, context) {
     await until(() => !has(field) && focused("composer"), "canceling returned focus to Beta's composer");
     assert.deepEqual(readFileSync(indexPath), beforeCancel);
   }
+  record("With two projects, both shortcuts offered Alpha and Beta. Escape returned to the original composer with byte-identical saved state.");
   menuItem("New Thread");
   await until(() => focused(field), "File menu opens the project chooser");
   dismiss("command-palette-new-thread-project-" + alphaID);
