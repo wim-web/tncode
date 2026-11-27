@@ -60,7 +60,13 @@ final class QueuedMessageTests: XCTestCase {
         let index = fixture.root.appendingPathComponent("workspace.json")
         let saved = try Data(contentsOf: index)
 
-        let links = ["pi-workspace://settings/open-source-licenses", "pi-workspace://settings/about#app-version"]
+        let project = try XCTUnwrap(model.project)
+        let links = [
+            "pi-workspace://settings", "pi-workspace://settings/appearance", "pi-workspace://settings/chat",
+            "pi-workspace://usage", "pi-workspace://projects/\(project.id)",
+            "pi-workspace://settings/open-source-licenses", "pi-workspace://settings/about#app-version",
+            "pi-workspace://projects/\(UUID())", "pi-workspace://settings/general?machine=elsewhere",
+        ]
         for text in links {
             let url = try XCTUnwrap(URL(string: text))
             XCTAssertTrue(model.openSettingsLink(url))

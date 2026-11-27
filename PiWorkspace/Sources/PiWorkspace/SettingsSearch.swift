@@ -70,21 +70,66 @@ enum SettingsAnchor: String {
     case welcomePage = "welcome-page"
 }
 
-enum SettingsDeepLink: String {
-    case licenses = "open-source-licenses"
-    case version = "about#app-version"
+enum SettingsDeepLink: Equatable {
+    case page(SettingsPage)
+    case licenses
+    case version
+    case project(UUID)
 
-    init?(url: URL) {
-        let authority = "\(ThreadLink.scheme)://settings/"
-        let text = url.absoluteString
-        guard text.prefix(authority.count).lowercased() == authority else { return nil }
-        self.init(rawValue: String(text.dropFirst(authority.count)))
+    private static let pages: [String: SettingsPage] = [
+        "": .general, "/": .general, "/general": .general, "/threads": .threads,
+        "/appearance": .appearance, "/chat": .chat, "/model": .model,
+        "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser, "/about": .about
+    ]
+
+    static func handles(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == ThreadLink.scheme &&
+            ["settings", "usage", "projects"].contains(url.host?.lowercased())
     }
 
-    var anchor: SettingsAnchor {
+    init?(url: URL) {
+        guard Self.handles(url), let host = url.host?.lowercased() else { return nil }
+        let authority = "\(ThreadLink.scheme)://\(host)"
+        let text = url.absoluteString
+        guard text.prefix(authority.count).lowercased() == authority else { return nil }
+        let route = text.dropFirst(authority.count)
+        switch (host, route) {
+        case ("usage", ""), ("usage", "/"):
+            self = .page(.usage)
+        case ("settings", "/open-source-licenses"):
+            self = .licenses
+        case ("settings", "/about#app-version"):
+            self = .version
+        case ("settings", _):
+            if let page = Self.pages[String(route)] {
+                self = .page(page)
+            } else {
+                let prefix = "/projects?project="
+                guard route.hasPrefix(prefix),
+                      let id = UUID(uuidString: String(route.dropFirst(prefix.count))) else { return nil }
+                self = .project(id)
+            }
+        case ("projects", _):
+            guard route.first == "/", let id = UUID(uuidString: String(route.dropFirst())) else { return nil }
+            self = .project(id)
+        default:
+            return nil
+        }
+    }
+
+    var page: SettingsPage {
+        switch self {
+        case .page(let page): page
+        case .licenses, .version: .about
+        case .project: .project
+        }
+    }
+
+    var anchor: SettingsAnchor? {
         switch self {
         case .licenses: .licenses
         case .version: .appVersion
+        default: nil
         }
     }
 }
@@ -95,21 +140,21 @@ final class SettingsRequest: ObservableObject, Identifiable {
         let id = UUID()
         let page: SettingsPage
         let anchor: SettingsAnchor?
+        let projectID: UUID?
     }
 
     let id = UUID()
-    let projectID: UUID?
     @Published private(set) var destination: Destination
 
     var page: SettingsPage { destination.page }
+    var projectID: UUID? { destination.projectID }
 
     init(page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
-        self.projectID = projectID
-        destination = Destination(page: page, anchor: anchor)
+        destination = Destination(page: page, anchor: anchor, projectID: projectID)
     }
 
-    func navigate(to link: SettingsDeepLink) {
-        destination = Destination(page: .about, anchor: link.anchor)
+    func navigate(to page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
+        destination = Destination(page: page, anchor: anchor, projectID: projectID ?? destination.projectID)
     }
 }
 

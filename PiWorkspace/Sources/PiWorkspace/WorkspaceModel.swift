@@ -687,13 +687,31 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func openSettingsLink(_ url: URL) -> Bool {
-        guard let link = SettingsDeepLink(url: url) else { return false }
-        if let settingsRequest {
-            settingsRequest.navigate(to: link)
-        } else {
-            openSettings(.about, anchor: link.anchor)
+        guard SettingsDeepLink.handles(url) else { return false }
+        do {
+            guard let link = SettingsDeepLink(url: url) else { throw WorkspaceError("This settings link is invalid.") }
+            var projectID: UUID?
+            if case .project(let id) = link {
+                guard projects.contains(where: { $0.id == id }) else {
+                    throw WorkspaceError("The linked project is unavailable in this workspace.")
+                }
+                projectID = id
+            }
+            if link.page == .model && !canOpenModelSettings {
+                throw WorkspaceError("Finish the current operation and open Model Settings again.")
+            }
+            if link.page == .usage && startupFailure != nil {
+                throw WorkspaceError("Finish opening the workspace and try the Usage link again.")
+            }
+            if let settingsRequest {
+                settingsRequest.navigate(to: link.page, anchor: link.anchor, projectID: projectID)
+            } else {
+                openSettings(link.page, anchor: link.anchor, projectID: projectID)
+            }
+            threadLinkError = nil
+        } catch {
+            threadLinkError = error.localizedDescription
         }
-        threadLinkError = nil
         return true
     }
 

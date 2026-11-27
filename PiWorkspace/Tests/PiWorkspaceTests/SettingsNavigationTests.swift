@@ -161,25 +161,114 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.expectLicenses()
     }
 
-    func testSettingsLinkRecognizesOnlyTheTwoDestinations() throws {
+    func testSettingsLinkRecognizesLocalDestinationsOnly() throws {
+        let project = UUID()
         let links: [(String, SettingsDeepLink?)] = [
+            ("pi-workspace://settings", .page(.general)),
+            ("pi-workspace://settings/", .page(.general)),
+            ("pi-workspace://settings/general", .page(.general)),
+            ("pi-workspace://settings/appearance", .page(.appearance)),
+            ("pi-workspace://settings/chat", .page(.chat)),
+            ("pi-workspace://usage", .page(.usage)),
+            ("pi-workspace://settings/usage", .page(.usage)),
+            ("pi-workspace://projects/\(project)", .project(project)),
+            ("pi-workspace://settings/projects?project=\(project)", .project(project)),
             ("pi-workspace://settings/open-source-licenses", .licenses),
             ("PI-WORKSPACE://SETTINGS/about#app-version", .version),
-            ("pi-workspace://settings/about", nil),
+            ("pi-workspace://settings/about", .page(.about)),
             ("pi-workspace://settings/about#version", nil),
             ("pi-workspace://settings/about?#app-version", nil),
             ("pi-workspace://settings/open-source-licenses/", nil),
             ("pi-workspace://settings/open-source-licenses#app-version", nil),
             ("pi-workspace://settings:1/about#app-version", nil),
             ("pi-workspace://user@settings/about#app-version", nil),
+            ("pi-workspace://settings/projects", nil),
+            ("pi-workspace://settings/projects?project=\(project)&machine=remote", nil),
+            ("pi-workspace://settings/general?project=\(project)", nil),
+            ("pi-workspace://projects/\(project)/extra", nil),
+            ("pi-workspace://usage?machine=remote", nil),
+            ("pi-workspace://settings/pair", nil),
             ("pi-workspace://thread/v1/about#app-version", nil),
             ("pi-workspace://draft/v1/about#app-version", nil),
+            ("pi-workspace://new/v1?prompt=general", nil),
             ("https://settings/about#app-version", nil)
         ]
         for (text, expected) in links {
             let url = try XCTUnwrap(URL(string: text))
             XCTAssertEqual(SettingsDeepLink(url: url), expected, text)
         }
+    }
+
+    func testNativePageLinksKeepTheSheetAndItsProjectEdits() async throws {
+        let first = UUID()
+        let second = UUID()
+        let fixture = try Fixture(link: URL(string: "pi-workspace://usage"), projectIDs: [first, second])
+        defer { fixture.close() }
+        try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
+        let model = fixture.model
+        let request = try XCTUnwrap(model.settingsRequest)
+        let index = fixture.root.appendingPathComponent("workspace.json")
+        let stored = try Data(contentsOf: index)
+
+        func open(_ route: String) throws {
+            XCTAssertTrue(model.openSettingsLink(try XCTUnwrap(URL(string: "pi-workspace://\(route)"))))
+            XCTAssertTrue(model.settingsRequest === request)
+        }
+
+        func edit(_ field: NSTextField, to text: String) throws {
+            XCTAssertTrue(fixture.window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            XCTAssertEqual(field.stringValue, text)
+        }
+
+        try await fixture.expectControls("settings-heading-usage", "usage-period")
+        try open("settings")
+        try await fixture.expectControls("settings-heading-general", "settings-group-by-project", "add-project-starts-in")
+        try open("settings/appearance")
+        try await fixture.expectControls("settings-heading-appearance", "appearance-color-scheme", "appearance-chat-width")
+        try open("settings/chat")
+        try await fixture.expectControls("settings-heading-chat", "send-shortcut", "follow-up-behavior")
+
+        try open("projects/\(first)")
+        try await fixture.expectControls("settings-heading-project", "project-settings-name", "project-settings-pin")
+        try edit(try await fixture.waitForField("Alpha name") { $0.stringValue == "Alpha" }, to: "Unsaved Alpha")
+        try await fixture.press("project-settings-model")
+        try edit(try await fixture.waitForField("Alpha model") { $0.stringValue == "local-override" }, to: "unsaved-alpha")
+        try open("settings/projects?project=\(second)")
+        _ = try await fixture.waitForField("Beta name") { $0.stringValue == "Beta" }
+        try await fixture.press("project-settings-model")
+        try edit(try await fixture.waitForField("Beta model") { $0.stringValue == "beta-override" }, to: "unsaved-beta")
+
+        let current = request.destination
+        try open("projects/\(UUID())")
+        XCTAssertTrue(model.threadLinkError?.contains("unavailable") == true)
+        try open("settings/general?machine=elsewhere")
+        XCTAssertTrue(model.threadLinkError?.contains("invalid") == true)
+        XCTAssertEqual(request.destination, current)
+        _ = try await fixture.waitForField("still editing Beta model") { $0.stringValue == "unsaved-beta" }
+
+        try open("projects/\(first)")
+        _ = try await fixture.waitForField("unsaved Alpha name") { $0.stringValue == "Unsaved Alpha" }
+        try open("settings/model")
+        _ = try await fixture.waitForField("unsaved Alpha model") { $0.stringValue == "unsaved-alpha" }
+        try open("projects/\(second)")
+        try await fixture.press("project-settings-model")
+        _ = try await fixture.waitForField("unsaved Beta model") { $0.stringValue == "unsaved-beta" }
+        XCTAssertEqual(try Data(contentsOf: index), stored)
+
+        model.removeProject(second)
+        let afterRemoval = try Data(contentsOf: index)
+        try open("projects/\(second)")
+        XCTAssertTrue(model.threadLinkError?.contains("unavailable") == true)
+        try await fixture.expectControls("settings-heading-model", "settings-project-unavailable")
+        XCTAssertNil(fixture.element("save-settings"))
+        try open("settings/general")
+        try await fixture.press("settings-close")
+        XCTAssertNil(model.settingsRequest)
+        XCTAssertNil(model.threadLinkError)
+        XCTAssertEqual(model.workspace.selectedProject, first)
+        XCTAssertEqual(try Data(contentsOf: index), afterRemoval)
     }
 
     func testNativeFolderPreferenceCommitsOnReturnAndBlur() async throws {
@@ -232,14 +321,18 @@ final class SettingsNavigationTests: XCTestCase {
         let window: NSWindow
         let activationPolicy: NSApplication.ActivationPolicy
 
-        init(link: URL? = nil) throws {
+        init(link: URL? = nil, projectIDs: [UUID] = [UUID()]) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             suite = "SettingsNavigationTests.\(root.lastPathComponent)"
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            var scoped = Project(id: UUID(), path: root.path, title: "Alpha")
-            scoped.modelOverride = ModelSettings(provider: .local, model: "local-override")
+            let path = root.path
+            let projects = projectIDs.enumerated().map { index, id in
+                var project = Project(id: id, path: path, title: index == 0 ? "Alpha" : "Beta")
+                project.modelOverride = ModelSettings(provider: .local, model: index == 0 ? "local-override" : "beta-override")
+                return project
+            }
             try WorkspaceStore(root: root).save(
-                Workspace(projects: [scoped], selectedProject: scoped.id, welcomeCompleted: true)
+                Workspace(projects: projects, selectedProject: projectIDs.first, welcomeCompleted: true)
             )
             XCTAssertTrue(BrowserSearchSettings(engine: .custom, customURL: "https://example.test/?q=%s").save(to: defaults))
             model = WorkspaceModel(root: root, keychainService: suite, makeProcess: { _, _ in
@@ -324,6 +417,12 @@ final class SettingsNavigationTests: XCTestCase {
                 element("app-version") != nil &&
                     (element("about-version") as? NSAccessibilityProtocol)?.accessibilityValue() as? String
                         == (AboutInfo().version ?? "Unavailable")
+            }
+        }
+
+        func expectControls(_ ids: String...) async throws {
+            try await until("Visible controls \(ids.joined(separator: ", "))") {
+                ids.allSatisfy { element($0) != nil }
             }
         }
 

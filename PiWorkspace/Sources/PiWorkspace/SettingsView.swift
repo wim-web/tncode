@@ -16,8 +16,8 @@ struct SettingsView: View {
     @State private var page: SettingsPage
     @State private var jump: SettingsJump?
     @State private var search = SettingsSearch()
-    @State private var modelDraft: ModelSettingsDraft
-    @State private var projectTitle: String
+    @State private var modelDrafts: [UUID?: ModelSettingsDraft]
+    @State private var projectTitles: [UUID: String] = [:]
     @State private var browserDraft: BrowserSearchSettings
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
@@ -37,18 +37,33 @@ struct SettingsView: View {
         _page = State(initialValue: request.page)
         _jump = State(initialValue: request.destination.anchor.map { SettingsJump(anchor: $0) })
         _showingLicenses = State(initialValue: request.destination.anchor == .licenses)
-        let project = model.projects.first { $0.id == request.projectID }
-        _modelDraft = State(initialValue: ModelSettingsDraft(workspace: model.workspace.model, project: project))
-        _projectTitle = State(initialValue: project?.title ?? "")
+        let projectID = request.projectID
+        let project = model.projects.first { $0.id == projectID }
+        _modelDrafts = State(initialValue: [projectID: ModelSettingsDraft(workspace: model.workspace.model, project: project)])
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
         _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
         _worktreeDirectory = State(initialValue: model.workspace.worktreesDirectory ?? "")
     }
 
-    private var scopedProject: Project? { model.projects.first { $0.id == modelDraft.projectID } }
+    private var scopedProject: Project? { model.projects.first { $0.id == request.projectID } }
+    private var projectScopeUnavailable: Bool { request.projectID != nil && scopedProject == nil }
+
+    private var modelDraft: Binding<ModelSettingsDraft> {
+        let project = scopedProject
+        let projectID = request.projectID
+        return Binding(get: {
+            modelDrafts[projectID] ?? ModelSettingsDraft(workspace: model.workspace.model, project: project)
+        }, set: { modelDrafts[projectID] = $0 })
+    }
+
+    private func projectTitle(_ project: Project) -> Binding<String> {
+        Binding(get: { projectTitles[project.id] ?? project.title },
+                set: { projectTitles[project.id] = $0 })
+    }
 
     private var results: [SettingsSearchResult] {
         guard search.isSearching else { return [] }
+        let modelDraft = modelDraft.wrappedValue
         let scopedOverride: Bool
         if case .project(let id) = modelDraft.scope {
             scopedOverride = model.projects.contains { $0.id == id && $0.modelOverride != nil }
@@ -84,7 +99,8 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if [.general, .threads, .chat, .project, .worktrees, .usage, .about].contains(page) {
+                    if [.general, .threads, .chat, .project, .worktrees, .usage, .about].contains(page) ||
+                        (page == .model && projectScopeUnavailable) {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
@@ -238,13 +254,19 @@ struct SettingsView: View {
             chatSettings
         case .project:
             if let scopedProject {
-                ProjectOverviewSettingsView(model: model, project: scopedProject, title: $projectTitle,
+                ProjectOverviewSettingsView(model: model, project: scopedProject, title: projectTitle(scopedProject),
                                             pasteboard: pasteboard) { navigate(to: .model) }
+                    .id(scopedProject.id)
             } else {
-                Text("This project is no longer open.").foregroundStyle(.secondary)
+                projectUnavailable
             }
         case .model:
-            ModelSettingsView(model: model, draft: $modelDraft, settingsFocus: $focus)
+            if projectScopeUnavailable {
+                projectUnavailable
+            } else {
+                ModelSettingsView(model: model, draft: modelDraft, settingsFocus: $focus)
+                    .id(request.projectID)
+            }
         case .worktrees:
             worktreeDirectorySetting
             Divider()
@@ -254,6 +276,12 @@ struct SettingsView: View {
         case .about, .usage:
             EmptyView()
         }
+    }
+
+    private var projectUnavailable: some View {
+        Text("This project is no longer open.")
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("settings-project-unavailable")
     }
 
     private var chatSettings: some View {
