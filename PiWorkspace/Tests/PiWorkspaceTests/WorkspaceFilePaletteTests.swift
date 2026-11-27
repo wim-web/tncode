@@ -251,8 +251,9 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         XCTAssertTrue(app.window.firstResponder === terminal)
         terminal.removeFromSuperview()
 
-        let settings = try app.openSettings()
+        app.model.openSettings()
         try await app.waitFor("settings field takes focus") { app.element("settings") != nil && app.input != nil }
+        let settings = try XCTUnwrap(app.window.attachedSheet)
         let settingsEditor = try XCTUnwrap(app.input)
         try app.type("Model")
         try app.goToFile()
@@ -265,9 +266,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         try app.goToFile(in: app.window)
         try app.searchContents(in: app.window)
         XCTAssertFalse(app.model.showingCommandPalette)
-        app.window.endSheet(settings)
         try await app.waitFor("settings sheet closed") { app.window.attachedSheet == nil }
-        settings.close()
 
         try app.goToFile()
         try await app.waitForMode("project-file-picker")
@@ -283,6 +282,68 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         paletteEditor.insertText("", replacementRange: paletteMarked)
         try app.goToFile()
         try await app.waitFor("file picker closes after composition ends") { app.window.attachedSheet == nil }
+        XCTAssertEqual(app.model.draft, "Keep Alpha composer")
+    }
+
+    func testNativePaletteOpensTheSelectedSettingWithoutChangingTheDraft() async throws {
+        let fixture = try await Repository()
+        defer { fixture.remove() }
+        let app = try OffscreenWorkspace(fixture: fixture)
+        defer { app.close() }
+        let width = "command-palette-setting-appearance-chat-width"
+        let defaults = "command-palette-setting-appearance-restore-defaults"
+        _ = try await app.focusComposer()
+
+        try await app.openPalette("width")
+        try await app.waitFor("Chat width and Restore Defaults results") {
+            app.element(width) != nil && app.element(defaults) != nil
+        }
+        try app.key(kVK_DownArrow, "\u{f701}")
+        try app.key(kVK_Return, "\r")
+        try await app.waitFor("Return opens the second result in Appearance") {
+            app.element("settings-heading-appearance") != nil && app.element("appearance-restore-defaults") != nil
+                && app.model.settingsRequest?.destination.anchor == .restoreAppearance
+        }
+        try app.key(kVK_Escape, "\u{1b}")
+
+        try await app.openPalette("Interface font")
+        try await app.waitFor("unavailable settings have no result") { app.element("command-palette-empty") != nil }
+        try app.key(kVK_Escape, "\u{1b}")
+
+        try await app.openPalette(">Chat width")
+        try await app.waitFor("command-only search keeps settings out") { app.element("command-palette-empty") != nil }
+        try app.key(kVK_Escape, "\u{1b}")
+        try await app.waitFor("Escape leaves the workspace open") { app.window.attachedSheet == nil }
+        XCTAssertNil(app.model.settingsRequest)
+
+        try await app.openPalette("Chat width")
+        try await app.waitFor("Chat width is visible") { app.element(width) != nil }
+        try app.key(kVK_Return, "\r")
+        try await app.waitFor("Chat width opens the actual Appearance picker") {
+            app.element("settings-heading-appearance") != nil && app.element("appearance-chat-width") != nil
+                && app.model.settingsRequest?.destination.anchor == .chatWidth
+        }
+        try app.key(kVK_Escape, "\u{1b}")
+
+        try await app.openPalette("Model ID")
+        try await app.waitFor("Model ID is visible") { app.element("command-palette-setting-model-id") != nil }
+        try app.key(kVK_Return, "\r")
+        try await app.waitFor("Model ID opens with the project scope and field focus") {
+            app.element("settings-heading-model") != nil && app.element("model-settings-source") != nil &&
+                app.input?.string == app.model.workspace.model.model
+        }
+        XCTAssertEqual(app.model.settingsRequest?.projectID, fixture.project.id)
+        try app.type("unsaved alpha model")
+        let appearance = try XCTUnwrap(app.element("settings-nav-appearance"))
+        XCTAssertTrue(appearance.accessibilityPerformPress?() == true)
+        try await app.waitFor("Settings shows Appearance") { app.element("settings-heading-appearance") != nil }
+        let modelPage = try XCTUnwrap(app.element("settings-nav-model"))
+        XCTAssertTrue(modelPage.accessibilityPerformPress?() == true)
+        try await app.waitFor("the project edit survives visiting another settings page") {
+            (app.element("model-id") as? NSAccessibilityProtocol)?.accessibilityValue() as? String == "unsaved alpha model"
+        }
+        XCTAssertNil(app.model.project?.modelOverride)
+        XCTAssertEqual(app.model.conversation?.id, fixture.alpha.id)
         XCTAssertEqual(app.model.draft, "Keep Alpha composer")
     }
 
@@ -385,6 +446,23 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         }
     }
 
+    private struct WorkspaceWithSettings: View {
+        @ObservedObject var model: WorkspaceModel
+        @ObservedObject var appearance: AppearanceSettings
+        let defaults: UserDefaults
+        let pasteboard: NSPasteboard
+
+        var body: some View {
+            WorkspaceView(model: model, chatWidthMode: appearance.chatWidth,
+                          browserDefaults: defaults, workspacePasteboard: pasteboard)
+                .sheet(item: $model.settingsRequest) { request in
+                    SettingsView(model: model, appearance: appearance, browserDefaults: defaults,
+                                 request: request, pasteboard: pasteboard, openWelcome: {})
+                }
+                .defaultAppStorage(defaults)
+        }
+    }
+
     @MainActor
     private final class OffscreenWorkspace {
         let model: WorkspaceModel
@@ -413,9 +491,11 @@ final class WorkspaceFilePaletteTests: XCTestCase {
             let panel = Panel(contentRect: NSRect(origin: origin, size: CGSize(width: 1100, height: 740)),
                               styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.isReleasedWhenClosed = false
-            panel.contentView = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .full,
-                                                                     browserDefaults: defaults, workspacePasteboard: pasteboard)
-                .defaultAppStorage(defaults))
+            let appearance = AppearanceSettings(defaults: defaults)
+            appearance.chatWidth = .full
+            panel.contentView = NSHostingView(rootView: WorkspaceWithSettings(
+                model: model, appearance: appearance, defaults: defaults, pasteboard: pasteboard
+            ))
             panel.setFrameOrigin(origin)
             XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(panel.frame) })
             panel.orderBack(nil)
@@ -473,19 +553,6 @@ final class WorkspaceFilePaletteTests: XCTestCase {
             let field = try XCTUnwrap(window.contentView.flatMap(composer(in:)))
             XCTAssertTrue(window.makeFirstResponder(field))
             return field
-        }
-
-        func openSettings() throws -> NSWindow {
-            model.openSettings()
-            let sheet = NSWindow(contentRect: NSRect(origin: window.frame.origin, size: CGSize(width: 784, height: 474)),
-                                 styleMask: [.titled], backing: .buffered, defer: false)
-            sheet.isReleasedWhenClosed = false
-            sheet.contentView = NSHostingView(rootView: SettingsView(
-                model: model, appearance: AppearanceSettings(defaults: defaults), browserDefaults: defaults,
-                request: try XCTUnwrap(model.settingsRequest), pasteboard: pasteboard, openWelcome: {}
-            ).defaultAppStorage(defaults))
-            window.beginSheet(sheet)
-            return sheet
         }
 
         func waitForMode(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) async throws {
