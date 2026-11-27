@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage(SidebarPreference.groupByProject) private var groupByProject = false
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
     @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
+    @AppStorage(TerminalPreference.confirmClose) private var confirmTerminalClose = TerminalPreference.defaultConfirmClose
     @FocusState private var focus: SettingsFocus?
     @State private var search = SettingsSearch()
     @State private var modelDrafts: [UUID?: ModelSettingsDraft]
@@ -248,6 +249,8 @@ struct SettingsView: View {
                 Divider()
                 archiveConfirmationSetting
                 Divider()
+                terminalCloseConfirmationSetting
+                Divider()
                 projectBaseDirectorySetting
             }
         case .threads:
@@ -368,6 +371,25 @@ struct SettingsView: View {
             archiveConfirmationError = nil
         } catch {
             archiveConfirmationError = error.localizedDescription
+        }
+    }
+
+    private var terminalCloseConfirmationSetting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Toggle("Terminal close confirmation", isOn: $confirmTerminalClose)
+                    .toggleStyle(.switch)
+                    .accessibilityLabel("Confirm terminal closing")
+                    .settingsTarget(.terminalCloseConfirmation, focus: $focus)
+                if confirmTerminalClose != TerminalPreference.defaultConfirmClose {
+                    Button("Reset") { confirmTerminalClose = TerminalPreference.defaultConfirmClose }
+                        .accessibilityLabel("Reset terminal close confirmation to default")
+                        .accessibilityIdentifier("reset-terminal-close-confirmation")
+                }
+            }
+            Text("Ask before closing terminals and stopping their running processes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

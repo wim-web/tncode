@@ -62,7 +62,7 @@ final class ThreadTerminalTests: XCTestCase {
             else { unsetenv("SHELL") }
         }
 
-        let first = Conversation(id: UUID(), title: "Local Checkout", isDraft: false)
+        let first = Conversation(id: UUID(), title: "Local Checkout", isDraft: false, composerText: "Keep this draft")
         let sameCheckout = Conversation(id: UUID(), title: "Another Thread", isDraft: false)
         let second = Conversation(id: UUID(), title: "Linked Checkout",
                                   location: .worktree(path: checkout.path, base: nil), isDraft: false)
@@ -176,6 +176,15 @@ final class ThreadTerminalTests: XCTestCase {
         let drawer = try await focused("thread-terminal")
         let drawerPID = try await readyPID(of: drawer)
         let drawerTTY = try await verifyDirectoryAndTTY(in: local, terminal: drawer, name: "drawer")
+        XCTAssertNil(defaults.object(forKey: TerminalPreference.confirmClose))
+        try await press("hide-terminal")
+        try await waitFor("drawer hide preserves the shell and does not prompt") {
+            drawer.isHidden && kill(drawerPID, 0) == 0 && window.attachedSheet == nil
+        }
+        try await press("toggle-terminal")
+        let reopenedDrawer = try await focused("thread-terminal")
+        XCTAssertTrue(reopenedDrawer === drawer)
+
         let right = try await add(2)
         let rightPID = try await readyPID(of: right)
         let rightTTY = try await verifyDirectoryAndTTY(in: local, terminal: right, name: "right")
@@ -192,6 +201,36 @@ final class ThreadTerminalTests: XCTestCase {
         send("printf 'RIGHT-MARKER-%s\\n' \"$$\"\n", to: right)
         try await waitFor("right marker") { self.output(of: right).contains("RIGHT-MARKER-\(rightPID)") }
         XCTAssertFalse(output(of: drawer).contains("RIGHT-MARKER"))
+
+        try await press("split-terminal-horizontal")
+        let drawerSplit = try await focused("thread-terminal")
+        let drawerSplitPID = try await readyPID(of: drawerSplit)
+        send("/bin/sleep 60 & echo $! > drawer-background\n", to: drawerSplit)
+        let drawerBackground = try await readPID(at: local.appendingPathComponent("drawer-background"))
+        send("/bin/sh -c 'echo $$ > drawer-foreground; exec /bin/sleep 60'\n", to: drawerSplit)
+        let drawerForeground = try await readPID(at: local.appendingPathComponent("drawer-foreground"))
+        let drawerJobs = [drawerSplitPID, drawerForeground, drawerBackground]
+
+        try await press("close-terminal")
+        try await press("cancel-close-terminal")
+        try await waitFor("Cancel keeps all drawer processes") {
+            window.attachedSheet == nil && drawerJobs.allSatisfy { kill($0, 0) == 0 }
+        }
+        drawerSplit.setAccessibilityFocused(true)
+        try key(kVK_ANSI_W, "w", modifiers: .command)
+        try await waitFor("Cmd+W confirms the focused drawer pane") { element("confirm-close-terminal") != nil }
+        model.selectConversation(sameCheckout.id, in: project.id)
+        try await waitFor("switch threads while the drawer confirmation is open") {
+            model.conversation?.id == sameCheckout.id && drawerSplit.isHidden
+        }
+        try await press("confirm-close-terminal")
+        try await waitFor("confirm closes only the originally requested drawer pane and its jobs") {
+            drawerJobs.allSatisfy { kill($0, 0) == -1 }
+        }
+        XCTAssertEqual(kill(drawerPID, 0), 0)
+        XCTAssertEqual(kill(rightPID, 0), 0)
+        try await select(first)
+        XCTAssertEqual(model.conversation?.composerText, "Keep this draft")
 
         send("/bin/sleep 60 & echo $! > right-background\n", to: right)
         let background = try await readPID(at: local.appendingPathComponent("right-background"))
@@ -247,20 +286,20 @@ final class ThreadTerminalTests: XCTestCase {
         for pid in [drawerPID, rightPID, linkedPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
 
         try await press("split-right-terminal-horizontal")
-        let split = try await focused("right-terminal-pane-3")
+        let split = try await focused("right-terminal-pane-4")
         let splitPID = try await readyPID(of: split)
         XCTAssertLessThanOrEqual(right.convert(right.bounds, to: nil).maxX, split.convert(split.bounds, to: nil).minX)
         try key(kVK_ANSI_LeftBracket, "[", modifiers: [.command, .shift])
         let previous = try await focused("right-terminal-pane-2")
         XCTAssertTrue(previous === right)
         try key(kVK_ANSI_RightBracket, "]", modifiers: [.command, .shift])
-        let next = try await focused("right-terminal-pane-3")
+        let next = try await focused("right-terminal-pane-4")
         XCTAssertTrue(next === split)
         try await press("split-right-terminal-vertical")
-        let vertical = try await focused("right-terminal-pane-4")
+        let vertical = try await focused("right-terminal-pane-5")
         let verticalPID = try await readyPID(of: vertical)
         XCTAssertGreaterThanOrEqual(split.convert(split.bounds, to: nil).minY, vertical.convert(vertical.bounds, to: nil).maxY)
-        try await press("close-right-terminal-pane")
+        try key(kVK_ANSI_W, "w", modifiers: .command)
         try await press("confirm-close-right-terminal")
         try await waitFor("only the vertical pane closed") { kill(verticalPID, 0) == -1 }
         for pid in [drawerPID, rightPID, linkedPID, splitPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
@@ -271,17 +310,64 @@ final class ThreadTerminalTests: XCTestCase {
         for pid in [drawerPID, rightPID, linkedPID, splitPID, background, foreground] { XCTAssertEqual(kill(pid, 0), 0) }
 
         try await press("close-right-panel-terminal-2")
+        model.selectConversation(sameCheckout.id, in: project.id)
+        try await waitFor("switch threads while the right tab confirmation is open") {
+            model.conversation?.id == sameCheckout.id && right.isHidden
+        }
         try await press("confirm-close-right-terminal")
         try await waitFor("panel tab, both shells and their jobs closed") {
             [rightPID, splitPID, foreground, background].allSatisfy { kill($0, 0) == -1 }
         }
         XCTAssertEqual(kill(drawerPID, 0), 0)
         XCTAssertEqual(kill(linkedPID, 0), 0)
+        try await select(first)
+        XCTAssertEqual(model.conversation?.composerText, "Keep this draft")
         try await waitFor("neighboring Files tab selected") { element("files-row-fixture.txt") != nil }
+
+        defaults.set(false, forKey: TerminalPreference.confirmClose)
+        try await press("new-terminal")
+        let bypassDrawer = try await focused("thread-terminal")
+        let bypassDrawerPID = try await readyPID(of: bypassDrawer)
+        try await press("close-terminal-pane-6")
+        try await waitFor("disabled confirmation closes the drawer pane immediately") {
+            kill(bypassDrawerPID, 0) == -1 && window.attachedSheet == nil
+        }
+        let bypassRight = try await add(7)
+        let bypassRightPID = try await readyPID(of: bypassRight)
+        try await press("close-right-terminal-pane")
+        try await waitFor("disabled confirmation closes the right pane immediately") {
+            kill(bypassRightPID, 0) == -1 && window.attachedSheet == nil
+        }
+        let mouseClose = try await add(8)
+        let mouseClosePID = try await readyPID(of: mouseClose)
+        try await waitFor("middle-click target has a visible tab frame") {
+            guard let frame = try? tabFrame("right-panel-tab-terminal-8"), !frame.isEmpty else { return false }
+            let point = window.convertPoint(fromScreen: CGPoint(x: frame.midX, y: frame.midY))
+            return window.contentView?.bounds.contains(point) == true
+        }
+        let tab = try tabFrame("right-panel-tab-terminal-8")
+        let click = window.convertPoint(fromScreen: CGPoint(x: tab.midX, y: tab.midY))
+        let mouseUp = try mouse(.otherMouseUp, in: window, at: click)
+        let mouseEvent = try XCTUnwrap(mouseUp.cgEvent)
+        mouseEvent.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+        let middleClick = try XCTUnwrap(NSEvent(cgEvent: mouseEvent))
+        XCTAssertEqual(middleClick.buttonNumber, 2)
+        XCTAssertEqual(middleClick.windowNumber, window.windowNumber)
+        XCTAssertEqual(middleClick.locationInWindow.x, click.x, accuracy: 1)
+        XCTAssertEqual(middleClick.locationInWindow.y, click.y, accuracy: 1)
+        app.sendEvent(middleClick)
+        try await waitFor("disabled confirmation closes the middle-clicked tab immediately") {
+            kill(mouseClosePID, 0) == -1 && window.attachedSheet == nil
+        }
+        XCTAssertEqual(kill(drawerPID, 0), 0)
+        XCTAssertEqual(kill(linkedPID, 0), 0)
+
+        defaults.set(true, forKey: TerminalPreference.confirmClose)
         try await select(second)
         let linkedRestored = try await focused("right-terminal-pane-1")
         XCTAssertTrue(linkedRestored === linked)
-        try await press("close-right-panel-terminal-1")
+        window.makeFirstResponder(nil)
+        try key(kVK_ANSI_W, "w", modifiers: .command)
         try await press("confirm-close-right-terminal")
         try await waitFor("last right panel terminal closes the panel") {
             kill(linkedPID, 0) == -1 && element("hide-right-panel") == nil
@@ -297,6 +383,7 @@ final class ThreadTerminalTests: XCTestCase {
             self.output(of: failedTerminal).contains("The workspace folder is unavailable.")
         }
         XCTAssertLessThanOrEqual(failedTerminal.process.shellPid, 0)
+        print("Drawer cancellation preserved PTY \(drawerSplitPID) and jobs \(drawerForeground), \(drawerBackground); confirming after a thread switch stopped all three.")
         print("Right panel PTYs: drawer \(drawerPID) \(drawerTTY), right \(rightPID) \(rightTTY), linked \(linkedPID) \(linkedTTY), split \(splitPID) and \(verticalPID). Closed jobs \(foreground) and \(background).")
     }
 
@@ -670,7 +757,8 @@ private struct DrawerFixtureView: View {
                 Spacer(minLength: 0)
                 ForEach($fixture.drawers) { $drawer in
                     let location = drawer.id
-                    ThreadTerminalDrawer(drawer: $drawer, selected: location == fixture.selected, limits: limits) {
+                    ThreadTerminalDrawer(drawer: $drawer, selected: location == fixture.selected, limits: limits,
+                                         requestClose: { drawer.close($0) }) {
                         fixture.drawers.removeAll { $0.id == location }
                     }
                 }

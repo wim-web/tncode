@@ -72,6 +72,76 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(search.selected(in: search.results(available: availability))?.id, "browser")
     }
 
+    func testTerminalClosePreferenceAcrossRelaunch() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let suiteKey = "PI_WORKSPACE_TERMINAL_CLOSE_SUITE"
+        let phaseKey = "PI_WORKSPACE_TERMINAL_CLOSE_PHASE"
+        if let suite = environment[suiteKey] {
+            let phase = try XCTUnwrap(environment[phaseKey])
+            let fixture = try Fixture(suiteName: suite)
+            defer { fixture.close() }
+            let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+            try await fixture.typeQuery("stop process shell", in: search)
+            try await fixture.expectControls("settings-result-terminal-close-confirmation")
+            try await fixture.key(kVK_Return, "\r")
+            try await fixture.expectControls("terminal-close-confirmation")
+            XCTAssertEqual(fixture.model.settingsRequest?.destination.anchor, .terminalCloseConfirmation)
+
+            func isOn() -> Bool? {
+                let control = fixture.element("terminal-close-confirmation") as? NSAccessibilityProtocol
+                return (control?.accessibilityValue() as? NSNumber)?.boolValue
+            }
+            let initialValue = isOn()
+            switch phase {
+            case "fresh":
+                XCTAssertNil(fixture.defaults.object(forKey: TerminalPreference.confirmClose))
+                XCTAssertEqual(isOn(), true)
+                XCTAssertNil(fixture.element("reset-terminal-close-confirmation"))
+                let toggle = try XCTUnwrap(fixture.element("terminal-close-confirmation"))
+                _ = toggle.accessibilityPerformPress?()
+                try await fixture.expectControls("reset-terminal-close-confirmation")
+                XCTAssertEqual(isOn(), false)
+            case "disabled":
+                XCTAssertEqual(isOn(), false)
+                try await fixture.press("reset-terminal-close-confirmation")
+                try await fixture.until("Reset restores the enabled default") {
+                    isOn() == true && fixture.element("reset-terminal-close-confirmation") == nil
+                }
+            case "reset":
+                XCTAssertEqual(isOn(), true)
+                XCTAssertNil(fixture.element("reset-terminal-close-confirmation"))
+            default:
+                XCTFail("Unexpected relaunch phase \(phase)")
+            }
+            XCTAssertTrue(fixture.defaults.bool(forKey: SidebarPreference.groupByProject))
+            XCTAssertTrue(fixture.defaults.synchronize())
+            print("Terminal close confirmation, \(phase) launch: \(String(describing: initialValue)), after interaction: \(String(describing: isOn()))")
+            return
+        }
+
+        let suite = "SettingsNavigationTests.TerminalClose.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SidebarPreference.groupByProject)
+        XCTAssertTrue(defaults.synchronize())
+        for phase in ["fresh", "disabled", "reset"] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+            process.arguments = ["xctest", "-XCTest",
+                                 "PiWorkspaceTests.SettingsNavigationTests/testTerminalClosePreferenceAcrossRelaunch",
+                                 Bundle(for: Self.self).bundlePath]
+            var childEnvironment = environment
+            childEnvironment["XCTestSessionIdentifier"] = nil
+            childEnvironment[suiteKey] = suite
+            childEnvironment[phaseKey] = phase
+            process.environment = childEnvironment
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationReason, .exit, phase)
+            XCTAssertEqual(process.terminationStatus, 0, phase)
+        }
+    }
+
     func testNativeSearchReachesScopedModelAndCustomBrowserURL() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -397,10 +467,13 @@ final class SettingsNavigationTests: XCTestCase {
         let host: NSView
         let window: NSWindow
         let activationPolicy: NSApplication.ActivationPolicy
+        let ownsDefaults: Bool
 
-        init(link: URL? = nil, linkBeforePresentation: URL? = nil, projectIDs: [UUID] = [UUID()]) throws {
+        init(link: URL? = nil, linkBeforePresentation: URL? = nil, projectIDs: [UUID] = [UUID()],
+             suiteName: String? = nil) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-            suite = "SettingsNavigationTests.\(root.lastPathComponent)"
+            suite = suiteName ?? "SettingsNavigationTests.\(root.lastPathComponent)"
+            ownsDefaults = suiteName == nil
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let path = root.path
             let projects = projectIDs.enumerated().map { index, id in
@@ -444,7 +517,7 @@ final class SettingsNavigationTests: XCTestCase {
         }
 
         deinit {
-            defaults.removePersistentDomain(forName: suite)
+            if ownsDefaults { defaults.removePersistentDomain(forName: suite) }
             try? FileManager.default.removeItem(at: root)
         }
 

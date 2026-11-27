@@ -3,6 +3,11 @@ import Darwin
 import SwiftTerm
 import SwiftUI
 
+enum TerminalPreference {
+    static let confirmClose = "confirmTerminalClose"
+    static let defaultConfirmClose = true
+}
+
 struct ThreadTerminal: View {
     static let maxPanesPerGroup = 4
 
@@ -70,6 +75,7 @@ struct ThreadTerminalKeyboard: NSViewRepresentable {
         let anchor = NSView()
         context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak anchor] event in
             guard let window = anchor?.window, event.window === window,
+                  window.attachedSheet == nil, NSApp.modalWindow == nil,
                   let terminal = window.firstResponder as? TerminalSessionView,
                   terminal.handleShortcut(event) else { return event }
             return nil
@@ -92,17 +98,22 @@ final class TerminalSessionView: LocalProcessTerminalView {
     private var focusRequest: Int?
 
     func closeSession() {
-        if case let .success(descriptor?) = process.duplicatePrimaryDescriptor() {
-            let shell = process.shellPid
-            let foreground = tcgetpgrp(descriptor)
-            _ = ioctl(descriptor, TIOCSIG, SIGHUP)
-            // The shell can ignore SIGTERM while another job owns the foreground.
-            if shell > 0, foreground != shell, getsid(shell) == shell {
-                _ = kill(-shell, SIGHUP)
-            }
-            Darwin.close(descriptor)
+        let process: LocalProcess = process
+        guard case let .success(descriptor?) = process.duplicatePrimaryDescriptor() else {
+            process.terminate()
+            return
         }
-        terminate()
+        let shell = process.shellPid
+        let foreground = tcgetpgrp(descriptor)
+        _ = ioctl(descriptor, TIOCSIG, SIGHUP)
+        if shell > 0, foreground != shell, getsid(shell) == shell {
+            _ = kill(-shell, SIGHUP)
+        }
+        Darwin.close(descriptor)
+        // Keep the process alive long enough for the shell's hangup handler to notify its jobs.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            process.terminate()
+        }
     }
 
     func setPresentation(_ presented: Bool, focusRequest: Int?) {
@@ -149,15 +160,17 @@ final class TerminalSessionView: LocalProcessTerminalView {
 
     func handleShortcut(_ event: NSEvent) -> Bool {
         if cycleFocus(for: event) { return true }
-        guard presented, window?.firstResponder === self, !event.isARepeat, let onCommand else { return false }
+        guard presented, window?.firstResponder === self, let onCommand else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let command: ThreadTerminal.Command
         switch (event.charactersIgnoringModifiers?.lowercased(), modifiers) {
-        case ("n", .command): onCommand(.new)
-        case ("d", .command): onCommand(.split)
-        case ("d", [.command, .shift]): onCommand(.splitVertical)
-        case ("w", .command): onCommand(.close)
+        case ("n", .command): command = .new
+        case ("d", .command): command = .split
+        case ("d", [.command, .shift]): command = .splitVertical
+        case ("w", .command): command = .close
         default: return false
         }
+        if !event.isARepeat { onCommand(command) }
         return true
     }
 

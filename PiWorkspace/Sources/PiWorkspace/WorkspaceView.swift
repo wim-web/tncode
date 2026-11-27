@@ -28,6 +28,7 @@ struct WorkspaceView: View {
     @AppStorage(SidebarPreference.groupByProject) private var grouped = false
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
     @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
+    @AppStorage(TerminalPreference.confirmClose) private var confirmTerminalClose = TerminalPreference.defaultConfirmClose
     @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
     @GestureState private var sidebarDrag: CGFloat = 0
     @State private var rightPanelWidths: [UUID: CGFloat] = [:]
@@ -43,7 +44,7 @@ struct WorkspaceView: View {
     @State private var browserPanels: [UUID: ThreadBrowserPreview] = [:]
     @State private var rightPanels: [UUID: WorkspaceRightPanelState] = [:]
     @State private var addingPanelSurface: UUID?
-    @State private var closingPanelTerminals: PanelTerminalClose?
+    @State private var closingTerminals: TerminalClose?
     @State private var deletingSideChat: SideChatDeletion?
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
     @State private var fileLineReveal: WorkspaceFileLineReveal?
@@ -114,20 +115,42 @@ struct WorkspaceView: View {
         }
     }
 
-    private struct PanelTerminalClose: Identifiable {
+    private struct TerminalClose: Identifiable {
+        struct Tab {
+            let tab: WorkspacePanelTab
+            let panes: [Int]
+        }
+
         enum Target {
-            case tabs([WorkspacePanelTab])
-            case pane(WorkspacePanelTab, Int)
+            case drawer(session: UUID, pane: Int)
+            case rightPane(thread: UUID, tab: WorkspacePanelTab, pane: Int)
+            case rightTabs(thread: UUID, tabs: [Tab])
         }
 
         let id = UUID()
-        let thread: UUID
         let target: Target
-        let panes: [Int]
+
+        var panes: [Int] {
+            switch target {
+            case .drawer(_, let pane), .rightPane(_, _, let pane): [pane]
+            case .rightTabs(_, let tabs): tabs.flatMap(\.panes)
+            }
+        }
 
         var title: String {
-            if panes.count == 1, let pane = panes.first { return "Close Terminal \(pane)?" }
-            return "Close \(panes.count) Terminals?"
+            if panes.count == 1, let pane = panes.first { return "Close terminal \"Terminal \(pane)\"?" }
+            return "Close \(panes.count) terminals?"
+        }
+
+        var message: String {
+            if panes.count == 1 { return "This stops the running process and clears its history." }
+            let labels = panes.map { "\"Terminal \($0)\"" }.joined(separator: ", ")
+            return "This stops their running processes and clears their histories: \(labels)."
+        }
+
+        var accessibilitySuffix: String {
+            if case .drawer = target { return "terminal" }
+            return "right-terminal"
         }
     }
 
@@ -330,12 +353,18 @@ struct WorkspaceView: View {
                     return true
                 }
                 if handleFindKey(event, in: window) { return true }
+                let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                if modifiers == .command, event.keyCode == kVK_ANSI_W,
+                   acceptsWorkspaceKeys(in: window), let thread = model.conversation?.id,
+                   let tab = rightPanels[thread]?.visibleTab {
+                    if !event.isARepeat { requestRightPanelClose([tab], in: thread) }
+                    return true
+                }
                 guard !event.isARepeat else { return false }
                 if case .toggle(let mode)? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window, startingAt: .init(fileSearchMode: mode))
                 }
                 if handleNewThreadKey(event, in: window) { return true }
-                let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
                 if handleRightPanelKey(event, modifiers: modifiers, in: window) { return true }
                 if modifiers == .command, event.keyCode == kVK_Return, acceptsWorkspaceKeys(in: window),
                    let editor = window.firstResponder as? ComposerTextField.Editor,
@@ -541,23 +570,20 @@ struct WorkspaceView: View {
         } message: { _ in
             Text("Workspace changes require a new terminal in the selected folder.")
         }
-        .sheet(item: $closingPanelTerminals) { request in
+        .sheet(item: $closingTerminals) { request in
             VStack(alignment: .leading, spacing: 14) {
                 Text(request.title).font(.headline)
-                Text("This stops the selected shells and clears their output.")
+                Text(request.message)
                 HStack {
                     Spacer()
-                    Button("Cancel") { closingPanelTerminals = nil }
+                    Button("Cancel") { closingTerminals = nil }
                         .keyboardShortcut(.cancelAction)
-                        .accessibilityIdentifier("cancel-close-right-terminal")
+                        .accessibilityIdentifier("cancel-close-\(request.accessibilitySuffix)")
                     Button("Close", role: .destructive) {
-                        closingPanelTerminals = nil
-                        switch request.target {
-                        case .tabs(let tabs): closeRightPanelTabs(tabs, in: request.thread)
-                        case .pane(let tab, let pane): rightPanels[request.thread]?.closePane(pane, in: tab)
-                        }
+                        closingTerminals = nil
+                        closeTerminals(request.target)
                     }
-                    .accessibilityIdentifier("confirm-close-right-terminal")
+                    .accessibilityIdentifier("confirm-close-\(request.accessibilitySuffix)")
                 }
             }
             .padding(20)
@@ -1667,6 +1693,8 @@ struct WorkspaceView: View {
                 rightPanels[thread.id]?.show(tab)
             }, close: { tabs in
                 requestRightPanelClose(tabs, in: thread.id)
+            }, closePane: { tab, pane in
+                requestTerminalClose(.rightPane(thread: thread.id, tab: tab, pane: pane))
             }, move: { tab, target in
                 rightPanels[thread.id]?.move(tab, to: target)
             }, hide: {
@@ -2191,9 +2219,11 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             ForEach($openTerminals) { $drawer in
                 let location = drawer.id
+                let session = drawer.sessionID
                 ThreadTerminalDrawer(drawer: $drawer, selected: location == activeTerminal, limits: limits,
-                                     allocateNumber: { nextTerminalNumber(at: location) }) {
-                    openTerminals.removeAll { $0.id == location }
+                                     allocateNumber: { nextTerminalNumber(at: location) },
+                                     requestClose: { requestTerminalClose(.drawer(session: session, pane: $0)) }) {
+                    openTerminals.removeAll { $0.sessionID == session }
                 }
             }
         }
@@ -2284,15 +2314,15 @@ struct WorkspaceView: View {
                 Spacer()
                 panelIcon("New Terminal", icon: "plus", id: "new-right-terminal") { addRightTerminal(in: thread) }
                 panelIcon("Split Terminal Horizontally", icon: "rectangle.split.2x1", id: "split-right-terminal-horizontal") {
-                    handleRightTerminalCommand(.split, tab: tab, thread: thread)
+                    handleRightTerminalCommand(.split, pane: group.selectedPane, tab: tab, thread: thread)
                 }
                 .disabled(!group.canSplit)
                 panelIcon("Split Terminal Vertically", icon: "rectangle.split.1x2", id: "split-right-terminal-vertical") {
-                    handleRightTerminalCommand(.splitVertical, tab: tab, thread: thread)
+                    handleRightTerminalCommand(.splitVertical, pane: group.selectedPane, tab: tab, thread: thread)
                 }
                 .disabled(!group.canSplit)
                 panelIcon("Close Terminal Pane", icon: "xmark", id: "close-right-terminal-pane") {
-                    handleRightTerminalCommand(.close, tab: tab, thread: thread)
+                    handleRightTerminalCommand(.close, pane: group.selectedPane, tab: tab, thread: thread)
                 }
             }
             .padding(.horizontal, 8)
@@ -2315,7 +2345,7 @@ struct WorkspaceView: View {
                                                        bounds: visible ? bounds : nil, focusRequest: panel.focusRequest,
                                                        select: { rightPanels[thread]?.selectPane($0, in: tab) },
                                                        cycle: { rightPanels[thread]?.cycle(by: $0) ?? false },
-                                                       command: { handleRightTerminalCommand($0, tab: tab, thread: thread) })
+                                                       command: { handleRightTerminalCommand($0, pane: $1, tab: tab, thread: thread) })
                         }
                     }
                 }
@@ -2323,9 +2353,10 @@ struct WorkspaceView: View {
         }
     }
 
-    private func handleRightTerminalCommand(_ command: ThreadTerminal.Command, tab: WorkspacePanelTab, thread: UUID) {
+    private func handleRightTerminalCommand(_ command: ThreadTerminal.Command, pane: Int,
+                                            tab: WorkspacePanelTab, thread: UUID) {
         guard let location = activeTerminal, location.thread == thread, rightPanels[thread]?.visibleTab == tab,
-              let group = rightPanels[thread]?.terminals[tab] else { return }
+              rightPanels[thread]?.terminals[tab]?.panes.contains(pane) == true else { return }
         switch command {
         case .new:
             addRightTerminal(in: thread)
@@ -2333,23 +2364,53 @@ struct WorkspaceView: View {
             let number = nextTerminalNumber(at: location)
             rightPanels[thread]?.split(command == .split ? .horizontal : .vertical, allocating: number)
         case .close:
-            closingPanelTerminals = PanelTerminalClose(thread: thread, target: .pane(tab, group.selectedPane),
-                                                       panes: [group.selectedPane])
+            requestTerminalClose(.rightPane(thread: thread, tab: tab, pane: pane))
         }
     }
 
     private func requestRightPanelClose(_ tabs: [WorkspacePanelTab], in thread: UUID) {
-        let panes = tabs.flatMap { rightPanels[thread]?.terminals[$0]?.panes ?? [] }
-        if panes.isEmpty {
-            closeRightPanelTabs(tabs, in: thread)
+        guard let panel = rightPanels[thread] else { return }
+        let targets = tabs.filter { panel.tabs.contains($0) }.map { tab in
+            TerminalClose.Tab(tab: tab, panes: panel.terminals[tab]?.panes ?? [])
+        }
+        requestTerminalClose(.rightTabs(thread: thread, tabs: targets))
+    }
+
+    private func requestTerminalClose(_ target: TerminalClose.Target) {
+        guard closingTerminals == nil else { return }
+        let request = TerminalClose(target: target)
+        if confirmTerminalClose && !request.panes.isEmpty {
+            closingTerminals = request
         } else {
-            closingPanelTerminals = PanelTerminalClose(thread: thread, target: .tabs(tabs), panes: panes)
+            closeTerminals(target)
+        }
+    }
+
+    private func closeTerminals(_ target: TerminalClose.Target) {
+        switch target {
+        case .drawer(let session, let pane):
+            guard let index = openTerminals.firstIndex(where: { $0.sessionID == session }) else { return }
+            openTerminals[index].close(pane)
+        case .rightPane(let thread, let tab, let pane):
+            rightPanels[thread]?.closePane(pane, in: tab)
+        case .rightTabs(let thread, let targets):
+            var tabs: [WorkspacePanelTab] = []
+            for target in targets where rightPanels[thread]?.tabs.contains(target.tab) == true {
+                let current = rightPanels[thread]?.terminals[target.tab]?.panes ?? []
+                if Set(current).isSubset(of: target.panes) {
+                    tabs.append(target.tab)
+                } else {
+                    for pane in target.panes { rightPanels[thread]?.closePane(pane, in: target.tab) }
+                }
+            }
+            closeRightPanelTabs(tabs, in: thread)
         }
     }
 
     private func closeRightPanelTabs(_ tabs: [WorkspacePanelTab], in thread: UUID) {
-        if let project = model.project, thread == model.conversation?.id {
-            for case .sideChat(let id) in tabs {
+        guard !tabs.isEmpty else { return }
+        for case .sideChat(let id) in tabs {
+            if let project = model.projects.first(where: { $0.conversations.contains { $0.id == thread } }) {
                 model.closeSideChat(.init(projectID: project.id, parentID: thread, id: id))
                 if focusedComposer == id { focusedComposer = thread }
             }
@@ -2381,7 +2442,7 @@ struct WorkspaceView: View {
               model.projectPicker == nil else { return false }
         if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "d" {
             guard model.conversation?.workingLocation.needsWorktree == false, acceptsWorkspaceKeys(in: window),
-                  closingPanelTerminals == nil, !documentHasFocus(in: window),
+                  !documentHasFocus(in: window),
                   (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
             if case .sideChat(let sideChat) = rightPanels[thread]?.visibleTab,
                (window.firstResponder as? ComposerTextField.Editor)?.owner?.composerTarget?.threadID == sideChat {
@@ -3257,7 +3318,7 @@ struct WorkspaceView: View {
             composerModelPicker == nil &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
-            rename == nil && removingProject == nil && archiveConfirmation == nil
+            rename == nil && removingProject == nil && archiveConfirmation == nil && closingTerminals == nil
     }
 
     private func navigate(_ direction: WorkspaceModel.NavigationDirection, in window: NSWindow) -> Bool {

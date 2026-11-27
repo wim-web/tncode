@@ -17,6 +17,7 @@ struct ThreadTerminalDrawerState: Identifiable {
     }
 
     let id: ThreadTerminalLocation
+    let sessionID = UUID()
     var isOpen = true
     private(set) var groups: [Group]
     private(set) var activePane: Int
@@ -109,18 +110,19 @@ struct ThreadTerminalDrawer: View {
     let selected: Bool
     let limits: TerminalDrawerHeight
     let allocateNumber: (() -> Int)?
+    let requestClose: (Int) -> Void
     let removeDrawer: () -> Void
     @AppStorage private var preferredHeight: Double?
-    @State private var closingPane: Int?
     @State private var dragHeight: CGFloat?
 
     init(drawer: Binding<ThreadTerminalDrawerState>, selected: Bool, limits: TerminalDrawerHeight,
-         allocateNumber: (() -> Int)? = nil,
+         allocateNumber: (() -> Int)? = nil, requestClose: @escaping (Int) -> Void,
          removeDrawer: @escaping () -> Void) {
         _drawer = drawer
         self.selected = selected
         self.limits = limits
         self.allocateNumber = allocateNumber
+        self.requestClose = requestClose
         self.removeDrawer = removeDrawer
         _preferredHeight = AppStorage("terminal-drawer-height.\(drawer.wrappedValue.id.thread.uuidString)")
     }
@@ -174,22 +176,6 @@ struct ThreadTerminalDrawer: View {
                 removeDrawer()
             }
         }
-        .alert("Close Terminal \(closingPane ?? drawer.activePane)?", isPresented: Binding(
-            get: { closingPane != nil },
-            set: { if !$0 { closingPane = nil } }
-        ), presenting: closingPane) { pane in
-            Button("Cancel", role: .cancel) {
-                closingPane = nil
-                drawer.select(drawer.activePane)
-            }
-            .accessibilityIdentifier("cancel-close-terminal")
-            Button("Close Terminal", role: .destructive) {
-                drawer.close(pane)
-            }
-            .accessibilityIdentifier("confirm-close-terminal")
-        } message: { _ in
-            Text("This stops the shell and clears its output.")
-        }
     }
 
     private var toolbar: some View {
@@ -199,42 +185,69 @@ struct ThreadTerminalDrawer: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 4) {
                         ForEach(drawer.groups) { group in
-                            let active = drawer.activeGroup?.id == group.id
-                            Button {
-                                if let pane = active ? drawer.activePane : group.panes.first {
-                                    drawer.select(pane)
-                                }
-                            } label: {
-                                Text("Terminal \(group.number)")
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(active ? Color.accentColor.opacity(0.16) : .clear,
-                                                in: RoundedRectangle(cornerRadius: 4))
-                            }
-                            .accessibilityAddTraits(active ? .isSelected : [])
-                            .accessibilityIdentifier("terminal-tab-\(group.number)")
+                            tab(group)
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
                 toolbarButton("New Terminal", icon: "plus", id: "new-terminal") {
-                    drawer.newTab(allocating: allocateNumber?())
+                    handle(.new, in: drawer.activePane)
                 }
                 toolbarButton("Split Terminal Horizontally", icon: "rectangle.split.2x1", id: "split-terminal-horizontal") {
-                    drawer.split(.horizontal, allocating: allocateNumber?())
+                    handle(.split, in: drawer.activePane)
                 }
                 .disabled(!drawer.canSplit)
                 toolbarButton("Split Terminal Vertically", icon: "rectangle.split.1x2", id: "split-terminal-vertical") {
-                    drawer.split(.vertical, allocating: allocateNumber?())
+                    handle(.splitVertical, in: drawer.activePane)
                 }
                 .disabled(!drawer.canSplit)
                 toolbarButton("Hide Terminal", icon: "chevron.down", id: "hide-terminal") { drawer.isOpen = false }
-                toolbarButton("Close Terminal", icon: "xmark", id: "close-terminal") { closingPane = drawer.activePane }
+                toolbarButton("Close Terminal", icon: "xmark", id: "close-terminal") {
+                    requestClose(drawer.activePane)
+                }
             }
             .font(.caption)
             .buttonStyle(.plain)
             .frame(height: TerminalDrawerHeight.toolbar)
             .padding(.horizontal, 12)
+        }
+    }
+
+    private func tab(_ group: ThreadTerminalDrawerState.Group) -> some View {
+        let active = drawer.activeGroup?.id == group.id
+        return HStack(spacing: 0) {
+            Button {
+                if let pane = active ? drawer.activePane : group.panes.first { drawer.select(pane) }
+            } label: {
+                Text("Terminal \(group.number)")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityAddTraits(active ? .isSelected : [])
+            .accessibilityIdentifier("terminal-tab-\(group.number)")
+            if group.panes.count == 1, let pane = group.panes.first {
+                toolbarButton("Close Terminal \(pane)", icon: "xmark", id: "close-terminal-pane-\(pane)") {
+                    requestClose(pane)
+                }
+                .font(.system(size: 9, weight: .medium))
+            }
+        }
+        .background(active ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .contextMenu {
+            ForEach(group.panes, id: \.self) { pane in
+                Button("Close Terminal \(pane)") { requestClose(pane) }
+                    .accessibilityIdentifier("close-drawer-pane-\(pane)")
+            }
+        }
+    }
+
+    private func handle(_ command: ThreadTerminal.Command, in pane: Int) {
+        switch command {
+        case .new: drawer.newTab(allocating: allocateNumber?())
+        case .split: drawer.split(.horizontal, allocating: allocateNumber?())
+        case .splitVertical: drawer.split(.vertical, allocating: allocateNumber?())
+        case .close: requestClose(pane)
         }
     }
 
@@ -244,7 +257,8 @@ struct ThreadTerminalDrawer: View {
         return ThreadTerminal(directory: drawer.id.path, number: pane, visible: presented,
                               focusRequest: presented && active ? drawer.focusRequest : nil,
                               onFocus: { if drawer.activePane != pane { drawer.select(pane) } },
-                              onCycle: { drawer.cycle(by: $0) })
+                              onCycle: { drawer.cycle(by: $0) },
+                              onCommand: { handle($0, in: pane) })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
                 Rectangle().strokeBorder(Color.accentColor.opacity(outlined ? 0.65 : 0))

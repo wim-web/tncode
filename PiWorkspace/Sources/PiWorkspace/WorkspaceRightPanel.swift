@@ -146,7 +146,7 @@ struct WorkspaceTerminalGroupView: View {
     let focusRequest: Int
     let select: (Int) -> Void
     let cycle: (Int) -> Bool
-    let command: (ThreadTerminal.Command) -> Void
+    let command: (ThreadTerminal.Command, Int) -> Void
     @State private var lastBounds = CGRect(x: 0, y: 0, width: 360, height: TerminalDrawerHeight.defaultContent)
 
     var body: some View {
@@ -161,7 +161,7 @@ struct WorkspaceTerminalGroupView: View {
                 ThreadTerminal(directory: directory, number: pane, visible: visible,
                                focusRequest: visible && active ? focusRequest : nil,
                                onFocus: { if !active { select(pane) } }, onCycle: cycle,
-                               identifier: "right-terminal-pane-\(pane)", onCommand: command)
+                               identifier: "right-terminal-pane-\(pane)", onCommand: { command($0, pane) })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay {
                         if active && group.panes.count > 1 {
@@ -188,6 +188,7 @@ struct WorkspacePanelTabs<AddButton: View>: View {
     let panel: WorkspaceRightPanelState
     let select: (WorkspacePanelTab) -> Void
     let close: ([WorkspacePanelTab]) -> Void
+    let closePane: (WorkspacePanelTab, Int) -> Void
     let move: (WorkspacePanelTab, WorkspacePanelTab) -> Void
     let hide: () -> Void
     var titleForTab: (WorkspacePanelTab) -> String = { $0.title }
@@ -207,6 +208,17 @@ struct WorkspacePanelTabs<AddButton: View>: View {
                         }
                     }
                     .scrollIndicators(.hidden)
+                    .background {
+                        PanelTabMiddleClick { point in
+                            guard let tab = panel.tabs.first(where: { tabFrames[$0]?.contains(point) == true }) else {
+                                return false
+                            }
+                            close([tab])
+                            return true
+                        }
+                        .accessibilityHidden(true)
+                    }
+                    .coordinateSpace(name: tabStrip)
                     .onChange(of: panel.selected, initial: true) { _, selected in
                         if let selected { scroll.scrollTo(selected) }
                     }
@@ -218,7 +230,6 @@ struct WorkspacePanelTabs<AddButton: View>: View {
             .padding(.horizontal, 8)
             Divider()
         }
-        .coordinateSpace(name: tabStrip)
         .onPreferenceChange(TabFrames.self) { tabFrames = $0 }
     }
 
@@ -258,11 +269,22 @@ struct WorkspacePanelTabs<AddButton: View>: View {
         )
         .contextMenu {
             Button("Close") { close([tab]) }
+                .accessibilityIdentifier("right-panel-tab-close")
             Button("Close Others") { close(panel.tabs.filter { $0 != tab }) }
+                .accessibilityIdentifier("right-panel-tab-close-others")
                 .disabled(panel.tabs.count <= 1)
             Button("Close to the Right") { close(toRight) }
+                .accessibilityIdentifier("right-panel-tab-close-to-right")
                 .disabled(toRight.isEmpty)
             Button("Close All") { close(panel.tabs) }
+                .accessibilityIdentifier("right-panel-tab-close-all")
+            if let group = panel.terminals[tab], group.panes.count > 1 {
+                Divider()
+                ForEach(group.panes, id: \.self) { pane in
+                    Button("Close Terminal \(pane)") { closePane(tab, pane) }
+                        .accessibilityIdentifier("close-right-panel-pane-\(pane)")
+                }
+            }
         }
     }
 
@@ -271,6 +293,40 @@ struct WorkspacePanelTabs<AddButton: View>: View {
         static func reduce(value: inout [WorkspacePanelTab: CGRect], nextValue: () -> [WorkspacePanelTab: CGRect]) {
             value.merge(nextValue(), uniquingKeysWith: { _, next in next })
         }
+    }
+}
+
+private struct PanelTabMiddleClick: NSViewRepresentable {
+    let closeTabAt: (CGPoint) -> Bool
+
+    final class Anchor: NSView {
+        override var isFlipped: Bool { true }
+    }
+
+    final class Coordinator {
+        var monitor: Any?
+        var closeTabAt: ((CGPoint) -> Bool)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let anchor = Anchor()
+        let coordinator = context.coordinator
+        coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) {
+            [weak anchor, weak coordinator] event in
+            guard event.buttonNumber == 2, let anchor, let window = anchor.window, event.window === window,
+                  window.attachedSheet == nil, NSApp.modalWindow == nil else { return event }
+            let point = anchor.convert(event.locationInWindow, from: nil)
+            return anchor.bounds.contains(point) && coordinator?.closeTabAt?(point) == true ? nil : event
+        }
+        return anchor
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.closeTabAt = closeTabAt }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
     }
 }
 

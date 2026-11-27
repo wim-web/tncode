@@ -46,6 +46,7 @@ enum SidebarPreference {
 enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
     case archiveConfirmation = "archive-confirmation"
+    case terminalCloseConfirmation = "terminal-close-confirmation"
     case archive
     case snoozeOptions = "snooze-options"
     case addProjectStartsIn = "add-project-starts-in"
@@ -77,6 +78,7 @@ enum SettingsAnchor: String {
 enum SettingsDeepLink: Equatable {
     case page(SettingsPage)
     case archiveConfirmation
+    case terminalCloseConfirmation
     case archivedThreads
     case licenses
     case version
@@ -108,6 +110,8 @@ enum SettingsDeepLink: Equatable {
             self = .version
         case ("settings", "/general#archive-confirmation"):
             self = .archiveConfirmation
+        case ("settings", "/general#terminal-close-confirmation"):
+            self = .terminalCloseConfirmation
         case ("settings", "/archived#archive"):
             self = .archivedThreads
         case ("settings", _):
@@ -130,7 +134,7 @@ enum SettingsDeepLink: Equatable {
     var page: SettingsPage {
         switch self {
         case .page(let page): page
-        case .archiveConfirmation: .general
+        case .archiveConfirmation, .terminalCloseConfirmation: .general
         case .archivedThreads: .archived
         case .licenses, .version: .about
         case .project: .project
@@ -142,6 +146,7 @@ enum SettingsDeepLink: Equatable {
         case .licenses: .licenses
         case .version: .appVersion
         case .archiveConfirmation: .archiveConfirmation
+        case .terminalCloseConfirmation: .terminalCloseConfirmation
         case .archivedThreads: .archive
         default: nil
         }
@@ -246,6 +251,8 @@ struct SettingsSearch {
         .init(page: .general, title: "General", keywords: "preferences sidebar threads"),
         .init(page: .general, anchor: .groupByProject, title: "Group by Project", keywords: "sidebar thread list grouping"),
         .init(page: .general, anchor: .archiveConfirmation, title: "Archive confirmation", keywords: "ask before thread confirm archiving"),
+        .init(page: .general, anchor: .terminalCloseConfirmation, title: "Terminal close confirmation",
+              keywords: "ask before delete stop process shell console history"),
         .init(page: .general, anchor: .addProjectStartsIn, title: "Add project starts in", keywords: "base directory folder browser path home"),
         .init(page: .threads, title: "Threads", keywords: "conversation preferences"),
         .init(page: .threads, anchor: .snoozeOptions, title: "Snooze options", keywords: "presets wake duration time weekday reset add remove"),
