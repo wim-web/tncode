@@ -57,6 +57,19 @@ final class BrowserPreviewTests: XCTestCase {
                        "https://duckduckgo.com/?q=fixture%20terms")
     }
 
+    func testUnfinishedCustomTemplateSurvivesReopenAndUsesDuckDuckGo() throws {
+        let suite = "BrowserSearchSettingsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let template = "https://example.test/search?q="
+        let edited = BrowserSearchSettings(engine: .custom, customURL: "  \(template)  ")
+        XCTAssertTrue(edited.save(to: defaults), "A custom template without %s should stay editable after relaunch.")
+        let loaded = BrowserSearchSettings.load(from: try XCTUnwrap(UserDefaults(suiteName: suite)))
+        XCTAssertEqual(loaded, BrowserSearchSettings(engine: .custom, customURL: template))
+        XCTAssertEqual(BrowserAddress.resolve("saved & reopened", searchSettings: loaded)?.absoluteString,
+                       "https://duckduckgo.com/?q=saved%20%26%20reopened")
+    }
+
     @MainActor
     func testAddressSubmissionUsesSavedEngineAndPreservesLoopbackURL() async throws {
         _ = NSApplication.shared

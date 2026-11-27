@@ -122,6 +122,26 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(saved.model.provider, .openai)
     }
 
+    func testBrowserSearchResetClearsTheSavedEngineAndTemplate() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let index = fixture.root.appendingPathComponent("workspace.json")
+        let before = try Data(contentsOf: index)
+        fixture.defaults.set("Keep this preference", forKey: "unrelated-preference")
+        try await fixture.press("settings-nav-browser")
+        try await fixture.expectControls("browser-custom-search-url")
+        XCTAssertEqual(BrowserSearchSettings.load(from: fixture.defaults).engine, .custom)
+        let reset = try XCTUnwrap(fixture.element("reset-browser-search-engine"), "The configured browser has no Reset search engine to default action.")
+        XCTAssertTrue(reset.accessibilityPerformPress?() == true)
+        try await fixture.until("Reset persisted DuckDuckGo and removed both custom controls") {
+            BrowserSearchSettings.load(from: fixture.defaults) == BrowserSearchSettings() &&
+                fixture.element("browser-custom-search-url") == nil && fixture.element("reset-browser-search-engine") == nil
+        }
+        XCTAssertEqual(BrowserSearchSettings.load(from: try XCTUnwrap(UserDefaults(suiteName: fixture.suite))), BrowserSearchSettings())
+        XCTAssertEqual(fixture.defaults.string(forKey: "unrelated-preference"), "Keep this preference")
+        XCTAssertEqual(try Data(contentsOf: index), before)
+    }
+
     func testNativeVersionSearchAndLinksKeepTheOpenSettingsDraft() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
