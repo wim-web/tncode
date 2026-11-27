@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { images, note } from "./fixtures/attachments.mjs";
+import { withCommitWritingFixture } from "./fixtures/commit-writing.mjs";
 import { withComposerModelFixture } from "./fixtures/composer-models.mjs";
 import { withComposerShortcutFixture } from "./fixtures/composer-shortcuts.mjs";
 import { withModelRoutingFixture } from "./fixtures/model-routing.mjs";
@@ -116,7 +117,7 @@ try {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   if (values["release-suite"]) {
-    await runReleaseSuite([withComposerModelFixture, withComposerShortcutFixture, withModelRoutingFixture, withSideChatFixture]);
+    await runReleaseSuite([withComposerModelFixture, withComposerShortcutFixture, withModelRoutingFixture, withSideChatFixture, withCommitWritingFixture]);
   } else {
     await runSwiftTests({});
   }
