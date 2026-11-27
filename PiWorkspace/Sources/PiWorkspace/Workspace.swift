@@ -187,6 +187,9 @@ struct Conversation: Codable, Identifiable {
     var sideChats: [SideChat]?
     // Pi session files do not identify the authenticated account. Imported sessions are read-only.
     var importedPiSessionID: String?
+    var sidebarAnchorAt: Date?
+    var sidebarPinOrder: String?
+    var sidebarActiveOrder: String?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -211,7 +214,9 @@ struct Conversation: Codable, Identifiable {
         composerText = nil
         composerAttachments = nil
         composerSubmission = nil
-        lastActiveAt = Date()
+        let now = Date()
+        sidebarAnchorAt = sidebarAnchorAt ?? lastActiveAt ?? now
+        lastActiveAt = now
         if threadShelf == .settled { shelf = .active }
         if !text.isEmpty, ["New thread", "New conversation"].contains(title) {
             title = String((text.split(whereSeparator: \.isNewline).first ?? Substring(text)).prefix(54))

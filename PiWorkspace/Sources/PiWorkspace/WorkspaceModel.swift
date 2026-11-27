@@ -1375,6 +1375,13 @@ final class WorkspaceModel: ObservableObject {
         SidebarProjectFilter(selection: Set(projects.filter { $0.inSidebarScope == true }.map(\.id)))
     }
 
+    var sidebarThreads: [SidebarThread] {
+        let filter = sidebarProjectFilter
+        let scope = filter.selection.isEmpty ? threadProjects : filter.projects(in: projects)
+        return SidebarThread.matching(in: scope, search: "", archived: showArchive)
+            .filter { $0.project.isScratch || showsInSidebar($0.thread) }
+    }
+
     func updateSidebarScope(_ edit: (inout SidebarProjectFilter) -> Void) {
         var filter = sidebarProjectFilter
         edit(&filter)
@@ -2299,10 +2306,84 @@ final class WorkspaceModel: ObservableObject {
               let project = workspace.projects.firstIndex(where: { $0.id == projectID }),
               let thread = workspace.projects[project].conversations.firstIndex(where: { $0.id == id }),
               !workspace.projects[project].conversations[thread].archived else { return }
-        save {
-            $0.projects[project].conversations[thread].shelf = shelf
-            if shelf == .pinned || shelf == .settled {
-                $0.projects[project].conversations[thread].snoozedUntil = nil
+        var changed = workspace.projects[project].conversations[thread]
+        guard changed.threadShelf != shelf else { return }
+        changeSidebarShelf(of: &changed, to: shelf)
+        if shelf == .pinned {
+            changed.sidebarPinOrder = SidebarThreadOrder.firstPin(among: threadProjects.flatMap(\.conversations))
+        }
+        save { $0.projects[project].conversations[thread] = changed }
+    }
+
+    private func changeSidebarShelf(of thread: inout Conversation, to shelf: ThreadShelf) {
+        if thread.threadShelf == .settled && shelf != .settled {
+            thread.sidebarAnchorAt = now()
+        }
+        thread.shelf = shelf
+        if shelf != .pinned { thread.sidebarPinOrder = nil }
+        if shelf == .settled { thread.sidebarActiveOrder = nil }
+        if shelf != .active { thread.snoozedUntil = nil }
+    }
+
+    func sidebarDragOrigin(for row: SidebarThread) -> SidebarThreadDragOrigin? {
+        guard !operationsInProgress, !showArchive, !showingWelcome, !showingSettings,
+              row.thread.isDraft != true, row.thread.worktreeLaunch == nil, row.thread.composerSubmission == nil else {
+            return nil
+        }
+        return SidebarThreadDragOrigin(projectID: row.project.id, threadID: row.id,
+                                       section: SidebarThreadSection(row.thread, at: snoozeClock),
+                                       snoozedUntil: row.thread.snoozedUntil,
+                                       projectScope: sidebarProjectFilter.selection)
+    }
+
+    func sidebarDragOrigin(threadID: UUID, in projectID: UUID) -> SidebarThreadDragOrigin? {
+        let selection = sidebarProjectFilter.selection
+        guard selection.isEmpty || selection.contains(projectID),
+              let project = threadProjects.first(where: { $0.id == projectID }),
+              let thread = project.conversations.first(where: { $0.id == threadID }),
+              !thread.archived, project.isScratch || showsInSidebar(thread) else { return nil }
+        return sidebarDragOrigin(for: SidebarThread(project: project, thread: thread))
+    }
+
+    func sidebarDropOrder(_ origin: SidebarThreadDragOrigin, at placement: SidebarThreadPlacement,
+                          settledExpanded: Bool) -> [UUID]? {
+        let rows = sidebarThreads
+        guard let source = rows.first(where: { $0.id == origin.threadID && $0.project.id == origin.projectID }),
+              sidebarDragOrigin(for: source) == origin else { return nil }
+        switch origin.section {
+        case .settled:
+            guard settledExpanded else { return nil }
+        case .snoozed:
+            guard workspace.snoozedShelfExpanded == true || conversation?.id == source.id else { return nil }
+        case .pinned, .active:
+            break
+        }
+        let shelf = rows.filter { SidebarThreadSection($0.thread, at: snoozeClock) == placement.shelf.section }
+        if case let .row(id) = placement.slot,
+           !shelf.contains(where: { $0.id == id && $0.thread.isDraft != true }) { return nil }
+        let visible = SidebarThreadOrder.arrange(shelf, on: placement.shelf).map(\.id)
+        return placement.order(moving: source.id, from: origin.section, among: visible)
+    }
+
+    func dropSidebarThread(_ origin: SidebarThreadDragOrigin, at placement: SidebarThreadPlacement,
+                           settledExpanded: Bool) -> Bool {
+        guard let order = sidebarDropOrder(origin, at: placement, settledExpanded: settledExpanded) else { return false }
+        let keys = SidebarThreadOrder.assignments(for: order, moving: origin.threadID,
+                                                  on: placement.shelf, threads: workspace.projects.flatMap(\.conversations))
+        return save { workspace in
+            for p in workspace.projects.indices {
+                for t in workspace.projects[p].conversations.indices {
+                    let id = workspace.projects[p].conversations[t].id
+                    guard let key = keys[id] else { continue }
+                    if id == origin.threadID && origin.section != placement.shelf.section {
+                        changeSidebarShelf(of: &workspace.projects[p].conversations[t], to: placement.shelf.threadShelf)
+                        if origin.section == .snoozed { workspace.projects[p].conversations[t].snoozedUntil = nil }
+                    }
+                    switch placement.shelf {
+                    case .pinned: workspace.projects[p].conversations[t].sidebarPinOrder = key
+                    case .active: workspace.projects[p].conversations[t].sidebarActiveOrder = key
+                    }
+                }
             }
         }
     }

@@ -83,6 +83,7 @@ struct WorkspaceView: View {
     @State private var focusAfterPromptLink: DraftProjectScope?
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
+    @StateObject private var sidebarThreadDrag = SidebarThreadDrag()
     @State private var targetingComposerDrop = false
     @State private var imagePreview: ChatImagePreview?
     @State private var filePreview: ChatAttachment.Opener?
@@ -265,11 +266,8 @@ struct WorkspaceView: View {
     private var filteredProjects: [Project] { projectFilter.projects(in: orderedProjects) }
     private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    private var threads: [SidebarThread] {
-        let scope = projectFilter.selection.isEmpty ? model.threadProjects : filteredProjects
-        return SidebarThread.matching(in: scope, search: "", archived: model.showArchive)
-            .filter { $0.project.isScratch || model.showsInSidebar($0.thread) }
-    }
+    private var threads: [SidebarThread] { model.sidebarThreads }
+    private var canReorderThreads: Bool { !grouped && searchTerm.isEmpty && !model.showArchive }
 
     private var rail: Color { colorScheme == .dark ? Color(white: 3 / 255) : Color(white: 0.955) }
     private var canvas: Color { colorScheme == .dark ? .black : Color(nsColor: .textBackgroundColor) }
@@ -937,6 +935,11 @@ struct WorkspaceView: View {
             if colorScheme == .dark { sidebarHeaderBackdrop }
         }
         .background(rail)
+        .onChange(of: canReorderThreads) { _, allowed in
+            if !allowed { sidebarThreadDrag.cancel() }
+        }
+        .onChange(of: projectFilter.selection) { _, _ in sidebarThreadDrag.cancel() }
+        .onDisappear { sidebarThreadDrag.cancel() }
         .task(id: search.key) {
             guard let key = search.key else { return }
             do {
@@ -1103,8 +1106,10 @@ struct WorkspaceView: View {
 
     private func sidebarShelves(_ threads: [SidebarThread]) -> SidebarShelves {
         let awake = threads.filter { $0.thread.snoozeStatus(at: model.snoozeClock)?.isSnoozed != true }
-        let active = model.showArchive ? threads : awake.filter { $0.thread.threadShelf == .active }
-        let pinned = model.showArchive ? [] : awake.filter { $0.thread.threadShelf == .pinned }
+        let activeRows = awake.filter { $0.thread.threadShelf == .active }
+        let active = model.showArchive ? threads : grouped ? activeRows : SidebarThreadOrder.arrange(activeRows, on: .active)
+        let pinned = model.showArchive ? [] : SidebarThreadOrder.arrange(
+            awake.filter { $0.thread.threadShelf == .pinned }, on: .pinned)
         let settled = model.showArchive ? [] : awake.filter { $0.thread.threadShelf == .settled }
         let snoozed = threads.compactMap { link -> SnoozedRow? in
             guard case let .snoozed(until: deadline) = link.thread.snoozeStatus(at: model.snoozeClock) else { return nil }
@@ -1129,10 +1134,10 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private func threadShelves(_ shelves: SidebarShelves) -> some View {
-        if !shelves.pinned.isEmpty {
-            Text("Pinned").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                .padding(.leading, 7).padding(.bottom, 4)
-            ForEach(shelves.pinned) { link in threadRow(link, showProject: true) }
+        let dragging = canReorderThreads && sidebarThreadDrag.isDragging
+        if !shelves.pinned.isEmpty || dragging {
+            shelfDropTarget(.init(shelf: .pinned, slot: .first), label: "Pinned", id: "sidebar-pinned-drop")
+            ForEach(shelves.pinned) { link in threadRow(link, showProject: true, reorder: canReorderThreads) }
         }
         if grouped {
             ForEach(shelves.active) { link in threadRow(link, showProject: true) }
@@ -1140,7 +1145,16 @@ struct WorkspaceView: View {
                 projectGroup(group.project, items: group.rows)
             }
         } else {
-            ForEach(shelves.active) { link in threadRow(link, showProject: true) }
+            if dragging {
+                if !shelves.pinned.isEmpty {
+                    shelfDropTarget(.init(shelf: .pinned, slot: .last), id: "sidebar-pinned-end-drop")
+                }
+                shelfDropTarget(.init(shelf: .active, slot: .first), label: "Active", id: "sidebar-active-drop")
+            }
+            ForEach(shelves.active) { link in threadRow(link, showProject: true, reorder: canReorderThreads) }
+            if dragging && !shelves.active.isEmpty {
+                shelfDropTarget(.init(shelf: .active, slot: .last), id: "sidebar-active-end-drop")
+            }
         }
         if !shelves.snoozed.isEmpty {
             let expanded = model.workspace.snoozedShelfExpanded == true
@@ -1158,18 +1172,54 @@ struct WorkspaceView: View {
             .accessibilityIdentifier("snoozed-shelf")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             ForEach(visibleSnoozedRows(shelves.snoozed)) { row in
-                threadRow(row.link, showProject: true, status: .snoozed(until: row.deadline))
+                threadRow(row.link, showProject: true, status: .snoozed(until: row.deadline),
+                          reorder: canReorderThreads)
             }
         }
         if !shelves.settled.isEmpty {
             DisclosureGroup(isExpanded: $settledExpanded) {
-                ForEach(shelves.settled) { link in threadRow(link, showProject: true) }
+                ForEach(shelves.settled) { link in threadRow(link, showProject: true, reorder: canReorderThreads) }
             } label: {
                 Text("Settled").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
             .accessibilityIdentifier("settled-shelf")
             .padding(.top, 6)
             .padding(.leading, 5)
+        }
+    }
+
+    private func sidebarDrop(at placement: SidebarThreadPlacement) -> SidebarThreadDrag.Destination? {
+        guard canReorderThreads else { return nil }
+        return .init(drag: sidebarThreadDrag, placement: placement, order: { origin in
+            model.sidebarDropOrder(origin, at: placement, settledExpanded: settledExpanded)
+        }, receive: { origin in
+            model.dropSidebarThread(origin, at: placement, settledExpanded: settledExpanded)
+        })
+    }
+
+    private func shelfDropTarget(_ placement: SidebarThreadPlacement, label: String? = nil, id: String) -> some View {
+        Group {
+            if let label {
+                Text(label).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 7).padding(.bottom, 4)
+                    .accessibilityIdentifier(id)
+            } else {
+                Color.clear.frame(height: 8)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(placement.shelf == .pinned ? "End of Pinned" : "End of Active")
+                    .accessibilityIdentifier(id)
+            }
+        }
+        .background(alignment: .bottom) {
+            if sidebarThreadDrag.insertion?.placement == placement {
+                Rectangle().fill(accent).frame(height: 2)
+            }
+        }
+        .background {
+            AttachmentDropDestination(canDrop: false, perform: { _ in false }, isTargeted: { _ in },
+                                      threadDrop: sidebarDrop(at: placement), receivesAttachments: false)
+                .accessibilityHidden(true)
         }
     }
 
@@ -1239,21 +1289,31 @@ struct WorkspaceView: View {
     }
 
     private func threadRow(_ link: SidebarThread, showProject: Bool, highlighted: Bool = false,
-                           status: ThreadSnoozeStatus? = nil) -> some View {
+                           status: ThreadSnoozeStatus? = nil, reorder: Bool = false) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
         let acceptsAttachments = !link.thread.archived && link.thread.importedPiSessionID == nil && link.thread.worktreeLaunch == nil &&
             link.thread.composerSubmission == nil && (!model.operationsInProgress || selected)
         return HStack(spacing: 5) {
-            threadSelectionButton(link, showProject: showProject, emphasized: emphasized, acceptsAttachments: acceptsAttachments)
+            threadSelectionButton(link, showProject: showProject, emphasized: emphasized,
+                                  acceptsAttachments: acceptsAttachments, reorder: reorder)
             snoozeRowStatus(link, status: status ?? link.thread.snoozeStatus(at: model.snoozeClock))
         }
         .accessibilityElement(children: .contain)
     }
 
     private func threadSelectionButton(_ link: SidebarThread, showProject: Bool, emphasized: Bool,
-                                       acceptsAttachments: Bool) -> some View {
+                                       acceptsAttachments: Bool, reorder: Bool) -> some View {
         let selected = model.conversation?.id == link.id
+        let origin = reorder ? model.sidebarDragOrigin(for: link) : nil
+        let source: SidebarThreadDrag.Source? = origin.map { _ in
+            .init(drag: sidebarThreadDrag, origin: {
+                model.sidebarDragOrigin(threadID: link.id, in: link.project.id)
+            })
+        }
+        let drop = origin?.section.orderedShelf.flatMap {
+            sidebarDrop(at: .init(shelf: $0, slot: .row(link.id)))
+        }
         return Button {
             openThread(link)
         } label: {
@@ -1284,7 +1344,19 @@ struct WorkspaceView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
         .contextMenu { threadActions(link.thread, project: link.project, fromSidebar: true) }
-        .attachmentDropDestination(canDrop: acceptsAttachments || !model.operationsInProgress) { items in
+        .overlay(alignment: .topLeading) {
+            if let drop, let insertion = sidebarThreadDrag.insertion, insertion.placement == drop.placement {
+                VStack(spacing: 0) {
+                    if insertion.afterRow { Spacer(minLength: 0) }
+                    Rectangle().fill(accent).frame(height: 2)
+                    if !insertion.afterRow { Spacer(minLength: 0) }
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+        .attachmentDropDestination(canDrop: acceptsAttachments || !model.operationsInProgress,
+                                   threadSource: source, threadDrop: drop) { items in
             let urls = items.compactMap(ComposerAttachmentInput.fileURL(from:))
             if !model.operationsInProgress && urls.count == items.count &&
                 urls.allSatisfy({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) {

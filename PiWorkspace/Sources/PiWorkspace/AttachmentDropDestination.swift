@@ -1,10 +1,14 @@
 import SwiftUI
 
 extension View {
-    func attachmentDropDestination(canDrop: Bool, perform: @escaping ([NSPasteboardItem]) -> Bool,
+    func attachmentDropDestination(canDrop: Bool, threadSource: SidebarThreadDrag.Source? = nil,
+                                   threadDrop: SidebarThreadDrag.Destination? = nil,
+                                   perform: @escaping ([NSPasteboardItem]) -> Bool,
                                    isTargeted: @escaping (Bool) -> Void) -> some View {
         background {
-            AttachmentDropDestination(canDrop: canDrop, perform: perform, isTargeted: isTargeted)
+            AttachmentDropDestination(canDrop: canDrop, perform: perform, isTargeted: isTargeted,
+                                      threadSource: threadSource, threadDrop: threadDrop)
+                .id(threadDrop?.placement)
                 .accessibilityHidden(true)
         }
     }
@@ -21,15 +25,27 @@ struct AttachmentDropDestination: NSViewRepresentable {
     let perform: ([NSPasteboardItem]) -> Bool
     let isTargeted: (Bool) -> Void
     var fileMentionDrop: FileMentionDrop?
+    var threadSource: SidebarThreadDrag.Source?
+    var threadDrop: SidebarThreadDrag.Destination?
+    var receivesAttachments = true
 
     static let types = ComposerAttachmentInput.contentTypes.map { NSPasteboard.PasteboardType($0.identifier) }
     var dragTypes: [NSPasteboard.PasteboardType] {
-        if fileMentionDrop != nil { return [WorkspaceFileMentionDrag.type] + Self.types }
-        return Self.types
+        var types = receivesAttachments ? Self.types : []
+        if fileMentionDrop != nil { types.append(WorkspaceFileMentionDrag.type) }
+        if threadDrop != nil { types.append(SidebarThreadDrag.type) }
+        return types
+    }
+
+    private func isThreadDrag(_ pasteboard: NSPasteboard) -> Bool {
+        pasteboard.availableType(from: [.fileURL]) == nil &&
+            pasteboard.availableType(from: [SidebarThreadDrag.type]) != nil
     }
 
     func operation(for sender: NSDraggingInfo) -> NSDragOperation? {
         let pasteboard = sender.draggingPasteboard
+        if isThreadDrag(pasteboard) { return threadDrop?.operation(for: sender) ?? [] }
+        guard receivesAttachments else { return nil }
         let allowsCopy = canDrop && sender.draggingSourceOperationMask.contains(.copy)
         let accepts: Bool
         if pasteboard.types?.contains(WorkspaceFileMentionDrag.type) == true {
@@ -47,6 +63,7 @@ struct AttachmentDropDestination: NSViewRepresentable {
         defer { isTargeted(false) }
         guard !operation.isEmpty else { return false }
         let pasteboard = sender.draggingPasteboard
+        if isThreadDrag(pasteboard) { return threadDrop?.perform(sender) == true }
         if pasteboard.types?.contains(WorkspaceFileMentionDrag.type) == true {
             guard let id = fileMentionToken(from: pasteboard) else { return false }
             return fileMentionDrop?.receive(id) == true
@@ -66,17 +83,27 @@ struct AttachmentDropDestination: NSViewRepresentable {
 
     func makeNSView(context: Context) -> Destination {
         let view = Destination()
-        view.registerForDraggedTypes(dragTypes)
         view.setAccessibilityElement(false)
         return view
     }
 
     func updateNSView(_ view: Destination, context: Context) {
+        if Set(view.registeredDraggedTypes) != Set(dragTypes) { view.registerForDraggedTypes(dragTypes) }
+        if view.source?.drag !== threadSource?.drag {
+            view.source?.drag.removeSource(view)
+            threadSource?.drag.addSource(view)
+        }
         view.target = self
+    }
+
+    static func dismantleNSView(_ view: Destination, coordinator: ()) {
+        view.source?.drag.removeSource(view)
+        view.target = nil
     }
 
     final class Destination: NSView {
         var target: AttachmentDropDestination?
+        var source: SidebarThreadDrag.Source? { target?.threadSource }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -94,6 +121,7 @@ struct AttachmentDropDestination: NSViewRepresentable {
 
         override func draggingExited(_ sender: NSDraggingInfo?) {
             target?.isTargeted(false)
+            if let drop = target?.threadDrop { drop.drag.clearTarget(drop.placement) }
         }
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
