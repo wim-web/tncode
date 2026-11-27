@@ -659,6 +659,7 @@ final class WorkspaceModel: ObservableObject {
     var projects: [Project] { threadProjects.filter { !$0.isScratch } }
     var project: Project? { workspace.activeProject }
     var effectiveModel: ModelSettings { workspace.effectiveModel }
+    var commitWritingSettings: CommitWritingSettings { workspace.commitWriting ?? CommitWritingSettings() }
     var conversation: Conversation? {
         guard let project else { return nil }
         return project.conversations.first { $0.id == project.selectedConversation }
@@ -2702,24 +2703,37 @@ final class WorkspaceModel: ObservableObject {
         return try await runGitMutation(operation)
     }
 
-    func generateCommitSubject(_ patch: String, in directory: String, settings: ModelSettings) async throws -> String {
+    func saveCommitWritingSettings(_ settings: CommitWritingSettings) throws {
+        var settings = settings
+        settings.customInstructions = settings.customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        settings.writerModel = try settings.writerModel?.validated()
+        guard settings != commitWritingSettings else { return }
+        var updated = workspace
+        updated.commitWriting = settings == CommitWritingSettings() ? nil : settings
+        try persist(updated)
+    }
+
+    func generateCommitMessage(_ context: GitWorkspace.CommitContext, writing: CommitWritingSettings,
+                               inheritedModel: ModelSettings) async throws -> String {
         guard let store else { throw WorkspaceError("Open a workspace before generating a commit message.") }
-        let config = try settings.validated()
+        let config = try (writing.writerModel ?? inheritedModel).validated()
         try Task.checkCancellation()
-        let worker = try makeProcess(store.config, directory)
+        let worker = try makeProcess(store.config, context.checkout.root)
         defer { worker.close() }
         let (events, input) = AsyncStream<PiEvent>.makeStream()
         defer { input.finish() }
         worker.onEvent = { input.yield($0) }
         worker.onClose = { input.finish() }
-        try worker.send(GenerateCommitSubject(config: config, patch: patch))
+        try worker.send(GenerateCommitMessage(config: config, patch: context.patch, style: writing.style,
+                                              instructions: writing.style == .custom ? writing.customInstructions : nil,
+                                              relatedSubjects: context.relatedSubjects))
         for await event in events {
             try Task.checkCancellation()
             switch event {
             case let .credential(id, read):
                 try replyToCredential(id, read: read, account: config.account, worker: worker)
-            case let .commitSubject(subject):
-                return subject
+            case let .commitMessage(message):
+                return message
             case let .fatal(message):
                 throw WorkspaceError(message)
             default:
@@ -3470,7 +3484,7 @@ final class WorkspaceModel: ObservableObject {
                 self.error = error.localizedDescription
                 queueDelivery.paused = true
             }
-        case .commitSubject:
+        case .commitMessage:
             break
         case let .forked(threadID, error):
             finishFork(threadID, failure: error)

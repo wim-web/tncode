@@ -70,7 +70,8 @@ const server = createServer(async (req, response) => {
       choices: [{ index: 0, delta, finish_reason }],
     }) + "\n\n";
     response.writeHead(200, { "Content-Type": "text/event-stream" }).end(
-      chunk({ role: "assistant", content: subject }, null) + chunk({}, "stop") + "data: [DONE]\n\n");
+      chunk({ role: "assistant", content: JSON.stringify({ subject, body: "" }) }, null) +
+      chunk({}, "stop") + "data: [DONE]\n\n");
   };
   requests.push(request);
   if (mode === "deny") response.writeHead(403, { "Content-Type": "application/json" })

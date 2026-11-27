@@ -31,7 +31,7 @@ enum PiEvent: Decodable {
     case compactionSkipped(turnID: UUID, queuedID: UUID)
     case forked(threadID: UUID, error: String?)
     case finished(turnID: UUID, [ChatMessage], error: String?)
-    case commitSubject(String)
+    case commitMessage(String)
     case fatal(String)
 
     private enum Field: String, CodingKey {
@@ -40,7 +40,7 @@ enum PiEvent: Decodable {
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
         case credential, modelCatalog, ready, history, sentImage, sentFile, partial, activity, toolApproval, finished, fatal
-        case agentQuestion, agentQuestionEnded, agentQuestionRejected, commitSubject
+        case agentQuestion, agentQuestionEnded, agentQuestionRejected, commitMessage
         case inputMode, queueRejected, compactionSkipped, forked
     }
     private enum Operation: String, Decodable { case exists, read }
@@ -89,7 +89,7 @@ enum PiEvent: Decodable {
             self = .finished(turnID: try fields.decode(UUID.self, forKey: .turnID),
                              try fields.decode([ChatMessage].self, forKey: .messages),
                              error: try fields.decodeIfPresent(String.self, forKey: .error))
-        case .commitSubject: self = .commitSubject(try fields.decode(String.self, forKey: .text))
+        case .commitMessage: self = .commitMessage(try fields.decode(String.self, forKey: .text))
         case .fatal: self = .fatal(try fields.decode(String.self, forKey: .error))
         }
     }
@@ -146,10 +146,13 @@ struct SendQueuedInput: Encodable {
     var attachments: [ComposerAttachment]?
 }
 struct CancelPrompt: Encodable { let type = "cancel"; let turnID: UUID }
-struct GenerateCommitSubject: Encodable {
-    let type = "generateCommitSubject"
+struct GenerateCommitMessage: Encodable {
+    let type = "generateCommitMessage"
     let config: ModelSettings
     let patch: String
+    let style: CommitWritingSettings.Style
+    let instructions: String?
+    let relatedSubjects: String
 }
 
 struct CredentialResult: Encodable {

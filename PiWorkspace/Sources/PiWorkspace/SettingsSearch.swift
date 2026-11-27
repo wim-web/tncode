@@ -2,7 +2,8 @@ import Combine
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, threads, appearance, chat, project, model, worktrees, usage, browser, archived, about
+    case general, threads, appearance, chat, project, model, sourceControl = "source-control"
+    case worktrees, usage, browser, archived, about
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .chat: "Chat"
         case .project: "Project Overview"
         case .model: "Model Settings"
+        case .sourceControl: "Source Control"
         case .worktrees: "Worktrees"
         case .usage: "Usage"
         case .browser: "Browser Settings"
@@ -30,6 +32,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .chat: "bubble.left"
         case .project: "folder"
         case .model: "cpu"
+        case .sourceControl: "arrow.triangle.branch"
         case .worktrees: "arrow.triangle.branch"
         case .usage: "chart.bar"
         case .browser: "globe"
@@ -68,6 +71,8 @@ enum SettingsAnchor: String {
     case apiKey = "key-input"
     case removeKey = "remove-api-key"
     case resetModelOverride = "reset-model-override"
+    case commitWritingStyle = "commit-writing-style"
+    case commitWriterModel = "source-control-writer-model"
     case searchEngine = "browser-search-engine"
     case customSearchURL = "browser-custom-search-url"
     case appVersion = "app-version"
@@ -86,7 +91,7 @@ enum SettingsDeepLink: Equatable {
 
     private static let pages: [String: SettingsPage] = [
         "": .general, "/": .general, "/general": .general, "/threads": .threads,
-        "/appearance": .appearance, "/chat": .chat, "/model": .model,
+        "/appearance": .appearance, "/chat": .chat, "/model": .model, "/source-control": .sourceControl,
         "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser, "/archived": .archived, "/about": .about
     ]
 
@@ -291,6 +296,9 @@ struct SettingsSearch {
         .init(page: .model, anchor: .apiKey, title: "API key", keywords: "provider credentials authentication keychain"),
         .init(page: .model, anchor: .removeKey, title: "Remove saved key", keywords: "delete API key credentials"),
         .init(page: .model, anchor: .resetModelOverride, title: "Reset to Workspace default", keywords: "project override restore inherited model"),
+        .init(page: .sourceControl, title: "Source Control", keywords: "git commits"),
+        .init(page: .sourceControl, anchor: .commitWritingStyle, title: "Commit writing style", keywords: "git repository conventional commits custom instructions"),
+        .init(page: .sourceControl, anchor: .commitWriterModel, title: "Source control writer model", keywords: "git commit model provider inheritance override"),
         .init(page: .worktrees, title: "Worktrees", keywords: "checkout storage"),
         .init(page: .worktrees, anchor: .worktreeLocation, title: "Worktree location", keywords: "folder directory path drive external disk"),
         .init(page: .worktrees, anchor: .startFromRemote, title: "Start from remote", keywords: "new worktrees default origin upstream branch fetch"),

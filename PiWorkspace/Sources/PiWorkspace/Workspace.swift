@@ -409,6 +409,7 @@ struct Workspace: Codable {
     var selectedProject: UUID?
     var lastUsedProject: UUID?
     var model = ModelSettings()
+    var commitWriting: CommitWritingSettings?
     var welcomeCompleted: Bool?
     var addProjectBaseDirectory: String?
     var confirmThreadArchive: Bool?

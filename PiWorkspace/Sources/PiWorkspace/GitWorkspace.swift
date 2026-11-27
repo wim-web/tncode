@@ -706,6 +706,7 @@ struct GitWorkspace: Sendable {
         let paths: Set<String>
         let tree: Data
         let patch: String
+        let relatedSubjects: String
     }
 
     func verifyCheckoutRevision(_ checkout: GitCheckoutRevision) async throws {
@@ -719,7 +720,8 @@ struct GitWorkspace: Sendable {
         try Task.checkCancellation()
     }
 
-    func commitContext(paths: Set<String>, checkout: GitCheckoutRevision) async throws -> CommitContext {
+    func commitContext(paths: Set<String>, checkout: GitCheckoutRevision, includeRelatedSubjects: Bool = false)
+        async throws -> CommitContext {
         try await verifyCheckoutRevision(checkout)
         let root = checkout.root
         let selection = try await commitSelection(paths, in: root)
@@ -732,10 +734,22 @@ struct GitWorkspace: Sendable {
             "diff", "--cached", "--patch", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
             "--ignore-submodules=none", "--submodule=short"
         ] + (checkout.head.map { [$0] } ?? []), in: root, index: index, outputLimit: 12_288, cancellable: true)
+        var relatedSubjects = ""
+        if includeRelatedSubjects, let head = checkout.head {
+            let args = ["log", "-n", "20", "--no-merges", "--no-show-signature", "--format=%s", head, "--"]
+            if let history = try? await run(args + selection.paths.sorted(), in: root, outputLimit: 4_096,
+                                            cancellable: true) {
+                relatedSubjects = String(decoding: history.output.bytes, as: UTF8.self)
+                if history.output.truncated, let end = relatedSubjects.lastIndex(of: "\n") {
+                    relatedSubjects = String(relatedSubjects[..<end])
+                }
+            }
+        }
         try await verifyCheckoutRevision(checkout)
         let text = String(decoding: patch.output.bytes, as: UTF8.self)
         return CommitContext(checkout: checkout, paths: paths, tree: tree,
-                             patch: text + (patch.output.truncated ? "\n[Diff truncated]" : ""))
+                             patch: text + (patch.output.truncated ? "\n[Diff truncated]" : ""),
+                             relatedSubjects: relatedSubjects.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private func selectedCommitTree(_ paths: Set<String>, checkout: GitCheckoutRevision, in scratch: URL)

@@ -629,7 +629,8 @@ struct SourceControlView: View {
 
     private func generateAndCommit(_ paths: Set<String>, checkout: GitChangesCheckout) {
         let git = GitWorkspace(path: directory)
-        let settings = model.effectiveModel
+        let inheritedModel = model.effectiveModel
+        let writing = model.commitWritingSettings
         let revision = model.repositoryRevision
         func verifyLocation() throws {
             try Task.checkCancellation()
@@ -643,12 +644,13 @@ struct SourceControlView: View {
         commitGeneration = Task {
             defer { commitGeneration = nil }
             do {
-                let context = try await git.commitContext(paths: paths, checkout: checkout.revision)
+                let context = try await git.commitContext(paths: paths, checkout: checkout.revision,
+                                                          includeRelatedSubjects: writing.style == .repository)
                 try verifyLocation()
-                let subject = try await model.generateCommitSubject(context.patch, in: checkout.root, settings: settings)
+                let message = try await model.generateCommitMessage(context, writing: writing, inheritedModel: inheritedModel)
                 try verifyLocation()
                 try await model.performGitMutation {
-                    try await git.commit(message: subject, paths: paths, generatedFrom: context)
+                    try await git.commit(message: message, paths: paths, generatedFrom: context)
                 }
                 commitMessage = ""
             } catch is CancellationError {

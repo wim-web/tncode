@@ -262,6 +262,8 @@ struct SettingsView: View {
                 ModelSettingsView(model: model, draft: modelDraft, settingsFocus: $focus)
                     .id(request.projectID)
             }
+        case .sourceControl:
+            CommitWritingSettingsView(model: model, settingsFocus: $focus)
         case .worktrees:
             worktreeDirectorySetting
             Divider()
