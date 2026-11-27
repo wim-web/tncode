@@ -174,6 +174,11 @@ async function receive(run, type, result, turnID) {
       result.credentialOperations.push(event.operation);
       const credential = event.operation === "read" ? { key } : { exists: true };
       send(run, { type: "credentialResult", requestID: event.requestID, ...credential });
+    } else if (event.type === "modelCatalog") {
+      assert.equal(type, "ready");
+      assert.equal(result.catalogProviders, undefined, "The worker published its startup catalog twice.");
+      result.catalogProviders = Object.keys(event.models).sort();
+      assert.deepEqual(result.catalogProviders, ["anthropic", "openai"]);
     } else if (event.type === "inputMode") {
       assert(turnID && event.turnID.toLowerCase() === turnID);
       assert(["steer", "waiting"].includes(event.mode));
