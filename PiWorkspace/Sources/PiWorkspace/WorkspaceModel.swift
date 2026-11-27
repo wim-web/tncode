@@ -928,6 +928,15 @@ final class WorkspaceModel: ObservableObject {
         try persist(updated)
     }
 
+    var confirmsThreadArchive: Bool { workspace.confirmThreadArchive ?? false }
+
+    func updateArchiveConfirmation(_ enabled: Bool) throws {
+        guard enabled != confirmsThreadArchive else { return }
+        var updated = workspace
+        updated.confirmThreadArchive = enabled ? true : nil
+        try persist(updated)
+    }
+
     func updateNewWorktreesStartFromRemote(_ enabled: Bool) throws {
         guard workspace.startNewWorktreesFromRemote != enabled else { return }
         var updated = workspace
@@ -1284,14 +1293,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func startScratchThread() {
-        startScratchThread(updating: { _ in })
-    }
-
-    private func startScratchThread(updating edit: (inout Workspace) -> Void) {
         guard !operationsInProgress, store != nil else { return }
         do {
             let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
-            try openScratchDraft(thread, updating: edit)
+            try openScratchDraft(thread, updating: { _ in })
         } catch {
             self.error = error.localizedDescription
         }
@@ -2122,19 +2127,22 @@ final class WorkspaceModel: ObservableObject {
         conversation?.id != id || (!operationsInProgress && queueEdit == nil)
     }
 
-    func archiveConversation(_ id: UUID, in projectID: UUID, archived: Bool) {
-        guard canChangeArchive(for: id), let p = workspace.projects.firstIndex(where: { $0.id == projectID }),
+    func archiveConversation(_ id: UUID, in projectID: UUID, archived: Bool) throws {
+        guard canChangeArchive(for: id),
+              let p = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }),
               workspace.projects[p].conversations[t].archived != archived else { return }
         let isOpen = project?.id == projectID && conversation?.id == id
         if archived && isOpen && workspace.projects[p].isScratch {
-            startScratchThread(updating: { $0.projects[p].conversations[t].archived = true })
+            let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
+            try openScratchDraft(thread, updating: { $0.projects[p].conversations[t].archived = true })
             return
         }
-        guard save({
-            $0.projects[p].conversations[t].archived = archived
-            if archived && isOpen { $0.projects[p].selectDraft() }
-        }), isOpen else { return }
+        var updated = workspace
+        updated.projects[p].conversations[t].archived = archived
+        if archived && isOpen { updated.projects[p].selectDraft() }
+        try persist(updated)
+        guard isOpen else { return }
         showArchive = false
         if archived { connect() }
     }

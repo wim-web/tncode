@@ -157,7 +157,7 @@ final class ThreadSnoozeTests: XCTestCase {
             try model.snooze(fixture.pinned, amount: "1", unit: .minutes)
             try model.snooze(fixture.settled, amount: "1", unit: .minutes)
             try model.snooze(fixture.archived, amount: "1", unit: .minutes)
-            model.archiveConversation(fixture.archived.threadID, in: fixture.archived.projectID, archived: true)
+            try model.archiveConversation(fixture.archived.threadID, in: fixture.archived.projectID, archived: true)
             fixture.now = deadline.addingTimeInterval(-0.001)
             model.refreshSnoozes()
             XCTAssertEqual(model.nextSnoozeUpdate, deadline)

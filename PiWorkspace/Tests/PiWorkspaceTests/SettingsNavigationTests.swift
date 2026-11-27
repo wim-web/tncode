@@ -161,6 +161,33 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.expectLicenses()
     }
 
+    func testNativeArchiveConfirmationSearchLinkAndReset() async throws {
+        let appearance = try XCTUnwrap(URL(string: "pi-workspace://settings/appearance"))
+        let archive = try XCTUnwrap(URL(string: "pi-workspace://settings/general#archive-confirmation"))
+        let fixture = try Fixture(link: appearance)
+        defer { fixture.close() }
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        try await fixture.typeQuery("archive confirmation", in: search)
+        try await fixture.press("settings-result-archive-confirmation")
+        try await fixture.expectControls("settings-heading-general", "archive-confirmation")
+        XCTAssertFalse(fixture.model.confirmsThreadArchive)
+        XCTAssertNil(fixture.element("reset-archive-confirmation"))
+
+        try await fixture.press("archive-confirmation")
+        try await fixture.expectControls("reset-archive-confirmation")
+        XCTAssertTrue(fixture.model.confirmsThreadArchive)
+        let otherRoot = fixture.root.appendingPathComponent("other-workspace")
+        let otherWorkspace = WorkspaceModel(root: otherRoot, keychainService: fixture.suite)
+        XCTAssertNil(otherWorkspace.startupFailure)
+        XCTAssertFalse(otherWorkspace.confirmsThreadArchive)
+        try await fixture.press("settings-nav-threads")
+        XCTAssertTrue(fixture.model.openSettingsLink(archive))
+        try await fixture.expectControls("settings-heading-general", "archive-confirmation", "reset-archive-confirmation")
+        XCTAssertEqual(fixture.model.settingsRequest?.destination.anchor, .archiveConfirmation)
+        try await fixture.press("reset-archive-confirmation")
+        try await fixture.until("Reset restores off") { !fixture.model.confirmsThreadArchive }
+    }
+
     func testSecondLinkBeforeSheetPresentationOpensLatestDestination() async throws {
         let first = try XCTUnwrap(URL(string: "pi-workspace://settings/appearance"))
         let second = try XCTUnwrap(URL(string: "pi-workspace://settings/open-source-licenses"))
@@ -177,6 +204,9 @@ final class SettingsNavigationTests: XCTestCase {
             ("pi-workspace://settings", .page(.general)),
             ("pi-workspace://settings/", .page(.general)),
             ("pi-workspace://settings/general", .page(.general)),
+            ("pi-workspace://settings/general#archive-confirmation", .archiveConfirmation),
+            ("pi-workspace://settings/threads#archive-confirmation", nil),
+            ("pi-workspace://settings/general?#archive-confirmation", nil),
             ("pi-workspace://settings/appearance", .page(.appearance)),
             ("pi-workspace://settings/chat", .page(.chat)),
             ("pi-workspace://usage", .page(.usage)),

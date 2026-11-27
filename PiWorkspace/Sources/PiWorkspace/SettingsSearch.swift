@@ -43,6 +43,7 @@ enum SidebarPreference {
 
 enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
+    case archiveConfirmation = "archive-confirmation"
     case snoozeOptions = "snooze-options"
     case addProjectStartsIn = "add-project-starts-in"
     case worktreeLocation = "storage-worktrees-location"
@@ -72,6 +73,7 @@ enum SettingsAnchor: String {
 
 enum SettingsDeepLink: Equatable {
     case page(SettingsPage)
+    case archiveConfirmation
     case licenses
     case version
     case project(UUID)
@@ -100,6 +102,8 @@ enum SettingsDeepLink: Equatable {
             self = .licenses
         case ("settings", "/about#app-version"):
             self = .version
+        case ("settings", "/general#archive-confirmation"):
+            self = .archiveConfirmation
         case ("settings", _):
             if let page = Self.pages[String(route)] {
                 self = .page(page)
@@ -120,6 +124,7 @@ enum SettingsDeepLink: Equatable {
     var page: SettingsPage {
         switch self {
         case .page(let page): page
+        case .archiveConfirmation: .general
         case .licenses, .version: .about
         case .project: .project
         }
@@ -129,6 +134,7 @@ enum SettingsDeepLink: Equatable {
         switch self {
         case .licenses: .licenses
         case .version: .appVersion
+        case .archiveConfirmation: .archiveConfirmation
         default: nil
         }
     }
@@ -231,6 +237,7 @@ struct SettingsSearch {
     private static let index: [SettingsSearchResult] = [
         .init(page: .general, title: "General", keywords: "preferences sidebar threads"),
         .init(page: .general, anchor: .groupByProject, title: "Group by Project", keywords: "sidebar thread list grouping"),
+        .init(page: .general, anchor: .archiveConfirmation, title: "Archive confirmation", keywords: "ask before thread confirm archiving"),
         .init(page: .general, anchor: .addProjectStartsIn, title: "Add project starts in", keywords: "base directory folder browser path home"),
         .init(page: .threads, title: "Threads", keywords: "conversation preferences"),
         .init(page: .threads, anchor: .snoozeOptions, title: "Snooze options", keywords: "presets wake duration time weekday reset add remove"),

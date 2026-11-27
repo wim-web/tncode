@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var browserDraft: BrowserSearchSettings
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
+    @State private var archiveConfirmationError: String?
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
@@ -244,6 +245,8 @@ struct SettingsView: View {
                 Toggle("Group by Project", isOn: $groupByProject)
                     .settingsTarget(.groupByProject, focus: $focus)
                 Divider()
+                archiveConfirmationSetting
+                Divider()
                 projectBaseDirectorySetting
             }
         case .threads:
@@ -329,6 +332,39 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var archiveConfirmationSetting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Toggle("Archive confirmation", isOn: Binding(get: { model.confirmsThreadArchive },
+                                                              set: setArchiveConfirmation))
+                    .settingsTarget(.archiveConfirmation, focus: $focus)
+                if model.confirmsThreadArchive {
+                    Button("Reset") { setArchiveConfirmation(false) }
+                        .accessibilityLabel("Reset archive confirmation to default")
+                        .accessibilityIdentifier("reset-archive-confirmation")
+                }
+            }
+            Text("Ask before archiving a thread.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let archiveConfirmationError {
+                Text(archiveConfirmationError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("archive-confirmation-error")
+            }
+        }
+    }
+
+    private func setArchiveConfirmation(_ enabled: Bool) {
+        do {
+            try model.updateArchiveConfirmation(enabled)
+            archiveConfirmationError = nil
+        } catch {
+            archiveConfirmationError = error.localizedDescription
         }
     }
 

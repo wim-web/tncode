@@ -100,7 +100,7 @@ final class ThreadRowActionTests: XCTestCase {
         try model.openProject(otherFolder)
         let detached = try XCTUnwrap(model.project?.id)
         model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
-        model.archiveConversation(fixture.linked.id, in: project, archived: true)
+        try model.archiveConversation(fixture.linked.id, in: project, archived: true)
         model.discardDraft(discarded, in: project)
         model.removeProject(detached)
 
@@ -505,13 +505,13 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertTrue(first.closed)
 
         let (nowArchived, second) = try await beginLink()
-        model.archiveConversation(target, in: projectID, archived: true)
+        try model.archiveConversation(target, in: projectID, archived: true)
         second.onEvent?(.ready([]))
         let openedArchived = await nowArchived.value
         XCTAssertFalse(openedArchived)
         XCTAssertTrue(second.closed)
         XCTAssertTrue(model.threadLinkError?.contains("archived") == true)
-        model.archiveConversation(target, in: projectID, archived: false)
+        try model.archiveConversation(target, in: projectID, archived: false)
 
         let (superseded, staleWorker) = try await beginLink()
         let stayedOnSource = await model.openThreadLink(sourceLink.text)
@@ -591,14 +591,14 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertTrue(model.threadLinkError?.contains("checkout is unavailable") == true)
         try FileManager.default.moveItem(at: movedCheckout, to: fixture.checkout)
 
-        model.archiveConversation(id, in: projectID, archived: true)
+        try model.archiveConversation(id, in: projectID, archived: true)
         try model.copyThreadReference(id, in: projectID, to: board)
         XCTAssertEqual(board.string(forType: .string), text)
         let archived = await model.openThreadLink(text)
         XCTAssertFalse(archived)
         XCTAssertTrue(model.threadLinkError?.contains("Restore it from the archive") == true)
         XCTAssertEqual(model.draft, "Keep me in this thread")
-        model.archiveConversation(id, in: projectID, archived: false)
+        try model.archiveConversation(id, in: projectID, archived: false)
 
         model.send()
         XCTAssertEqual(model.phase, .running)
@@ -639,7 +639,7 @@ final class ThreadRowActionTests: XCTestCase {
             host.element("conversation-title")?.accessibilityLabel?() == "Renamed linked thread" ? true : nil
         }
         model.draft += "\nBefore archive"
-        model.archiveConversation(id, in: projectID, archived: true)
+        try model.archiveConversation(id, in: projectID, archived: true)
         XCTAssertFalse(model.showArchive)
         XCTAssertEqual(model.conversation?.isDraft, true)
         XCTAssertEqual(model.workingDirectory, fixture.repo.path)
@@ -676,20 +676,20 @@ final class ThreadRowActionTests: XCTestCase {
         let id = fixture.local.id
         let other = fixture.linked.id
         let projectID = fixture.project.id
-        model.archiveConversation(id, in: projectID, archived: true)
+        try model.archiveConversation(id, in: projectID, archived: true)
         XCTAssertEqual(model.conversation?.archived, false)
-        model.archiveConversation(other, in: projectID, archived: true)
+        try model.archiveConversation(other, in: projectID, archived: true)
         XCTAssertEqual(model.project?.conversations.first { $0.id == other }?.archived, true)
         XCTAssertEqual(model.conversation?.id, id)
         XCTAssertEqual(model.phase, .running)
-        model.archiveConversation(other, in: projectID, archived: false)
+        try model.archiveConversation(other, in: projectID, archived: false)
         XCTAssertEqual(model.project?.conversations.first { $0.id == other }?.archived, false)
         XCTAssertEqual(model.phase, .running)
         model.shutdown()
 
         model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
         model.draft = "Scratch follow-up"
-        model.archiveConversation(fixture.scratchThread.id, in: fixture.scratch.id, archived: true)
+        try model.archiveConversation(fixture.scratchThread.id, in: fixture.scratch.id, archived: true)
         XCTAssertEqual(model.project?.isScratch, true)
         XCTAssertNotEqual(model.project?.id, fixture.scratch.id)
         XCTAssertNotEqual(model.workingDirectory, fixture.scratch.path)
@@ -697,7 +697,7 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.scratch.path))
         model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
         XCTAssertEqual(model.conversation?.archived, true)
-        model.archiveConversation(fixture.scratchThread.id, in: fixture.scratch.id, archived: false)
+        try model.archiveConversation(fixture.scratchThread.id, in: fixture.scratch.id, archived: false)
         XCTAssertEqual(model.draft, "Scratch follow-up")
         XCTAssertEqual(model.workingDirectory, fixture.scratch.path)
     }
@@ -722,12 +722,12 @@ final class ThreadRowActionTests: XCTestCase {
 
             let other = fixture.linked.id
             XCTAssertTrue(model.canChangeArchive(for: other))
-            model.archiveConversation(other, in: projectID, archived: true)
+            try model.archiveConversation(other, in: projectID, archived: true)
             XCTAssertEqual(model.project?.conversations.first { $0.id == other }?.archived, true)
-            model.archiveConversation(other, in: projectID, archived: false)
+            try model.archiveConversation(other, in: projectID, archived: false)
 
             XCTAssertFalse(model.canChangeArchive(for: id))
-            model.archiveConversation(id, in: projectID, archived: true)
+            try model.archiveConversation(id, in: projectID, archived: true)
             XCTAssertEqual(model.conversation?.id, id)
             XCTAssertEqual(model.draft, "Edited queued text")
             XCTAssertEqual(model.composerAttachments, [editedFile])
@@ -751,7 +751,7 @@ final class ThreadRowActionTests: XCTestCase {
             XCTAssertTrue(model.canChangeArchive(for: id))
             XCTAssertEqual(model.draft, "Other draft")
             XCTAssertEqual(model.composerAttachments, [draftFile])
-            model.archiveConversation(id, in: projectID, archived: true)
+            try model.archiveConversation(id, in: projectID, archived: true)
             XCTAssertNotEqual(model.conversation?.id, id)
             XCTAssertTrue(model.terminate())
         }
@@ -775,6 +775,177 @@ final class ThreadRowActionTests: XCTestCase {
         try await host.press("queue-cancel-edit")
         XCTAssertTrue(reopened.canChangeArchive(for: id))
         XCTAssertEqual(reopened.queuedMessages.first?.text, "Edited queued text")
+    }
+
+    func testNativeArchiveConfirmationAndRetryPreserveTheOpenQueueEdit() async throws {
+        let workspaceVariable = "PI_ARCHIVE_XCTEST_WORKSPACE"
+        if let path = ProcessInfo.processInfo.environment[workspaceVariable] {
+            try await verifyArchiveWithConfirmation(at: URL(fileURLWithPath: path))
+            return
+        }
+
+        let queued = QueuedMessage(text: "Original queued text")
+        let fixture = try Fixture(queuedMessages: [queued])
+        let issue = try XCTUnwrap(GitHubIssueReference(url: "https://github.com/example/project/issues/17"))
+        let pull = try XCTUnwrap(GitHubPullRequestReference(url: "https://github.com/example/project/pull/29"))
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var state = try store.load()
+            state.projects[0].conversations[1].linkedIssues = [.init(reference: issue, title: "Issue 17")]
+            state.projects[0].conversations[1].linkedPullRequests = [.init(reference: pull, title: "Pull 29")]
+            try store.save(state)
+        }
+        do {
+            let model = fixture.open()
+            XCTAssertFalse(model.confirmsThreadArchive)
+            try model.updateArchiveConfirmation(true)
+            XCTAssertTrue(model.terminate())
+        }
+
+        let projectID = fixture.project.id
+        let linkedID = fixture.linked.id
+        let scratchID = fixture.scratchThread.id
+        let localID = fixture.local.id
+        var histories = [fixture.historyFile]
+        if let node = ProcessInfo.processInfo.environment["PI_PALETTE_NODE"] {
+            _ = try fixture.seedPiHistory(node: URL(fileURLWithPath: node))
+            histories = try FileManager.default.contentsOfDirectory(at: fixture.historyFile.deletingLastPathComponent(),
+                                                                    includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "jsonl" }
+        }
+        XCTAssertEqual(histories.count, 1)
+        let originalHistories = try histories.map { try Data(contentsOf: $0) }
+        let runner = Process()
+        runner.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        runner.arguments = ["xctest", "-XCTest", "\(String(reflecting: Self.self))/\(#function.dropLast(2))",
+                            Bundle(for: Self.self).bundleURL.path]
+        var environment = ProcessInfo.processInfo.environment
+        environment[workspaceVariable] = fixture.workspace.path
+        runner.environment = environment
+        try runner.run()
+        runner.waitUntilExit()
+        guard runner.terminationStatus == 0 else {
+            throw WorkspaceError("The confirmation workflow failed in the relaunched AppKit process.")
+        }
+
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let reopened = fixture.open()
+        defer { reopened.terminate() }
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertFalse(reopened.confirmsThreadArchive)
+        XCTAssertEqual(reopened.conversation?.id, localID)
+        let archived = try XCTUnwrap(reopened.projects.first { $0.id == projectID }?.conversations.first { $0.id == linkedID })
+        XCTAssertTrue(archived.archived)
+        XCTAssertEqual(archived.issueLinks.map(\.reference), [issue])
+        XCTAssertEqual(archived.pullRequestLinks.map(\.reference), [pull])
+        XCTAssertEqual(try histories.map { try Data(contentsOf: $0) }, originalHistories)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.scratch.path))
+
+        let host = OffscreenWorkspace(model: reopened, pasteboard: board)
+        defer { host.close() }
+        try await host.chooseArchive(for: scratchID)
+        _ = try await host.waitFor("scratch archived immediately") {
+            reopened.threadProjects.first { $0.id == fixture.scratch.id }?.conversations.first?.archived == true ? true : nil
+        }
+        XCTAssertTrue(host.window.sheets.isEmpty)
+        XCTAssertEqual(reopened.conversation?.id, localID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.scratch.path))
+    }
+
+    private func verifyArchiveWithConfirmation(at workspace: URL) async throws {
+        let model = Fixture.open(at: workspace)
+        let index = workspace.appendingPathComponent("workspace.json")
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        defer { model.terminate() }
+        XCTAssertNil(model.startupFailure)
+        XCTAssertTrue(model.confirmsThreadArchive)
+        let localID = try XCTUnwrap(model.conversation?.id)
+        let queued = try XCTUnwrap(model.queuedMessages.first)
+        let linkedID = try XCTUnwrap(model.project?.conversations.first { $0.title == "Linked thread" }?.id)
+        let scratchID = try XCTUnwrap(model.threadProjects.first { $0.isScratch }?.conversations.first?.id)
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        model.connect()
+        model.editQueuedMessage(queued.id)
+        model.draft = "Unsaved edit with an attachment"
+        XCTAssertTrue(model.attach([.pastedText("Only in the queue editor")], to: model.attachmentTarget(for: localID)))
+        let attachments = model.composerAttachments
+        XCTAssertEqual(attachments.count, 1)
+        let before = try Data(contentsOf: index)
+
+        func expectEdit() {
+            XCTAssertEqual(model.conversation?.id, localID)
+            XCTAssertEqual(model.editingQueuedMessageID, queued.id)
+            XCTAssertEqual(model.queuedMessages, [queued])
+            XCTAssertEqual(model.draft, "Unsaved edit with an attachment")
+            XCTAssertEqual(model.composerAttachments, attachments)
+        }
+        func isArchived(_ id: UUID) -> Bool? {
+            model.threadProjects.flatMap(\.conversations).first { $0.id == id }?.archived
+        }
+
+        let editingThreadCanArchive = try await host.archiveItemEnabled(for: localID)
+        XCTAssertFalse(editingThreadCanArchive)
+        try await host.chooseArchive(for: scratchID)
+        try await host.respondToArchive("Scratch thread", button: "Cancel")
+        XCTAssertEqual(try Data(contentsOf: index), before)
+        expectEdit()
+
+        let backup = workspace.appendingPathComponent("workspace.previous.json")
+        try FileManager.default.removeItem(at: backup)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+        try Data().write(to: backup.appendingPathComponent("obstruction"))
+        try await host.chooseArchive(for: linkedID)
+        try await host.respondToArchive("Linked thread", button: "Confirm")
+        _ = try await host.waitFor("archive failure") { host.element("archive-thread-error") }
+        XCTAssertEqual(try Data(contentsOf: index), before)
+        XCTAssertEqual(isArchived(linkedID), false)
+        XCTAssertEqual(isArchived(scratchID), false)
+        expectEdit()
+
+        try FileManager.default.removeItem(at: backup)
+        try await host.press("retry-archive-thread")
+        _ = try await host.waitFor("idle row archived") { isArchived(linkedID) == true ? true : nil }
+        XCTAssertNil(host.element("archive-thread-error"))
+        XCTAssertEqual(isArchived(scratchID), false)
+        expectEdit()
+        try model.updateArchiveConfirmation(false)
+    }
+
+    func testNativeArchiveFailureKeepsSelectedScratchUntilRetry() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        defer { model.terminate() }
+        model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+        model.draft = "Original scratch follow-up"
+        try model.updateArchiveConfirmation(true)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        defer { host.close() }
+        let backup = fixture.workspace.appendingPathComponent("workspace.previous.json")
+        let scratchParent = URL(fileURLWithPath: fixture.scratch.path).deletingLastPathComponent()
+        let before = try FileManager.default.contentsOfDirectory(atPath: scratchParent.path).sorted()
+        try FileManager.default.removeItem(at: backup)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+        try await host.chooseArchive(for: fixture.scratchThread.id)
+        try await host.respondToArchive("Scratch thread", button: "Confirm")
+        _ = try await host.waitFor("scratch archive failure") { host.element("archive-thread-error") }
+        XCTAssertEqual(model.conversation?.id, fixture.scratchThread.id)
+        XCTAssertEqual(model.draft, "Original scratch follow-up")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: scratchParent.path).sorted(), before)
+
+        try FileManager.default.removeItem(at: backup)
+        try await host.press("retry-archive-thread")
+        _ = try await host.waitFor("new scratch draft after retry") { model.conversation?.isDraft == true ? true : nil }
+        XCTAssertEqual(model.project?.isScratch, true)
+        XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: scratchParent.path).count, before.count + 1)
+        model.selectConversation(fixture.scratchThread.id, in: fixture.scratch.id)
+        XCTAssertEqual(model.conversation?.archived, true)
+        XCTAssertEqual(model.draft, "Original scratch follow-up")
     }
 
     func testChangingSelectionWaitsForCancelAndKeepsTheStoredMessage() throws {
@@ -848,8 +1019,12 @@ final class ThreadRowActionTests: XCTestCase {
         deinit { try? FileManager.default.removeItem(at: root) }
 
         @MainActor
-        func open() -> WorkspaceModel {
-            WorkspaceModel(root: workspace, keychainService: root.lastPathComponent, readCredential: { _ in "fixture-key" }) { _, _ in
+        func open() -> WorkspaceModel { Self.open(at: workspace) }
+
+        @MainActor
+        static func open(at workspace: URL) -> WorkspaceModel {
+            WorkspaceModel(root: workspace, keychainService: workspace.deletingLastPathComponent().lastPathComponent,
+                           readCredential: { _ in "fixture-key" }) { _, _ in
                 Connection()
             }
         }
@@ -935,9 +1110,11 @@ final class ThreadRowActionTests: XCTestCase {
             app.setActivationPolicy(.prohibited)
             app.finishLaunching()
             let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2200, y: 0)
-            window = ThreadActionsOffscreenPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 1100, height: 720)),
-                                                 styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
+            let panel = ThreadActionsOffscreenPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 1100, height: 720)),
+                                                    styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.isReleasedWhenClosed = false
+            panel.delegate = panel
+            window = panel
             host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                          workspacePasteboard: pasteboard))
             window.contentView = host
@@ -1004,11 +1181,56 @@ final class ThreadRowActionTests: XCTestCase {
             XCTAssertTrue(button.accessibilityPerformPress?() == true)
             await Task.yield()
         }
+
+        private func withArchiveItem<T>(for id: UUID, _ use: (NSMenu, NSMenuItem) throws -> T) async throws -> T {
+            let row = try await waitFor("thread-row-\(id)") { element("thread-row-\(id)") }
+            let frame = try XCTUnwrap(row.accessibilityFrame?())
+            let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [],
+                                                         timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                         eventNumber: 0, clickCount: 1, pressure: 1))
+            return try autoreleasepool {
+                let menu = try XCTUnwrap(host.menu(for: event))
+                menu.update()
+                return try use(menu, XCTUnwrap(menu.item(withTitle: "Archive Thread")))
+            }
+        }
+
+        func archiveItemEnabled(for id: UUID) async throws -> Bool {
+            try await withArchiveItem(for: id) { _, item in item.isEnabled }
+        }
+
+        func chooseArchive(for id: UUID) async throws {
+            try await withArchiveItem(for: id) { menu, item in
+                XCTAssertTrue(item.isEnabled)
+                menu.performActionForItem(at: menu.index(of: item))
+            }
+        }
+
+        func respondToArchive(_ title: String, button: String) async throws {
+            let sheet = try await waitFor("archive confirmation for \(title)") { window.attachedSheet }
+            XCTAssertTrue(sheet.alphaValue == 0 || NSScreen.screens.allSatisfy { !$0.frame.intersects(sheet.frame) })
+            func find<T: NSView>(in view: NSView, matching: @escaping (T) -> Bool) -> T? {
+                if let control = view as? T, matching(control) { return control }
+                return view.subviews.lazy.compactMap { find(in: $0, matching: matching) }.first
+            }
+            let content = try XCTUnwrap(sheet.contentView)
+            let heading = find(in: content) { (field: NSTextField) in field.stringValue == "Archive thread \"\(title)\"?" }
+            XCTAssertNotNil(heading)
+            let action = try XCTUnwrap(find(in: content) { (control: NSButton) in control.title == button })
+            action.performClick(nil)
+            _ = try await waitFor("archive confirmation dismissal") { window.attachedSheet == nil ? true : nil }
+        }
     }
 }
 
-private final class ThreadActionsOffscreenPanel: NSPanel {
+private final class ThreadActionsOffscreenPanel: NSPanel, NSWindowDelegate {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    func window(_ window: NSWindow, willPositionSheet sheet: NSWindow, using rect: NSRect) -> NSRect {
+        sheet.alphaValue = 0
+        return rect
+    }
 }

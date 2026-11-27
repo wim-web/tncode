@@ -66,6 +66,8 @@ struct WorkspaceView: View {
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
+    @State private var archiveConfirmation: ArchiveRequest?
+    @State private var archiveFailure: ArchiveFailure?
     @State private var notice: Notice?
     @State private var checkoutsWithBranches: Set<String> = []
     @State private var copyTask: Task<Void, Never>?
@@ -138,6 +140,17 @@ struct WorkspaceView: View {
         let target: ThreadSnoozeTarget
         let fromSidebar: Bool
         var id: ThreadSnoozeTarget { target }
+    }
+
+    private struct ArchiveRequest {
+        let projectID: UUID
+        let threadID: UUID
+        let title: String
+    }
+
+    private struct ArchiveFailure {
+        let request: ArchiveRequest
+        let message: String
     }
 
     private enum RenameTarget {
@@ -384,18 +397,23 @@ struct WorkspaceView: View {
             model.refreshSnoozes()
         }
         .overlay(alignment: .topTrailing) {
-            if let notice {
-                Text(notice.message)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(10)
-                    .allowsHitTesting(false)
-                    .accessibilityIdentifier(notice.accessibilityID)
-                    .task(id: notice.id) {
-                        try? await Task.sleep(for: .seconds(3))
-                        if !Task.isCancelled { self.notice = nil }
-                    }
+            VStack(alignment: .trailing) {
+                if let archiveFailure {
+                    archiveFailureNotice(archiveFailure)
+                }
+                if let notice {
+                    Text(notice.message)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(10)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier(notice.accessibilityID)
+                        .task(id: notice.id) {
+                            try? await Task.sleep(for: .seconds(3))
+                            if !Task.isCancelled { self.notice = nil }
+                        }
+                }
             }
         }
         .onChange(of: model.threadFindScope) { _, scope in
@@ -622,6 +640,15 @@ struct WorkspaceView: View {
             Button("Save") { saveTitle() }
                 .accessibilityIdentifier("save-rename")
                 .keyboardShortcut(.defaultAction)
+        }
+        .alert("Archive thread \"\(archiveConfirmation?.title ?? "")\"?",
+               isPresented: Binding(get: { archiveConfirmation != nil },
+                                    set: { if !$0 { archiveConfirmation = nil } }),
+               presenting: archiveConfirmation) { request in
+            Button("Cancel", role: .cancel) { archiveConfirmation = nil }
+                .accessibilityIdentifier("cancel-archive-thread")
+            Button("Confirm") { archive(request) }
+                .accessibilityIdentifier("confirm-archive-thread")
         }
         .confirmationDialog("Remove project from the sidebar?",
                             isPresented: Binding(get: { removingProject != nil },
@@ -1394,10 +1421,57 @@ struct WorkspaceView: View {
         }
         threadCopyMenu(thread, project: project)
         Button(thread.archived ? "Restore Thread" : "Archive Thread") {
-            model.archiveConversation(thread.id, in: project.id, archived: !thread.archived)
+            if thread.archived {
+                restoreThread(thread.id, in: project.id)
+            } else {
+                guard archiveConfirmation == nil else { return }
+                let request = ArchiveRequest(projectID: project.id, threadID: thread.id, title: thread.title)
+                if model.confirmsThreadArchive {
+                    archiveConfirmation = request
+                } else {
+                    archive(request)
+                }
+            }
         }
         .accessibilityIdentifier(thread.archived ? "restore-thread" : "archive-thread")
         .disabled(!model.canChangeArchive(for: thread.id))
+    }
+
+    private func archive(_ request: ArchiveRequest) {
+        archiveFailure = nil
+        do {
+            try model.archiveConversation(request.threadID, in: request.projectID, archived: true)
+        } catch {
+            archiveFailure = ArchiveFailure(request: request, message: error.localizedDescription)
+        }
+    }
+
+    private func restoreThread(_ threadID: UUID, in projectID: UUID) {
+        do {
+            try model.archiveConversation(threadID, in: projectID, archived: false)
+        } catch {
+            model.error = error.localizedDescription
+        }
+    }
+
+    private func archiveFailureNotice(_ failure: ArchiveFailure) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Failed to archive thread \"\(failure.request.title)\"")
+                .font(.callout.weight(.semibold))
+                .accessibilityIdentifier("archive-thread-error")
+            Text(failure.message).font(.caption)
+            HStack {
+                Button("Retry") { archive(failure.request) }
+                    .disabled(!model.canChangeArchive(for: failure.request.threadID))
+                    .accessibilityIdentifier("retry-archive-thread")
+                Button("Dismiss") { archiveFailure = nil }
+                    .accessibilityIdentifier("dismiss-archive-thread-error")
+            }
+        }
+        .frame(maxWidth: 340, alignment: .leading)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(10)
     }
 
     @ViewBuilder
@@ -2718,7 +2792,7 @@ struct WorkspaceView: View {
             snoozeConversationStatus(thread, project: project)
             if thread.archived {
                 Button("Restore Thread") {
-                    model.archiveConversation(thread.id, in: project.id, archived: false)
+                    restoreThread(thread.id, in: project.id)
                 }
                 .accessibilityIdentifier("restore-open-thread")
             } else if canCompose {
@@ -3160,7 +3234,7 @@ struct WorkspaceView: View {
             composerModelPicker == nil &&
             window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
-            rename == nil && removingProject == nil
+            rename == nil && removingProject == nil && archiveConfirmation == nil
     }
 
     private func navigate(_ direction: WorkspaceModel.NavigationDirection, in window: NSWindow) -> Bool {

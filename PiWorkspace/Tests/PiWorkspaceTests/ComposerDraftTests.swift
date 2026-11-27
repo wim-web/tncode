@@ -463,7 +463,7 @@ final class ComposerDraftTests: XCTestCase {
             XCTAssertEqual(model.conversation?.id, threadID)
             XCTAssertTrue(model.draft.isEmpty)
             model.draft = "Unsent follow-up"
-            model.archiveConversation(threadID, in: projectID, archived: true)
+            try model.archiveConversation(threadID, in: projectID, archived: true)
             XCTAssertNotEqual(model.conversation?.id, threadID)
             XCTAssertFalse(model.showArchive)
             model.terminate()
@@ -477,7 +477,7 @@ final class ComposerDraftTests: XCTestCase {
         XCTAssertTrue(reopened.showArchive)
         XCTAssertFalse(reopened.canSend)
         reopened.discardDraft(threadID, in: projectID)
-        reopened.archiveConversation(threadID, in: projectID, archived: false)
+        try reopened.archiveConversation(threadID, in: projectID, archived: false)
         XCTAssertEqual(reopened.conversation?.id, threadID)
         XCTAssertEqual(reopened.draft, "Unsent follow-up")
     }

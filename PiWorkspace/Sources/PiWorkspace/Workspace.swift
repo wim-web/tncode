@@ -410,6 +410,7 @@ struct Workspace: Codable {
     var model = ModelSettings()
     var welcomeCompleted: Bool?
     var addProjectBaseDirectory: String?
+    var confirmThreadArchive: Bool?
     var worktreesDirectory: String?
     var newWorktreesStartFromRemote: Bool?
     var stashedPrompts: [StashedPrompt]?
