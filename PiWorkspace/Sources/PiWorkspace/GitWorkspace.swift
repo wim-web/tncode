@@ -695,7 +695,71 @@ struct GitWorkspace: Sendable {
         _ = try await run(["reset", "--quiet", "--"] + paths, in: root)
     }
 
-    func commit(message: String, paths: Set<String>) async throws {
+    struct CommitContext {
+        let checkout: GitChangesCheckout
+        let paths: Set<String>
+        let tree: Data
+        let patch: String
+    }
+
+    func commitContext(paths: Set<String>, checkout: GitChangesCheckout) async throws -> CommitContext {
+        try await verifyChangesCheckout(checkout)
+        let root = checkout.root
+        let selection = try await commitSelection(paths, in: root)
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("pi-commit-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let (tree, index) = try await selectedCommitTree(selection.paths, checkout: checkout, in: scratch)
+        let patch = try await run([
+            "diff", "--cached", "--patch", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+            "--ignore-submodules=none", "--submodule=short"
+        ] + (checkout.head.map { [$0] } ?? []), in: root, index: index, outputLimit: 12_288, cancellable: true)
+        try await verifyChangesCheckout(checkout)
+        let text = String(decoding: patch.output.bytes, as: UTF8.self)
+        return CommitContext(checkout: checkout, paths: paths, tree: tree,
+                             patch: text + (patch.output.truncated ? "\n[Diff truncated]" : ""))
+    }
+
+    private func selectedCommitTree(_ paths: Set<String>, checkout: GitChangesCheckout, in scratch: URL)
+        async throws -> (Data, URL) {
+        let index = scratch.appendingPathComponent("selected-index")
+        let pathspec = scratch.appendingPathComponent("selected-paths")
+        try Self.writePathspec(paths.sorted(), to: pathspec)
+        let config = ["-c", "core.splitIndex=false"]
+        let root = checkout.root
+        _ = try await run(config + ["read-tree"] + (checkout.head.map { [$0] } ?? ["--empty"]),
+                          in: root, index: index, cancellable: true)
+        _ = try await run(config + ["add", "--all", "--pathspec-from-file=" + pathspec.path, "--pathspec-file-nul"],
+                          in: root, index: index, cancellable: true)
+        let diff = try await run(["diff", "--cached", "--no-relative", "--ignore-submodules=none",
+                                  "--name-only", "--no-renames", "-z"] + (checkout.head.map { [$0] } ?? []),
+                                 in: root, index: index, cancellable: true)
+        let changed = Set(diff.output.bytes.split(separator: 0).map { Data($0) })
+        guard !changed.isEmpty else { throw WorkspaceError.staleSelection }
+        guard changed.isSubset(of: Set(paths.map { Data($0.utf8) })) else { throw WorkspaceError.staleSelection }
+        let tree = try await run(config + ["write-tree"], in: root, index: index, cancellable: true)
+        return (tree.output.bytes, index)
+    }
+
+    private func commitSelection(_ paths: Set<String>, in root: String)
+        async throws -> (files: [GitFileChange], paths: Set<String>, excluded: [GitFileChange]) {
+        guard !paths.isEmpty else { throw WorkspaceError.emptySelection }
+        let current = try await changes(in: root)
+        let selected = current.filter { paths.contains($0.path) }
+        guard Set(selected.map(\.path)) == paths else { throw WorkspaceError.staleSelection }
+        let commitPaths = Set(selected.flatMap(\.commitPaths))
+        let excluded = current.filter { !paths.contains($0.path) }
+        for path in excluded.flatMap(\.commitPaths) {
+            let overlaps = commitPaths.contains { selectedPath in
+                selectedPath == path || selectedPath.hasPrefix(path + "/") || path.hasPrefix(selectedPath + "/")
+            }
+            guard !overlaps else { throw WorkspaceError.overlappingSelection(path) }
+        }
+        return (selected, commitPaths, excluded)
+    }
+
+    func commit(message: String, paths: Set<String>, generatedFrom context: CommitContext? = nil) async throws {
         guard !paths.isEmpty else { throw WorkspaceError.emptySelection }
         let root = try await repositoryRoot()
         let indexPath = try await revParse(["--path-format=absolute", "--git-path", "index"], in: root)
@@ -710,20 +774,7 @@ struct GitWorkspace: Sendable {
         defer { unlink(lockPath) }
         close(lock)
 
-        let currentChanges = try await changes(in: root)
-        let selected = currentChanges.filter { paths.contains($0.path) }
-        guard Set(selected.map(\.path)) == paths else { throw WorkspaceError.staleSelection }
-        let commitPaths = Set(selected.flatMap(\.commitPaths))
-        let excluded = currentChanges.filter { !paths.contains($0.path) }
-        let excludedPaths = Set(excluded.flatMap(\.commitPaths))
-        for path in excludedPaths {
-            let overlaps = commitPaths.contains { selectedPath in
-                selectedPath == path || selectedPath.hasPrefix(path + "/") || path.hasPrefix(selectedPath + "/")
-            }
-            guard !overlaps else {
-                throw WorkspaceError.overlappingSelection(path)
-            }
-        }
+        let selection = try await commitSelection(paths, in: root)
 
         // Git requires new paths to be in the index before `commit --only` can select them.
         let scratch = index.deletingLastPathComponent().appendingPathComponent("pi-commit-" + UUID().uuidString)
@@ -731,6 +782,12 @@ struct GitWorkspace: Sendable {
         try manager.createDirectory(at: scratch, withIntermediateDirectories: false,
                                     attributes: [.posixPermissions: 0o700])
         defer { try? manager.removeItem(at: scratch) }
+        if let context {
+            guard context.paths == paths else { throw WorkspaceError.staleSelection }
+            try await verifyChangesCheckout(context.checkout)
+            let (tree, _) = try await selectedCommitTree(selection.paths, checkout: context.checkout, in: scratch)
+            guard tree == context.tree else { throw WorkspaceError.staleSelection }
+        }
         let temporaryIndex = scratch.appendingPathComponent("index")
         do {
             try manager.copyItem(at: index, to: temporaryIndex)
@@ -740,17 +797,18 @@ struct GitWorkspace: Sendable {
 
         let pathspec = scratch.appendingPathComponent("paths")
         let pathspecArguments = ["--pathspec-from-file=" + pathspec.path, "--pathspec-file-nul"]
-        let excludedStaged = Set(excluded.filter(\.isStaged).flatMap(\.commitPaths))
-        if !excludedStaged.isEmpty {
+        let excludedStaged = Set(selection.excluded.filter(\.isStaged).flatMap(\.commitPaths))
+        if context == nil, !excludedStaged.isEmpty {
             try Self.writePathspec(excludedStaged.sorted(), to: pathspec)
             _ = try await run(["reset", "--quiet"] + pathspecArguments, in: root, index: temporaryIndex)
         }
-        let untracked = selected.filter(\.isUntracked).map(\.path)
+        let untracked = selection.files.filter(\.isUntracked).map(\.path)
         if !untracked.isEmpty {
             try Self.writePathspec(untracked, to: pathspec)
             _ = try await run(["add", "--intent-to-add"] + pathspecArguments, in: root, index: temporaryIndex)
         }
-        try Self.writePathspec(commitPaths.sorted(), to: pathspec)
+        try Self.writePathspec(selection.paths.sorted(), to: pathspec)
+        if let context { try await verifyChangesCheckout(context.checkout) }
         _ = try await run(["commit", "--only", "--message", message] + pathspecArguments,
                           in: root, index: temporaryIndex)
 

@@ -1678,7 +1678,7 @@ struct WorkspaceView: View {
                 BrowserPreviewView(preview: browser)
             case .changes:
                 if let location = WorkspaceFilesLocation(thread: thread, project: project) {
-                    SourceControlView(directory: location.directory, model: model, openBranch: {
+                    SourceControlView(location: location, model: model, openBranch: {
                         openBranchPicker()
                     }, copyBranch: copyBranch) { path in
                         guard selectedFilesLocation == location else { return }

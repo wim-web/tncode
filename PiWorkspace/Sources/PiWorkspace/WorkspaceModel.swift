@@ -2645,6 +2645,34 @@ final class WorkspaceModel: ObservableObject {
         return try await runGitMutation(operation)
     }
 
+    func generateCommitSubject(_ patch: String, in directory: String) async throws -> String {
+        guard let store else { throw WorkspaceError("Open a workspace before generating a commit message.") }
+        let config = try effectiveModel.validated()
+        try Task.checkCancellation()
+        let worker = try makeProcess(store.config, directory)
+        defer { worker.close() }
+        let (events, input) = AsyncStream<PiEvent>.makeStream()
+        defer { input.finish() }
+        worker.onEvent = { input.yield($0) }
+        worker.onClose = { input.finish() }
+        try worker.send(GenerateCommitSubject(config: config, patch: patch))
+        for await event in events {
+            try Task.checkCancellation()
+            switch event {
+            case let .credential(id, read):
+                try replyToCredential(id, read: read, account: config.account, worker: worker)
+            case let .commitSubject(subject):
+                return subject
+            case let .fatal(message):
+                throw WorkspaceError(message)
+            default:
+                break
+            }
+        }
+        try Task.checkCancellation()
+        throw WorkspaceError("The Pi helper exited while generating the commit message. Try again or enter a message.")
+    }
+
     private func runGitMutation<T>(_ operation: () async throws -> T) async throws -> T {
         gitMutationInProgress = true
         defer {
@@ -3385,6 +3413,8 @@ final class WorkspaceModel: ObservableObject {
                 self.error = error.localizedDescription
                 queueDelivery.paused = true
             }
+        case .commitSubject:
+            break
         case let .forked(threadID, error):
             finishFork(threadID, failure: error)
         case let .finished(turnID, history, error):

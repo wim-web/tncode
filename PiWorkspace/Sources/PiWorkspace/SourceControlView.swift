@@ -1,7 +1,8 @@
+import AppKit
 import SwiftUI
 
 struct SourceControlView: View {
-    let directory: String
+    let location: WorkspaceFilesLocation
     @ObservedObject var model: WorkspaceModel
     let openBranch: () -> Void
     let copyBranch: (String) -> Void
@@ -11,6 +12,7 @@ struct SourceControlView: View {
     @State private var excludedPaths: Set<String> = []
     @State private var stage = Stage.all
     @State private var commitMessage = ""
+    @State private var commitGeneration: Task<Void, Never>?
     @State private var error: String?
     @State private var loading = true
     @State private var refresh = 0
@@ -75,7 +77,8 @@ struct SourceControlView: View {
         ReadRequest(location: directory, revision: model.repositoryRevision, refresh: refresh)
     }
 
-    private var busy: Bool { model.operationsInProgress }
+    private var directory: String { location.directory }
+    private var busy: Bool { model.operationsInProgress || commitGeneration != nil }
 
     private var checkout: GitChangesCheckout? {
         checkoutResult?.0 == request ? checkoutResult?.1 : nil
@@ -170,6 +173,7 @@ struct SourceControlView: View {
             if state == nil { Spacer() }
         }
         .frame(minWidth: 290, idealWidth: 360, maxHeight: .infinity)
+        .onDisappear { commitGeneration?.cancel() }
         .task(id: read) { await loadCheckout(read) }
         .task(id: history) {
             if let history, let activeCheckout { await loadHistory(history, checkout: activeCheckout) }
@@ -390,7 +394,8 @@ struct SourceControlView: View {
                 .font(.caption)
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
-                if state.files.contains(where: { $0.isStaged && excludedPaths.contains($0.path) }) {
+                if !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   state.files.contains(where: { $0.isStaged && excludedPaths.contains($0.path) }) {
                     Text("Committing will unstage the excluded files.")
                         .font(.caption)
                         .padding(.horizontal, 14)
@@ -587,21 +592,64 @@ struct SourceControlView: View {
     private func commitBar(_ state: GitRepositoryState) -> some View {
         let paths = Set(state.files.map(\.path)).subtracting(excludedPaths)
         let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        return HStack {
-            TextField("Commit message", text: $commitMessage)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("git-commit-message")
-            Button("Commit") {
-                mutate { git in
-                    try await git.commit(message: message, paths: paths)
-                    commitMessage = ""
+        return Group {
+            if let generation = commitGeneration, !model.gitMutationInProgress {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Generating commit message…")
+                        .font(.callout)
+                        .accessibilityIdentifier("git-commit-generating")
+                    Spacer()
+                    Button("Cancel") { generation.cancel() }
+                        .accessibilityIdentifier("git-commit-cancel")
+                }
+            } else {
+                HStack {
+                    CommitMessageField(message: $commitMessage)
+                        .disabled(busy)
+                    Button("Commit") {
+                        if message.isEmpty, let checkout {
+                            generateAndCommit(paths, checkout: checkout)
+                        } else if !message.isEmpty {
+                            mutate { git in
+                                try await git.commit(message: message, paths: paths)
+                                commitMessage = ""
+                            }
+                        }
+                    }
+                    .disabled(busy || paths.isEmpty || checkout == nil)
+                    .help("Commit the current contents of the included files")
+                    .accessibilityIdentifier("git-commit")
                 }
             }
-            .disabled(busy || paths.isEmpty || message.isEmpty)
-            .help("Commit the current contents of the included files")
-            .accessibilityIdentifier("git-commit")
         }
         .padding(9)
+    }
+
+    private func generateAndCommit(_ paths: Set<String>, checkout: GitChangesCheckout) {
+        let git = GitWorkspace(path: directory)
+        let revision = model.repositoryRevision
+        error = nil
+        commitGeneration = Task {
+            defer { commitGeneration = nil }
+            do {
+                let context = try await git.commitContext(paths: paths, checkout: checkout)
+                let subject = try await model.generateCommitSubject(context.patch, in: checkout.root)
+                try Task.checkCancellation()
+                guard let project = model.project, let thread = model.conversation,
+                      WorkspaceFilesLocation(thread: thread, project: project) == location,
+                      model.repositoryRevision == revision else {
+                    throw WorkspaceError("The checkout changed. Review the changes and try again.")
+                }
+                try await model.performGitMutation {
+                    try await git.commit(message: subject, paths: paths, generatedFrom: context)
+                }
+                commitMessage = ""
+            } catch is CancellationError {
+            } catch let failure {
+                error = failure.localizedDescription
+            }
+        }
     }
 
     private func diffColor(_ line: Substring) -> Color {
@@ -692,6 +740,40 @@ struct SourceControlView: View {
             guard !Task.isCancelled, key == diffRequest else { return }
             patchResult = nil
             patchError = (key, error.localizedDescription)
+        }
+    }
+}
+
+private struct CommitMessageField: NSViewRepresentable {
+    @Binding var message: String
+
+    func makeNSView(context: Context) -> Field {
+        let field = Field()
+        field.bezelStyle = .roundedBezel
+        field.placeholderString = "Leave empty to auto-generate"
+        field.setAccessibilityLabel("Commit message")
+        field.setAccessibilityIdentifier("git-commit-message")
+        field.delegate = field
+        return field
+    }
+
+    func updateNSView(_ field: Field, context: Context) {
+        field.isEnabled = context.environment.isEnabled
+        field.messageChanged = { message = $0 }
+        if field.stringValue != message { field.stringValue = message }
+    }
+
+    final class Field: NSTextField, NSTextFieldDelegate {
+        var messageChanged: ((String) -> Void)?
+
+        func controlTextDidChange(_ notification: Notification) {
+            messageChanged?(stringValue)
+        }
+
+        override func setAccessibilityValue(_ value: Any?) {
+            guard isEnabled, let text = value as? String else { return }
+            super.setAccessibilityValue(value)
+            messageChanged?(text)
         }
     }
 }
