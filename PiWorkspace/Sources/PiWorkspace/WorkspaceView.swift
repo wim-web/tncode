@@ -25,6 +25,8 @@ struct WorkspaceView: View {
     var workspacePasteboard: NSPasteboard = .general
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(SidebarPreference.groupByProject) private var grouped = false
+    @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
+    @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
     @State private var sidebarWidth = WorkspaceLayout.defaultSidebarWidth
     @GestureState private var sidebarDrag: CGFloat = 0
     @State private var rightPanelWidths: [UUID: CGFloat] = [:]
@@ -2732,7 +2734,19 @@ struct WorkspaceView: View {
                 }
             ), pasteboard: workspacePasteboard, drop: drop,
                fileMentionRevision: composerFileMentionRevision == model.composerRevision
-                   ? composerFileMentionRevision : nil) { text, inlineLength in
+                   ? composerFileMentionRevision : nil,
+               sendShortcut: sendShortcut, isFollowingUp: { isFollowingUp }, submit: { submission in
+                guard ownsComposer(), !model.showingSettings, !model.showingCommandPalette,
+                      !model.showingWelcome, model.activeThreadFind == nil, model.pendingAgentQuestion == nil else { return }
+                if model.editingQueuedMessageID != nil {
+                    model.updateQueuedMessage()
+                } else if isFollowingUp {
+                    let action = submission == .alternate ? followUpBehavior.alternate : followUpBehavior
+                    model.queueDraft(steering: action == .steer && model.canSteer)
+                } else {
+                    model.send()
+                }
+            }) { text, inlineLength in
                 model.foldPastedText(text, inlineLength: inlineLength, in: target) { attachment in
                     let size = ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .binary)
                     notice = Notice(id: attachment.id,
@@ -2836,6 +2850,17 @@ struct WorkspaceView: View {
         if model.draftProjectScope == picker.scope { focusedComposer = picker.scope.threadID }
     }
 
+    private var isFollowingUp: Bool {
+        model.phase == .running && model.sideChatCommand == nil && model.editingQueuedMessageID == nil
+    }
+
+    private func followUpButton(_ action: ComposerFollowUp) -> some View {
+        Button(action.title) { model.queueDraft(steering: action == .steer) }
+            .help(action == .steer ? "Send into the current turn" : "Send after the current turn")
+            .accessibilityIdentifier(action == .steer ? "steer-message" : "queue-message")
+            .disabled(!model.canQueueDraft)
+    }
+
     private var composerActions: some View {
         HStack(spacing: 6) {
             if model.editingQueuedMessageID != nil {
@@ -2844,24 +2869,16 @@ struct WorkspaceView: View {
                     .accessibilityIdentifier("queue-cancel-edit")
                 Button("Update", action: model.updateQueuedMessage)
                     .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityLabel("Update queued message")
                     .accessibilityIdentifier("queue-update")
                     .disabled(!model.canUpdateQueuedMessage)
             } else {
-                if model.canSteer {
-                    Button("Steer") { model.queueDraft(steering: true) }
-                        .help("Send into the current turn")
-                        .accessibilityIdentifier("steer-message")
-                        .disabled(!model.canQueueDraft)
-                }
-                if model.phase == .running && model.sideChatCommand == nil {
-                    Button("Queue") { model.queueDraft() }
-                        .help("Send after the current turn")
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .accessibilityIdentifier("queue-message")
-                        .disabled(!model.canQueueDraft)
+                if isFollowingUp {
+                    let primary = model.canSteer ? followUpBehavior : .queue
+                    if model.canSteer { followUpButton(primary.alternate) }
+                    followUpButton(primary).buttonStyle(.borderedProminent)
                 } else if !model.phase.isRunning || model.sideChatCommand != nil {
+                    if model.canSteer { followUpButton(.steer) }
                     if model.canStartQueuedMessage && !model.queuedMessages.isEmpty {
                         Button("Queue") { model.queueDraft() }
                             .accessibilityIdentifier("queue-message")
@@ -2877,7 +2894,6 @@ struct WorkspaceView: View {
                     }
                     .buttonStyle(.plain)
                     .opacity(model.canSend ? 1 : 0.45)
-                    .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityLabel("Send")
                     .accessibilityIdentifier("send-message")
                     .disabled(!model.canSend)

@@ -8,9 +8,10 @@ struct SettingsView: View {
     let browserDefaults: UserDefaults
     let pasteboard: NSPasteboard
     let openWelcome: () -> Void
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SidebarPreference.groupByProject) private var groupByProject = false
+    @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
+    @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
     @FocusState private var focus: SettingsFocus?
     @State private var page: SettingsPage
     @State private var jump: SettingsJump?
@@ -83,7 +84,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if page == .general || page == .threads || page == .project || page == .worktrees || page == .about || page == .usage {
+                    if [.general, .threads, .chat, .project, .worktrees, .usage, .about].contains(page) {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
@@ -233,6 +234,8 @@ struct SettingsView: View {
             SnoozeOptionsSettingsView(model: model, settingsFocus: $focus)
         case .appearance:
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
+        case .chat:
+            chatSettings
         case .project:
             if let scopedProject {
                 ProjectOverviewSettingsView(model: model, project: scopedProject, title: $projectTitle,
@@ -250,6 +253,54 @@ struct SettingsView: View {
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
         case .about, .usage:
             EmptyView()
+        }
+    }
+
+    private var chatSettings: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Picker("Send shortcut", selection: $sendShortcut) {
+                        ForEach(ComposerSendShortcut.allCases, id: \.self) { option in
+                            Text(option.title)
+                                .accessibilityIdentifier("send-shortcut-\(option.rawValue)")
+                                .tag(option)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .settingsTarget(.sendShortcut, focus: $focus)
+                    if sendShortcut != .initial {
+                        Button("Reset") { sendShortcut = .initial }
+                            .accessibilityLabel("Reset send shortcut to default")
+                            .accessibilityIdentifier("reset-send-shortcut")
+                    }
+                }
+                Text("Choose when Enter sends a prompt or inserts a new line. Shift + Enter inserts a new line.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Picker("Follow-up behavior", selection: $followUpBehavior) {
+                        ForEach(ComposerFollowUp.allCases, id: \.self) { option in
+                            Text(option.title)
+                                .accessibilityIdentifier("follow-up-behavior-\(option.rawValue)")
+                                .tag(option)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .settingsTarget(.followUpBehavior, focus: $focus)
+                    if followUpBehavior != .initial {
+                        Button("Reset") { followUpBehavior = .initial }
+                            .accessibilityLabel("Reset follow-up behavior to default")
+                            .accessibilityIdentifier("reset-follow-up-behavior")
+                    }
+                }
+                Text("Queue follow-ups or steer the current turn. Press \(sendShortcut.alternateShortcutDescription) to use the other action for one message.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -380,7 +431,7 @@ struct SettingsView: View {
     private func closeSettings() {
         if page == .general, !commitProjectBaseDirectory() { return }
         if page == .worktrees, !commitWorktreeDirectory(worktreeDirectory) { return }
-        dismiss()
+        if model.settingsRequest === request { model.settingsRequest = nil }
     }
 
     private func navigate(to page: SettingsPage, anchor: SettingsAnchor? = nil) {

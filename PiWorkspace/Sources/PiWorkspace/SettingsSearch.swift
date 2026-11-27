@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, threads, appearance, project, model, worktrees, usage, browser, about
+    case general, threads, appearance, chat, project, model, worktrees, usage, browser, about
 
     var id: String { rawValue }
 
@@ -11,6 +11,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: "General"
         case .threads: "Threads"
         case .appearance: "Appearance"
+        case .chat: "Chat"
         case .project: "Project Overview"
         case .model: "Model Settings"
         case .worktrees: "Worktrees"
@@ -25,6 +26,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .threads: "bubble.left.and.bubble.right"
         case .appearance: "paintbrush"
+        case .chat: "bubble.left"
         case .project: "folder"
         case .model: "cpu"
         case .worktrees: "arrow.triangle.branch"
@@ -48,6 +50,8 @@ enum SettingsAnchor: String {
     case colorScheme = "appearance-color-scheme"
     case chatWidth = "appearance-chat-width"
     case restoreAppearance = "appearance-restore-defaults"
+    case sendShortcut = "send-shortcut"
+    case followUpBehavior = "follow-up-behavior"
     case scope = "model-settings-scope"
     case provider = "provider"
     case modelID = "model-id"
@@ -189,6 +193,9 @@ struct SettingsSearch {
         .init(page: .appearance, anchor: .colorScheme, title: "Color scheme", keywords: "theme light dark system"),
         .init(page: .appearance, anchor: .chatWidth, title: "Chat width", keywords: "conversation composer comfortable wide full"),
         .init(page: .appearance, anchor: .restoreAppearance, title: "Restore Defaults", keywords: "reset appearance color width"),
+        .init(page: .chat, title: "Chat", keywords: "conversation composer follow-ups"),
+        .init(page: .chat, anchor: .sendShortcut, title: "Send shortcut", keywords: "enter return command ctrl multiline prompt new line composer"),
+        .init(page: .chat, anchor: .followUpBehavior, title: "Follow-up behavior", keywords: "queue steer running turn send default behavior composer"),
         .init(page: .project, title: "Project Overview", keywords: "project settings name folder path checkouts pin"),
         .init(page: .model, title: "Model Settings", keywords: "providers Pi project workspace"),
         .init(page: .model, anchor: .scope, title: "Scope", keywords: "workspace project default inheritance override"),

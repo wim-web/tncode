@@ -1,3 +1,4 @@
+import Carbon
 import Combine
 import SwiftUI
 
@@ -13,6 +14,8 @@ extension FocusedValues {
 }
 
 struct ComposerTextField: NSViewRepresentable {
+    enum Submission { case primary, alternate }
+
     let target: ComposerAttachmentTarget
     let placeholder: String
     @Binding var text: String
@@ -20,6 +23,9 @@ struct ComposerTextField: NSViewRepresentable {
     let drop: AttachmentDropDestination
     let fileMentionRevision: Int?
     var identifier = "composer"
+    var sendShortcut = ComposerSendShortcut.initial
+    var isFollowingUp: () -> Bool = { false }
+    var submit: ((Submission) -> Void)? = nil
     let foldPastedText: (String, Int) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -51,6 +57,9 @@ struct ComposerTextField: NSViewRepresentable {
         field.pasteboardOverride = pasteboard.name == .general ? nil : pasteboard
         field.drop = drop
         field.foldPastedText = foldPastedText
+        field.sendShortcut = sendShortcut
+        field.isFollowingUp = isFollowingUp
+        field.submit = submit
         field.isEnabled = context.environment.isEnabled
         field.placeholderString = placeholder
         let editor = field.currentEditor() as? NSTextView
@@ -151,6 +160,9 @@ struct ComposerTextField: NSViewRepresentable {
         var pasteboardOverride: NSPasteboard?
         var drop: AttachmentDropDestination?
         var foldPastedText: ((String, Int) -> Bool)?
+        var sendShortcut = ComposerSendShortcut.initial
+        var isFollowingUp: () -> Bool = { false }
+        var submit: ((Submission) -> Void)?
 
         override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 
@@ -198,6 +210,34 @@ struct ComposerTextField: NSViewRepresentable {
     final class Editor: NSTextView {
         weak var owner: Field?
         private var pastingAsPlainText = false
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            if event.modifierFlags.contains(.command), handleReturn(event) { return true }
+            return super.performKeyEquivalent(with: event)
+        }
+
+        override func keyDown(with event: NSEvent) {
+            if !handleReturn(event) { super.keyDown(with: event) }
+        }
+
+        private func handleReturn(_ event: NSEvent) -> Bool {
+            guard event.keyCode == kVK_Return || event.keyCode == kVK_ANSI_KeypadEnter,
+                  let field = owner, let submit = field.submit, field.isEnabled, isEditable,
+                  window?.firstResponder === self, field.currentEditor() === self, !hasMarkedText() else { return false }
+            let modifiers = event.modifierFlags.intersection([.command, .control, .shift, .option])
+            let needsModifier = field.sendShortcut.requiresModifier(for: string)
+            let alternateKey: NSEvent.ModifierFlags = needsModifier ? [.command, .shift] : .command
+            if field.isFollowingUp() && modifiers == alternateKey {
+                if !event.isARepeat { submit(.alternate) }
+            } else if modifiers == .command || modifiers == .control || (modifiers.isEmpty && !needsModifier) {
+                if !event.isARepeat { submit(.primary) }
+            } else if !modifiers.contains(.command) {
+                insertNewlineIgnoringFieldEditor(nil)
+            } else {
+                return false
+            }
+            return true
+        }
 
         override func paste(_ sender: Any?) {
             guard let board = owner?.pasteboardOverride else { return super.paste(sender) }
