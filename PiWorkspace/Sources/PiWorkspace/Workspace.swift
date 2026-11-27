@@ -334,6 +334,7 @@ struct Project: Codable, Identifiable {
     var modelOverride: ModelSettings?
     var kind: Kind?
     var pendingPullRequestCheckouts: [PendingPullRequestCheckout]?
+    var icon: ProjectIcon?
 
     var isScratch: Bool { kind == .scratch }
 

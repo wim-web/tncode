@@ -1223,6 +1223,16 @@ final class WorkspaceModel: ObservableObject {
         return save { $0.projects[index].title = title }
     }
 
+    func setProjectIcon(_ icon: ProjectIcon?, for id: UUID) throws {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true && !$0.isScratch }) else {
+            throw WorkspaceError("This project is no longer open.")
+        }
+        guard workspace.projects[index].icon != icon else { return }
+        var updated = workspace
+        updated.projects[index].icon = icon
+        try persist(updated)
+    }
+
     func copyProjectPath(_ id: UUID, to pasteboard: NSPasteboard) throws {
         guard let project = projects.first(where: { $0.id == id }), project.folderIsAvailable else {
             throw WorkspaceError("The project folder is no longer available.")

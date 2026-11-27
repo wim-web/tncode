@@ -35,12 +35,13 @@ enum WorkspaceMediaFormat {
     case image, svg, pdf
 
     static let byteLimit = 50 * 1024 * 1024
+    static let imageExtensions = ["avif", "bmp", "gif", "ico", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
 
     init?(fileName: String) {
         switch fileName.split(separator: ".", omittingEmptySubsequences: false).dropFirst().last?.lowercased() {
         case "pdf": self = .pdf
         case "svg": self = .svg
-        case "avif", "bmp", "gif", "ico", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp":
+        case let suffix? where Self.imageExtensions.contains(suffix):
             self = .image
         default: return nil
         }
@@ -60,7 +61,15 @@ enum WorkspaceMediaFormat {
         }
     }
 
-    private func rasterImage(_ data: Data) throws -> WorkspaceImageFile {
+    func imageBitmap(_ data: Data, maximumEdge: Int) throws -> CGImage {
+        switch self {
+        case .image: try rasterImage(data, maximumEdge: maximumEdge).bitmap
+        case .svg: try vectorImage(data).bitmap
+        case .pdf: throw WorkspaceMediaError.image
+        }
+    }
+
+    private func rasterImage(_ data: Data, maximumEdge: Int? = nil) throws -> WorkspaceImageFile {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let identifier = CGImageSourceGetType(source) as String?,
               identifier != UTType.pdf.identifier,
@@ -74,7 +83,7 @@ enum WorkspaceMediaFormat {
         let options = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height), maximumEdge ?? Int.max),
             kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {

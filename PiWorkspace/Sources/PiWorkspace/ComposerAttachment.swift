@@ -26,7 +26,7 @@ enum ComposerAttachmentInput: Transferable {
 
     static func fileURL(from item: NSPasteboardItem) -> URL? {
         guard let string = item.string(forType: .fileURL), let url = URL(string: string),
-              ComposerAttachment.isLocalFile(url) else { return nil }
+              WorkspaceLocalFile.isLocal(url) else { return nil }
         return url
     }
 
@@ -48,7 +48,7 @@ enum ComposerAttachmentInput: Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(importedContentType: .fileURL) { data in
-            guard let url = URL(dataRepresentation: data, relativeTo: nil), ComposerAttachment.isLocalFile(url) else {
+            guard let url = URL(dataRepresentation: data, relativeTo: nil), WorkspaceLocalFile.isLocal(url) else {
                 throw WorkspaceError("Choose a local file.")
             }
             return Self.file(url)
@@ -175,26 +175,10 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         }
     }
 
-    fileprivate static func isLocalFile(_ url: URL) -> Bool {
-        let host = url.host(percentEncoded: false)?.lowercased() ?? ""
-        return url.isFileURL && (host.isEmpty || host == "localhost")
-    }
-
     fileprivate static func read(_ url: URL) throws -> Data {
-        guard isLocalFile(url) else { throw WorkspaceError("Choose a local file.") }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { throw WorkspaceError("Could not read \(url.lastPathComponent).") }
-        let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        var info = stat()
-        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
-            throw WorkspaceError("Choose a regular local file.")
+        try WorkspaceLocalFile.read(url, limit: maxImageSourceBytes) {
+            sourceSizeError(for: url)
         }
-        guard info.st_size <= maxImageSourceBytes else { throw sourceSizeError(for: url) }
-        let data = try file.read(upToCount: maxImageSourceBytes + 1) ?? Data()
-        guard data.count <= maxImageSourceBytes else { throw sourceSizeError(for: url) }
-        return data
     }
 
     private static func sourceSizeError(for url: URL) -> Error {

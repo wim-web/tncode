@@ -1120,14 +1120,19 @@ struct WorkspaceView: View {
                     HStack(spacing: 7) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 8, weight: .semibold))
-                        Image(systemName: project.pinned == true ? "pin.fill" : "folder")
+                        ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder")
+                            .accessibilityHidden(true)
                         Text(project.title).lineLimit(1)
+                        if project.pinned == true && project.icon != nil {
+                            Image(systemName: "pin.fill").font(.system(size: 9))
+                        }
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("project-group-\(project.id)")
+                .accessibilityValue(project.icon?.summary ?? "Default project icon")
                 .accessibilityAddTraits(expanded ? .isSelected : [])
                 Button { openProjectSettings(project.id) } label: { Image(systemName: "gearshape") }
                     .buttonStyle(.plain)
@@ -1175,8 +1180,8 @@ struct WorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if showProject {
                     HStack(spacing: 5) {
-                        Image(systemName: link.project.isScratch ? "doc" : "folder")
-                            .font(.system(size: 9, weight: .medium))
+                        ProjectIconView(icon: link.project.icon, size: 12, fallback: link.project.isScratch ? "doc" : "folder")
+                            .accessibilityHidden(true)
                         Text(link.project.title).lineLimit(1)
                         Spacer(minLength: 0)
                     }

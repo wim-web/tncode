@@ -24,7 +24,14 @@ struct SidebarProjectScopeRow: View {
                     selectOnly()
                 }
             } label: {
-                Label(project.title, systemImage: project.pinned == true ? "pin.fill" : "folder")
+                HStack(spacing: 5) {
+                    ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder")
+                        .accessibilityHidden(true)
+                    Text(project.title)
+                    if project.pinned == true && project.icon != nil {
+                        Image(systemName: "pin.fill").font(.system(size: 9))
+                    }
+                }
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
