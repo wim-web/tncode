@@ -230,6 +230,7 @@ struct ProjectPickerRequest: Identifiable {
     let initialPath: String
     let basePath: String?
     var draftOrigin: DraftProjectScope? = nil
+    var promptLink: PromptLinkReview? = nil
 }
 
 enum ProjectSource {
@@ -344,7 +345,12 @@ struct Project: Codable, Identifiable {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
     }
 
-    mutating func selectDraft() {
+    mutating func selectDraft(seed: Conversation? = nil) {
+        if let seed {
+            conversations.insert(seed, at: 0)
+            selectedConversation = seed.id
+            return
+        }
         if let empty = conversations.first(where: {
             $0.canDiscardDraft && !$0.hasDraftContent
         }) {

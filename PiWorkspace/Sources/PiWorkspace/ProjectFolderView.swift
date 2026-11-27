@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ProjectFolderView: View {
     let request: ProjectPickerRequest
     let open: (ProjectSource) async throws -> Void
+    private let cloneRemote: ProjectCloneRemote?
 
     private enum Page {
         case sources, localFolder, newProject, cloneURL, cloneDestination
@@ -28,11 +29,13 @@ struct ProjectFolderView: View {
     @State private var highlightedFolder: ProjectPathSuggestions.Row?
     @FocusState private var focusedField: Field?
 
-    init(request: ProjectPickerRequest, open: @escaping (ProjectSource) async throws -> Void) {
+    init(request: ProjectPickerRequest, cloneRemote: ProjectCloneRemote? = nil,
+         open: @escaping (ProjectSource) async throws -> Void) {
         self.request = request
         self.open = open
-        _page = State(initialValue: request.relinking == nil ? .sources : .localFolder)
-        _path = State(initialValue: request.initialPath)
+        self.cloneRemote = cloneRemote
+        _page = State(initialValue: cloneRemote != nil ? .cloneDestination : request.relinking == nil ? .sources : .localFolder)
+        _path = State(initialValue: request.initialPath + (cloneRemote?.suggestedName ?? ""))
     }
 
     private var title: String {
@@ -40,7 +43,7 @@ struct ProjectFolderView: View {
         case .sources: "Add project"
         case .localFolder: request.relinking == nil ? "Local folder" : "Relink project"
         case .newProject: "New project"
-        case .cloneURL, .cloneDestination: "Git URL"
+        case .cloneURL, .cloneDestination: cloneRemote == nil ? "Git URL" : "Clone repository"
         }
     }
 
@@ -50,6 +53,11 @@ struct ProjectFolderView: View {
         let suggestions = pathSuggestions
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.title3.weight(.semibold))
+            if let cloneRemote {
+                Text(cloneRemote.argument)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("prompt-link-clone-remote")
+            }
             if page == .sources {
                 sourceButtons
             } else {
@@ -91,7 +99,7 @@ struct ProjectFolderView: View {
                 }
             }
             HStack {
-                if page != .sources && request.relinking == nil {
+                if page != .sources && request.relinking == nil && cloneRemote == nil {
                     Button("Back") { show(page == .cloneDestination ? .cloneURL : .sources) }
                         .disabled(submitting)
                         .accessibilityIdentifier("back-project-source")
@@ -374,7 +382,8 @@ struct ProjectFolderView: View {
     }
 
     private func enteredRemote() throws -> ProjectCloneRemote {
-        try ProjectCloneRemote(remoteInput, relativeTo: request.basePath)
+        if let cloneRemote { return cloneRemote }
+        return try ProjectCloneRemote(remoteInput, relativeTo: request.basePath)
     }
 
     private func cancel() {

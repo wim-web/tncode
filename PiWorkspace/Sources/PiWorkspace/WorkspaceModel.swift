@@ -559,6 +559,8 @@ final class WorkspaceModel: ObservableObject {
 
     @Published private(set) var errorNotice: ErrorNotice?
     @Published var threadLinkError: String?
+    @Published var promptLinkReview: PromptLinkReview?
+    private var lastOpenedPromptLink: PromptLinkReview?
     @Published private(set) var startupFailure: WorkspaceStoreError?
     @Published private(set) var failedStartupDraftProject: UUID?
     @Published var settingsRequest: SettingsRequest?
@@ -918,6 +920,7 @@ final class WorkspaceModel: ObservableObject {
             try registerCreatedRepository(folder, request: request)
         case .clone(let remote, let destination):
             try checkCanOpenProject()
+            if let review = request.promptLink { try requirePromptLinkReview(review) }
             guard request.relinking == nil else {
                 throw WorkspaceError("Choose a local folder to relink this project.")
             }
@@ -995,6 +998,8 @@ final class WorkspaceModel: ObservableObject {
     private func registerProject(_ folder: URL, request: ProjectPickerRequest? = nil) throws {
         try checkDraftProjectRequest(request)
         let draftOrigin = request?.draftOrigin
+        let promptLink = request?.promptLink
+        if let promptLink { try validatePromptLinkReview(promptLink) }
         let relinking = request?.relinking
         let startThread = request?.startThread == true
         let existing = workspace.projects.firstIndex { $0.path == folder.path }
@@ -1019,17 +1024,22 @@ final class WorkspaceModel: ObservableObject {
                 $0.projects[index].detached = false
                 guard draftOrigin == nil else { return }
                 $0.selectedProject = $0.projects[index].id
-                if startThread || $0.projects[index].selectedConversation == nil ||
+                if let promptLink {
+                    let draft = linkedPromptDraft(promptLink.link, in: $0.projects[index])
+                    $0.projects[index].selectDraft(seed: draft)
+                } else if startThread || $0.projects[index].selectedConversation == nil ||
                     (relinking == nil && previous?.id != $0.selectedProject) {
                     $0.projects[index].selectDraft()
                 }
             } else {
                 var project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date())
-                project.selectDraft()
+                let draft = promptLink.map { linkedPromptDraft($0.link, in: project) }
+                project.selectDraft(seed: draft)
                 $0.projects.append(project)
                 if draftOrigin == nil { $0.selectedProject = project.id }
             }
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
+        if let promptLink { lastOpenedPromptLink = promptLink }
         showingWelcome = false
         if draftOrigin == nil && (previous?.id != project?.id || previous?.path != project?.path ||
             previous?.selectedConversation != project?.selectedConversation || process == nil || failedStartupDraftProject != nil) {
@@ -1228,23 +1238,30 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func startScratchThread(updating edit: (inout Workspace) -> Void) {
-        guard !operationsInProgress, let store else { return }
+        guard !operationsInProgress, store != nil else { return }
         do {
             let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)
-            let scratch = try store.makeScratchProject(for: thread)
-            guard save({
-                edit(&$0)
-                $0.projects.append(scratch)
-                $0.selectedProject = scratch.id
-            }) else {
-                store.discardEmptyScratchFolder(scratch)
-                return
-            }
-            showArchive = false
-            connect()
+            try openScratchDraft(thread, updating: edit)
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func openScratchDraft(_ thread: Conversation, updating edit: (inout Workspace) -> Void) throws {
+        guard let store else { throw WorkspaceError("Could not open the workspace.") }
+        let scratch = try store.makeScratchProject(for: thread)
+        var updated = workspace
+        edit(&updated)
+        updated.projects.append(scratch)
+        updated.selectedProject = scratch.id
+        do {
+            try persist(updated)
+        } catch {
+            store.discardEmptyScratchFolder(scratch)
+            throw error
+        }
+        showArchive = false
+        connect()
     }
 
     func convertScratchThread(_ id: UUID, in projectID: UUID) -> Bool {
@@ -1369,6 +1386,94 @@ final class WorkspaceModel: ObservableObject {
         updated.threadLinkID = id
         try persist(updated)
         return id
+    }
+
+    func openPromptLink(_ url: URL) -> Bool {
+        guard PromptLink.handles(url) else { return false }
+        do {
+            let link = try PromptLink(url: url)
+            guard store != nil else { throw WorkspaceError("Finish opening the workspace and try the prompt link again.") }
+            if let review = promptLinkReview {
+                guard review.link == link else {
+                    throw WorkspaceError("Finish reviewing the current prompt and open the other link again.")
+                }
+            } else {
+                promptLinkReview = PromptLinkReview(link: link, alreadyOpened: lastOpenedPromptLink?.link == link)
+            }
+            threadLinkError = nil
+        } catch {
+            threadLinkError = error.localizedDescription
+        }
+        return true
+    }
+
+    func matchingPromptLinkProjects(for repository: GitHubRepository) async throws -> [Project] {
+        var matches: [Project] = []
+        let hosts: Set<String> = ["github.com", "git.cafe", "staging.git.cafe"]
+        for project in projects.sorted(by: { $0.lastActivity > $1.lastActivity }) where project.folderIsAvailable {
+            try Task.checkCancellation()
+            if (try? await makeGitHubReader(project.path).repository(matching: repository, hosts: hosts)) != nil {
+                matches.append(project)
+            }
+        }
+        try Task.checkCancellation()
+        return matches
+    }
+
+    func promptLinkCloneRequest(for review: PromptLinkReview) throws -> (ProjectPickerRequest, ProjectCloneRemote) {
+        try requirePromptLinkReview(review)
+        guard let repository = review.link.repository else { throw WorkspaceError("This link has no repository.") }
+        let request = ProjectPickerRequest(relinking: nil, startThread: true,
+                                           initialPath: ProjectFolder.addProjectInitialPath(workspace.addProjectBaseDirectory),
+                                           basePath: project?.path, promptLink: review)
+        let remote = try ProjectCloneRemote("https://github.com/\(repository.slug).git", relativeTo: nil)
+        return (request, remote)
+    }
+
+    func openPromptLinkDraft(_ review: PromptLinkReview, in projectID: UUID? = nil) throws {
+        try requirePromptLinkReview(review)
+        if let projectID {
+            guard let index = workspace.projects.firstIndex(where: {
+                $0.id == projectID && !$0.isScratch && $0.detached != true && $0.folderIsAvailable
+            }) else { throw WorkspaceError("The linked project’s folder is unavailable.") }
+            var updated = workspace
+            let draft = linkedPromptDraft(review.link, in: updated.projects[index])
+            updated.projects[index].selectDraft(seed: draft)
+            updated.selectedProject = projectID
+            updated.welcomeCompleted = true
+            try persist(updated)
+            failedStartupDraftProject = nil
+            showArchive = false
+            connect()
+        } else {
+            try openScratchDraft(linkedPromptDraft(review.link, in: nil), updating: { $0.welcomeCompleted = true })
+        }
+        showingWelcome = false
+        lastOpenedPromptLink = review
+    }
+
+    private func validatePromptLinkReview(_ review: PromptLinkReview) throws {
+        guard promptLinkReview?.id == review.id, lastOpenedPromptLink?.id != review.id,
+              queueEdit == nil, pendingThreadLink == nil else {
+            throw WorkspaceError("Finish the current operation and open the prompt link again.")
+        }
+    }
+
+    private func requirePromptLinkReview(_ review: PromptLinkReview) throws {
+        try checkCanOpenProject()
+        try validatePromptLinkReview(review)
+    }
+
+    private func linkedPromptDraft(_ link: PromptLink, in project: Project?) -> Conversation {
+        var draft = Conversation(id: UUID(), title: "New thread", isDraft: true, composerText: link.prompt)
+        if let hint = link.modelHint {
+            let inherited = project?.modelOverride ?? workspace.model
+            let matching = [inherited, workspace.model].first {
+                $0.provider.rawValue == hint.provider && (hint.model == nil || $0.model == hint.model)
+            }
+            if let matching, matching != inherited { draft.modelSelection = matching }
+        }
+        return draft
     }
 
     @discardableResult

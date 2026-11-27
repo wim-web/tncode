@@ -75,7 +75,7 @@ struct PiWorkspaceApp: App {
             }
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
                 .onOpenURL { url in
-                    if model.openSettingsLink(url) {
+                    if model.openSettingsLink(url) || model.openPromptLink(url) {
                         launchWorkspace()
                         return
                     }

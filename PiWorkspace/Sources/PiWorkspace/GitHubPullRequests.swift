@@ -21,16 +21,17 @@ struct GitHubRepository: Hashable, Sendable {
         return components.percentEncodedPath
     }
 
-    fileprivate init?(remote: String) {
+    fileprivate init?(remote: String, hosts: Set<String>) {
         let path: String
-        if remote.lowercased().hasPrefix("git@github.com:") {
-            path = String(remote.dropFirst("git@github.com:".count))
+        if let ssh = remote.wholeMatch(of: #/(?i:git)@([^:\/]+):(.+)/#),
+           hosts.contains(ssh.1.lowercased()) {
+            path = String(ssh.2)
         } else {
             guard let url = URLComponents(string: remote),
                   let scheme = url.scheme?.lowercased(),
                   let host = url.host?.lowercased(),
-                  (host == "github.com" && ["https", "http", "ssh", "git"].contains(scheme))
-                    || (scheme == "ssh" && host == "ssh.github.com") else { return nil }
+                  (hosts.contains(host) && ["https", "http", "ssh", "git"].contains(scheme))
+                    || (scheme == "ssh" && host == "ssh.github.com" && hosts.contains("github.com")) else { return nil }
             path = url.path
         }
         let parts = path.split(separator: "/")
@@ -376,14 +377,14 @@ struct GitHubReader: Sendable {
         return log
     }
 
-    func repository(matching expected: GitHubRepository? = nil) async throws -> GitHubRepository {
-        let repository = try await checkoutRepository()
+    func repository(matching expected: GitHubRepository? = nil, hosts: Set<String> = ["github.com"]) async throws -> GitHubRepository {
+        let repository = try await checkoutRepository(hosts: hosts)
         try Task.checkCancellation()
         guard expected == nil || repository == expected else { throw ReadError.repositoryChanged }
         return repository
     }
 
-    private func checkoutRepository() async throws -> GitHubRepository {
+    private func checkoutRepository(hosts: Set<String>) async throws -> GitHubRepository {
         try Task.checkCancellation()
         let remotes: [(name: String, url: String)]
         do {
@@ -393,7 +394,7 @@ struct GitHubReader: Sendable {
         }
         var repositories: [GitHubRepository] = []
         for remote in remotes {
-            guard let repository = GitHubRepository(remote: remote.url) else { continue }
+            guard let repository = GitHubRepository(remote: remote.url, hosts: hosts) else { continue }
             if remote.name == "origin" { return repository }
             if !repositories.contains(repository) {
                 repositories.append(repository)

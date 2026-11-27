@@ -74,6 +74,7 @@ struct WorkspaceView: View {
     @State private var showingComposerStash = false
     @FocusState private var welcomeFocus: WelcomeFocus?
     @State private var focusAfterPicker: DraftProjectScope?
+    @State private var focusAfterPromptLink: DraftProjectScope?
     @State private var targetingProjectDrop = false
     @State private var targetingAttachmentRow: UUID?
     @State private var targetingComposerDrop = false
@@ -528,6 +529,23 @@ struct WorkspaceView: View {
             }
             .padding(20)
             .frame(width: 340)
+        }
+        .sheet(item: $model.promptLinkReview, onDismiss: {
+            if let scope = focusAfterPromptLink, scope == model.draftProjectScope {
+                focusCurrentComposer()
+            }
+            focusAfterPromptLink = nil
+        }) { review in
+            PromptLinkView(model: model, review: review) {
+                focusAfterPromptLink = model.draftProjectScope
+                if model.project?.isScratch == true {
+                    model.updateSidebarScope { $0.clear() }
+                } else {
+                    revealOpenedProject()
+                }
+                searchFocused = false
+                clearSearch()
+            }
         }
         .sheet(item: $model.projectPicker, onDismiss: {
             if let focusAfterPicker, focusAfterPicker == model.draftProjectScope {
