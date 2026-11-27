@@ -274,14 +274,14 @@ final class SidebarPersistenceTests: XCTestCase {
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
                       "The popover needs a WindowServer connection to receive window-targeted events.")
         if keyParent { window.makeKey() }
-        let first = try await window.openSearchPopover("thread-filters")
+        let (firstPopover, first) = try await window.openSearchPopover("thread-filters")
         let alphaRow = "project-filter-choice-\(alpha.id)"
         let betaRow = "project-filter-choice-\(beta.id)"
         try await first.click(alphaRow)
-        try await window.waitFor("the first popover to close") { !first.isVisible }
+        try await window.waitFor("the first popover to close") { !firstPopover.isShown }
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
 
-        let popup = try await window.openSearchPopover("thread-filters")
+        let (popover, popup) = try await window.openSearchPopover("thread-filters")
         try await popup.click(betaRow, modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
         try await popup.click(betaRow, modifiers: .shift)
@@ -293,7 +293,7 @@ final class SidebarPersistenceTests: XCTestCase {
         editor.insertText("unmatched", replacementRange: editor.selectedRange())
         try await window.waitFor("no matching projects") { popup.element("project-filter-no-results") != nil }
         try target.key(kVK_Return, "\r")
-        XCTAssertTrue(popup.isVisible)
+        XCTAssertTrue(popover.isShown)
 
         // Buffered keys can arrive before SwiftUI renders the new matches or highlight.
         editor.insertText("a", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
@@ -307,7 +307,7 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertEqual(editor.string, "a")
         try target.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
-        XCTAssertTrue(popup.isVisible)
+        XCTAssertTrue(popover.isShown)
 
         if !keyParent {
             try window.key(kVK_Return, "\r", modifiers: .shift)
@@ -318,12 +318,17 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertTrue(editor.hasMarkedText())
         try target.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
-        XCTAssertTrue(popup.isVisible)
+        XCTAssertTrue(popover.isShown)
         editor.unmarkText()
 
+        XCTAssertTrue(app.keyWindow === target)
+        XCTAssertTrue(target.firstResponder === editor)
+        XCTAssertTrue(popup.searchEditor === editor)
+        XCTAssertFalse(editor.hasMarkedText())
+        XCTAssertEqual(editor.string, "a")
         try target.key(kVK_Return, "\r")
-        try await window.waitFor("Return to dismiss the popover") { !popup.isVisible }
         XCTAssertEqual(model.sidebarProjectFilter.selection, [beta.id])
+        try await window.waitFor("Return to dismiss the popover") { !popover.isShown }
     }
 
     func testWorkspaceDraftProjectPopoverKeyboard() async throws {
@@ -352,7 +357,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defer { window.close() }
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0, "WindowServer unavailable.")
         window.makeKey()
-        let popup = try await window.openSearchPopover("draft-project-trigger")
+        let (popover, popup) = try await window.openSearchPopover("draft-project-trigger")
         let editor = try XCTUnwrap(popup.searchEditor)
         XCTAssertTrue(app.keyWindow === window)
         XCTAssertTrue(window.firstResponder === editor)
@@ -381,21 +386,21 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertEqual(model.projects.filter { $0.pinned == true }.map(\.id), [beta.id])
         try await window.waitFor("filtered picker") { popup.element("draft-project-pin-\(beta.id)") != nil }
         try window.key(kVK_Return, "\r")
-        try await window.waitFor("chooser closed") { !popup.isVisible }
+        try await window.waitFor("chooser closed") { !popover.isShown }
         XCTAssertEqual(model.project?.id, beta.id)
         XCTAssertEqual(model.conversation?.id, draft.id)
         XCTAssertEqual(model.draft, draft.composerText)
 
-        let reopened = try await window.openSearchPopover("draft-project-trigger")
+        let (reopened, _) = try await window.openSearchPopover("draft-project-trigger")
         try window.key(kVK_Escape, "\u{1b}")
-        try await window.waitFor("chooser cancelled") { !reopened.isVisible }
+        try await window.waitFor("chooser cancelled") { !reopened.isShown }
         XCTAssertEqual(model.project?.id, beta.id)
 
-        let visible = try await window.openSearchPopover("draft-project-trigger")
+        let (visible, _) = try await window.openSearchPopover("draft-project-trigger")
         let composer = try await window.field(withValue: model.draft)
         XCTAssertTrue(window.makeFirstResponder(composer))
         XCTAssertTrue(window.firstResponder === composer.currentEditor())
-        XCTAssertTrue(visible.isVisible)
+        XCTAssertTrue(visible.isShown)
         try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
         XCTAssertEqual(model.projects.filter { $0.pinned == true }.map(\.id), [beta.id])
     }
@@ -648,7 +653,7 @@ private final class SidebarOffscreenPanel: NSPanel {
 }
 
 private extension NSWindow {
-    func openSearchPopover(_ trigger: String) async throws -> NSWindow {
+    func openSearchPopover(_ trigger: String) async throws -> (popover: NSPopover, window: NSWindow) {
         var shown: NSPopover?
         let observer = NotificationCenter.default.publisher(for: NSPopover.willShowNotification).sink { note in
             shown = note.object as? NSPopover
@@ -662,7 +667,8 @@ private extension NSWindow {
         try await waitFor("the presented project picker's field editor") {
             shown?.isShown == true && shown?.contentViewController?.view.window?.searchEditor != nil
         }
-        return try XCTUnwrap(shown?.contentViewController?.view.window)
+        let popover = try XCTUnwrap(shown)
+        return (popover, try XCTUnwrap(popover.contentViewController?.view.window))
     }
 
     func element(_ identifier: String) -> AnyObject? {

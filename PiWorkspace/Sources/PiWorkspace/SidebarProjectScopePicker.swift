@@ -28,11 +28,10 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
         let (matches, choices) = results
         let active = activeChoice(in: choices)
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Search projects", text: Binding(get: { query }, set: { value in
+            SidebarProjectSearch(text: Binding(get: { query }, set: { value in
                 if value != query { highlight = nil }
                 query = value
-            }))
-                .textFieldStyle(.roundedBorder)
+            }), handleKey: handleKey)
                 .focused($searchFocused)
                 .accessibilityIdentifier("project-filter-search")
             if choices.isEmpty {
@@ -94,13 +93,6 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
         .frame(width: 230)
         .defaultFocus($searchFocused, true)
         .onAppear { searchFocused = true }
-        .background {
-            WindowKeyMonitor(includesPopoverFieldEditor: true) { event, window in
-                guard searchFocused, let editor = window.firstResponder as? NSTextView,
-                      editor.isFieldEditor, !editor.hasMarkedText() else { return false }
-                return handleKey(event)
-            }
-        }
     }
 
     private func highlightBackground(_ highlighted: Bool) -> some View {
@@ -146,5 +138,49 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
             return false
         }
         return true
+    }
+}
+
+private struct SidebarProjectSearch: NSViewRepresentable {
+    @Binding var text: String
+
+    let handleKey: (NSEvent) -> Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.bezelStyle = .roundedBezel
+        field.placeholderString = "Search projects"
+        let coordinator = context.coordinator
+        field.delegate = coordinator
+        coordinator.monitor = WindowKeyMonitor.observeKeys(in: field, includesPopoverFieldEditor: true) {
+            [weak field, weak coordinator] event, window in
+            // SwiftUI focus can change while AppKit still has this field's editor as first responder.
+            guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+                  editor.window === window, field?.currentEditor() === editor, !editor.hasMarkedText() else { return false }
+            return coordinator?.search.handleKey(event) == true
+        }
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.search = self
+        if field.currentEditor() == nil, field.stringValue != text { field.stringValue = text }
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var search: SidebarProjectSearch
+        var monitor: Any?
+
+        init(_ search: SidebarProjectSearch) { self.search = search }
+
+        func controlTextDidChange(_ notification: Notification) {
+            if let field = notification.object as? NSTextField { search.text = field.stringValue }
+        }
     }
 }

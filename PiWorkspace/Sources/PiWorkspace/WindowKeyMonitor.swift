@@ -18,14 +18,20 @@ struct WindowKeyMonitor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let anchor = NSView()
         let coordinator = context.coordinator
-        let includesPopoverFieldEditor = self.includesPopoverFieldEditor
-        coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak anchor, weak coordinator] event in
-            guard let window = anchor?.window, let target = event.window,
-                  window === target || (includesPopoverFieldEditor && window.sharesFieldEditor(withKeyParent: target)),
-                  coordinator?.handle(event, window) == true else { return event }
-            return nil
+        coordinator.monitor = Self.observeKeys(in: anchor, includesPopoverFieldEditor: includesPopoverFieldEditor) {
+            [weak coordinator] event, window in coordinator?.handle(event, window) == true
         }
         return anchor
+    }
+
+    static func observeKeys(in anchor: NSView, includesPopoverFieldEditor: Bool,
+                            handle: @escaping (NSEvent, NSWindow) -> Bool) -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak anchor] event in
+            guard let window = anchor?.window, let target = event.window,
+                  window === target || (includesPopoverFieldEditor && window.sharesFieldEditor(withKeyParent: target)),
+                  handle(event, window) else { return event }
+            return nil
+        }
     }
 
     func updateNSView(_ view: NSView, context: Context) {
