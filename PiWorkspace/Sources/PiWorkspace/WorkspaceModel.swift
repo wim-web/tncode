@@ -1101,7 +1101,6 @@ final class WorkspaceModel: ObservableObject {
 
     private func registerProject(_ folder: URL, request: ProjectPickerRequest? = nil) throws {
         try checkDraftProjectRequest(request)
-        let draftOrigin = request?.draftOrigin
         let promptLink = request?.promptLink
         if let promptLink { try validatePromptLinkReview(promptLink) }
         if promptLink?.link.pullRequest != nil {
@@ -1135,11 +1134,12 @@ final class WorkspaceModel: ObservableObject {
                 }
                 $0.projects[index].path = folder.path
                 $0.projects[index].detached = false
-                guard draftOrigin == nil else { return }
                 $0.selectedProject = $0.projects[index].id
                 if let promptLink {
                     let draft = linkedPromptDraft(promptLink.link, in: $0.projects[index])
                     $0.projects[index].selectDraft(seed: draft)
+                } else if request?.draftOrigin != nil {
+                    $0.projects[index].openLatestThreadOrDraft()
                 } else if startThread || $0.projects[index].selectedConversation == nil ||
                     (relinking == nil && previous?.id != $0.selectedProject) {
                     $0.projects[index].selectDraft()
@@ -1149,13 +1149,13 @@ final class WorkspaceModel: ObservableObject {
                 let draft = promptLink.map { linkedPromptDraft($0.link, in: project) }
                 project.selectDraft(seed: draft)
                 $0.projects.append(project)
-                if draftOrigin == nil { $0.selectedProject = project.id }
+                $0.selectedProject = project.id
             }
         }) else { throw WorkspaceError(error ?? "Could not save the project.") }
         if let promptLink { lastOpenedPromptLink = promptLink }
         showingWelcome = false
-        if draftOrigin == nil && (previous?.id != project?.id || previous?.path != project?.path ||
-            previous?.selectedConversation != project?.selectedConversation || process == nil || failedStartupDraftProject != nil) {
+        if previous?.id != project?.id || previous?.path != project?.path ||
+            previous?.selectedConversation != project?.selectedConversation || process == nil || failedStartupDraftProject != nil {
             failedStartupDraftProject = nil
             showArchive = conversation?.archived == true
             connect()

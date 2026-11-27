@@ -198,7 +198,7 @@ final class ComposerDraftTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: firstFile), firstBytes)
     }
 
-    func testAddProjectFromDraftPreservesOriginAndRejectsDismissedOrStaleRequests() async throws {
+    func testAddProjectFromDraftSelectsDestinationAndRejectsDismissedOrStaleRequests() async throws {
         let fixture = try Fixture()
         let second = fixture.root.appendingPathComponent("Second Project", isDirectory: true)
         try FileManager.default.createDirectory(at: second, withIntermediateDirectories: false)
@@ -223,15 +223,18 @@ final class ComposerDraftTests: XCTestCase {
         try await model.openProject(.localFolder(second), request: request)
         model.projectPicker = nil
         let registered = try XCTUnwrap(model.projects.first { $0.path == second.path })
-        XCTAssertEqual(model.draftProjectScope, source)
+        XCTAssertEqual(model.project?.id, registered.id)
+        XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(try fixture.saved().selectedProject, registered.id)
+        model.selectConversation(source.threadID, in: source.projectID)
         XCTAssertEqual(model.draft, "Keep typing in this original draft")
-        XCTAssertEqual(try fixture.saved().selectedProject, source.projectID)
 
-        model.openFolder(draftOrigin: source)
+        let reopened = try XCTUnwrap(model.draftProjectScope)
+        model.openFolder(draftOrigin: reopened)
         let stale = try XCTUnwrap(model.projectPicker)
         model.selectProject(registered.id)
         model.selectConversation(source.threadID, in: source.projectID)
-        XCTAssertNotEqual(model.draftProjectScope, source)
+        XCTAssertNotEqual(model.draftProjectScope, reopened)
         do {
             try await model.openProject(.newProject(name: "Stale Project", parent: fixture.root), request: stale)
             XCTFail("A chooser from a previous selection created a repository.")
@@ -242,9 +245,55 @@ final class ComposerDraftTests: XCTestCase {
         model.openFolder(draftOrigin: try XCTUnwrap(model.draftProjectScope))
         try await model.openProject(.newProject(name: "Created Project", parent: fixture.root),
                                     request: try XCTUnwrap(model.projectPicker))
-        XCTAssertTrue(model.projects.contains { $0.title == "Created Project" })
-        XCTAssertEqual(model.conversation?.id, source.threadID)
+        XCTAssertEqual(model.project?.title, "Created Project")
+        XCTAssertEqual(model.draft, "")
+        model.projectPicker = nil
+        model.openFolder(draftOrigin: try XCTUnwrap(model.draftProjectScope))
+        try await model.openProject(.localFolder(fixture.project), request: try XCTUnwrap(model.projectPicker))
+        XCTAssertEqual(model.project?.id, source.projectID)
+        XCTAssertNotEqual(model.conversation?.id, source.threadID)
+        XCTAssertEqual(model.draft, "")
+        model.selectConversation(source.threadID, in: source.projectID)
         XCTAssertEqual(model.draft, "Keep typing in this original draft")
+    }
+
+    func testAddingAnExistingOrDetachedFolderOpensItsLatestThreadUnlessSettled() async throws {
+        for detached in [false, true] {
+            for settled in [false, true] {
+                let fixture = try Fixture()
+                let destination = fixture.root.appending(path: "Existing")
+                try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+                let savedDraft = Conversation(id: UUID(), title: "Unsent", isDraft: true, composerText: "Saved destination draft")
+                let older = Conversation(id: UUID(), title: "Older", lastActiveAt: Date(timeIntervalSince1970: 1))
+                let latest = Conversation(id: UUID(), title: "Latest", lastActiveAt: Date(timeIntervalSince1970: 2),
+                                          shelf: settled ? .settled : .active)
+                let archived = Conversation(id: UUID(), title: "Archived", archived: true, lastActiveAt: Date(timeIntervalSince1970: 3))
+                let project = Project(id: UUID(), path: destination.path, title: "Existing", detached: detached,
+                                      conversations: [savedDraft, older, latest, archived], selectedConversation: older.id)
+                try WorkspaceStore(root: fixture.workspace).save(Workspace(projects: [project], welcomeCompleted: true))
+                let model = fixture.open()
+                defer { model.terminate() }
+                try model.openProject(fixture.project)
+                let source = try XCTUnwrap(model.draftProjectScope)
+                model.draft = "Source draft"
+                model.openFolder(draftOrigin: source)
+                try await model.openProject(.localFolder(destination), request: try XCTUnwrap(model.projectPicker))
+                let saved = try fixture.saved()
+                XCTAssertEqual(saved.selectedProject, project.id)
+                XCTAssertTrue(saved.activeProject?.detached == false)
+                if settled {
+                    XCTAssertEqual(model.conversation?.isDraft, true)
+                    XCTAssertEqual(model.draft, "")
+                    XCTAssertNotEqual(model.conversation?.id, savedDraft.id)
+                } else {
+                    XCTAssertEqual(model.conversation?.id, latest.id)
+                }
+                XCTAssertEqual(saved.activeProject?.conversations.first { $0.id == savedDraft.id }?.composerText,
+                               savedDraft.composerText)
+                model.selectConversation(source.threadID, in: source.projectID)
+                XCTAssertEqual(model.draft, "Source draft")
+            }
+        }
     }
 
     func testSendRetainsUnrecordedTextAndClearsRecordedText() async throws {

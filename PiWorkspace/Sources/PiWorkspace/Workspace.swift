@@ -347,6 +347,17 @@ struct Project: Codable, Identifiable {
         max(createdAt ?? .distantPast, conversations.compactMap(\.lastActiveAt).max() ?? .distantPast)
     }
 
+    mutating func openLatestThreadOrDraft() {
+        let latest = conversations.filter { !$0.archived && $0.isDraft != true }.max {
+            ($0.lastActiveAt ?? .distantPast, $0.id.uuidString) < ($1.lastActiveAt ?? .distantPast, $1.id.uuidString)
+        }
+        if let latest, latest.threadShelf != .settled {
+            selectedConversation = latest.id
+        } else {
+            selectDraft()
+        }
+    }
+
     mutating func selectDraft(seed: Conversation? = nil) {
         if let seed {
             conversations.insert(seed, at: 0)

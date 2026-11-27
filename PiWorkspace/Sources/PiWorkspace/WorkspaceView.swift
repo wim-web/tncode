@@ -680,7 +680,6 @@ struct WorkspaceView: View {
         }) { request in
             ProjectFolderView(request: request) { source in
                 try await model.openProject(source, request: request)
-                guard request.draftOrigin == nil else { return }
                 focusAfterPicker = model.draftProjectScope
                 revealOpenedProject()
                 if request.relinking == nil {

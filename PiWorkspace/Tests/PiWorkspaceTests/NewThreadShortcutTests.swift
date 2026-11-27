@@ -213,7 +213,7 @@ final class NewThreadShortcutTests: XCTestCase {
         }
     }
 
-    func testScratchHeadlineAddReturnsTypingToSameDraft() async throws {
+    func testScratchHeadlineAddFocusesOriginOnCancelAndNewProjectOnRegistration() async throws {
         let fixture = try Fixture(projectCount: 1, isDraft: true, keyable: true)
         defer { fixture.close() }
         let project = try XCTUnwrap(fixture.model.project)
@@ -222,39 +222,62 @@ final class NewThreadShortcutTests: XCTestCase {
         let scratch = try XCTUnwrap(fixture.model.project)
         XCTAssertTrue(scratch.isScratch)
         fixture.model.removeProject(project.id)
-        XCTAssertTrue(fixture.model.projects.isEmpty)
+        let folder = fixture.root.appending(path: "New destination")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        try fixture.model.updateAddProjectBaseDirectory(folder.path)
 
-        var expectedText = try XCTUnwrap(draft.composerText)
-        for register in [false, true] {
+        func openAdd() async throws {
             let (popover, _) = try await fixture.window.openSearchPopover("draft-project-trigger")
-            try await fixture.pressKey(kVK_Return, "\r", [])
+            try await fixture.pressKey(kVK_Return, "\r")
             _ = try await fixture.find("project-source-local")
             XCTAssertFalse(popover.isShown)
-            if register {
-                try await fixture.press("project-source-local")
-                try await fixture.press("confirm-project")
-            } else {
-                try await fixture.press("cancel-project")
-            }
-            try await fixture.resumeAfterSheet()
-            try await fixture.waitFor("typing focus on the original scratch draft") {
-                (fixture.window.firstResponder as? ComposerTextField.Editor)?.owner?.composerTarget?.threadID == draft.id
-            }
-            let editor = try XCTUnwrap(fixture.window.firstResponder as? ComposerTextField.Editor)
-            XCTAssertEqual(editor.string, expectedText)
-            let saved = try fixture.saved()
-            XCTAssertEqual(saved.selectedProject, scratch.id)
-            XCTAssertEqual(saved.activeProject?.selectedConversation, draft.id)
-            let persisted = try XCTUnwrap(saved.activeProject?.conversations.first { $0.id == draft.id })
-            XCTAssertEqual(persisted.composerText, expectedText)
-            XCTAssertEqual(persisted.composerAttachments, draft.composerAttachments)
-            XCTAssertEqual(fixture.model.projects.map(\.id), register ? [project.id] : [])
-
-            editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
-            try await fixture.pressKey(kVK_ANSI_X, "x")
-            expectedText += "x"
-            XCTAssertEqual(fixture.model.draft, expectedText)
         }
+
+        func editor(for id: UUID) async throws -> ComposerTextField.Editor {
+            try await fixture.waitFor("typing focus on the selected thread") {
+                (fixture.window.firstResponder as? ComposerTextField.Editor)?.owner?.composerTarget?.threadID == id
+            }
+            return try XCTUnwrap(fixture.window.firstResponder as? ComposerTextField.Editor)
+        }
+
+        try await openAdd()
+        try await fixture.press("cancel-project")
+        try await fixture.resumeAfterSheet()
+        let originEditor = try await editor(for: draft.id)
+        let text = try XCTUnwrap(draft.composerText)
+        XCTAssertEqual(originEditor.string, text)
+        XCTAssertEqual(fixture.model.project?.id, scratch.id)
+        XCTAssertTrue(fixture.model.projects.isEmpty)
+        originEditor.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
+        try await fixture.pressKey(kVK_ANSI_X, "x")
+        let unsent = text + "x"
+        XCTAssertEqual(fixture.model.draft, unsent)
+
+        try await openAdd()
+        try await fixture.press("project-source-local")
+        try await fixture.press("confirm-project")
+        try await fixture.resumeAfterSheet()
+        XCTAssertEqual(fixture.model.project?.path, folder.path)
+        let destination = try XCTUnwrap(fixture.model.conversation)
+        XCTAssertNotEqual(destination.id, draft.id)
+        XCTAssertEqual(destination.isDraft, true)
+        let newEditor = try await editor(for: destination.id)
+        XCTAssertEqual(newEditor.string, "")
+        try await fixture.pressKey(kVK_ANSI_Y, "y")
+        XCTAssertEqual(fixture.model.draft, "y")
+
+        let saved = try fixture.saved()
+        XCTAssertEqual(saved.activeProject?.path, folder.path)
+        XCTAssertEqual(saved.activeProject?.selectedConversation, destination.id)
+        let source = try XCTUnwrap(saved.projects.first { $0.id == scratch.id })
+        let persisted = try XCTUnwrap(source.conversations.first { $0.id == draft.id })
+        XCTAssertEqual(persisted.composerText, unsent)
+        XCTAssertEqual(persisted.composerAttachments, draft.composerAttachments)
+
+        try await fixture.press("thread-row-\(draft.id)")
+        let restoredEditor = try await editor(for: draft.id)
+        XCTAssertEqual(restoredEditor.string, unsent)
+        XCTAssertEqual(fixture.model.composerAttachments, draft.composerAttachments)
     }
 
     func testAddExistingProjectFromNewProjectForm() async throws {
