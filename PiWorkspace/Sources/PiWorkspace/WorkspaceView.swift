@@ -1910,13 +1910,10 @@ struct WorkspaceView: View {
             get: { draftProjectPicker },
             set: { if $0 == nil, let session = draftProjectPicker { finishDraftProjectPicker(session, with: nil) } }
         ), arrowEdge: .bottom) { session in
-            let projects = model.projects.sorted { lhs, rhs in
-                if (lhs.pinned == true) != (rhs.pinned == true) { return lhs.pinned == true }
-                return lhs.lastActivity > rhs.lastActivity
-            }
-            DraftProjectPicker(projects: projects, currentProject: project.id, isScratch: project.isScratch) {
+            DraftProjectPicker(model: model) {
                 finishDraftProjectPicker(session, with: $0)
             }
+            .id(session.id)
         }
     }
 

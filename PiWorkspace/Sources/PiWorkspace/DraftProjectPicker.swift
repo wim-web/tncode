@@ -7,26 +7,25 @@ struct DraftProjectPicker: View {
         case addProject
     }
 
-    let projects: [Project]
-    let currentProject: UUID
-    let isScratch: Bool
+    @ObservedObject var model: WorkspaceModel
     let finish: (Destination?) -> Void
 
     @State private var query = ""
     @State private var highlight: Destination?
+    @State private var projectOrder: [UUID] = []
     @FocusState private var searchFocused: Bool
 
-    private var matches: [Project] {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return term.isEmpty ? projects : projects.filter { $0.title.localizedStandardContains(term) }
-    }
-
     var body: some View {
-        let matches = self.matches
-        let browsing = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let actions: [Destination] = browsing ? (isScratch ? [.addProject] : [.noProject, .addProject]) : []
+        let projects = SidebarProjectFilter.orderedProjects(model.projects.sorted { $0.lastActivity > $1.lastActivity })
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rank = Dictionary(uniqueKeysWithValues: projectOrder.enumerated().map { ($1, $0) })
+        let matches = projects.filter { term.isEmpty || $0.title.localizedStandardContains(term) }.sorted {
+            rank[$0.id, default: projectOrder.count] < rank[$1.id, default: projectOrder.count]
+        }
+        let browseActions: [Destination] = model.project?.isScratch == true ? [.addProject] : [.noProject, .addProject]
+        let actions = term.isEmpty ? browseActions : []
         let destinations = matches.map { Destination.project($0.id) } + actions
-        let selected = highlight.flatMap { destinations.contains($0) ? $0 : nil } ?? destinations.first
+        let selected = highlightedDestination(in: destinations)
         VStack(alignment: .leading, spacing: 8) {
             TextField("Search projects", text: $query)
                 .textFieldStyle(.roundedBorder)
@@ -46,22 +45,19 @@ struct DraftProjectPicker: View {
                         VStack(spacing: 2) {
                             ForEach(matches) { project in
                                 let destination = Destination.project(project.id)
-                                row(project.title, icon: project.pinned == true ? "pin" : "folder",
-                                    destination: destination, selected: selected,
-                                    current: project.id == currentProject)
-                                    .help(project.path)
-                                    .accessibilityIdentifier("draft-project-\(project.id)")
+                                row(project.title, icon: "folder", destination: destination, selected: selected,
+                                    identifier: "draft-project-\(project.id)", project: project)
                                     .id(destination)
                             }
                             if !matches.isEmpty && !actions.isEmpty { Divider() }
                             if actions.contains(.noProject) {
-                                row("No project", icon: "doc", destination: .noProject, selected: selected)
-                                    .accessibilityIdentifier("draft-no-project")
+                                row("No project", icon: "doc", destination: .noProject, selected: selected,
+                                    identifier: "draft-no-project")
                                     .id(Destination.noProject)
                             }
                             if actions.contains(.addProject) {
-                                row("Add project", icon: "folder.badge.plus", destination: .addProject, selected: selected)
-                                    .accessibilityIdentifier("draft-add-project")
+                                row("Add project", icon: "folder.badge.plus", destination: .addProject, selected: selected,
+                                    identifier: "draft-add-project")
                                     .id(Destination.addProject)
                             }
                         }
@@ -80,10 +76,23 @@ struct DraftProjectPicker: View {
         .accessibilityIdentifier("draft-project-chooser")
         .defaultFocus($searchFocused, true)
         .onAppear { searchFocused = true }
+        .onChange(of: projects.map(\.id), initial: true) { _, ids in
+            // Keep rows in place until the picker reopens, including while filtering.
+            let known = Set(projectOrder)
+            let newIDs = ids.filter { !known.contains($0) }
+            if !newIDs.isEmpty { projectOrder.append(contentsOf: newIDs) }
+        }
         .background {
             WindowKeyMonitor { event, window in
-                guard let key = CommandPaletteSession.Key(event),
-                      (window.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
+                guard (window.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
+                let selected = highlightedDestination(in: destinations)
+                let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+                if searchFocused, modifiers == [.command, .shift],
+                   event.charactersIgnoringModifiers?.lowercased() == "p", case .project(let id)? = selected {
+                    if !event.isARepeat { togglePin(id) }
+                    return true
+                }
+                guard let key = CommandPaletteSession.Key(event) else { return false }
                 if key == .escape {
                     if !event.isARepeat { finish(nil) }
                     return true
@@ -106,25 +115,53 @@ struct DraftProjectPicker: View {
         }
     }
 
+    private func highlightedDestination(in destinations: [Destination]) -> Destination? {
+        highlight.flatMap { destinations.contains($0) ? $0 : nil } ?? destinations.first
+    }
+
+    private func togglePin(_ id: UUID) {
+        guard let project = model.projects.first(where: { $0.id == id }) else { return }
+        model.setProjectPinned(id, pinned: project.pinned != true)
+    }
+
     private func row(_ title: String, icon: String, destination: Destination,
-                     selected: Destination?, current: Bool = false) -> some View {
-        Button { finish(destination) } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .frame(width: 17)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text(title).lineLimit(1)
-                Spacer()
-                if current { Image(systemName: "checkmark").accessibilityHidden(true) }
+                     selected: Destination?, identifier: String, project: Project? = nil) -> some View {
+        let current = model.project.map { $0.id == project?.id } ?? false
+        return HStack(spacing: 0) {
+            Button { finish(destination) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .frame(width: 17)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text(title).lineLimit(1)
+                    Spacer()
+                    if current { Image(systemName: "checkmark").accessibilityHidden(true) }
+                }
+                .padding(.horizontal, 7)
+                .frame(height: 28)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 7)
-            .frame(height: 28)
-            .background(destination == selected ? Color.accentColor.opacity(0.15) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(project?.path ?? "")
+            .accessibilityAddTraits(current ? .isSelected : [])
+            .accessibilityIdentifier(identifier)
+            if let project {
+                let pinned = project.pinned == true
+                let action = pinned ? "Unpin \(project.title)" : "Pin \(project.title)"
+                Button { togglePin(project.id) } label: {
+                    Image(systemName: pinned ? "pin.fill" : "pin")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("\(action) (⌘⇧P)")
+                .accessibilityLabel(action)
+                .accessibilityIdentifier("draft-project-pin-\(project.id)")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(current ? .isSelected : [])
+        .background(destination == selected ? Color.accentColor.opacity(0.15) : .clear,
+                    in: RoundedRectangle(cornerRadius: 5))
     }
 }
