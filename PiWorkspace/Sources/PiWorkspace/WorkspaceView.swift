@@ -52,6 +52,7 @@ struct WorkspaceView: View {
     @State private var restoreBranchComposerFocus = false
     @State private var terminalWorkspaceChange: UUID?
     @State private var choosingThreadProject = false
+    @State private var focusAfterThreadChoice: DraftProjectScope?
     @State private var draftProjectPicker: DraftProjectPickerPresentation?
     @State private var composerModelPicker: ComposerModelPresentation?
     @State private var paletteChoosingProject = false
@@ -542,15 +543,20 @@ struct WorkspaceView: View {
             .padding(20)
             .frame(width: 360)
         }
-        .sheet(isPresented: $choosingThreadProject) {
+        .sheet(isPresented: $choosingThreadProject, onDismiss: {
+            if let scope = focusAfterThreadChoice, scope == model.draftProjectScope {
+                focusedComposer = scope.threadID
+            }
+            focusAfterThreadChoice = nil
+        }) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Start a thread in").font(.headline)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(filteredProjects) { project in
                             Button(project.title) {
+                                focusAfterThreadChoice = startThread(in: project.id)
                                 choosingThreadProject = false
-                                startThread(in: project.id)
                             }
                             .accessibilityIdentifier("new-thread-project-\(project.id)")
                         }
@@ -3364,13 +3370,15 @@ struct WorkspaceView: View {
         }
     }
 
-    private func startThread(in projectID: UUID) {
-        guard !model.operationsInProgress, model.projects.contains(where: { $0.id == projectID }) else { return }
+    @discardableResult
+    private func startThread(in projectID: UUID) -> DraftProjectScope? {
+        guard !model.operationsInProgress, model.projects.contains(where: { $0.id == projectID }) else { return nil }
         model.addConversation(in: projectID)
-        guard model.project?.id == projectID, model.editingQueuedMessageID == nil else { return }
+        guard model.project?.id == projectID, model.editingQueuedMessageID == nil else { return nil }
         revealOpenedProject()
         searchFocused = false
         clearSearch()
+        return model.conversation?.isDraft == true ? model.draftProjectScope : nil
     }
 
     private func clearSearch() {

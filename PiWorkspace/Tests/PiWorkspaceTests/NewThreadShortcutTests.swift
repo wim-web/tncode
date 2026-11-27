@@ -6,6 +6,53 @@ import XCTest
 
 @MainActor
 final class NewThreadShortcutTests: XCTestCase {
+    func testSidebarProjectChoiceFocusesNewDraftAfterWorktreeStorageReset() async throws {
+        let fixture = try Fixture(projectCount: 2, fromWorktree: true, keyable: true)
+        defer { fixture.close() }
+        let project = try XCTUnwrap(fixture.model.project)
+        let submitted = try XCTUnwrap(fixture.model.conversation)
+        XCTAssertFalse(submitted.isDraft == true)
+        try fixture.model.updateWorktreesDirectory(fixture.root.appending(path: "Custom Worktrees").path)
+        try await fixture.press("model-settings")
+        try await fixture.press("settings-nav-worktrees")
+        try await fixture.press("reset-worktree-location")
+        XCTAssertNil(fixture.model.workspace.worktreesDirectory)
+        try await fixture.press("settings-close")
+        try await fixture.resumeAfterSheet()
+
+        let draftID = try await fixture.chooseProjectAndType(project.id)
+        XCTAssertNotEqual(draftID, submitted.id)
+        let original = fixture.model.project?.conversations.first { $0.id == submitted.id }
+        XCTAssertEqual(original?.composerText, submitted.composerText)
+        XCTAssertEqual(original?.composerAttachments, submitted.composerAttachments)
+    }
+
+    func testSidebarProjectChoiceFocusesSelectedEmptyDraftAndCancelPreservesSearch() async throws {
+        let fixture = try Fixture(projectCount: 2, keyable: true)
+        defer { fixture.close() }
+        let project = try XCTUnwrap(fixture.model.project)
+        fixture.model.addConversation(in: project.id)
+        let empty = try XCTUnwrap(fixture.model.conversation)
+        try await fixture.waitFor("selected draft's editor") {
+            (fixture.window.firstResponder as? ComposerTextField.Editor)?.owner?.composerTarget?.threadID == empty.id
+        }
+        let search = try XCTUnwrap(fixture.textField("Search threads", in: fixture.window))
+        XCTAssertTrue(fixture.window.makeFirstResponder(search))
+        try await fixture.pressKey(kVK_ANSI_J, "j")
+        XCTAssertEqual(search.stringValue, "j")
+        let stored = try Data(contentsOf: fixture.index)
+        try await fixture.press("new-conversation")
+        _ = try await fixture.find("new-thread-project-\(project.id)")
+        try await fixture.cancelChooser()
+        try await fixture.resumeAfterSheet()
+        XCTAssertTrue(fixture.window.firstResponder === search.currentEditor())
+        XCTAssertEqual(search.stringValue, "j")
+        XCTAssertEqual(try Data(contentsOf: fixture.index), stored)
+
+        let draftID = try await fixture.chooseProjectAndType(project.id)
+        XCTAssertEqual(draftID, empty.id)
+    }
+
     func testCommandShiftNStartsLocalDraft() async throws {
         let fixture = try Fixture(projectCount: 2, fromWorktree: true)
         defer { fixture.close() }
@@ -192,9 +239,24 @@ final class NewThreadShortcutTests: XCTestCase {
         (kVK_ANSI_N, "n", [.command, .option])
     ]
 
+    private struct TestWorkspace: View {
+        @ObservedObject var model: WorkspaceModel
+        let defaults: UserDefaults
+        let pasteboard: NSPasteboard
+
+        var body: some View {
+            WorkspaceView(model: model, chatWidthMode: .full, browserDefaults: defaults, workspacePasteboard: pasteboard)
+                .sheet(item: $model.settingsRequest) { request in
+                    SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults), browserDefaults: defaults,
+                                 request: request, pasteboard: pasteboard, openWelcome: {})
+                }
+        }
+    }
+
     private final class Panel: NSPanel {
         override var canBecomeMain: Bool { false }
-        override var canBecomeKey: Bool { false }
+        var keyable = false
+        override var canBecomeKey: Bool { keyable }
         override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
         override func beginSheet(_ sheetWindow: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
@@ -216,7 +278,7 @@ final class NewThreadShortcutTests: XCTestCase {
         private let pasteboard = NSPasteboard.withUniqueName()
         var index: URL { root.appending(path: "workspace/workspace.json") }
 
-        init(projectCount: Int, fromWorktree: Bool = false, isDraft: Bool = false) throws {
+        init(projectCount: Int, fromWorktree: Bool = false, isDraft: Bool = false, keyable: Bool = false) throws {
             let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
             self.root = root
             let workspaceRoot = root.appendingPathComponent("workspace")
@@ -245,8 +307,7 @@ final class NewThreadShortcutTests: XCTestCase {
             }
             if let failure = model.startupFailure { throw failure }
             defaults = try XCTUnwrap(UserDefaults(suiteName: namespace))
-            let host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .full,
-                                                            browserDefaults: defaults, workspacePasteboard: pasteboard)
+            let host = NSHostingView(rootView: TestWorkspace(model: model, defaults: defaults, pasteboard: pasteboard)
                 .defaultAppStorage(defaults))
             policy = app.activationPolicy()
             app.setActivationPolicy(.prohibited)
@@ -258,7 +319,9 @@ final class NewThreadShortcutTests: XCTestCase {
             panel.contentView = host
             panel.setFrameOrigin(origin)
             XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(panel.frame) })
+            panel.keyable = keyable
             panel.orderBack(nil)
+            if keyable { panel.makeKey() }
             window = panel
         }
 
@@ -318,13 +381,47 @@ final class NewThreadShortcutTests: XCTestCase {
             XCTAssertTrue(button.accessibilityPerformPress?() == true, id)
         }
 
-        func enterProjectName(_ name: String) throws {
-            func nameField(in view: NSView) -> NSTextField? {
-                if let field = view as? NSTextField, field.placeholderString == "Enter a project name" { return field }
-                return view.subviews.lazy.compactMap(nameField).first
+        func resumeAfterSheet() async throws {
+            try await waitFor("sheet to dismiss") { window.attachedSheet == nil }
+            // The inactive test application doesn't automatically return key status to its parent panel.
+            window.makeKey()
+            XCTAssertTrue(window.isKeyWindow)
+        }
+
+        func chooseProjectAndType(_ projectID: UUID) async throws -> UUID {
+            try await press("new-conversation")
+            try await press("new-thread-project-\(projectID)")
+            try await resumeAfterSheet()
+            let draft = try XCTUnwrap(model.conversation)
+            XCTAssertEqual(model.project?.id, projectID)
+            XCTAssertEqual(draft.isDraft, true)
+            XCTAssertEqual(model.draft, "")
+
+            let editor = window.firstResponder as? ComposerTextField.Editor
+            let owner = editor?.owner
+            XCTAssertEqual(owner?.composerTarget?.threadID, draft.id)
+            XCTAssertEqual(owner?.accessibilityIdentifier(), "composer")
+            XCTAssertNotNil(editor)
+            XCTAssertTrue(owner?.currentEditor() === editor)
+            XCTAssertEqual(editor?.selectedRange(), NSRange(location: 0, length: 0))
+            try await pressKey(kVK_ANSI_X, "x")
+            XCTAssertEqual(model.draft, "x")
+            XCTAssertEqual(model.conversation?.id, draft.id)
+            XCTAssertEqual(editor?.selectedRange(), NSRange(location: 1, length: 0))
+            return draft.id
+        }
+
+        func textField(_ placeholder: String, in window: NSWindow) -> NSTextField? {
+            func find(in view: NSView) -> NSTextField? {
+                if let field = view as? NSTextField, field.placeholderString == placeholder { return field }
+                return view.subviews.lazy.compactMap(find).first
             }
+            return window.contentView.flatMap(find)
+        }
+
+        func enterProjectName(_ name: String) throws {
             let sheet = try XCTUnwrap(window.attachedSheet)
-            let field = try XCTUnwrap(sheet.contentView.flatMap(nameField))
+            let field = try XCTUnwrap(textField("Enter a project name", in: sheet))
             XCTAssertTrue(sheet.makeFirstResponder(field))
             let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
             editor.insertText(name, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
