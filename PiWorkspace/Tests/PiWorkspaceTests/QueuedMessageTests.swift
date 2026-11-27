@@ -80,12 +80,13 @@ final class QueuedMessageTests: XCTestCase {
     }
 
     @MainActor
-    func testLateFinishAndOldStopDeadlinesStayWithTheirTurn() async throws {
+    func testLateFinishAndOldStopDeadlinesStayWithTheirTurn() throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }
         let model = fixture.open()
         defer { model.shutdown() }
         let oldWorker = fixture.worker
+        let originalThread = try XCTUnwrap(model.conversation?.id)
         let oldEvent = try XCTUnwrap(oldWorker.onEvent)
         let first = try oldWorker.start("First", in: model)
         model.cancel()
@@ -99,16 +100,15 @@ final class QueuedMessageTests: XCTestCase {
         worker.finish(second)
         let third = try worker.start("Third", in: model)
         fixture.append(["Wait for resume"], in: model)
-        let beforeThirdStop = ContinuousClock.now
-        try await Task.sleep(for: .seconds(2))
         model.cancel()
 
         oldEvent(.finished(turnID: third.turnID, [], error: "Old helper"))
         worker.finish(second)
-        try await Task.sleep(until: beforeThirdStop + .milliseconds(10500), clock: .continuous)
+        model.stopAcknowledgementExpired(turnID: first.turnID, threadID: originalThread, from: oldWorker)
+        model.stopAcknowledgementExpired(turnID: second.turnID, threadID: fixture.other, from: worker)
         XCTAssertEqual(model.phase, .stopping)
         XCTAssertNil(model.error)
-        try await Task.sleep(until: beforeThirdStop + .seconds(13), clock: .continuous)
+        model.stopAcknowledgementExpired(turnID: third.turnID, threadID: fixture.other, from: worker)
         XCTAssertEqual(model.phase, .stopTimedOut)
         worker.finish(third)
         model.cancel()

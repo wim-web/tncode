@@ -2552,10 +2552,13 @@ final class WorkspaceModel: ObservableObject {
         let deadline = ContinuousClock.now + .seconds(10)
         stopTimeout = Task { [weak self, weak worker, threadID = conversation?.id] in
             do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
-            guard let self, let worker, process === worker, conversation?.id == threadID,
-                  activeTurnID == turnID, phase == .stopping else { return }
-            phase = .stopTimedOut
+            if let worker { self?.stopAcknowledgementExpired(turnID: turnID, threadID: threadID, from: worker) }
         }
+    }
+
+    func stopAcknowledgementExpired(turnID: UUID, threadID: UUID?, from worker: any PiConnection) {
+        guard process === worker, conversation?.id == threadID, activeTurnID == turnID, phase == .stopping else { return }
+        phase = .stopTimedOut
     }
 
     func respond(to requestID: String, with decision: ToolApprovalDecision) {
