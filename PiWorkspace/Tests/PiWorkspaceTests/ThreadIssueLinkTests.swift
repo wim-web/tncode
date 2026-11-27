@@ -385,7 +385,6 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testCommentRetryAfterRestart() async throws {
-        // Launch the first editor in a separate XCTest process so only on-disk state survives.
         let launchRoot = "PI_TEST_COMMENT_FIRST_LAUNCH"
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
@@ -467,7 +466,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         try fixture.setMode("reveal")
         try await panel.press("issue-detail-refresh")
         _ = try await panel.find("issue-comment-body-posted-2")
-        for mode in ["different-viewer", "different-author", "replacement-issue", "window-moved"] {
+        for mode in ["different-viewer", "different-author", "replacement-issue", "baseline-comment-outside-page"] {
             try fixture.setMode(mode)
             try await panel.press("issue-write-check")
             _ = try await panel.find("issue-write-check") { _ in

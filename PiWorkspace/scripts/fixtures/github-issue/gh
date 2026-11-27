@@ -84,8 +84,7 @@ elif args[:2] == ["api", "graphql"] and "query NativeIssueDetail" in " ".join(ar
     result["comments"] = {"totalCount": len(details["comments"]), "nodes": details["comments"][-25:]}
     if mode == "wrong-target":
         result["url"] = details["url"].replace("/issues/", "/pull/")
-    if mode == "window-moved":
-        # The baseline comment has fallen beyond the bounded read.
+    if mode == "baseline-comment-outside-page":
         result["comments"] = {"totalCount": 26, "nodes": [
             {**details["comments"][-1], "id": f"later-{index}"} for index in range(25)
         ]}

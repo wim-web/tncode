@@ -115,6 +115,9 @@ async function open() {
       endpoint: `http://127.0.0.1:${server.address().port}/v1`,
     },
   });
+  const catalog = await receive(worker, "modelCatalog");
+  assert.equal(typeof catalog.models.openai["gpt-5-mini"], "string");
+  assert(Object.keys(catalog.models.anthropic).length > 0);
   const messages = (await receive(worker, "ready")).messages;
   return { ...worker, messages };
 }
