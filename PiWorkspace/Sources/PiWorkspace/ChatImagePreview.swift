@@ -2,7 +2,7 @@ import Carbon
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ChatImagePreview {
+enum ChatAttachment {
     enum Owner: Hashable {
         case composer(ComposerAttachmentTarget)
         case queued(thread: UUID, message: UUID)
@@ -20,11 +20,13 @@ struct ChatImagePreview {
         let owner: Owner
         let attachmentID: UUID
     }
+}
 
-    let opener: Opener
+struct ChatImagePreview {
+    let opener: ChatAttachment.Opener
     var selectedID: UUID
 
-    init(_ opener: Opener) {
+    init(_ opener: ChatAttachment.Opener) {
         self.opener = opener
         selectedID = opener.attachmentID
     }
@@ -57,12 +59,12 @@ struct ChatImagePreview {
     }
 }
 
-struct ChatImagePreviewButton<Label: View>: View {
-    let opener: ChatImagePreview.Opener
+struct ChatAttachmentPreviewButton<Label: View>: View {
+    let opener: ChatAttachment.Opener
     let name: String
     let identifier: String
-    let focus: FocusState<ChatImagePreview.Opener?>.Binding
-    let open: (ChatImagePreview.Opener) -> Void
+    let focus: FocusState<ChatAttachment.Opener?>.Binding
+    let open: (ChatAttachment.Opener) -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {

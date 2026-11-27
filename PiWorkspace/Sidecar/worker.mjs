@@ -114,19 +114,37 @@ function sentImageBlocks(message) {
   }));
 }
 
-function readSentImage({ requestID, messageID, attachmentID }) {
+function sentTextFile(attachment) {
+  const { mimeType, textData: data } = attachment ?? {};
+  if (mimeType !== "text/plain" || typeof data !== "string" ||
+      data.length > 4 * Math.ceil(maxTextAttachmentBytes / 3)) return;
+  const bytes = Buffer.from(data, "base64");
+  if (!bytes.length || bytes.length > maxTextAttachmentBytes ||
+      bytes.includes(0) || bytes.toString("base64") !== data) return;
+  try { new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch { return; }
+  return { mimeType, data };
+}
+
+function visibleBranch() {
+  const branch = manager.getBranch();
+  return inheritedCutoff ? branch.slice(branch.findIndex(({ id }) => id === inheritedCutoff) + 1) : branch;
+}
+
+function readSentAttachment({ type, requestID, messageID, attachmentID }) {
   if (!session || !validID(requestID) || !validID(attachmentID) || typeof messageID !== "string") return;
-  const entry = manager.getBranch().find(({ id }) => id === messageID);
-  const image = entry?.type === "message" && entry.message.role === "user"
-    ? sentImageBlocks(entry.message).get(attachmentID)
-    : undefined;
-  emit({ type: "sentImage", requestID, image });
+  const entry = visibleBranch().find(({ id }) => id === messageID);
+  const message = entry?.type === "message" && entry.message.role === "user" ? entry.message : undefined;
+  if (type === "readSentImage") {
+    emit({ type: "sentImage", requestID, image: message && sentImageBlocks(message).get(attachmentID) });
+  } else {
+    const file = sentTextFile(message?.workspaceInput?.attachments?.find(({ id }) => id === attachmentID));
+    emit({ type: "sentFile", requestID, file });
+  }
 }
 
 function history() {
-  const branch = manager.getBranch();
-  const start = inheritedCutoff ? branch.findIndex(({ id }) => id === inheritedCutoff) + 1 : 0;
-  return branch.slice(start).flatMap((entry) => {
+  return visibleBranch().flatMap((entry) => {
     if (entry.type !== "message") return [];
     const { role } = entry.message;
     if (role !== "user" && role !== "assistant") return [];
@@ -137,8 +155,9 @@ function history() {
     const images = sentImageBlocks(entry.message);
     return text || attachments?.length ? [{
       id: entry.id, role, text, queuedID: workspaceQueuedID, submissionID: workspaceSubmissionID,
-      attachments: attachments?.map((attachment) => ({
-        ...attachment, hasImage: images.has(attachment.id),
+      attachments: attachments?.map(({ id, name, mimeType, textData }) => ({
+        id, name, mimeType, hasImage: images.has(id),
+        hasText: mimeType === "text/plain" ? Boolean(sentTextFile({ mimeType, textData })) : undefined,
       })),
       canFork: forkStatus === "replayable",
       incompleteReply: ["interrupted", "truncated"].includes(forkStatus) ? forkStatus : undefined,
@@ -230,6 +249,7 @@ function prepareInput(text, attachments = []) {
     bytes += decoded.length;
     if (bytes > maxAttachmentBytes) throw new Error("Attachments must total 4 MB or less.");
     const safeName = redact(name);
+    let textData;
     if (mimeType === "text/plain") {
       if (decoded.length > maxTextAttachmentBytes || decoded.includes(0)) {
         throw new Error("Choose a UTF-8 text file of 64 KB or smaller.");
@@ -237,7 +257,9 @@ function prepareInput(text, attachments = []) {
       let content;
       try { content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(decoded); }
       catch { throw new Error("Choose a UTF-8 text file."); }
-      parts.push(`Attached text file ${JSON.stringify(safeName)}:\n${redact(content)}`);
+      const safeText = redact(content);
+      parts.push(`Attached text file ${JSON.stringify(safeName)}:\n${safeText}`);
+      textData = Buffer.from(safeText, "utf8").toString("base64");
     } else if (
       (mimeType === "image/png" && decoded.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") ||
       (mimeType === "image/jpeg" && decoded.subarray(0, 3).toString("hex") === "ffd8ff")
@@ -252,7 +274,7 @@ function prepareInput(text, attachments = []) {
       throw new Error("Choose a PNG, JPEG, or UTF-8 text file.");
     }
     ids.add(id);
-    metadata.push({ id, name: safeName, mimeType });
+    metadata.push({ id, name: safeName, mimeType, textData });
   }
   return {
     prompt: parts.filter(Boolean).join("\n\n"),
@@ -613,8 +635,8 @@ input.on("line", (line) => {
     void prompt(command);
   } else if (command.type === "fork") {
     forkConversation(command);
-  } else if (command.type === "readSentImage") {
-    readSentImage(command);
+  } else if (command.type === "readSentImage" || command.type === "readSentFile") {
+    readSentAttachment(command);
   } else if (command.type === "steer" || command.type === "skipCompaction") {
     handleQueuedInput(command);
   } else if (command.type === "toolApprovalResult") {

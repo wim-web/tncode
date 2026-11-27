@@ -5,12 +5,19 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
     @ObservedObject var model: WorkspaceModel
     let threadID: UUID
     @State private var choosingFiles = false
-    @State private var replacementID: UUID?
-    @State private var pickerTarget: ComposerAttachmentTarget?
-    let previewFocus: FocusState<ChatImagePreview.Opener?>.Binding
-    let openPreview: (ChatImagePreview.Opener) -> Void
+    @State private var picker: FilePicker?
+    let previewFocus: FocusState<ChatAttachment.Opener?>.Binding
+    let openPreview: (ChatAttachment.Opener) -> Void
+    let openFilePreview: (ChatAttachment.Opener) -> Void
     @ViewBuilder let prompt: () -> Prompt
     @ViewBuilder let controls: () -> Controls
+
+    private struct FilePicker {
+        let target: ComposerAttachmentTarget
+        let threadRevision: Int
+        let replacementID: UUID?
+    }
+
     private var target: ComposerAttachmentTarget {
         model.attachmentTarget(for: threadID)
     }
@@ -71,28 +78,37 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
             .padding(.bottom, 9)
         }
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.item],
-                      allowsMultipleSelection: replacementID == nil) { result in
+                      allowsMultipleSelection: picker?.replacementID == nil) { result in
+            guard let picker, picker.target == target, model.conversation?.id == threadID,
+                  picker.threadRevision == model.threadSelectionRevision else { return }
+            self.picker = nil
             switch result {
             case .success(let urls):
-                guard let pickerTarget else { return }
-                model.attach(urls.map(ComposerAttachmentInput.file), to: pickerTarget, replacing: replacementID)
+                model.attach(urls.map(ComposerAttachmentInput.file), to: picker.target, replacing: picker.replacementID)
             case .failure(let error):
                 if (error as? CocoaError)?.code != .userCancelled { model.error = error.localizedDescription }
             }
         }
         .fileDialogDefaultDirectory(model.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        .onChange(of: target) { _, _ in closePicker() }
+        .onChange(of: model.threadSelectionRevision) { _, _ in closePicker() }
     }
 
     private func chooseFiles(replacing id: UUID?) {
-        pickerTarget = target
-        replacementID = id
+        picker = FilePicker(target: target, threadRevision: model.threadSelectionRevision, replacementID: id)
         choosingFiles = true
     }
 
+    private func closePicker() {
+        picker = nil
+        choosingFiles = false
+    }
+
     private func tile(_ attachment: ComposerAttachment) -> some View {
-        HStack(spacing: 6) {
+        let owner = target
+        return HStack(spacing: 6) {
             if let item = ChatImagePreview.ImageItem(attachment) {
-                ChatImagePreviewButton(opener: .init(owner: .composer(target), attachmentID: item.id),
+                ChatAttachmentPreviewButton(opener: .init(owner: .composer(owner), attachmentID: item.id),
                                        name: item.name, identifier: "preview-attachment-\(item.id)",
                                        focus: previewFocus, open: openPreview) {
                     Group {
@@ -104,16 +120,17 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
                     }
                     .frame(width: 34, height: 34)
                 }
+                attachmentName(attachment.name)
+            } else if attachment.payload != nil {
+                ChatAttachmentPreviewButton(opener: .init(owner: .composer(owner), attachmentID: attachment.id),
+                                            name: attachment.name, identifier: "preview-attachment-\(attachment.id)",
+                                            focus: previewFocus, open: openFilePreview) {
+                    Label { attachmentName(attachment.name) } icon: { Image(systemName: "doc.text") }
+                }
             } else {
-                Image(systemName: attachment.payload == nil ? "exclamationmark.triangle" : "doc.text")
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading) {
-                Text(attachment.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 180)
-                if attachment.payload == nil {
+                Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
+                VStack(alignment: .leading) {
+                    attachmentName(attachment.name)
                     Button("Attach Again") { chooseFiles(replacing: attachment.id) }
                         .disabled(!model.canEditAttachments)
                         .accessibilityLabel("Attach \(attachment.name) again")
@@ -121,7 +138,7 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
                 }
             }
             Button {
-                model.removeAttachment(attachment.id, in: target)
+                model.removeAttachment(attachment.id, in: owner)
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }
@@ -136,5 +153,12 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("composer-attachment-\(attachment.id)")
+    }
+
+    private func attachmentName(_ name: String) -> some View {
+        Text(name)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: 180)
     }
 }

@@ -134,6 +134,11 @@ struct ComposerAttachment: Codable, Equatable, Identifiable {
         let data: Data
 
         var isImage: Bool { mimeType.hasPrefix("image/") }
+        var text: String? {
+            guard mimeType == "text/plain", !data.isEmpty, data.count <= ComposerAttachment.maxTextBytes,
+                  !data.contains(0), String(data: data, encoding: .utf8) != nil else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
     }
 
     static let maxCount = 10
@@ -305,4 +310,5 @@ struct SentAttachment: Decodable, Identifiable {
     let name: String
     let mimeType: String
     let hasImage: Bool?
+    var hasText: Bool? = nil
 }

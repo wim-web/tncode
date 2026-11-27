@@ -23,6 +23,7 @@ struct WorkspaceView: View {
     let chatWidthMode: ChatWidth
     var browserDefaults: UserDefaults = .standard
     var workspacePasteboard: NSPasteboard = .general
+    var attachmentSavePicker: ChatFileSavePicker = .native
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(SidebarPreference.groupByProject) private var grouped = false
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
@@ -79,7 +80,23 @@ struct WorkspaceView: View {
     @State private var targetingAttachmentRow: UUID?
     @State private var targetingComposerDrop = false
     @State private var imagePreview: ChatImagePreview?
-    @FocusState private var focusedImageOpener: ChatImagePreview.Opener?
+    @State private var filePreview: ChatAttachment.Opener?
+    @State private var fileSaveRequest: FileSaveRequest?
+    @FocusState private var focusedAttachmentOpener: ChatAttachment.Opener?
+    @FocusState private var focusedFileDownload: ChatAttachment.Opener?
+
+    private struct FilePreviewContent: Equatable {
+        let name: String
+        var payload: ComposerAttachment.Payload?
+    }
+
+    private struct FileSaveRequest {
+        let id = UUID()
+        let opener: ChatAttachment.Opener
+        let content: FilePreviewContent
+        let fromPreview: Bool
+        let threadRevision: Int
+    }
 
     private struct ComposerModelPresentation {
         let scope: DraftProjectScope
@@ -203,7 +220,7 @@ struct WorkspaceView: View {
     var body: some View {
         workspaceBody
             .overlayPreferenceValue(ComposerModelAnchor.self) { anchor in
-                if let anchor, let picker = composerModelPicker, imagePreview == nil {
+                if let anchor, let picker = composerModelPicker, imagePreview == nil, filePreview == nil {
                     composerModelOverlay(picker, anchoredAt: anchor)
                 }
             }
@@ -215,8 +232,11 @@ struct WorkspaceView: View {
             }
     }
 
-    private func workspaceSurface(images: [ChatImagePreview.ImageItem], imageIndex: Int?) -> some View {
-        ZStack {
+    private func workspaceSurface(images: [ChatImagePreview.ImageItem], imageIndex: Int?,
+                                  fileContent: FilePreviewContent?) -> some View {
+        let blocked = model.showingWelcome || imageIndex != nil || fileContent != nil || deletingSideChat != nil
+        let saveRequest = fileSavePanelRequest
+        return ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
                 let width = WorkspaceLayout.sidebarWidth(in: viewportWidth, preferred: sidebarWidth, drag: sidebarDrag)
@@ -233,8 +253,8 @@ struct WorkspaceView: View {
                 }
             }
             .opacity(model.showingWelcome ? 0 : 1)
-            .accessibilityHidden(model.showingWelcome || imageIndex != nil || deletingSideChat != nil)
-            .disabled(model.showingWelcome || imageIndex != nil || deletingSideChat != nil)
+            .accessibilityHidden(blocked)
+            .disabled(blocked)
             if model.showingWelcome { welcome }
             if let imagePreview, let imageIndex {
                 ChatImagePreviewDialog(items: images, index: imageIndex, close: closeImagePreview,
@@ -244,6 +264,10 @@ struct WorkspaceView: View {
                     }
                     return item.payload
                 }, pasteboard: workspacePasteboard)
+            }
+            if let filePreview, let fileContent {
+                filePreviewDialog(filePreview, content: fileContent)
+                    .id(filePreview)
             }
             if let request = deletingSideChat {
                 Color.black.opacity(0.28)
@@ -257,10 +281,24 @@ struct WorkspaceView: View {
         .onChange(of: imageIndex) { _, index in
             if index == nil { closeImagePreview() }
         }
+        .onChange(of: fileContent) { _, content in
+            if content == nil { filePreview = nil }
+        }
+        .onChange(of: saveRequest?.id) { _, id in
+            if id == nil { fileSaveRequest = nil }
+        }
+        .background(ChatFileSavePanel(request: saveRequest, picker: attachmentSavePicker))
         .tint(accent)
         .background {
             WindowKeyMonitor { event, window in
                 guard imageIndex == nil else { return false }
+                if fileContent != nil {
+                    if event.keyCode == kVK_Escape, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty {
+                        closeFilePreview()
+                        return true
+                    }
+                    return false
+                }
                 if let request = deletingSideChat {
                     let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
                     if modifiers.isEmpty && event.keyCode == kVK_Escape {
@@ -336,9 +374,10 @@ struct WorkspaceView: View {
         let findRequest = model.activeThreadFind?.request
         let images = imagePreview.map { previewImages(for: $0.opener.owner) } ?? []
         let imageIndex = imagePreview?.index(in: images)
-        return workspaceSurface(images: images, imageIndex: imageIndex)
+        let fileContent = filePreview.flatMap { filePreviewContent(for: $0) }
+        return workspaceSurface(images: images, imageIndex: imageIndex, fileContent: fileContent)
         .onReceive(model.sidebarCommand) { command in
-            if imageIndex == nil && deletingSideChat == nil { handleSidebarCommand(command) }
+            if imageIndex == nil && fileContent == nil && deletingSideChat == nil { handleSidebarCommand(command) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshSnoozes()
@@ -371,6 +410,10 @@ struct WorkspaceView: View {
         .onChange(of: model.conversation?.id) { _, _ in
             addingPanelSurface = nil
             deletingSideChat = nil
+        }
+        .onChange(of: model.threadSelectionRevision) { _, _ in
+            filePreview = nil
+            fileSaveRequest = nil
         }
         .onChange(of: model.sideChatToOpen) { _, request in
             if let scope = request?.scope, model.conversation?.id == scope.parentID {
@@ -2297,7 +2340,7 @@ struct WorkspaceView: View {
                         let isMatch = message.id == target?.messageID
                         VStack(alignment: .leading, spacing: 8) {
                             messageRow(message.text, role: message.role, attachments: message.attachments ?? [],
-                                       imageOwner: .sent(thread: thread.id, message: message.id),
+                                       attachmentOwner: .sent(thread: thread.id, message: message.id),
                                        selection: isMatch ? target : nil)
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
@@ -2413,7 +2456,7 @@ struct WorkspaceView: View {
         .disabled(!model.canOpenForkLink(threadID))
     }
 
-    private func previewImages(for owner: ChatImagePreview.Owner) -> [ChatImagePreview.ImageItem] {
+    private func previewImages(for owner: ChatAttachment.Owner) -> [ChatImagePreview.ImageItem] {
         guard model.conversation?.id == owner.threadID, !model.showingWelcome else { return [] }
         switch owner {
         case .composer(let target):
@@ -2428,7 +2471,7 @@ struct WorkspaceView: View {
         }
     }
 
-    private func openImagePreview(_ opener: ChatImagePreview.Opener) {
+    private func openImagePreview(_ opener: ChatAttachment.Opener) {
         let selection = ChatImagePreview(opener)
         guard selection.index(in: previewImages(for: opener.owner)) != nil else { return }
         imagePreview = selection
@@ -2449,12 +2492,133 @@ struct WorkspaceView: View {
             guard imagePreview == nil, previewImages(for: selection.opener.owner).contains(where: {
                 $0.id == selection.opener.attachmentID
             }) else { return }
-            focusedImageOpener = selection.opener
+            focusedAttachmentOpener = selection.opener
         }
     }
 
+    private func filePreviewContent(for opener: ChatAttachment.Opener) -> FilePreviewContent? {
+        guard model.conversation?.id == opener.owner.threadID, !model.showingWelcome else { return nil }
+        let attachment: ComposerAttachment?
+        switch opener.owner {
+        case .composer(let target):
+            guard model.attachmentTarget(for: target.threadID) == target else { return nil }
+            attachment = model.composerAttachments.first { $0.id == opener.attachmentID }
+        case .queued(_, let messageID):
+            attachment = model.queuedMessages.first { $0.id == messageID }?
+                .attachments?.first { $0.id == opener.attachmentID }
+        case .sent(let threadID, let messageID):
+            return model.sentTextFile(threadID: threadID, messageID: messageID, attachmentID: opener.attachmentID)
+                .map { FilePreviewContent(name: $0.name) }
+        }
+        guard let attachment, let payload = attachment.payload, payload.mimeType == "text/plain" else { return nil }
+        return FilePreviewContent(name: attachment.name, payload: payload)
+    }
+
+    private func openFilePreview(_ opener: ChatAttachment.Opener) {
+        guard filePreviewContent(for: opener) != nil else { return }
+        filePreview = opener
+    }
+
+    private func closeFilePreview() {
+        guard let opener = filePreview else { return }
+        let revision = model.threadSelectionRevision
+        filePreview = nil
+        Task { @MainActor in
+            guard filePreview == nil, revision == model.threadSelectionRevision,
+                  filePreviewContent(for: opener) != nil else { return }
+            focusedAttachmentOpener = opener
+        }
+    }
+
+    private func filePreviewDialog(_ opener: ChatAttachment.Opener, content: FilePreviewContent) -> some View {
+        let revision = model.threadSelectionRevision
+        let origin: String
+        var remove: (() -> Void)?
+        var load: (() async -> ComposerAttachment.Payload?)?
+        switch opener.owner {
+        case .composer(let target):
+            origin = target.queueEditID == nil ? "Draft" : "Queue Edit"
+            if model.canEditAttachments {
+                remove = {
+                    guard filePreview == opener, revision == model.threadSelectionRevision,
+                          filePreviewContent(for: opener) == content else { return }
+                    model.removeAttachment(opener.attachmentID, in: target)
+                    guard filePreviewContent(for: opener) == nil else { return }
+                    filePreview = nil
+                    Task { @MainActor in
+                        guard revision == model.threadSelectionRevision, model.conversation?.id == target.threadID,
+                              model.attachmentTarget(for: target.threadID) == target else { return }
+                        focusedComposer = target.threadID
+                    }
+                }
+            }
+        case .queued:
+            origin = "Queued"
+        case .sent(let threadID, let messageID):
+            origin = "Sent"
+            load = { await model.readSentFile(threadID: threadID, messageID: messageID, attachmentID: opener.attachmentID) }
+        }
+        return ChatFilePreview(name: content.name, origin: origin, localText: content.payload?.text, load: load,
+                               remove: remove, save: { saveFile(opener, fromPreview: true) }, close: closeFilePreview)
+    }
+
+    private func sentFileCard(_ file: SentAttachment, owner: ChatAttachment.Owner) -> some View {
+        let opener = ChatAttachment.Opener(owner: owner, attachmentID: file.id)
+        let label = Label(file.name, systemImage: "doc.text").lineLimit(1).truncationMode(.middle)
+        return HStack {
+            if file.hasText == true {
+                ChatAttachmentPreviewButton(opener: opener, name: file.name, identifier: "sent-attachment-\(file.id)",
+                                            focus: $focusedAttachmentOpener, open: openFilePreview) { label }
+                Button { saveFile(opener, fromPreview: false) } label: {
+                    Image(systemName: "arrow.down.to.line")
+                }
+                .focusable()
+                .focused($focusedFileDownload, equals: opener)
+                .help("Download \(file.name)")
+                .accessibilityLabel("Download \(file.name)")
+                .accessibilityIdentifier("download-sent-attachment-\(file.id)")
+            } else {
+                label.accessibilityIdentifier("sent-attachment-\(file.id)")
+                Text("Attachment unavailable").foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.callout)
+    }
+
+    private func saveFile(_ opener: ChatAttachment.Opener, fromPreview: Bool) {
+        guard fileSaveRequest == nil, let content = filePreviewContent(for: opener),
+              !fromPreview || filePreview == opener else { return }
+        if !fromPreview { focusedFileDownload = opener }
+        fileSaveRequest = .init(opener: opener, content: content, fromPreview: fromPreview,
+                                threadRevision: model.threadSelectionRevision)
+    }
+
+    private var fileSavePanelRequest: ChatFileSavePanel.Request? {
+        guard let request = fileSaveRequest else { return nil }
+        func isCurrent() -> Bool {
+            fileSaveRequest?.id == request.id && request.threadRevision == model.threadSelectionRevision &&
+                filePreviewContent(for: request.opener) == request.content &&
+                (!request.fromPreview || filePreview == request.opener)
+        }
+        guard isCurrent() else { return nil }
+        return ChatFileSavePanel.Request(id: request.id, name: request.content.name, load: {
+            if case .sent(let threadID, let messageID) = request.opener.owner {
+                return await model.readSentFile(threadID: threadID, messageID: messageID,
+                                                attachmentID: request.opener.attachmentID)
+            }
+            return request.content.payload
+        }, isCurrent: isCurrent, finish: { error in
+            fileSaveRequest = nil
+            if !request.fromPreview { focusedFileDownload = request.opener }
+            if let error {
+                notice = Notice(id: UUID(), message: error, accessibilityID: "attachment-save-error")
+            }
+        })
+    }
+
     private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = [],
-                            imageOwner: ChatImagePreview.Owner? = nil,
+                            attachmentOwner: ChatAttachment.Owner? = nil,
                             selection: ThreadFindSession.Selection? = nil) -> some View {
         let rendered = TranscriptText.rendered(text, role: role)
         return HStack {
@@ -2472,16 +2636,18 @@ struct WorkspaceView: View {
                 }
                 ForEach(attachments) { attachment in
                     let label = Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
-                    if let imageOwner, case .sent(let threadID, let messageID) = imageOwner, attachment.hasImage == true {
-                        ChatImagePreviewButton(opener: .init(owner: imageOwner, attachmentID: attachment.id),
+                    if let attachmentOwner, case .sent(let threadID, let messageID) = attachmentOwner, attachment.hasImage == true {
+                        ChatAttachmentPreviewButton(opener: .init(owner: attachmentOwner, attachmentID: attachment.id),
                                                name: attachment.name, identifier: "sent-attachment-\(attachment.id)",
-                                               focus: $focusedImageOpener, open: openImagePreview) {
+                                               focus: $focusedAttachmentOpener, open: openImagePreview) {
                             SentImageThumbnail(name: attachment.name) {
                                 await model.readSentImage(threadID: threadID, messageID: messageID, attachmentID: attachment.id)
                             }
                         }
                             .buttonStyle(.borderless)
                             .font(.callout)
+                    } else if let attachmentOwner, attachment.mimeType == "text/plain" {
+                        sentFileCard(attachment, owner: attachmentOwner)
                     } else {
                         label
                             .font(.callout)
@@ -2556,7 +2722,8 @@ struct WorkspaceView: View {
                     }
                 }
                 QueuedMessagesView(model: model, threadID: thread.id, focusComposer: { focusedComposer = thread.id },
-                                   previewFocus: $focusedImageOpener, openPreview: openImagePreview)
+                                   previewFocus: $focusedAttachmentOpener, openPreview: openImagePreview,
+                                   openFilePreview: openFilePreview)
                     .id(thread.id)
                 if let scope = model.draftProjectScope {
                     composerStash(in: scope)
@@ -2741,8 +2908,8 @@ struct WorkspaceView: View {
                 focusComposerAfterFileMention(in: threadID)
                 return true
             }))
-        return ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedImageOpener,
-                                       openPreview: openImagePreview) {
+        return ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedAttachmentOpener,
+                                       openPreview: openImagePreview, openFilePreview: openFilePreview) {
             ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
                 set: {

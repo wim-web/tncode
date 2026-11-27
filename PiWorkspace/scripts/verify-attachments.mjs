@@ -24,6 +24,7 @@ assert.equal(installed.version, lock.packages[sdk].version);
 
 const root = mkdtempSync(join(tmpdir(), "pi-attachments-"));
 const requests = [];
+const textFileRequests = [];
 let fixtureError;
 const server = createServer(async (request, response) => {
   try {
@@ -31,15 +32,25 @@ const server = createServer(async (request, response) => {
     assert.equal(request.method, "POST");
     assert.equal(request.headers.authorization, "Bearer attachment-fixture-key");
     const body = await new Response(request).json();
-    assert.equal(body.model, "attachment-fixture");
     const message = body.messages.findLast(({ role }) => role === "user");
-    requests.push(message.content);
     const text = message.content.filter(({ type }) => type === "text").map(({ text }) => text).join("");
     const urls = message.content.filter(({ type }) => type === "image_url").map(({ image_url }) => image_url.url);
-    if (requests.length === 1) {
+    if (body.model === "attachment-file-fixture") {
+      textFileRequests.push(text);
+      const first = '\uFEFF  First 日本語 👩🏽‍💻 e\u0301\r\nLast line\n\n';
+      const second = 'Second file\r\n\n  Tail';
+      assert.deepEqual(urls, []);
+      assert.equal(text, textFileRequests.length === 1
+        ? `Attached text file "same.txt":\n${first}\n\nAttached text file "same.txt":\n${second}`
+        : `Second owner\n\nAttached text file "same.txt":\n${first}`);
+    } else if (requests.length === 0) {
+      assert.equal(body.model, "attachment-fixture");
+      requests.push(message.content);
       assert.equal(text, `Attached text file "note.txt":\n${note}`);
       assert.deepEqual(urls, [images.blue, images.red].map((image) => `data:image/png;base64,${image}`));
     } else {
+      assert.equal(body.model, "attachment-fixture");
+      requests.push(message.content);
       const run = requests.length - 1;
       const largeText = "\uFEFF" + "  日本語 👩🏽‍💻 e\u0301\r\n".repeat(1300);
       assert.ok(Buffer.byteLength(largeText) >= 32 * 1024);
@@ -109,7 +120,9 @@ try {
     await runSwiftTests({});
   }
   assert.equal(requests.length, 3);
+  assert.equal(textFileRequests.length, 2);
   console.log(`PASS Pi SDK ${installed.version} sent exact PNG bytes and complete UTF-8 text across three turns.`);
+  console.log("PASS reopened Pi text attachments with matching names preserved preview text and exported bytes by owner.");
 } finally {
   server.close();
   rmSync(root, { recursive: true, force: true });

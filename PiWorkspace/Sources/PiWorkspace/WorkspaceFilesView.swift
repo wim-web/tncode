@@ -768,7 +768,7 @@ func fileButton(_ label: String, _ symbol: String, id: String,
         .accessibilityIdentifier(id)
 }
 
-private struct FileTextView: NSViewRepresentable {
+struct FileTextView: NSViewRepresentable {
     let text: String
     let editable: Bool
     let wraps: Bool

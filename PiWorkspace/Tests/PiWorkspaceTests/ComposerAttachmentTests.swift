@@ -223,6 +223,82 @@ final class ComposerAttachmentTests: XCTestCase {
         try await ui.hidden("attachment-image-preview")
     }
 
+    func testOffscreenTextPreviewRemovesOnlyTheSelectedDraftOrQueueAttachment() async throws {
+        let fixture = try Fixture()
+        let model = fixture.open()
+        try model.openProject(fixture.root)
+        fixture.worker.onEvent?(.ready([]))
+        let thread = try XCTUnwrap(model.conversation?.id)
+        let target = model.attachmentTarget(for: thread)
+        model.draft = "Active turn"
+        model.send()
+        let active = try XCTUnwrap(fixture.worker.prompt)
+        fixture.worker.onEvent?(.history([ChatMessage(id: "active", role: .user, text: active.text)]))
+        let text = ["\u{feff}  First 日本語 👩🏽‍💻 e\u{0301}\r\nLast line\n\n", "Second file\r\n\n  Tail"]
+        let files = try sameNamedTextFiles(text, in: fixture.root)
+        XCTAssertTrue(model.attach(files.map(ComposerAttachmentInput.file), to: target))
+        let draftFiles = model.composerAttachments
+        XCTAssertNotEqual(draftFiles[0].id, draftFiles[1].id)
+        let ui = OffscreenPreviewWorkspace(model)
+        defer { ui.close() }
+
+        let first = "preview-attachment-\(draftFiles[0].id)"
+        try await ui.press(first)
+        try await ui.checkFileText(text[0])
+        try await ui.focused("close-file-preview")
+        try ui.key(kVK_Escape, "\u{1b}")
+        try await ui.hidden("attachment-file-preview")
+        try await ui.focused(first)
+        try await ui.press("preview-attachment-\(draftFiles[1].id)")
+        try await ui.checkFileText(text[1])
+        try await ui.press("remove-file-preview")
+        try await ui.hidden("attachment-file-preview")
+        XCTAssertEqual(model.composerAttachments.map(\.id), [draftFiles[0].id])
+        XCTAssertTrue(model.attach([.file(files[1])], to: target))
+        model.draft = "Queued caption"
+        model.queueDraft()
+        let queued = try XCTUnwrap(model.queuedMessages.first)
+        let queuedFiles = try XCTUnwrap(queued.attachments)
+        XCTAssertTrue(model.attach([.pastedText("Independent draft")], to: model.attachmentTarget(for: thread)))
+        let independent = model.composerAttachments
+
+        let queuedOpener = "preview-queued-attachment-\(queued.id)-\(queuedFiles[1].id)"
+        try await ui.press(queuedOpener)
+        try await ui.checkFileText(text[1])
+        XCTAssertNil(ui.element("remove-file-preview"))
+        try await ui.press("close-file-preview")
+        try await ui.focused(queuedOpener)
+        model.editQueuedMessage(queued.id)
+        try await ui.press("preview-attachment-\(queuedFiles[0].id)")
+        try await ui.checkFileText(text[0])
+        model.cancelQueuedMessageEdit()
+        try await ui.hidden("attachment-file-preview")
+        XCTAssertEqual(model.queuedMessages.first?.attachments, queuedFiles)
+
+        model.editQueuedMessage(queued.id)
+        try await ui.press("preview-attachment-\(queuedFiles[0].id)")
+        try await ui.press("remove-file-preview")
+        try await ui.hidden("attachment-file-preview")
+        try await ui.press("queue-update")
+        XCTAssertEqual(model.queuedMessages.first?.id, queued.id)
+        XCTAssertEqual(model.queuedMessages.first?.attachments, [queuedFiles[1]])
+        XCTAssertEqual(model.composerAttachments, independent)
+
+        let missing = fixture.root.appendingPathComponent("missing.txt")
+        XCTAssertTrue(model.attach([.file(missing)], to: model.attachmentTarget(for: thread)))
+        let unavailable = try XCTUnwrap(model.composerAttachments.last)
+        try await ui.visible("reattach-attachment-\(unavailable.id)")
+        XCTAssertNil(ui.element("preview-attachment-\(unavailable.id)"))
+        try await ui.press("remove-attachment-\(unavailable.id)")
+        XCTAssertEqual(model.composerAttachments, independent)
+
+        let legacy = SentAttachment(id: UUID(), name: "legacy.txt", mimeType: "text/plain", hasImage: false)
+        fixture.worker.onEvent?(.history([ChatMessage(id: "legacy", role: .user, text: "", attachments: [legacy])]))
+        try await ui.visible("sent-attachment-\(legacy.id)")
+        XCTAssertEqual(ui.element("sent-attachment-\(legacy.id)")?.accessibilityRole?(), .staticText)
+        XCTAssertNil(ui.element("download-sent-attachment-\(legacy.id)"))
+    }
+
     func testSelectedAttachmentsReachPinnedSDK() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let endpoint = environment["PI_ATTACHMENT_TEST_ENDPOINT"],
@@ -437,6 +513,135 @@ final class ComposerAttachmentTests: XCTestCase {
         }
     }
 
+    func testTextPreviewAndSaveUseExactBytesFromReopenedPiSession() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let endpoint = environment["PI_ATTACHMENT_TEST_ENDPOINT"],
+              let executable = environment["PI_ATTACHMENT_TEST_NODE"],
+              let worker = environment["PI_ATTACHMENT_TEST_WORKER"] else {
+            throw XCTSkip("Run scripts/verify-attachments.mjs for the loopback integration.")
+        }
+        let fixture = try Fixture()
+        let settings = ModelSettings(provider: .local, model: "attachment-file-fixture", endpoint: endpoint)
+        func open() -> WorkspaceModel {
+            WorkspaceModel(root: fixture.workspace, keychainService: "dev.piworkspace.attachment-tests",
+                           readCredential: { _ in "attachment-fixture-key" }) { config, cwd in
+                try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: executable),
+                              arguments: [worker])
+            }
+        }
+        let text = ["\u{feff}  First 日本語 👩🏽‍💻 e\u{0301}\r\nLast line\n\n", "Second file\r\n\n  Tail"]
+        let files = try sameNamedTextFiles(text, in: fixture.root)
+        let data = text.map { Data($0.utf8) }
+        let thread: UUID
+        let project: UUID
+        let sent: [ChatMessage]
+        let ids: [UUID]
+        do {
+            let model = open()
+            try model.applySettings(settings, in: .workspace, newKey: "", removeKey: false)
+            try model.openProject(fixture.root)
+            await wait(for: .ready, in: model)
+            thread = try XCTUnwrap(model.conversation?.id)
+            project = try XCTUnwrap(model.project?.id)
+            XCTAssertTrue(model.attach(files.map(ComposerAttachmentInput.file), to: model.attachmentTarget(for: thread)))
+            ids = model.composerAttachments.map(\.id)
+            model.send()
+            await wait(for: .ready, in: model)
+            XCTAssertNil(model.error)
+            model.draft = "Second owner"
+            XCTAssertTrue(model.attach([.file(files[0])], to: model.attachmentTarget(for: thread)))
+            model.send()
+            await wait(for: .ready, in: model)
+            XCTAssertNil(model.error)
+            sent = model.messages.filter { $0.role == .user }
+            XCTAssertEqual(sent.count, 2)
+            XCTAssertTrue(model.terminate())
+        }
+        for file in files { try FileManager.default.removeItem(at: file) }
+        let history = WorkspaceStore.historyComponents(project: project, conversation: thread).reduce(fixture.workspace) {
+            $0.appendingPathComponent($1, isDirectory: true)
+        }
+        let session = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: history, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "jsonl" })
+        let records = try String(contentsOf: session, encoding: .utf8).split(separator: "\n").map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        let entry = try XCTUnwrap(records.first { $0?["id"] as? String == sent[0].id } ?? nil)
+        let message = try XCTUnwrap(entry["message"] as? [String: Any])
+        let receipt = try XCTUnwrap(message["workspaceInput"] as? [String: Any])
+        let metadata = try XCTUnwrap(receipt["attachments"] as? [[String: String]])
+        XCTAssertEqual(metadata.compactMap { $0["id"] }, ids.map(\.uuidString))
+        XCTAssertEqual(metadata.compactMap { $0["textData"].flatMap { Data(base64Encoded: $0) } }, data)
+
+        let model = open()
+        defer { _ = model.terminate() }
+        if let error = model.startupFailure { throw error }
+        model.start()
+        model.selectConversation(thread, in: project)
+        await wait(for: .ready, in: model)
+        XCTAssertEqual(model.conversation?.id, thread)
+        XCTAssertEqual(model.messages.first?.attachments?.map(\.id), ids)
+        let wrongOwner = await model.readSentFile(threadID: thread, messageID: sent[1].id, attachmentID: ids[0])
+        XCTAssertNil(wrongOwner)
+        let wrongThread = await model.readSentFile(threadID: UUID(), messageID: sent[0].id, attachmentID: ids[0])
+        XCTAssertNil(wrongThread)
+        let ui = OffscreenPreviewWorkspace(model)
+        defer { ui.close() }
+        for (id, contents) in zip(ids, text) {
+            let opener = "sent-attachment-\(id)"
+            try await ui.press(opener)
+            try await ui.checkFileText(contents)
+            XCTAssertNil(ui.element("remove-file-preview"))
+            try await ui.press("close-file-preview")
+            try await ui.focused(opener)
+        }
+
+        let destination = fixture.root.appendingPathComponent("exports", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let download = "download-sent-attachment-\(ids[0])"
+        try await ui.press(download)
+        let cancelled = try await ui.saveRequest()
+        XCTAssertEqual(cancelled.name, "same.txt")
+        ui.finishSaveRequest(to: nil)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty)
+        try await ui.focused(download)
+        for (index, id) in ids.enumerated() {
+            try await ui.press("download-sent-attachment-\(id)")
+            let request = try await ui.saveRequest()
+            XCTAssertEqual(request.name, "same.txt")
+            let url = destination.appendingPathComponent("export-\(index).txt")
+            ui.finishSaveRequest(to: url)
+            XCTAssertEqual(try Data(contentsOf: url), data[index])
+        }
+
+        try await ui.press("sent-attachment-\(ids[0])")
+        try await ui.checkFileText(text[0])
+        try await ui.press("save-file-preview")
+        let stale = try await ui.saveRequest()
+        model.addConversation()
+        XCTAssertNotEqual(model.conversation?.id, thread)
+        try await ui.hidden("attachment-file-preview")
+        try await ui.saveRequestClosed()
+        let staleURL = destination.appendingPathComponent("stale.txt")
+        stale.complete(.success(staleURL))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staleURL.path))
+        model.selectConversation(thread, in: project)
+        await wait(for: .ready, in: model)
+        try await ui.press(download)
+        _ = try await ui.saveRequest()
+        ui.finishSaveRequest(to: nil)
+    }
+
+    private func sameNamedTextFiles(_ contents: [String], in root: URL) throws -> [URL] {
+        try contents.enumerated().map { index, text in
+            let folder = root.appendingPathComponent("source-\(index)", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("same.txt")
+            try Data(text.utf8).write(to: file)
+            return file
+        }
+    }
+
     private final class Worker: PiConnection {
         var onEvent: ((PiEvent) -> Void)?
         var onClose: (() -> Void)?
@@ -447,8 +652,8 @@ final class ComposerAttachmentTests: XCTestCase {
         func send(_ command: any Encodable) throws {
             if let command = command as? SendPrompt { prompt = command }
             if let command = command as? SendQueuedInput { steer = command }
-            if let command = command as? ReadSentImage {
-                onEvent?(.sentImage(requestID: command.requestID, sentImages[command.attachmentID]))
+            if let command = command as? ReadSentAttachment, command.type == .readSentImage {
+                onEvent?(.sentAttachment(requestID: command.requestID, sentImages[command.attachmentID]))
             }
         }
 
@@ -463,6 +668,7 @@ private final class OffscreenPreviewWorkspace {
     private let window: NSPanel
     private let host: NSHostingView<WorkspaceView>
     private let pasteboard = NSPasteboard.withUniqueName()
+    private let savePicker = OffscreenSavePicker()
 
     init(_ model: WorkspaceModel) {
         policy = app.activationPolicy()
@@ -473,7 +679,8 @@ private final class OffscreenPreviewWorkspace {
                                             styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         host = NSHostingView(rootView: WorkspaceView(model: model, chatWidthMode: .comfortable,
-                                                     workspacePasteboard: pasteboard))
+                                                     workspacePasteboard: pasteboard,
+                                                     attachmentSavePicker: savePicker.picker))
         window.contentView = host
         window.setFrameOrigin(origin)
         XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
@@ -487,17 +694,22 @@ private final class OffscreenPreviewWorkspace {
         app.setActivationPolicy(policy)
     }
 
-    func element(_ id: String) -> AnyObject? {
+    private func find(in root: AnyObject, matching: (AnyObject) -> Bool) -> AnyObject? {
         var visited = Set<ObjectIdentifier>()
         func find(_ node: AnyObject) -> AnyObject? {
             guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
-            if node.accessibilityIdentifier?() == id { return node }
+            if matching(node) { return node }
             for child in node.accessibilityChildren?() ?? [] {
                 if let found = find(child as AnyObject) { return found }
             }
             return nil
         }
-        return find(host) ?? find(window)
+        return find(root)
+    }
+
+    func element(_ id: String) -> AnyObject? {
+        func matches(_ node: AnyObject) -> Bool { node.accessibilityIdentifier?() == id }
+        return find(in: host, matching: matches) ?? find(in: window, matching: matches)
     }
 
     func press(_ id: String) async throws {
@@ -509,6 +721,27 @@ private final class OffscreenPreviewWorkspace {
     func hidden(_ id: String) async throws { try await waitFor(id) { self.element(id) == nil } }
     func focused(_ id: String) async throws {
         try await waitFor("focus on \(id)") { self.element(id)?.isAccessibilityFocused?() == true }
+    }
+
+    func checkFileText(_ expected: String) async throws {
+        try await visible("file-preview-contents")
+        let field = element("file-preview-contents") as? NSAccessibilityProtocol
+        let value = try XCTUnwrap(field?.accessibilityValue() as? String)
+        XCTAssertEqual(Data(value.utf8), Data(expected.utf8))
+    }
+
+    func saveRequest() async throws -> OffscreenSavePicker.Request {
+        try await waitFor("attachment save destination request") { self.savePicker.request != nil }
+        XCTAssertFalse(app.isActive)
+        return try XCTUnwrap(savePicker.request)
+    }
+
+    func finishSaveRequest(to url: URL?) {
+        savePicker.finish(with: url)
+    }
+
+    func saveRequestClosed() async throws {
+        try await waitFor("attachment save request to close") { self.savePicker.request == nil }
     }
 
     @discardableResult
@@ -544,4 +777,32 @@ private final class ImagePreviewOffscreenPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+private final class OffscreenSavePicker {
+    struct Request {
+        let id = UUID()
+        let name: String
+        let complete: ChatFileSavePicker.Completion
+    }
+
+    private(set) var request: Request?
+
+    var picker: ChatFileSavePicker {
+        ChatFileSavePicker { [weak self] window, name, complete in
+            XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+            let request = Request(name: name, complete: complete)
+            self?.request = request
+            return { [weak self] in
+                if self?.request?.id == request.id { self?.request = nil }
+            }
+        }
+    }
+
+    func finish(with url: URL?) {
+        let request = request
+        self.request = nil
+        request?.complete(.success(url))
+    }
 }

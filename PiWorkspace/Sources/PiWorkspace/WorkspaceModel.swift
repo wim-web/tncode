@@ -114,7 +114,7 @@ final class WorkspaceModel: ObservableObject {
     private var composerCredential: (account: String, key: String?)?
     private var composerDraftGenerations: [UUID: UUID] = [:]
     private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
-    private var threadSelectionRevision = 0
+    private(set) var threadSelectionRevision = 0
     private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
     private var promotedDraftLinks: [UUID: UUID] = [:]
     private var fileMentionDrag: FileMentionDrag?
@@ -267,22 +267,41 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func readSentImage(threadID: UUID, messageID: String, attachmentID: UUID) async -> ComposerAttachment.Payload? {
+        await readSentAttachment(.readSentImage, threadID: threadID, messageID: messageID, attachmentID: attachmentID)
+    }
+
+    func readSentFile(threadID: UUID, messageID: String, attachmentID: UUID) async -> ComposerAttachment.Payload? {
+        guard sentTextFile(threadID: threadID, messageID: messageID, attachmentID: attachmentID) != nil else { return nil }
+        let payload = await readSentAttachment(.readSentFile, threadID: threadID, messageID: messageID, attachmentID: attachmentID)
+        return payload?.text == nil ? nil : payload
+    }
+
+    func sentTextFile(threadID: UUID, messageID: String, attachmentID: UUID) -> SentAttachment? {
+        guard conversation?.id == threadID else { return nil }
+        return messages.first { $0.id == messageID && $0.role == .user }?
+            .attachments?.first { $0.id == attachmentID && $0.hasText == true }
+    }
+
+    private func readSentAttachment(_ kind: ReadSentAttachment.Kind, threadID: UUID,
+                                    messageID: String, attachmentID: UUID) async -> ComposerAttachment.Payload? {
         guard let process, conversation?.id == threadID, !Task.isCancelled else { return nil }
-        let request = ReadSentImage(requestID: UUID(), messageID: messageID, attachmentID: attachmentID)
-        return await withTaskCancellationHandler {
+        let request = ReadSentAttachment(type: kind, requestID: UUID(), messageID: messageID, attachmentID: attachmentID)
+        let revision = threadSelectionRevision
+        let payload: ComposerAttachment.Payload? = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                sentImageRequests[request.requestID] = continuation
+                sentAttachmentRequests[request.requestID] = continuation
                 do {
                     try process.send(request)
                 } catch {
-                    sentImageRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
+                    sentAttachmentRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
                 }
             }
         } onCancel: { [weak self] in
             Task { @MainActor in
-                self?.sentImageRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
+                self?.sentAttachmentRequests.removeValue(forKey: request.requestID)?.resume(returning: nil)
             }
         }
+        return revision == threadSelectionRevision && !Task.isCancelled ? payload : nil
     }
 
     var canEditAttachments: Bool { canUseQueue }
@@ -592,7 +611,7 @@ final class WorkspaceModel: ObservableObject {
     private var connectedModel: ModelSettings?
     private var modelCatalog: [Provider: [String: String]] = [:]
     private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Never>)?
-    private var sentImageRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
+    private var sentAttachmentRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
     private var stopTimeout: Task<Void, Never>?
 
@@ -776,8 +795,8 @@ final class WorkspaceModel: ObservableObject {
         process?.close()
         process = nil
         connectedModel = nil
-        let requests = sentImageRequests
-        sentImageRequests.removeAll()
+        let requests = sentAttachmentRequests
+        sentAttachmentRequests.removeAll()
         for continuation in requests.values { continuation.resume(returning: nil) }
         if forkRequest != nil {
             forkRequest = nil
@@ -2998,8 +3017,8 @@ final class WorkspaceModel: ObservableObject {
 
     private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
         switch event {
-        case let .sentImage(requestID, image):
-            sentImageRequests.removeValue(forKey: requestID)?.resume(returning: image)
+        case let .sentAttachment(requestID, payload):
+            sentAttachmentRequests.removeValue(forKey: requestID)?.resume(returning: payload)
         case let .credential(id, read):
             do {
                 try replyToCredential(id, read: read, account: account, worker: worker)

@@ -19,7 +19,7 @@ enum PiEvent: Decodable {
     case modelCatalog([Provider: [String: String]])
     case ready([ChatMessage], supportsImages: Bool = false)
     case history([ChatMessage])
-    case sentImage(requestID: UUID, ComposerAttachment.Payload?)
+    case sentAttachment(requestID: UUID, ComposerAttachment.Payload?)
     case partial(String)
     case activity(String)
     case toolApproval(ToolApproval)
@@ -34,11 +34,11 @@ enum PiEvent: Decodable {
     case fatal(String)
 
     private enum Field: String, CodingKey {
-        case type, requestID, operation, messages, image, text, error, turnID, queuedID, mode, threadID, scope, models
+        case type, requestID, operation, messages, image, file, text, error, turnID, queuedID, mode, threadID, scope, models
     }
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
-        case credential, modelCatalog, ready, history, sentImage, partial, activity, toolApproval, finished, fatal
+        case credential, modelCatalog, ready, history, sentImage, sentFile, partial, activity, toolApproval, finished, fatal
         case agentQuestion, agentQuestionEnded, agentQuestionRejected
         case inputMode, queueRejected, compactionSkipped, forked
     }
@@ -61,9 +61,9 @@ enum PiEvent: Decodable {
             self = .ready(try fields.decode([ChatMessage].self, forKey: .messages),
                           supportsImages: try capabilities.decodeIfPresent(Bool.self, forKey: .supportsImages) ?? false)
         case .history: self = .history(try fields.decode([ChatMessage].self, forKey: .messages))
-        case .sentImage:
-            self = .sentImage(requestID: try fields.decode(UUID.self, forKey: .requestID),
-                              try? fields.decode(ComposerAttachment.Payload.self, forKey: .image))
+        case .sentImage, .sentFile:
+            self = .sentAttachment(requestID: try fields.decode(UUID.self, forKey: .requestID),
+                                   try? fields.decode(ComposerAttachment.Payload.self, forKey: kind == .sentImage ? .image : .file))
         case .partial: self = .partial(try fields.decode(String.self, forKey: .text))
         case .activity: self = .activity(try fields.decode(String.self, forKey: .text))
         case .toolApproval: self = .toolApproval(try ToolApproval(from: decoder))
@@ -117,8 +117,9 @@ struct ForkConversation: Encodable {
     let messageID: String
 }
 
-struct ReadSentImage: Encodable {
-    let type = "readSentImage"
+struct ReadSentAttachment: Encodable {
+    enum Kind: String, Encodable { case readSentImage, readSentFile }
+    let type: Kind
     let requestID: UUID
     let messageID: String
     let attachmentID: UUID

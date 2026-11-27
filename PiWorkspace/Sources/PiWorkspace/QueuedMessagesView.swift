@@ -4,8 +4,9 @@ struct QueuedMessagesView: View {
     @ObservedObject var model: WorkspaceModel
     let threadID: UUID
     let focusComposer: () -> Void
-    let previewFocus: FocusState<ChatImagePreview.Opener?>.Binding
-    let openPreview: (ChatImagePreview.Opener) -> Void
+    let previewFocus: FocusState<ChatAttachment.Opener?>.Binding
+    let openPreview: (ChatAttachment.Opener) -> Void
+    let openFilePreview: (ChatAttachment.Opener) -> Void
     @State private var expanded = false
 
     var body: some View {
@@ -62,7 +63,7 @@ struct QueuedMessagesView: View {
                 .help(item.text)
                 .accessibilityIdentifier("queued-message-\(item.id)")
             if let attachments = item.attachments, !attachments.isEmpty {
-                imagePreviews(attachments.filter { $0.payload?.isImage == true }, message: item.id)
+                attachmentPreviews(attachments.filter { $0.payload != nil }, message: item.id)
                 Label("\(attachments.count)", systemImage: "paperclip")
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(attachments.count) attachments")
@@ -109,18 +110,21 @@ struct QueuedMessagesView: View {
     }
 
     @ViewBuilder
-    private func imagePreviews(_ images: [ComposerAttachment], message: UUID) -> some View {
-        if !images.isEmpty {
+    private func attachmentPreviews(_ attachments: [ComposerAttachment], message: UUID) -> some View {
+        if !attachments.isEmpty {
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
-                    ForEach(images) { attachment in
-                        ChatImagePreviewButton(opener: .init(owner: .queued(thread: threadID, message: message),
+                    ForEach(attachments) { attachment in
+                        let isImage = attachment.payload?.isImage == true
+                        ChatAttachmentPreviewButton(opener: .init(owner: .queued(thread: threadID, message: message),
                                                             attachmentID: attachment.id),
                                                name: attachment.name,
                                                identifier: "preview-queued-attachment-\(message)-\(attachment.id)",
-                                               focus: previewFocus, open: openPreview) {
+                                               focus: previewFocus, open: isImage ? openPreview : openFilePreview) {
                             Group {
-                                if let raster = attachment.preview(maximumSize: 72) {
+                                if !isImage {
+                                    Image(systemName: "doc.text")
+                                } else if let raster = attachment.preview(maximumSize: 72) {
                                     Image(nsImage: raster).resizable().scaledToFit()
                                 } else {
                                     Image(systemName: "photo")
@@ -132,7 +136,7 @@ struct QueuedMessagesView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxWidth: CGFloat(images.count * 28 - 4))
+            .frame(maxWidth: CGFloat(attachments.count * 28 - 4))
         }
     }
 }
