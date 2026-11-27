@@ -17,6 +17,8 @@ To keep a build for comparison, pass its destination directory to `./scripts/bui
 
 **Pi Workspace → About Pi Workspace** shows the bundled version, build, and runtime versions. Select **Open source licenses…** to search the notices included in that build.
 
+Open `pi-workspace://settings/open-source-licenses` to go directly to the notices. `pi-workspace://settings/about#app-version` and the **Version** Settings search result show the packaged version.
+
 ## Start a conversation
 
 1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
@@ -25,11 +27,23 @@ To keep a build for comparison, pass its destination directory to `./scripts/bui
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
 5. Use the thread context menu to rename, pin, settle, or archive a thread. Use **Show Archive** in the filter menu to reopen or restore an archived thread. Use the project menu above the thread to manage its folder.
 
+**Settings → Archive** lists archived threads by project and checkout. Choose **Unarchive** to return a thread to the sidebar and keep editing the current conversation. Turn on **Archive confirmation** in **Settings → General** to see the thread name before archiving it.
+
+In **Project Overview**, choose a symbol, emoji, monogram, or image for the sidebar. Pi Workspace saves the imported image with the project. **Reset project icon to default** restores that project's original icon.
+
+**Welcome → Find Pi Projects** lists projects with local Pi history. Select a session to import its saved messages as a read-only conversation. Pi records its provider and model, but an external session does not identify the account that originally received those messages.
+
 To start from an existing Git repository, choose **Add Project → Git URL** and enter its URL. Choose an empty folder or a new path. **Clone** creates any missing parent folders and opens the checkout. Cloning into an empty folder already registered as a project keeps its conversations.
 
-During a turn, choose **Queue** or press ⌘Return to send a follow-up after Pi finishes. **Steer** sends an instruction into the current run. A queued row’s menu lets you edit, reorder, or remove it. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
+Choose **Add project** from a draft's project picker to register another folder. Cancel returns to the draft. A new folder opens its own empty draft. A previously registered folder opens its latest unarchived conversation, or an empty draft if that conversation is settled or there is no saved conversation. Your earlier draft and attachments stay in the sidebar.
+
+By default, Return sends a message. When Pi accepts steering during a turn, Return steers Pi and ⌘Return queues a follow-up. **Settings → Chat** lets you change the send shortcut and choose **Queue** or **Steer** as the usual follow-up action. Shift-Return inserts a new line.
+
+Use a queued row's menu to edit, reorder, or remove it. You can update a paused queue before signing in to the provider. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
 
 Use **Attach Files** to add PNG, JPEG, or UTF-8 text files to a draft. You can also paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local model that accepts images, enable image input in **Model Settings**.
+
+Select a text attachment to read its contents. **Remove from Draft** removes the selected attachment from the draft or queued edit. For sent files, **Save File** opens the macOS save dialog. Older Pi histories that recorded only the name show **Attachment unavailable**.
 
 Pasting at least 32 KiB of UTF-8 text creates a text attachment when it fits. Press ⌘⇧V or choose **Edit → Paste and Match Style** to paste text inline. If a normal paste exceeds the 64 KiB text attachment limit, it stays inline when the resulting draft fits within 120,000 UTF-16 units.
 
@@ -37,11 +51,21 @@ With the composer focused, press ⌘S to stash its text and attachments. Select 
 
 For a submitted conversation, right-click its sidebar row and choose **Copy → Thread**. **Edit → Open Thread Link from Clipboard** and macOS can open this link in the same local workspace. If you move the workspace itself, copy a new link.
 
+A shared prompt link such as `pi-workspace://new/v1?prompt=Review+the+tests&repo=owner%2Frepo` opens a review sheet. Confirm the project or choose **Use without project** to open an unsent draft. Select **Send** when the draft is ready.
+
+For a PR link such as `pi-workspace://new/v1?pr=owner%2Frepo%2F42&prompt=Review+this+change`, review the folder and commit before selecting **Check out**. If you clone the repository first, open the link again. When a linked conversation already exists, **Open Thread** keeps its draft. **Replace Draft and Open** applies the linked prompt to it.
+
 Choose **Fork from this response** on a completed reply to start a separate conversation with the messages through that reply. **Open source conversation** and **Open fork** take you between the two histories.
+
+Use **Add Panel Surface → Side chat**, or send `/btw` followed by a question, to ask beside the current thread. The side chat has its own Pi history. **Add to chat** attaches a copy of its messages to the parent’s draft.
 
 Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
 
-Choose a hit under **In messages** to open the conversation at that message. Press ⌘F to search the current thread. Return and ⇧Return move between matching messages on its active Pi branch. Escape returns to the composer. Press ⌘⇧F to search the sidebar.
+Type a setting name such as **Chat width** or **Model ID** in the palette to jump to its control. ⌘⇧[ and ⌘⇧] move between visible sidebar threads. ⌘1 through ⌘9 open the corresponding visible row.
+
+Choose a hit under **In messages** to open the conversation at that message. Press ⌘F to search the current thread. Return and ⇧Return move between matching messages on its active Pi branch. Escape returns to the composer. **Edit → Search Threads** focuses the sidebar.
+
+Press ⌘P to find a file by name, or ⌘⇧F to search text in the current checkout. Choosing a text match opens Files at the matching line. Both searches are also available in the command palette.
 
 If a project folder moves, use **Relink Folder** in its context menu to point the project at the new path and retain its conversations.
 
@@ -59,6 +83,8 @@ In a registered project, **Model Settings → Scope** lets you change that proje
 
 Open **Settings** from the sidebar or press ⌘, to search the available controls. For example, search for **Model ID** and press Return to edit the selected project's model, or search for **Open source licenses** to read the packaged notices.
 
+**Settings → Threads → Snooze options** sets the choices in the Snooze menu. Add a duration or a local day and time. You can keep up to eight choices. **Reset to defaults** restores the preset list. Existing reminders keep their scheduled times.
+
 **Settings → General → Add project starts in** sets the initial folder for adding or cloning a project. **Help → Show Welcome** or **Settings → About → Welcome page** reopens onboarding. Closing it returns to the selected draft.
 
 **Settings → Usage** shows token counts and USD costs recorded in local Pi conversation histories. Select a period, filter by project or provider, and select a model to inspect input, output and cache tokens. **Refresh usage** includes newly recorded replies. A total marked **+ unreported** includes only messages with a recorded value.
@@ -69,12 +95,14 @@ If the app cannot read its workspace index, the startup screen shows the affecte
 
 **Pi Workspace → Appearance Settings…** changes the color scheme and conversation width across projects. **Restore Defaults** returns to the system appearance and Comfortable width.
 
+**Settings → General → Restore device defaults** lists the local preferences it will change. Review the list, then choose **Confirm** to restore them.
+
 ## Work in a Git checkout
 
 1. In a draft, use the workspace control below the composer or press ⌘⇧X. Choose the project folder, an existing worktree, or a new worktree and its base branch. **Settings → Worktrees → Worktree location** sets the storage folder for new checkouts. An existing checkout or a checkout awaiting Retry keeps its saved path.
 2. Send the first message to create a new worktree. If preparation fails, correct the problem and select **Retry** in that thread. The app keeps the prompt and failed stage across relaunch. Before Pi starts the turn, **Cancel** returns the text to the draft. **Work locally** sends it from the project folder.
 3. Open **Changes** in the thread header. Select a file to read its unstaged or staged patch. Use the file's stage or unstage button to change the index.
-4. Check the files to include, enter a commit message, and select **Commit**. Git commits their current contents. An excluded file keeps its working copy, and any staged changes in it become unstaged after the commit succeeds.
+4. Check the files to include and select **Commit**. Enter a subject to commit directly. Leave it empty to generate a subject and optional body with Pi. In **Settings → Source Control**, choose repository conventions, Conventional Commits, or custom instructions and an optional writer model. A generated commit preserves excluded staging. With a typed subject, excluded files keep their working copies and their staged changes become unstaged when the commit succeeds.
 5. Open **Terminal** in the header to start an interactive shell in the thread's directory. Use **New Terminal** for another tab or split a tab horizontally or vertically. Press ⌘⇧[ or ⌘⇧] to move between panes. Drag the top edge to adjust the drawer height for that thread. Hiding the drawer keeps its height and shells. Confirm **Close Terminal** to end the selected shell.
 
 Use the branch button or ⌘⇧G to search local and cached remote refs. **New Branch** creates a branch at the base you choose. Selecting a branch that already has a linked checkout moves the thread to that checkout.
@@ -89,17 +117,27 @@ If a worktree moves while an edit is pending, select its new path in the draft's
 
 Select an image to see its dimensions, change its zoom, or open the expanded preview. Select a PDF to page through it, fit its width, or search its text. **Retry** reloads a file after you replace a damaged copy.
 
+For a standalone SQLite database, select a table and use **Previous Rows** and **Next Rows** to read it in pages of 50. Files reads a snapshot of the selected checkout's database. If it is in WAL mode or has a rollback journal, open a standalone copy.
+
+Open a ZIP, JAR, TAR, TAR.GZ, TGZ, or GZIP file to browse its entries. Select a text file or image to preview it. Files reads the members in memory and leaves the archive and checkout untouched.
+
 For text files over 1 MiB, enter a line number in **Go to Line** or use **Next Page** and **Previous Page**. Each page holds up to 32 lines. Lines longer than 16 KiB show their first 16 KiB, up to a complete UTF-8 character.
 
 Open **Browser** in the thread header. Enter a URL, a host such as `localhost:5173`, or search terms, then press Return. **Pi Workspace → Browser Settings…** selects the search engine. A custom HTTP or HTTPS search URL uses `%s` for the query. Use **New Browser Tab** to choose the Default or Alternate profile. Tabs keep their own history and zoom. Tabs in the same thread and profile share temporary website data until you quit the app.
 
 Choose **Open Mini Player** to keep the page over the conversation. Drag the arrow handle to move it or drag an edge to resize it. **Open in Browser Panel** returns the page to its tab. **Open in Floating Window** moves it to a separate macOS window.
 
+With the page focused, press ⌘F or choose **Find on page**. Return and ⇧Return step through matches in that tab. Escape returns focus to the page.
+
+An unfinished custom search URL stays editable after you save it. Until the URL contains a usable `%s` placeholder, address-bar searches use DuckDuckGo. **Reset** beside **Search engine** restores DuckDuckGo and clears the custom URL.
+
 Open **Pull Requests** in the header and choose **Pull Requests** or **Issues** for the selected checkout. Search by text or a filter such as `label:bug`, choose a state, and use **Load more** for the next page. Choose a PR to read its description, branches, and checks, or an Issue to read its author, labels, and body.
 
 In the PR list, **Author** and **Labels** let you search the repository's available choices. Choose **Anyone** or **Clear labels** to remove that filter while keeping the others.
 
-In **Linked items**, choose **Link pull request** and enter a PR number or URL for the checkout's GitHub repository. The link stays with the selected thread across relaunch. Its menu can copy the URL or number, open GitHub, or unlink the PR from that thread.
+In **Linked items**, choose **Link pull request** or **Link issue**, then enter the number or URL for the checkout's GitHub repository. **Link to thread** in Issue details fills in the issue URL. The links stay with the selected thread across relaunch. Select a linked issue to read it, copy its URL or unlink it.
+
+From either Issue detail view, edit the title or description and select **Save**, or enter a comment and select **Comment**. If GitHub’s acknowledgement is lost, **Check result** reads the issue for the submitted text. The app keeps the pending comment through relaunch and enables submission again when it can confirm the new comment.
 
 For a failed GitHub Actions check, choose **View log** to read up to the last 200 lines and 96 KiB of the selected job. **Retry** fetches it again after access is restored.
 
@@ -113,9 +151,16 @@ open -na "dist/Pi Workspace.app" --args --project "/path/to/project"
 
 ## Verify the app locally
 
-Build the app first. Run the Swift tests, then use the packaged app with a loopback model fixture. The UI checks require macOS Accessibility and keyboard input permissions.
+Run the headless suite while using your Mac. It exercises the Pi worker, saved conversations, checkout Git operations, and file formats with private fixtures. A skipped selected test makes the run fail.
 
 ```sh
+node scripts/verify-headless.mjs
+```
+
+For the full native UI suite, use a separate macOS login session or virtual machine with Accessibility and keyboard input access for the test driver. Build the app and run the following commands inside that session.
+
+```sh
+export PI_WORKSPACE_TEST_DESKTOP=dedicated
 swift test -c release
 swiftc -module-cache-path .build/ax-cache scripts/ax.swift -o .build/ax
 node scripts/verify-app.mjs "$PWD/.build/ax" --fixture-model
@@ -126,30 +171,51 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --conversation-controls-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --project-flows-only
 node scripts/verify-native-paste.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-app.mjs "$PWD/.build/ax" --thread-actions-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --queue-edit-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --sidebar-and-checks-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --image-preview-only
+node scripts/verify-text-attachment-save.mjs --foreground "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-app.mjs "$PWD/.build/ax" --new-thread-routes-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --draft-projects-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --palette-files-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --startup-draft-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --recovery-actions-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --pr-files-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --right-terminal-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --model-account-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --side-chat-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --settings-links-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --chat-settings-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --prompt-links-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --pr-prompt-links-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --issue-edits-only
+node scripts/verify-draft-links.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-app.mjs "$PWD/.build/ax" --local-changes-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --sqlite-files-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --archive-files-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --browser-find-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --browser-find-keys-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --browser-search-settings-only
+node scripts/verify-commit-generation.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-stop-retry.mjs "dist/Pi Workspace.app" "$PWD/.build/ax"
 node scripts/verify-app.mjs "$PWD/.build/ax" --snooze-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --snooze-options-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --project-settings-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --project-icons-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --archived-threads-only
 node scripts/verify-file-drops.mjs "$PWD/.build/ax" "dist/Pi Workspace.app"
 node scripts/verify-attachments.mjs --release-suite "dist/Pi Workspace.app"
 ```
 
 The app verifier writes its report under `dist/verification-*/logs`. The neighboring `fixture` link points to the test data in a temporary folder outside the source checkout. Model turns use a disposable Keychain item. The worktree run checks failure and retry, terminal lifetime, selected commits, and PR details from the mock GitHub CLI. The file-drop verifier moves the pointer across a disposable source window and the app. The release suite supplies loopback providers for both the attachment and question tests. To test real local model replies, run Ollama on port 18541 with `smollm2:135m` installed and omit `--fixture-model`.
 
-On a shared Mac, set `PI_WORKSPACE_VERIFY_IDLE_SECONDS=180` to wait for three minutes of keyboard and pointer inactivity before each test launch. The verifier runs a private copy of the named build throughout that scenario.
+The desktop verifier runs a private copy of the named build. Input, drag, and system-picker scenarios check for `PI_WORKSPACE_TEST_DESKTOP=dedicated` before starting. The idle timer can delay those scenarios within the dedicated session.
 
-The startup-draft, recovery-actions, PR-files, right-terminal, model-account, side-chat and local-changes scenarios use background Accessibility actions. They can run while another application has keyboard focus. The model-account check routes an existing conversation and a fresh draft after a project settings reset. The side-chat check holds the first parent turn, verifies the child's reply, and follows its attachment back into the parent after relaunch. The separate Stop-retry verifier holds the private app's own Pi worker long enough to observe the ten-second retry. Its watchdog releases that worker on controller exit or after 18 seconds.
+The startup-draft, recovery-actions, PR-files, right-terminal, model-account, side-chat, settings-links, chat-settings, prompt-links, PR-prompt-links, issue-edits, queue-edit, snooze-options, and local-changes scenarios use background Accessibility actions. They can run while another application has keyboard focus. The settings-links check opens the packaged version and license list while retaining an unsaved project model edit. The PR-link check clones from a local Git mirror and changes the simulated PR head before confirmation. The issue-edits check uses a private mock GitHub CLI and counts its requests across two app restarts.
 
-`logs/artifact.json` records the verified bundle's code directory hash, the SHA-256 digests of its executable and Pi worker, the bundled Pi version and the verifier digest.
+The model-account check routes an existing conversation and a fresh draft after a project settings reset. The side-chat check holds the first parent turn, verifies the child's reply, and follows its attachment back into the parent after relaunch. The separate Stop-retry verifier holds the private app's Pi worker for the ten-second retry. Its watchdog releases that worker on controller exit or after 18 seconds.
+
+`logs/artifact.json` records the bundle's code directory hash and bundled Pi version. Its SHA-256 digests cover the app executable, Pi worker, Accessibility driver, verification scripts, fixture modules, and the private copy of the mock GitHub CLI.
 
 To test which network connections the packaged Pi helper attempts during startup, idle time, an explicit local turn, and shutdown, run `node scripts/verify-default-telemetry.mjs`. It checks the Node network and child-process APIs against a loopback receiver and applies a macOS process sandbox. Native app and WebKit traffic require separate observation.
 

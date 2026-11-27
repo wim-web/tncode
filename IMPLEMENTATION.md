@@ -4,7 +4,11 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 **全件の担当は [工程別の作業表](docs/implementation-order.tsv) にある。** 操作・設定・分岐1,494行、通信87行、UI 実装単位1,491行、画面61件、実機追加の入力2件を、それぞれ1工程に割り当てた。ソース上の10,763の入口と実機入口1,091件は [宣言の対応表](T3Audit-0.1.12/inventory/entries.tsv) と [実機の対応表](T3Audit-0.1.12/inventory/runtime-entries.tsv) の `feature_id` で担当工程を引く。
 
+1台の Mac で使う最初の3操作は署名版で通った。直接入力と Browse のどちらでも同じフォルダーを登録でき、Pi の部分応答を Stop で止めて再起動後に同じ履歴へ送信できた。worktree 準備の失敗ではモデル要求は0件で、保存先を直して Retry すると元の文が1回だけ届いた。停止の応答が永久に返らない場合の強制終了、複数会話での同時実行は、それぞれ独立した受入条件として残る。[配布版の3操作](PiWorkspace/scripts/verify-app.mjs)・[停止の再試行](PiWorkspace/scripts/verify-stop-retry.mjs)
+
 ## 工程の進め方
+
+共有中の Mac では `node PiWorkspace/scripts/verify-headless.mjs` で Pi・Git・保存データを検証する。画面にキーを送る操作、ドラッグ、macOS のファイルパネルは専用の GUI セッションで再生する。作業表には実際に通した経路と別環境での確認待ちを記入する。
 
 1. 作業表を `stage` で絞る。例えばリポジトリ直下で以下を実行すると、工程01のユーザー操作・設定だけを読める。機能と実機入口は clone 後の `T3Audit-0.1.12/index.html` で検索できる。
 
@@ -48,9 +52,11 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 **終了条件**　CHAT-058、DEV-001、NAV-232 を、直接入力と Browse の両方で実行する。OS の選択パネルで対象を選んで確定し、戻ったシートで登録すると対象の下書きにフォーカスが移り、再起動後も同じ ID で開く。取消・存在しないパス・同じフォルダーの再登録で、重複や意図しない選択変更が起きない。Browse の確定・登録は以前の調査で未検証だった経路。
 
-配布版の下書き見出しからプロジェクトを検索すると、空の下書きでは移動先の保存済み下書きが開く。入力済みなら同じスレッド ID、本文、添付を持って移動し、モデルは移動先の設定に切り替わる。プロジェクト追加を取り消した場合と登録を完了した場合も、元の下書きに戻った。[下書き移動の配布試験](PiWorkspace/scripts/verify-draft-project-chooser.mjs)
+配布版の下書き見出しからプロジェクトを検索すると、空の下書きでは移動先の保存済み下書きが開く。入力済みなら同じスレッド ID、本文、添付を持って移動し、モデルは移動先の設定に切り替わる。原本の scratch だけの画面では候補が **Add project** の1件となり、取消後は元の入力欄に戻った。新規登録に成功すると登録先の空の下書きが開く。Swift の画面外試験で最初のキーが登録先に入り、元の本文と添付をサイドバーから再び開けることを確認した。[下書き移動の配布試験](PiWorkspace/scripts/verify-draft-project-chooser.mjs)・[登録後の選択試験](PiWorkspace/Tests/PiWorkspaceTests/NewThreadShortcutTests.swift)
 
 起動時に新規下書きを保存できなかった場合は、保存先を修復して **Try again** を押す。元々開く予定だったプロジェクトに下書きが1件でき、別の会話を選んだ場合は再試行を取り消す。新規スレッドは ⌘N と ⌘⇧O、現在または最後に使ったプロジェクトは ⌘⇧N、プロジェクトなしは ⌘⌥N で開く。登録数0・1・2件で署名済みアプリに実キーを送り、選択画面、作成した下書きの UUID、取消後の本文を照合した。ターミナルにフォーカスがある間は4通りのキーを送っても下書きは増えなかった。[起動時の再試行](PiWorkspace/Tests/PiWorkspaceTests/StartupDraftTests.swift)・[ショートカットの試験](PiWorkspace/Tests/PiWorkspaceTests/NewThreadShortcutTests.swift)
+
+署名版でプロンプト共有リンクを開くと、本文を確認してから登録済みフォルダー、プロジェクトなし、または新規 clone を選べた。候補表示後に Git の origin を差し替えると、以前の候補を選んでも元の下書きは保たれた。モデルの指定が同梱 Pi のカタログと一致すると、そのモデル名で未送信の下書きを保存した。[共有リンクの配布試験](PiWorkspace/scripts/verify-prompt-links.mjs)
 
 ### 02　Pi に送り、同じ会話を続ける
 
@@ -76,11 +82,17 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 配布版では5件を積んだキューを編集・並べ替えし、実行中の Steer と停止後の再開を合わせて、8件の受付 ID が Pi 履歴に各1回だけ残ることを確認した。[キューの再現手順](PiWorkspace/scripts/verify-message-queue.mjs)
 
+署名版でキー未登録のキューを編集し、同じ名前の添付2件から片方だけを削除した。再起動後もキュー ID、残したファイルのバイト、別の下書きとその添付が一致した。**Resume Queue** で認証欄が開き、モデルへの HTTP 要求は0件だった。[キュー編集の配布試験](PiWorkspace/scripts/verify-thread-actions.mjs)
+
+親の初回応答を保留し、配布版から `/btw` で子に質問すると、サイドチャットが先に答えた。子の質問と回答を **Add to chat** で添付し、再起動後に子を削除しても、親は保存した添付を次のリクエストで1回だけ送信した。[サイドチャットの配布試験](PiWorkspace/scripts/verify-side-chat-panel.mjs)
+
 ローカル Pi の質問では、2件の選択と自由入力をまとめて返し、後続の書き込みには個別の承認が必要だった。質問を表示したまま停止・終了すると保留中の書き込みは実行されず、再起動後に同じスレッドを1回だけ継続した。画像の添付では、入力欄と別スレッド行へ実際に落としたファイルの名前とバイトをそれぞれ照合した。[質問の配布試験](PiWorkspace/scripts/verify-conversation-controls.mjs)・[ドラッグ試験](PiWorkspace/scripts/verify-file-drops.mjs)
 
 専用ペーストボードで32,767バイトのテキストを貼ると本文に入り、32,768バイトでは名前とサイズを表示して添付になった。保管した下書きは再起動後に ID で復元でき、本文と添付を一緒に戻せた。[貼り付け試験](PiWorkspace/scripts/verify-native-paste.mjs)・[一時保管試験](PiWorkspace/scripts/verify-thread-actions.mjs)
 
 配布版で同名の赤・青 PNG を下書きと送信済み履歴から開き、前後への移動、元のボタンへのフォーカス復帰、**Copy Image** が返す両方のバイト列を確認した。テキスト添付は画像の巡回対象から外れ、別のキュー項目にある画像はその項目だけで開いた。[画像の配布試験](PiWorkspace/scripts/verify-chat-images.mjs)
+
+同名の UTF-8 ファイル2件から選んだほうだけをプレビューで削除し、再添付後に元ファイルを両方削除した。再起動した署名版で下書きと送信済み会話を開き、macOS の保存パネルから3回書き出した。各ファイルは BOM、改行、結合文字を含め元のバイトと一致し、取消では何も作成されなかった。[ファイル保存の配布試験](PiWorkspace/scripts/verify-text-attachment-save.mjs)
 
 **終了条件**　CHAT-090〜099、141〜151、160〜169。同じ無害な編集を要求し、承認前と拒否時はファイルが変わらず、承認時に一度だけ変わる。実行中に2通保留し、一方を編集し他方を削除して送信順を照合する。親からの分岐でコピーした履歴と、Pi の同じセッションへ復帰した場合を区別する。原本の既往試験では Steer の画面到達とプロバイダーの受理に確認範囲の差がある。[確認済みの遷移](T3Audit-0.1.12/results/transitions.tsv)
 
@@ -88,9 +100,13 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 標準のスレッド一覧と Labs のプロジェクト別表示に同じ記録を使う。ピンと並び順、名前変更、Settle・Snooze・Archive と復元、複数選択、本文検索、パレット、履歴移動を実装する。各操作をサイドバー、コンテキストメニュー、ショートカットから呼び、フォーカス中の入力欄・端末とキーの取り合いを検査する。
 
+署名版の **Snooze → Custom… → Edit snooze options** で期限を編集した。再起動後のリストから31分と「水曜13:37」を選ぶと、保存した期限はそれぞれ選択時刻の1,860秒後と次の水曜の現地時刻に一致した。候補をすべて削除すると **Custom…** だけになり、初期値を戻しても別スレッドの既存期限は保たれた。[スヌーズの配布試験](PiWorkspace/scripts/verify-thread-snooze.mjs)
+
 **終了条件**　CHAT-018、023、028、043〜044、155〜158、NAV-111。二つのプロジェクトに似た名前のスレッドを作り、古い本文だけにある語で目的の発言まで移動できる。Settle 後の送信は正しい会話を再開し、Archive 済みは復元まで該当の操作が制限される。再起動して並び・選択・表示モードを照合する。メニューに出るだけの項目はキー実行と結果を別途確認する。
 
 スレッド内の ⌘F で30往復離れた2発言を往復し、同じ発言内でも2箇所の一致を個別に選択できた。サイドバーとパレットの検索は、画面に表示する Pi の本文を使う。履歴の重複を解消すると Retry で同じ語句を検索できた。Escape の直後に入力した文字は元のキャレット位置に入り、閉じるボタンからも日本語と絵文字の選択範囲に戻った。[検索の配布試験](PiWorkspace/scripts/verify-conversation-controls.mjs)
+
+署名版の **Settings → Archive** で作業先を絞り、同じタイトルの2件から1件を復元した。保存を失敗させて再試行した後も、再起動すると元の Pi メッセージ2件が開き、別スレッドの下書きとキューは保持された。Project Overview のアイコンも、同名プロジェクトを使い、選んだ登録にだけ保存・初期化されることを確かめた。[アーカイブ復元](PiWorkspace/scripts/verify-archived-threads.mjs)・[アイコンの取込と初期化](PiWorkspace/scripts/verify-project-icons.mjs)
 
 ### 06　同じ checkout の変更を見て端末で作業する
 
@@ -102,6 +118,10 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 署名済みアプリの Changes で、ローカルとリモート追跡ブランチを比較元に選び、個別コミット2件のパッチを開いた。Uncommitted では同じファイルのステージ済み・未ステージの行を照合し、Git の読み取り権限を戻して Refresh すると元の表示を復元できた。[差分の配布試験](PiWorkspace/scripts/verify-local-changes.mjs)
 
+件名を空にして **Commit** を選ぶと、選択した差分が Pi に届き、生成した件名でそのファイルだけが履歴に入った。手入力ではモデル要求は0件だった。確定直前にフックがファイルを編集した場合と、同じ SHA の別ブランチへ切り替えた場合も検査した。どちらも選択時と違うコミットは作成されず、Git index のバイトは保たれた。[件名生成の配布試験](PiWorkspace/scripts/verify-commit-generation.mjs)・[確定時の競合試験](PiWorkspace/Tests/PiWorkspaceTests/GitChangesTests.swift)
+
+⌘P はファイル名検索、⌘⇧F は作業先の本文検索を開く。親とリンクした worktree に同じ相対パスのファイルを置き、それぞれ本文だけにある語から3行目・164行目を開いた。SQLite のプレビューでは同じ相対パスでも各 checkout のデータを読み、表の切替・ページ送り・破損時の再試行後も元ファイルのバイトが一致した。[ファイル検索](PiWorkspace/scripts/verify-command-palette.mjs)・[SQLite 閲覧](PiWorkspace/scripts/verify-workspace-files.mjs)
+
 ### 07　設定・プロバイダー・使用量を管理する
 
 設定ナビと検索、環境・プロジェクト別の継承と上書き、復元、外観・フォント・テーマ、モデル選択と使用量の内訳を実装する。工程02の単一モデル経路から、複数の設定、利用不能モデル、期限切れ認証、切替失敗へ拡張する。Labs は対応機能を作った工程で実際の挙動までつなぐ。非 Pi の CLI 専用操作は原本の ID を残し、Pi で同等にできる部分と製品判断の必要な部分を記録する。
@@ -112,6 +132,8 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 
 初回送信では、その会話の接続先を保存する。同じアカウントのモデル変更は次の送信に反映する。既定値が別の接続先に変わると、未送信の下書きが新しい設定を継承し、送信済みの会話とそこから始めるサイドチャットは元の接続先で続く。Pi 1.6.1 で設定リセットと再起動を含む10回の要求を照合した。接続先の記録がない旧形式では、設定変更直前の値を引き継ぐ。[接続先の回帰試験](PiWorkspace/Tests/PiWorkspaceTests/ModelRoutingWireTests.swift)
 
+設定リンクから別プロジェクトの概要を開き、コピーしたフォルダーと表示先を照合した。存在しないプロジェクトへのリンクを開いても編集中の欄は保たれた。アプリ起動直後に2件の設定 URL を続けて送った試験では、8組すべて2件目の General が開いた。保存済みの下書き URL から起動すると、別の下書きを作らず指定 UUID の入力欄に戻った。[設定リンク](PiWorkspace/scripts/verify-settings-panels.mjs)・[下書きリンク](PiWorkspace/scripts/verify-draft-links.mjs)
+
 ### 08　PR、CI、レビュー、Issue を扱う
 
 ローカル差分と branch に forge アカウント、対象リポジトリ、PR / Issue の識別子を結ぶ。読み取り系の一覧・絞り込み・詳細・CI ログを先に通し、次に作成・レビュー・コメント・担当変更・マージ、スレッドとのリンク・監視、スタック操作を追加する。外部書き込みは使い捨てリポジトリで再生する。
@@ -119,6 +141,12 @@ T3 Code (Beta) 0.1.12 の macOS クライアントを、[現行の PiWorkspace](
 公開 `cli/cli` への読み取りでは、同じ checkout を使って PR と Issue を各50件取得し、ラベル検索、次ページの別の50件、選択した詳細を照合した。配布版から模擬 `gh` を呼ぶ試験では、認証失敗やページ取得失敗からの再試行も再現できる。[GitHub の検証手順](PiWorkspace/README.md#verify-github-reads)
 
 失敗したチェックで **View log** を開き、権限エラーの解消後に再試行すると指定したジョブの末尾が表示された。同名の2件のチェックをジョブ ID で区別し、別の PR や新しい head に切り替えた後は以前のログを表示しないことを確認した。[チェックログの配布試験](PiWorkspace/scripts/verify-panels.mjs)
+
+署名版の **Linked items** では、対象リポジトリの Issue を番号または詳細画面からスレッドに登録できた。模擬 GitHub の同じ番号の PR と Issue を個別に開き、再起動後に Issue を解除しても PR と他の Issue は残った。[関連付けの配布試験](PiWorkspace/scripts/verify-linked-prs.mjs)
+
+PR 付き共有リンクでは、確認中に head を変更すると新しいコミットを表示して再確認を求めた。明示承認の後に作成した worktree の HEAD が一致し、元の未コミット編集も残った。リンク先の Pi 分岐履歴を壊して **Open Thread** と **Replace Draft and Open** を押しても、元の選択、本文、キュー、両方の履歴は変わらなかった。履歴を戻すと同じリンクで開けた。[PR リンクの配布試験](PiWorkspace/scripts/verify-prompt-links.mjs)
+
+Issue のタイトル更新で権限エラーを返すと、編集内容を保って再試行できた。コメントの受信直後に模擬 GitHub の応答を失わせ、再起動して **Check result** を押すと、同文の過去のコメントと新しい ID を区別できた。記録された POST は1回だった。[Issue 編集の配布試験](PiWorkspace/scripts/verify-issue-edits.mjs)
 
 **終了条件**　DEV-073〜128、RPC-041〜051、SRC-S18・30。単一の PR をスレッドに関連付け、CI 失敗からログへ移動し、行コメントを提出して forge と画面の両方で1件だけ増える。Issue の作成・更新も対象プロジェクトで照合する。通信断、未サインイン、権限不足、異なる head へ更新された場合を確認し、再試行で投稿を重複させない。アカウント依存の分岐は使用したサービスと権限を結果に添える。
 
