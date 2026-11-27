@@ -30,8 +30,9 @@ import { verifyThreadSnooze } from "./verify-thread-snooze.mjs";
 import { verifyNewThreadRoutes, verifyStartupRetry } from "./verify-new-thread-routes.mjs";
 import { verifyStartupRecovery } from "./verify-startup-recovery.mjs";
 import { verifyRightTerminal } from "./verify-right-terminal.mjs";
-import { verifyModelAccount } from "./verify-model-account.mjs";
+import { verifyInheritedAccount, verifyModelAccount } from "./verify-model-account.mjs";
 import { verifyLocalChanges } from "./verify-local-changes.mjs";
+import { verifySideChatPanel } from "./verify-side-chat-panel.mjs";
 
 const packagedApp = process.env.PI_WORKSPACE_VERIFY_APP
   ? resolve(process.env.PI_WORKSPACE_VERIFY_APP)
@@ -41,7 +42,7 @@ let testBundleDirectory;
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
 const backgroundChecks = ["--startup-draft-only", "--recovery-actions-only", "--pr-files-only", "--right-terminal-only",
-  "--model-account-only", "--local-changes-only"];
+  "--model-account-only", "--local-changes-only", "--side-chat-only"];
 const backgroundScenario = process.argv.slice(3).find(flag => backgroundChecks.includes(flag));
 if (backgroundScenario) assert.equal(process.argv.length, 4, "Run a background scenario on its own.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), backgroundScenario ? /accessibility=true/ : /accessibility=true keyboard=true/);
@@ -1284,9 +1285,15 @@ try {
   if (backgroundScenario === "--model-account-only") {
     await verifyModelAccount(panelDriver, { root: join(directory, "model-account"), launch, quit, record,
       credential: updateKey, removeFixtureCredential });
+    await verifyInheritedAccount(panelDriver, { root: join(directory, "inherited-account"), launch, quit, record,
+      credential: updateKey, removeFixtureCredential });
   }
   if (backgroundScenario === "--local-changes-only") {
     await verifyLocalChanges(panelDriver, { root: join(directory, "local-changes"), git, launch, quit, record });
+  }
+  if (backgroundScenario === "--side-chat-only") {
+    await verifySideChatPanel(panelDriver, { root: join(directory, "side-chat"), launch, quit, record,
+      credential: updateKey, removeFixtureCredential });
   }
   if (backgroundScenario === "--pr-files-only") {
     makeRepository();

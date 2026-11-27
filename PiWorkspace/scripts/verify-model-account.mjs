@@ -1,37 +1,8 @@
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
-import { once } from "node:events";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
 import { join } from "node:path";
-
-async function localAccount(model) {
-  const key = randomBytes(32).toString("hex");
-  const turns = [];
-  const server = createServer(async (request, response) => {
-    if (request.method !== "POST" || request.url !== "/v1/chat/completions" ||
-        request.headers.authorization !== "Bearer " + key) {
-      response.writeHead(401).end();
-      return;
-    }
-    let body;
-    try { body = await new Response(request).json(); } catch { response.writeHead(400).end(); return; }
-    if (!Array.isArray(body.messages)) { response.writeHead(400).end(); return; }
-    const prompts = body.messages.filter(m => m.role === "user").map(m =>
-      typeof m.content === "string" ? m.content : m.content.map(part => part.text).join(""));
-    turns.push({ model: body.model, prompts });
-    const reply = "Reply from " + model + " turn " + turns.length;
-    const chunk = (delta, reason) => "data: " + JSON.stringify({ id: "account-fixture-" + turns.length,
-      object: "chat.completion.chunk", created: 1, model,
-      choices: [{ index: 0, delta, finish_reason: reason }] }) + "\n\n";
-    response.writeHead(200, { "Content-Type": "text/event-stream" }).end(
-      chunk({ role: "assistant", content: reply }, null) + chunk({}, "stop") + "data: [DONE]\n\n");
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return { server, key, turns, settings: { provider: "local", model, contextWindow: 8192,
-    endpoint: "http://127.0.0.1:" + server.address().port + "/v1" } };
-}
+import { localAccount } from "./fixtures/local-pi-account.mjs";
 
 export async function verifyModelAccount(driver, { root, launch, quit, record, credential, removeFixtureCredential }) {
   const { press, dismiss, tree, visible, value, until } = driver;
@@ -99,6 +70,74 @@ export async function verifyModelAccount(driver, { root, launch, quit, record, c
     record("Use Default was available on the unsent draft. After its first reply, neither the other account nor Use Default could switch that history, including after relaunch. Only the owner endpoint received the two turns. The other endpoint received zero requests.");
   } finally {
     for (const account of owners) {
+      removeFixtureCredential(root, "local:" + account.settings.endpoint);
+      account.server.closeAllConnections();
+      await new Promise(resolve => account.server.close(resolve));
+    }
+  }
+}
+
+export async function verifyInheritedAccount(driver, { root, launch, quit, record, credential, removeFixtureCredential }) {
+  const { press, dismiss, tree, visible, value, until, openModelSettings, closeSettings } = driver;
+  const accounts = [];
+  try {
+    accounts.push(await localAccount("inherited-owner"));
+    accounts.push(await localAccount("new-default"));
+    const [owner, other] = accounts;
+    const uuid = () => randomUUID().toUpperCase();
+    const projectID = uuid(), threadID = uuid(), siblingID = uuid(), stashID = uuid();
+    const first = "First inherited conversation", next = "Continue the inherited conversation", sibling = "A separate new draft";
+    const project = { id: projectID, title: "Reset fixture", path: join(root, "Project"), allowEdits: false,
+      selectedConversation: threadID, conversations: [
+        { id: threadID, title: "Original", archived: false, isDraft: true, composerText: first },
+        { id: siblingID, title: "Sibling", archived: false, isDraft: true, composerText: sibling },
+      ] };
+    const state = { welcomeCompleted: true, selectedProject: projectID, projects: [project], model: other.settings,
+      stashedPrompts: [{ id: stashID, createdAt: 1, prompt: next, attachments: [] }] };
+    const path = join(root, "workspace.json");
+    const current = () => JSON.parse(readFileSync(path, "utf8")).projects[0];
+    mkdirSync(project.path, { recursive: true });
+    writeFileSync(path, JSON.stringify(state), { mode: 0o600 });
+    credential("--set-api-key-from-stdin", other.key, root);
+    project.modelOverride = owner.settings;
+    writeFileSync(path, JSON.stringify(state), { mode: 0o600 });
+    credential("--set-api-key-from-stdin", owner.key, root);
+    async function send(account, count) {
+      await until(() => value("active-model").includes(account.settings.model) && visible("send-message").includes("enabled=true"), "correct route before sending");
+      press("send-message");
+      await until(() => account.turns.length === count && tree().includes("Reply from " + account.settings.model + " turn " + count) &&
+        !tree().includes('id="stop-message"'), "expected model replied");
+    }
+    await launch("composer", root);
+    await send(owner, 1);
+    press("thread-row-" + siblingID);
+    await until(() => current().selectedConversation === siblingID && value("composer").includes(sibling), "sibling draft selected");
+    await openModelSettings();
+    await until(() => visible("reset-model-override"), "project override");
+    press("reset-model-override");
+    await until(() => value("model-settings-source").includes("Inherits Workspace default"), "project now inherits the default");
+    await closeSettings();
+    await quit();
+    await launch("composer", root);
+    assert.equal(current().selectedConversation, siblingID);
+    assert.equal(current().modelOverride, undefined);
+    assert(value("composer").includes(sibling));
+    await send(other, 1);
+    press("thread-row-" + threadID);
+    await until(() => current().selectedConversation === threadID && tree().includes("Reply from inherited-owner turn 1"), "original conversation restored");
+    const retained = current().conversations.find(t => t.id === threadID);
+    assert.equal(retained.modelSelection, undefined);
+    assert.equal(retained.historyModel.endpoint, owner.settings.endpoint);
+    press("open-composer-stash");
+    await until(() => visible("restore-stashed-prompt-" + stashID), "original follow-up");
+    dismiss("restore-stashed-prompt-" + stashID);
+    await send(owner, 2);
+    await quit();
+    assert.deepEqual(owner.turns.map(t => t.prompts), [[first], [first, next]]);
+    assert.deepEqual(other.turns.map(t => t.prompts), [[sibling]]);
+    record("After resetting the project model from a sibling draft and relaunching, only the sibling's standalone text reached the new default. The original inherited thread kept its ID and had both of its turns delivered to its original endpoint.");
+  } finally {
+    for (const account of accounts) {
       removeFixtureCredential(root, "local:" + account.settings.endpoint);
       account.server.closeAllConnections();
       await new Promise(resolve => account.server.close(resolve));

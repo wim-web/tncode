@@ -134,6 +134,7 @@ node scripts/verify-app.mjs "$PWD/.build/ax" --recovery-actions-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --pr-files-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --right-terminal-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --model-account-only
+node scripts/verify-app.mjs "$PWD/.build/ax" --side-chat-only
 node scripts/verify-app.mjs "$PWD/.build/ax" --local-changes-only
 node scripts/verify-stop-retry.mjs "dist/Pi Workspace.app" "$PWD/.build/ax"
 node scripts/verify-app.mjs "$PWD/.build/ax" --snooze-only
@@ -146,7 +147,7 @@ The app verifier writes its report under `dist/verification-*/logs`. The neighbo
 
 On a shared Mac, set `PI_WORKSPACE_VERIFY_IDLE_SECONDS=180` to wait for three minutes of keyboard and pointer inactivity before each test launch. The verifier runs a private copy of the named build throughout that scenario.
 
-The startup-draft, recovery-actions, PR-files, right-terminal, model-account and local-changes scenarios use background Accessibility actions. They can run while another application has keyboard focus. The separate Stop-retry verifier holds the private app's own Pi worker long enough to observe the ten-second retry. Its watchdog releases that worker on controller exit or after 18 seconds.
+The startup-draft, recovery-actions, PR-files, right-terminal, model-account, side-chat and local-changes scenarios use background Accessibility actions. They can run while another application has keyboard focus. The model-account check routes an existing conversation and a fresh draft after a project settings reset. The side-chat check holds the first parent turn, verifies the child's reply, and follows its attachment back into the parent after relaunch. The separate Stop-retry verifier holds the private app's own Pi worker long enough to observe the ten-second retry. Its watchdog releases that worker on controller exit or after 18 seconds.
 
 `logs/artifact.json` records the verified bundle's code directory hash, the SHA-256 digests of its executable and Pi worker, the bundled Pi version and the verifier digest.
 
