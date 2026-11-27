@@ -79,8 +79,27 @@ enum WorkspaceFilePreview: Sendable {
     case text(WorkspaceFileText)
     case largeText(WorkspaceLargeTextFile)
     case binary(prefix: Data, size: Int64)
+    case sqlite(WorkspaceSQLiteFile)
     case image(WorkspaceImageFile)
     case pdf(WorkspacePDFFile)
+}
+
+struct WorkspaceSQLiteFile: Sendable {
+    let id = UUID()
+    let tables: [WorkspaceSQLite.Table]
+    fileprivate let database: WorkspaceSQLite
+    fileprivate let files: WorkspaceFiles
+    fileprivate let path: String
+    fileprivate let checkout: WorkspaceFileIdentity
+    fileprivate let revision: SQLiteFileRevision
+
+    func page(table: Int, index: Int) throws -> WorkspaceSQLite.Page {
+        guard tables.indices.contains(table) else { throw WorkspaceSQLiteError.unavailableTable }
+        try files.validateSQLite(self)
+        let page = try database.page(of: tables[table], index: index)
+        try files.validateSQLite(self)
+        return page
+    }
 }
 
 struct WorkspaceLargeTextFile: Sendable {
@@ -171,10 +190,26 @@ struct WorkspaceFiles: Sendable {
             let file = try openFile(in: folder, name: name)
             defer { close(file) }
             let metadata = try status(file)
+            let header = try read(file, limit: WorkspaceSQLite.signatureLength, cancellable: true)
+            if WorkspaceSQLite.recognizes(header, name: name) {
+                let revision = SQLiteFileRevision(metadata)
+                guard metadata.st_size <= WorkspaceSQLite.byteLimit else { throw WorkspaceSQLiteError.tooLarge }
+                try checkSQLiteSideFiles(in: folder, name: name)
+                let bytes = try read(file, limit: WorkspaceSQLite.byteLimit + 1, after: header, cancellable: true)
+                try checkSQLiteSideFiles(in: folder, name: name)
+                guard bytes.count == metadata.st_size, SQLiteFileRevision(try status(file)) == revision else {
+                    throw WorkspaceSQLiteError.changed
+                }
+                let database = try WorkspaceSQLite(bytes: bytes)
+                let source = WorkspaceSQLiteFile(tables: try database.tables(), database: database, files: self,
+                                                 path: path, checkout: checkout, revision: revision)
+                try validateSQLite(source)
+                return .sqlite(source)
+            }
             let media = WorkspaceMediaFormat(fileName: name)
             let limit = media == nil ? Self.textLimit : WorkspaceMediaFormat.byteLimit
             if media != nil, metadata.st_size > limit { throw WorkspaceMediaError.tooLarge }
-            let data = try read(file, limit: limit + 1, cancellable: true)
+            let data = try read(file, limit: limit + 1, after: header, cancellable: true)
             guard FileRevision(metadata) == FileRevision(try status(file)) else { throw WorkspaceFileError.changed }
             if let media {
                 guard data.count <= limit else { throw WorkspaceMediaError.tooLarge }
@@ -189,6 +224,31 @@ struct WorkspaceFiles: Sendable {
                                                checkout: checkout, revision: revision, bytes: data))
             }
             return .binary(prefix: Data(data.prefix(4096)), size: metadata.st_size)
+        }
+    }
+
+    fileprivate func validateSQLite(_ source: WorkspaceSQLiteFile) throws {
+        do {
+            try withParent(of: source.path, checkout: source.checkout) { folder, name in
+                let file = try openFile(in: folder, name: name)
+                defer { close(file) }
+                try checkSQLiteSideFiles(in: folder, name: name)
+                guard SQLiteFileRevision(try status(file)) == source.revision else {
+                    throw WorkspaceSQLiteError.changed
+                }
+            }
+        } catch WorkspaceFileError.changed {
+            throw WorkspaceSQLiteError.changed
+        }
+    }
+
+    private func checkSQLiteSideFiles(in folder: Int32, name: String) throws {
+        for suffix in ["-journal", "-wal"] {
+            var metadata = stat()
+            if fstatat(folder, name + suffix, &metadata, AT_SYMLINK_NOFOLLOW) == 0 {
+                throw WorkspaceSQLiteError.journaled
+            }
+            guard errno == ENOENT || errno == ENAMETOOLONG else { throw fileError() }
         }
     }
 
@@ -477,9 +537,9 @@ struct WorkspaceFiles: Sendable {
         return metadata
     }
 
-    private func read(_ descriptor: Int32, limit: Int, cancellable: Bool = false) throws -> Data {
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    private func read(_ descriptor: Int32, limit: Int, after prefix: Data = Data(), cancellable: Bool = false) throws -> Data {
+        var data = prefix
+        var buffer = [UInt8](repeating: 0, count: min(limit, 64 * 1024))
         while data.count < limit {
             if cancellable { try Task.checkCancellation() }
             let count = Darwin.read(descriptor, &buffer, min(buffer.count, limit - data.count))
@@ -549,5 +609,17 @@ private struct FileRevision: Equatable, Sendable {
         size = metadata.st_size
         modifiedSeconds = metadata.st_mtimespec.tv_sec
         modifiedNanoseconds = metadata.st_mtimespec.tv_nsec
+    }
+}
+
+private struct SQLiteFileRevision: Equatable, Sendable {
+    let file: FileRevision
+    let changedSeconds: Int
+    let changedNanoseconds: Int
+
+    init(_ metadata: stat) {
+        file = FileRevision(metadata)
+        changedSeconds = metadata.st_ctimespec.tv_sec
+        changedNanoseconds = metadata.st_ctimespec.tv_nsec
     }
 }

@@ -4,6 +4,7 @@ import Darwin
 import Foundation
 import Observation
 import PDFKit
+import SQLite3
 import SwiftUI
 import XCTest
 @testable import PiWorkspace
@@ -643,6 +644,257 @@ final class WorkspaceFilesTests: XCTestCase {
     }
 
     @MainActor
+    func testSQLiteTableSelectionPagingAndRetryStayInTheSelectedCheckoutOffscreen() async throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try folder("Source", in: root)
+        let alpha = root.appendingPathComponent("Alpha Checkout")
+        let beta = root.appendingPathComponent("Beta Checkout")
+        let path = "data.sqlite"
+        let source = repo.appendingPathComponent(path)
+        try sqlite(source, #"""
+            CREATE TABLE fruit(id INTEGER PRIMARY KEY, name TEXT);
+            WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i + 1 FROM n WHERE i < 51)
+            INSERT INTO fruit SELECT i, CASE i WHEN 1 THEN 'apple' ELSE 'fruit-' || i END FROM n;
+            CREATE TABLE "empty table" ("quoted ""column""" TEXT);
+            """#)
+        _ = try write("original note", "note.txt", in: repo)
+        try Data([0, 0x41, 0xff, 0x10]).write(to: repo.appendingPathComponent("raw.bin"))
+        try sqlite(repo.appendingPathComponent("empty.sqlite"), "VACUUM")
+        _ = try git(repo, ["init", "-qb", "main"])
+        _ = try git(repo, ["add", "--", path, "note.txt", "raw.bin", "empty.sqlite"])
+        _ = try git(repo, ["commit", "-qm", "SQLite fixture"])
+        _ = try git(repo, ["worktree", "add", "--detach", "--", alpha.path, "HEAD"])
+        _ = try git(repo, ["worktree", "add", "--detach", "--", beta.path, "HEAD"])
+        let alphaFile = alpha.appendingPathComponent(path)
+        let betaFile = beta.appendingPathComponent(path)
+        try sqlite(betaFile, "DELETE FROM fruit; INSERT INTO fruit VALUES (1, 'pear');")
+        let alphaBytes = try Data(contentsOf: alphaFile)
+        let betaBytes = try Data(contentsOf: betaFile)
+        XCTAssertNotEqual(alphaBytes, betaBytes)
+        let alphaNames = try FileManager.default.contentsOfDirectory(atPath: alpha.path).sorted()
+        let betaNames = try FileManager.default.contentsOfDirectory(atPath: beta.path).sorted()
+        let betaStatus = try git(beta, ["--no-optional-locks", "status", "--porcelain"])
+        let local = Conversation(id: UUID(), title: "Alpha", location: .worktree(path: alpha.path, base: "main"))
+        let linked = Conversation(id: UUID(), title: "Beta", location: .worktree(path: beta.path, base: "main"))
+        let project = Project(id: UUID(), path: repo.path, title: "Fixture", conversations: [local, linked])
+        let alphaLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: local, project: project))
+        let betaLocation = try XCTUnwrap(WorkspaceFilesLocation(thread: linked, project: project))
+        let fixture = FilesPanelFixture(location: alphaLocation, selection: nil, saves: WorkspaceFileSaves())
+        let alphaSession = fixture.saves.acquire(WorkspaceFileTarget(location: alphaLocation, path: path))
+        defer { fixture.saves.release(alphaSession) }
+        let suite = "SQLiteFilesTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+        let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
+        let window = OffscreenFilesPanel(contentRect: NSRect(origin: origin, size: CGSize(width: 850, height: 520)),
+                                         styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: FilesPanelFixtureView(fixture: fixture).defaultAppStorage(defaults))
+        host.sizingOptions = []
+        window.contentView = host
+        window.setFrameOrigin(origin)
+        window.orderBack(nil)
+        defer {
+            window.contentView = nil
+            window.close()
+            app.setActivationPolicy(policy)
+        }
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+
+        func element(_ id: String) -> AnyObject? {
+            var seen: [ObjectIdentifier: AnyObject] = [:]
+            func find(_ node: AnyObject) -> AnyObject? {
+                guard seen.updateValue(node, forKey: ObjectIdentifier(node)) == nil else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let match = find(child as AnyObject) { return match }
+                }
+                return nil
+            }
+            host.layoutSubtreeIfNeeded()
+            return find(host)
+        }
+        func press(_ id: String) async throws {
+            try await waitFor { element(id)?.isAccessibilityEnabled?() == true }
+            let button = try XCTUnwrap(element(id), id)
+            XCTAssertEqual(button.accessibilityPerformPress?(), true, id)
+        }
+        func selectTable(_ title: String) throws {
+            let picker = try XCTUnwrap(firstSubview(in: host) { view -> NSPopUpButton? in
+                guard let button = view as? NSPopUpButton,
+                      button.accessibilityIdentifier() == "files-sqlite-table" else { return nil }
+                return button
+            })
+            XCTAssertEqual(picker.accessibilityRole(), .popUpButton)
+            XCTAssertEqual(picker.accessibilityLabel(), "Table")
+            XCTAssertNotNil(element("files-sqlite-table"))
+            let index = try XCTUnwrap(picker.itemTitles.firstIndex(of: title))
+            picker.selectItem(at: index)
+            XCTAssertTrue(picker.sendAction(picker.action, to: picker.target))
+        }
+        func table() -> NSTableView? { element("files-sqlite-rows") as? NSTableView }
+        func cell(_ column: Int) -> NSTextField? {
+            (table()?.view(atColumn: column, row: 0, makeIfNecessary: false) as? NSTableCellView)?.textField
+        }
+        func previewError() -> Error? {
+            if case .failure(let error) = alphaSession.preview { return error }
+            return nil
+        }
+
+        try await press("files-row-data.sqlite")
+        try await waitFor { element("files-sqlite-no-rows") != nil }
+        XCTAssertNotNil(element("files-sqlite-preview"))
+        XCTAssertEqual(table()?.tableColumns.map(\.title), ["quoted \"column\""])
+        XCTAssertEqual(table()?.numberOfRows, 0)
+        try selectTable("fruit (51 rows)")
+        try await waitFor { cell(1)?.stringValue == "apple" }
+        XCTAssertEqual(cell(1)?.accessibilityIdentifier(), "files-sqlite-cell-1-2")
+        XCTAssertEqual(cell(1)?.isEditable, false)
+        XCTAssertEqual(table()?.numberOfRows, 50)
+        XCTAssertNotNil(element("files-sqlite-range"))
+        XCTAssertNil(element("files-editor"))
+        XCTAssertNil(element("files-save"))
+        try await press("files-sqlite-next")
+        try await waitFor { cell(1)?.stringValue == "fruit-51" }
+        XCTAssertEqual(table()?.numberOfRows, 1)
+        try await press("files-sqlite-previous")
+        try await waitFor { cell(1)?.stringValue == "apple" }
+        XCTAssertEqual(try Data(contentsOf: alphaFile), alphaBytes)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: alpha.path).sorted(), alphaNames)
+        XCTAssertEqual(try git(alpha, ["--no-optional-locks", "status", "--porcelain"]), "")
+
+        let corrupt = Data("SQLite format 3\0broken".utf8)
+        try corrupt.write(to: alphaFile, options: .atomic)
+        try await press("files-sqlite-next")
+        try await waitFor { element("files-sqlite-error") != nil && table() == nil }
+        try await press("files-preview-retry")
+        try await waitFor {
+            previewError() as? WorkspaceSQLiteError == .invalidDatabase && element("files-preview-error") != nil
+        }
+        XCTAssertEqual(try Data(contentsOf: alphaFile), corrupt)
+        try FileManager.default.removeItem(at: alphaFile)
+        try await press("files-preview-retry")
+        try await waitFor {
+            previewError() as? WorkspaceFileError == .missing && element("files-preview-error") != nil
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: alphaFile.path))
+        try alphaBytes.write(to: alphaFile)
+        try await press("files-preview-retry")
+        try await waitFor { element("files-sqlite-no-rows") != nil }
+        try selectTable("fruit (51 rows)")
+        try await waitFor { cell(1)?.stringValue == "apple" }
+        try await press("files-close-preview")
+        try await waitFor { fixture.selection == nil && element("files-row-data.sqlite") != nil }
+        try await press("files-row-empty.sqlite")
+        try await waitFor { element("files-sqlite-no-tables") != nil }
+        try await press("files-row-raw.bin")
+        try await waitFor { element("files-binary-preview") != nil }
+        try await press("files-row-note.txt")
+        try await waitFor { (element("files-editor") as? NSTextView)?.string == "original note" }
+        let editor = try XCTUnwrap(element("files-editor") as? NSTextView)
+        XCTAssertTrue(editor.isEditable)
+        editor.insertText("edited note", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        try await press("files-save")
+        XCTAssertEqual(try String(contentsOf: alpha.appendingPathComponent("note.txt"), encoding: .utf8), "edited note")
+
+        fixture.selection = nil
+        fixture.location = betaLocation
+        try await press("files-row-data.sqlite")
+        try await waitFor { element("files-sqlite-no-rows") != nil }
+        try selectTable("fruit (1 row)")
+        try await waitFor { cell(1)?.stringValue == "pear" }
+        try await press("files-close-preview")
+        XCTAssertEqual(try Data(contentsOf: alphaFile), alphaBytes)
+        XCTAssertEqual(try Data(contentsOf: betaFile), betaBytes)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: alpha.path).sorted(), alphaNames)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: beta.path).sorted(), betaNames)
+        XCTAssertEqual(try git(beta, ["--no-optional-locks", "status", "--porcelain"]), betaStatus)
+        XCTAssertEqual(try git(alpha, ["--no-optional-locks", "status", "--porcelain"]), " M note.txt\n")
+        XCTAssertFalse(window.isKeyWindow)
+    }
+
+    func testSQLiteBoundsAndLiveJournalPreserveDatabaseFiles() throws {
+        try withFixture { root in
+            let file = root.appendingPathComponent("extensionless")
+            let columns = (1...48).map { "c\($0) TEXT" }.joined(separator: ",")
+            try sqlite(file, """
+                CREATE TABLE "fruit ""quote" ("name ""text" TEXT PRIMARY KEY, payload BLOB, optional TEXT, \(columns)) WITHOUT ROWID;
+                INSERT INTO "fruit ""quote" VALUES ('apple', X'0041ff10', NULL,
+                    replace(hex(zeroblob(1050)), '00', '東'), \(Array(repeating: "NULL", count: 47).joined(separator: ",")));
+                CREATE VIEW hidden_view AS SELECT * FROM "fruit ""quote";
+                CREATE TABLE rowids(id INTEGER PRIMARY KEY AUTOINCREMENT);
+                """)
+            let files = WorkspaceFiles(directory: root.path)
+            func database(_ path: String) throws -> WorkspaceSQLiteFile {
+                guard case .sqlite(let database) = try files.preview(path) else {
+                    throw WorkspaceError("Expected a SQLite preview for \(path).")
+                }
+                return database
+            }
+            let bytes = try Data(contentsOf: file)
+            let databaseFile = try database(file.lastPathComponent)
+            XCTAssertEqual(databaseFile.tables.map(\.name), ["fruit \"quote", "rowids"])
+            let page = try databaseFile.page(table: 0, index: 0)
+            XCTAssertEqual(page.columns.count, 50)
+            XCTAssertEqual(page.columns.first, "name \"text")
+            XCTAssertEqual(page.columns.last, "c47")
+            XCTAssertEqual(page.rows.count, 1)
+            XCTAssertEqual(Array(page.rows[0].prefix(4)), ["apple", "[blob: 4 bytes]", "NULL", String(repeating: "東", count: 1024)])
+            XCTAssertThrowsError(try databaseFile.page(table: 0, index: 1))
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [file.lastPathComponent])
+
+            let empty = root.appendingPathComponent("empty.sqlite")
+            try sqlite(empty, "VACUUM")
+            XCTAssertTrue(try database(empty.lastPathComponent).tables.isEmpty)
+            let many = root.appendingPathComponent("many.db")
+            try sqlite(many, (0...100).map { "CREATE TABLE t\($0)(x);" }.joined())
+            XCTAssertThrowsError(try database(many.lastPathComponent)) {
+                XCTAssertEqual($0 as? WorkspaceSQLiteError, .tooManyTables)
+            }
+            let large = root.appendingPathComponent("large.sqlite3")
+            try bytes.write(to: large)
+            let handle = try FileHandle(forWritingTo: large)
+            try handle.truncate(atOffset: UInt64(WorkspaceSQLite.byteLimit) + 1)
+            try handle.close()
+            XCTAssertThrowsError(try database(large.lastPathComponent)) {
+                XCTAssertEqual($0 as? WorkspaceSQLiteError, .tooLarge)
+            }
+
+            func assertJournaled(_ url: URL) throws {
+                let names = try FileManager.default.contentsOfDirectory(atPath: root.path).sorted()
+                let family = names.filter { $0.hasPrefix(url.lastPathComponent) }
+                XCTAssertGreaterThan(family.count, 1)
+                let originals = try family.map { try Data(contentsOf: root.appendingPathComponent($0)) }
+                XCTAssertThrowsError(try database(url.lastPathComponent)) {
+                    XCTAssertEqual($0 as? WorkspaceSQLiteError, .journaled)
+                }
+                XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted(), names)
+                XCTAssertEqual(try family.map { try Data(contentsOf: root.appendingPathComponent($0)) }, originals)
+            }
+            let live = root.appendingPathComponent("live.db")
+            try sqlite(live, "CREATE TABLE fruit(name); INSERT INTO fruit VALUES ('before');")
+            try sqlite(live, "BEGIN IMMEDIATE; UPDATE fruit SET name = 'uncommitted';") {
+                try assertJournaled(live)
+            }
+            XCTAssertEqual(try database(live.lastPathComponent).page(table: 0, index: 0).rows, [["before"]])
+            try sqlite(live, "PRAGMA journal_mode=WAL; UPDATE fruit SET name = 'committed';") {
+                try assertJournaled(live)
+            }
+            XCTAssertThrowsError(try database(live.lastPathComponent)) {
+                XCTAssertEqual($0 as? WorkspaceSQLiteError, .journaled)
+            }
+            try sqlite(live, "PRAGMA journal_mode=DELETE")
+            XCTAssertEqual(try database(live.lastPathComponent).page(table: 0, index: 0).rows, [["committed"]])
+        }
+    }
+
+    @MainActor
     func testPDFKitPagingZoomSearchAndRestoringViewOffscreen() async throws {
         let reader = WorkspacePDFReader()
         _ = NSApplication.shared
@@ -1092,12 +1344,12 @@ final class WorkspaceFilesTests: XCTestCase {
     }
 
     @MainActor
-    private func waitFor(_ condition: () -> Bool) async throws {
+    private func waitFor(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while !condition() && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertTrue(condition())
+        XCTAssertTrue(condition(), file: file, line: line)
     }
 
     private func withFixture(_ body: (URL) throws -> Void) throws {
@@ -1223,6 +1475,23 @@ final class WorkspaceFilesTests: XCTestCase {
         guard command.terminationStatus == 0 else { throw WorkspaceError("Fixture git command failed.") }
         return String(decoding: bytes, as: UTF8.self)
     }
+
+    private func sqlite(_ file: URL, _ sql: String, whileOpen: () throws -> Void = {}) throws {
+        var connection: OpaquePointer?
+        defer { sqlite3_close(connection) }
+        guard sqlite3_open(file.path, &connection) == SQLITE_OK,
+              sqlite3_exec(connection, sql, nil, nil, nil) == SQLITE_OK else {
+            let message = sqlite3_errmsg(connection).map { String(cString: $0) } ?? "Unknown SQLite error"
+            throw WorkspaceError(message)
+        }
+        try whileOpen()
+    }
+}
+
+private final class OffscreenFilesPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 @MainActor @Observable

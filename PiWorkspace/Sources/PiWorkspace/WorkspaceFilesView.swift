@@ -588,6 +588,9 @@ private struct WorkspaceFilePreviewView: View {
             case .success(.binary(let prefix, let size)):
                 status("Binary file (\(formattedSize(size))). Showing \(prefix.count) bytes.", id: "files-binary-preview")
                 FileTextView(text: hexadecimal(prefix), editable: false, wraps: false, identifier: "files-contents")
+            case .success(.sqlite(let file)):
+                WorkspaceSQLiteView(file: file, retry: { reload += 1 })
+                    .id(file.id)
             case .success(.image(let file)):
                 WorkspaceImageView(file: file, name: pathComponents.last ?? target.path)
                     .id(file.id)

@@ -75,7 +75,13 @@ struct WorkspaceRenderedFileView: View {
                         if table.clippedColumns {
                             notice("Showing the first \(table.columnCount) columns.", id: "files-rendered-table-limit")
                         }
-                        WorkspaceDelimitedTableView(table: table)
+                        WorkspaceReadOnlyTable(
+                            columns: (0..<table.columnCount).map { index in
+                                table.rows[0].indices.contains(index) ? table.rows[0][index] : "Column \(index + 1)"
+                            },
+                            rows: Array(table.rows.dropFirst()), label: "Delimited Table",
+                            identifier: "files-rendered-table", cellIdentifier: "files-table-cell"
+                        )
                             .id(rendered.id)
                     }
                 case .failure(let error):
@@ -104,23 +110,27 @@ struct WorkspaceRenderedFileView: View {
     }
 }
 
-private struct WorkspaceDelimitedTableView: NSViewRepresentable {
-    let table: WorkspaceDelimitedTable
+struct WorkspaceReadOnlyTable: NSViewRepresentable {
+    let columns: [String]
+    let rows: [[String]]
+    let label: String
+    let identifier: String
+    let cellIdentifier: String
 
-    func makeCoordinator() -> Coordinator { Coordinator(table: table) }
+    func makeCoordinator() -> Coordinator { Coordinator(rows: rows, cellIdentifier: cellIdentifier) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let view = NSTableView()
-        view.setAccessibilityLabel("Delimited Table")
-        view.setAccessibilityIdentifier("files-rendered-table")
+        view.setAccessibilityLabel(label)
+        view.setAccessibilityIdentifier(identifier)
         view.style = .plain
         view.columnAutoresizingStyle = .noColumnAutoresizing
         view.allowsColumnReordering = false
         view.usesAlternatingRowBackgroundColors = true
         view.gridStyleMask = [.solidVerticalGridLineMask]
-        for index in 0..<table.columnCount {
+        for (index, title) in columns.enumerated() {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(index)))
-            column.title = table.rows[0].indices.contains(index) ? table.rows[0][index] : "Column \(index + 1)"
+            column.title = title
             column.width = DelimitedCell.columnWidth
             column.resizingMask = []
             view.addTableColumn(column)
@@ -139,15 +149,19 @@ private struct WorkspaceDelimitedTableView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {}
 
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-        let table: WorkspaceDelimitedTable
+        let rows: [[String]]
+        let cellIdentifier: String
 
-        init(table: WorkspaceDelimitedTable) { self.table = table }
+        init(rows: [[String]], cellIdentifier: String) {
+            self.rows = rows
+            self.cellIdentifier = cellIdentifier
+        }
 
-        func numberOfRows(in tableView: NSTableView) -> Int { table.rows.count - 1 }
+        func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
             var height = tableView.rowHeight
-            for value in table.rows[row + 1] {
+            for value in rows[row] {
                 if value.utf8.count <= 8, value.utf8.allSatisfy({ (32...126).contains($0) }) { continue }
                 let bounds = (value as NSString).boundingRect(
                     with: NSSize(width: DelimitedCell.textWidth, height: .greatestFiniteMagnitude),
@@ -164,9 +178,9 @@ private struct WorkspaceDelimitedTableView: NSViewRepresentable {
             let identifier = NSUserInterfaceItemIdentifier("DelimitedCell")
             let label = (tableView.makeView(withIdentifier: identifier, owner: nil) as? DelimitedCell)
                 ?? DelimitedCell()
-            let values = table.rows[row + 1]
+            let values = rows[row]
             label.field.stringValue = values.indices.contains(index) ? values[index] : ""
-            label.field.setAccessibilityIdentifier("files-table-cell-\(row + 1)-\(index + 1)")
+            label.field.setAccessibilityIdentifier("\(cellIdentifier)-\(row + 1)-\(index + 1)")
             return label
         }
     }
