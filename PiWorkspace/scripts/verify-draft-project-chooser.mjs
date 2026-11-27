@@ -77,8 +77,7 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
   await setField("draft-project-search", "cafe beta");
   await until(() => visible("draft-project-" + beta.id), "accent-insensitive project match");
   keyFor("draft-project-search", 36);
-  const sameDraft = () => {
-    const { thread } = selected();
+  const sameDraft = (thread = selected().thread) => {
     return thread?.id === betaThread && thread.composerText === text && thread.composerAttachments?.[0]?.id === attachment.id &&
            Buffer.from(thread.composerAttachments[0].payload.data, "base64").toString() === blueNote;
   };
@@ -109,10 +108,25 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
     await until(() => visible("project-path"), "local folder path");
     await setField("project-path", newProject);
     press(cancel ? "cancel-project" : "confirm-project");
-    await until(() => !tree().includes('id="project-path"') && sameDraft() && visible("composer").includes("focused=true"),
-                "focus and same draft after project registration or cancellation");
+    await until(() => !tree().includes('id="project-path"') && visible("composer").includes("focused=true"),
+                "composer focus after the project sheet closes");
     assert.equal(index().projects.some(p => p.path === newProject), !cancel);
-    assert.equal(selected().project.id, scratch.id);
+    if (cancel) {
+      assert.equal(selected().project.id, scratch.id);
+      assert(sameDraft());
+    } else {
+      await until(() => selected().project.path === newProject && selected().thread.isDraft && composer(""),
+                  "focused empty draft in the newly registered folder");
+      assert.notEqual(selected().thread.id, betaThread);
+      keyFor("composer", 7);
+      await until(() => composer("x") && selected().thread.composerText === "x", "first keystroke in the destination");
+      const origin = index().projects.find(p => p.id === scratch.id);
+      const savedOrigin = origin.conversations.find(t => t.id === betaThread);
+      assert(savedOrigin && sameDraft(savedOrigin));
+      press("thread-row-" + betaThread);
+      await until(() => selected().project.id === scratch.id && sameDraft() && composer(text) &&
+                        visible("remove-attachment-" + attachment.id), "original scratch draft reopened");
+    }
   }
   await quit();
   await launch("model-settings", root);

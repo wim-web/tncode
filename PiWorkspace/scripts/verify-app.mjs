@@ -10,6 +10,7 @@ import { resetProjectModel, setProjectModel, verifyBrowserFind, verifyPRFilesChe
 import { restoreAppearance, verifyAbout, verifyAppearance, verifyBrowserSearchSettings, verifyChatSettings, verifySettingsLinks, verifySettingsSearch } from "./verify-settings-panels.mjs";
 import { verifyFiles, verifySQLiteFiles } from "./verify-workspace-files.mjs";
 import { verifyArchiveFiles } from "./verify-archive-files.mjs";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
 import { verifyCommandPalette, verifyPaletteFiles, verifyPaletteMessage } from "./verify-command-palette.mjs";
 import { closeTerminalPane, verifyInteractiveShell, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
@@ -52,6 +53,7 @@ const backgroundChecks = ["--startup-draft-only", "--recovery-actions-only", "--
   "--project-icons-only", "--archived-threads-only", "--archive-files-only", "--browser-search-settings-only"];
 const backgroundScenario = process.argv.slice(3).find(flag => backgroundChecks.includes(flag));
 if (backgroundScenario) assert.equal(process.argv.length, 4, "Run a background scenario on its own.");
+if (!backgroundScenario || backgroundScenario === "--project-icons-only") requireDedicatedDesktop();
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), backgroundScenario ? /accessibility=true/ : /accessibility=true keyboard=true/);
 const minimumIdle = Number(process.env.PI_WORKSPACE_VERIFY_IDLE_SECONDS ?? 0);
 assert(Number.isFinite(minimumIdle) && minimumIdle >= 0);
@@ -1538,6 +1540,12 @@ try {
   }
   if (backgroundScenario === "--browser-search-settings-only") {
     preferenceChecks.push([join(directory, "browser-search-settings"), "browser", "browserSearchSettings"]);
+  }
+  if (backgroundScenario === "--right-terminal-only") {
+    preferenceChecks.push([join(directory, "right-terminal"), "browser", "confirmTerminalClose"]);
+  }
+  if (process.argv.includes("--palette-files-only")) {
+    preferenceChecks.push([join(directory, "palette-file-search"), "appearance", "appearance.chatWidth"]);
   }
   if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
   for (const [root, feature, key] of preferenceChecks) {

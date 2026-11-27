@@ -10,10 +10,12 @@ import { createServer } from "node:http";
 import { userInfo } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
 
 const usage = "Usage: node verify-text-attachment-save.mjs --check|--foreground AX_BINARY [PI_WORKSPACE_APP]";
 const [mode, driver, bundle = resolve(import.meta.dirname, "../dist/Pi Workspace.app"), extra] = process.argv.slice(2);
 assert(["--check", "--foreground"].includes(mode) && driver && !extra, usage);
+if (mode === "--foreground") requireDedicatedDesktop();
 const appBundle = realpathSync(bundle);
 const ax = realpathSync(driver);
 const run = (program, args, options = {}) => execFileSync(program, args, {

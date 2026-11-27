@@ -26,6 +26,7 @@ export async function verifyBrowserSearchSettings(driver, { root, launch, quit, 
   const before = readFileSync(path);
   assert(!tree().includes('id="' + reset + '"'));
   pick("browser-search-engine", "Custom");
+  await until(() => visible(searchURL) && visible(reset), "custom search template field");
   await setField(searchURL, unfinished);
   await until(() => tree().includes("Searches use DuckDuckGo until then.") && visible("browser-settings-save").includes("enabled=true"),
               "an unfinished template can be saved with the fallback visible");
@@ -33,7 +34,7 @@ export async function verifyBrowserSearchSettings(driver, { root, launch, quit, 
   await open();
   assert(value(searchURL).includes("value=" + JSON.stringify(unfinished)));
   press(reset);
-  await until(() => visible("browser-engine-DuckDuckGo") && !tree().includes('id="' + reset + '"') &&
+  await until(() => value("browser-search-engine").includes('value="DuckDuckGo"') && !tree().includes('id="' + reset + '"') &&
     !tree().includes('id="' + searchURL + '"'), "reset restored the default engine and cleared its custom URL");
   await close();
   await open();
@@ -130,7 +131,7 @@ export async function verifySettingsLinks(driver, { root, app, launch, quit, rec
   for (const [route, control] of [
     ["settings", "settings-group-by-project"], ["settings/appearance", "appearance-color-scheme"], ["settings/chat", "send-shortcut"],
     ["usage", "usage-refresh"], ["settings/worktrees", "storage-worktrees-location"],
-    ["settings/threads", "snooze-options"], ["settings/browser", "browser-engine-DuckDuckGo"],
+    ["settings/threads", "snooze-options"], ["settings/browser", "browser-search-engine"],
   ]) {
     openSettingsLink("pi-workspace://" + route);
     await until(() => visible(control), "routed Settings control " + control);

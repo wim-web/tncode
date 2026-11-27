@@ -7,6 +7,9 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSyn
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { images } from "./fixtures/attachments.mjs";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
+
+requireDedicatedDesktop();
 
 const [ax, app = resolve(import.meta.dirname, "../dist/Pi Workspace.app")] = process.argv.slice(2);
 assert(ax, "Usage: verify-native-paste.mjs AX_BINARY [PI_WORKSPACE_APP]");

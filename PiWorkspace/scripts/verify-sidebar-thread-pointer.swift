@@ -2,7 +2,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Run only in an isolated macOS desktop. The driver never activates the target app.
 private struct Failure: LocalizedError {
     let errorDescription: String?
     init(_ message: String) { errorDescription = message }
@@ -102,6 +101,9 @@ private func send(_ type: CGEventType, at point: CGPoint, to pid: pid_t) throws 
 }
 
 private func run() throws {
+    guard ProcessInfo.processInfo.environment["PI_WORKSPACE_TEST_DESKTOP"] == "dedicated" else {
+        throw Failure("Run the pointer test in a separate test desktop with PI_WORKSPACE_TEST_DESKTOP=dedicated.")
+    }
     let args = Array(CommandLine.arguments.dropFirst())
     if args == ["--help"] {
         print("Usage: verify-sidebar-thread-pointer --isolated-session WORKSPACE PID SOURCE_ID TARGET_ID [EXPECTED_ROW_ID ...]")

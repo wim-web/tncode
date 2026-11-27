@@ -3,6 +3,7 @@
 Run from `PiWorkspace` in a dedicated macOS desktop session with Accessibility and keyboard permissions for the AX driver. The verifier creates a disposable workspace and uses a named pasteboard.
 
 ```sh
+export PI_WORKSPACE_TEST_DESKTOP=dedicated
 ./scripts/build-app.sh
 codesign --verify --deep --strict "dist/Pi Workspace.app"
 swiftc -module-cache-path .build/ax-cache scripts/ax.swift -o .build/ax

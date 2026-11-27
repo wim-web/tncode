@@ -72,7 +72,28 @@ export async function verifyRightTerminal(driver, { root, git, launch, quit, rec
   assert(active(other));
   await select(linked, "Keep linked text.");
   await until(() => readPID(pane(1)) === other, "linked checkout retained its own right pane");
+  const setting = "terminal-close-confirmation", reset = "reset-terminal-close-confirmation";
+  async function showPreference() {
+    driver.openSettingsLink("pi-workspace://settings/general#terminal-close-confirmation");
+    await until(() => visible(setting), "terminal close confirmation in General");
+  }
+  await showPreference();
+  assert(value(setting).includes("value=1"));
+  press(setting);
+  await until(() => value(setting).includes("value=0") && visible(reset), "confirmations switched off");
+  dismiss("settings-close");
+  await until(() => readPID(pane(1)) === other && !tree().includes('id="settings-close"'), "linked terminal after Settings");
+  dismiss("close-right-panel-terminal-1");
+  await until(() => !active(other) && !tree().includes('id="confirm-close-right-terminal"'), "linked PTY closed directly");
+  assert(active(drawer));
   await quit();
-  await until(() => !active(drawer) && !active(other), "normal quit closed the two remaining fixture shells");
-  record("Three PTYs had distinct device names. The drawer and right pane kept their PIDs through hide, Files, Browser and thread switching. The linked pane ran in its separate checkout. Cancel kept the right shell, confirmed Close ended only that shell, and Quit ended the others.");
+  await until(() => !active(drawer), "normal quit closed the remaining drawer shell");
+  await launch("toggle-terminal", root, shell);
+  await showPreference();
+  assert(value(setting).includes("value=0"));
+  press(reset);
+  await until(() => value(setting).includes("value=1") && !tree().includes('id="' + reset + '"'), "Reset restored confirmations");
+  dismiss("settings-close");
+  await quit();
+  record("Three PTYs had distinct device names and the expected working directories. Hiding or switching tabs and threads retained their PIDs. Cancel kept the right shell, Confirm closed only that shell, and turning confirmations off closed the selected linked PTY directly. Quit stopped the remaining drawer shell. The Off setting survived relaunch, and Reset restored On.");
 }

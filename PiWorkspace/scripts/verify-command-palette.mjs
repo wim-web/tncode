@@ -76,6 +76,27 @@ export async function verifyPaletteFiles(driver, { root, git, launch, quit, reco
   await until(() => !has(field) && shown("files-editor", beta), "the same shortcut closed content search");
   driver.menuItem("Search Threads");
   await until(() => visible("thread-search").includes("focused=true"), "sidebar thread search still opens by menu");
+  driver.sizeWindow(1600, 800);
+  const initialWidth = driver.frame("composer")[2];
+  driver.menuItem("Command Palette…");
+  await until(() => visible(field).includes("focused=true"), "focused palette for a setting");
+  await setField(field, "Chat width", () => Boolean(visible("command-palette-setting-appearance-chat-width")));
+  keyFor(field, 36);
+  await until(() => visible("settings-heading-appearance") && value("appearance-chat-width").includes("Comfortable"),
+              "the palette opened the current Chat width setting");
+  driver.pick("appearance-chat-width", "Full");
+  dismiss("appearance-done");
+  await until(() => driver.frame("composer")[2] > initialWidth && shown("composer", secondText), "the same draft widened");
+  driver.menuItem("Command Palette…");
+  await until(() => visible(field).includes("focused=true"), "palette for scoped Model ID");
+  await setField(field, "Model ID", () => Boolean(visible("command-palette-setting-model-id")));
+  keyFor(field, 36);
+  await until(() => visible("model-id").includes("focused=true") && shown("model-id", "file-search"),
+              "the active project's Model ID field took focus");
+  press("settings-nav-general");
+  await until(() => visible("settings-close"), "General Settings");
+  dismiss("settings-close");
+  await until(() => shown("composer", secondText) && !has("settings-close"), "returned to the original linked draft");
   assert.equal(readFileSync(join(project, relative), "utf8"), alpha);
   assert.equal(readFileSync(join(linked, relative), "utf8"), beta);
   await quit();
@@ -83,6 +104,7 @@ export async function verifyPaletteFiles(driver, { root, git, launch, quit, reco
   assert.equal(threads.find(t => t.id === firstID).composerText, firstText);
   assert.equal(threads.find(t => t.id === secondID).composerText, secondText);
   record("Go to file opened src/log.txt. Escape restored the parent command from both searches. Return on the same body-only query selected lines 3 and 164 in the two checkouts. Command-P opened the file picker, Command-Shift-F switched to a fresh content search, and the same shortcut closed it. Edit > Search Threads focused the sidebar. Both drafts and files retained their exact contents.");
+  record("Return on the Chat width palette result opened Appearance. Selecting Full widened the linked draft's composer. The Model ID result focused the project model field, and closing Settings preserved the draft.");
 }
 
 export async function verifyPaletteMessage(driver, index, threadID, messageID, term) {
