@@ -4,16 +4,21 @@ struct CommandPaletteView: View {
     let contents: CommandPaletteContents
     let latestMessageID: String?
     let searchMessages: (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match]
+    let filesLocation: WorkspaceFilesLocation?
+    let activeFilesLocation: () -> WorkspaceFilesLocation?
     let finish: (CommandPaletteAction?) -> Void
 
     @State private var session: CommandPaletteSession
     @FocusState private var searchFocused: Bool
 
     init(contents: CommandPaletteContents, latestMessageID: String?, choosingProject: Bool = false,
+         filesLocation: WorkspaceFilesLocation? = nil, activeFilesLocation: @escaping () -> WorkspaceFilesLocation? = { nil },
          searchMessages: @escaping (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match],
          finish: @escaping (CommandPaletteAction?) -> Void) {
         self.contents = contents
         self.latestMessageID = latestMessageID
+        self.filesLocation = filesLocation
+        self.activeFilesLocation = activeFilesLocation
         self.searchMessages = searchMessages
         self.finish = finish
         _session = State(initialValue: CommandPaletteSession(choosingProject: choosingProject))
@@ -24,8 +29,55 @@ struct CommandPaletteView: View {
     }
 
     private func groups(for search: CommandPaletteSession.Search?) -> [CommandPaletteGroup] {
-        contents.groups(for: session.query, choosingProject: session.choosingProject, search: search?.request,
+        if let mode = session.fileSearchMode {
+            guard filesLocation == activeFilesLocation(), case let .success(result) = fileResult,
+                  !result.matches.isEmpty else { return [] }
+            return [CommandPaletteGroup(id: mode == .files ? .files : .contents, rows: result.matches.map { match in
+                let destination = match.destination
+                let path = destination.target.path
+                if let line = destination.line {
+                    return CommandPaletteRow(action: .openWorkspaceFile(destination), title: "\(path):\(line)",
+                                             icon: "doc.text", detail: match.snippet)
+                }
+                return CommandPaletteRow(action: .openWorkspaceFile(destination),
+                                         title: String(path.split(separator: "/").last ?? ""),
+                                         icon: "doc", detail: path)
+            })]
+        }
+        return contents.groups(for: session.query, choosingProject: session.choosingProject, search: search?.request,
                         matches: session.messageMatches(for: search) ?? [:])
+    }
+
+    private var fileSearch: CommandPaletteSession.FileSearch? { session.fileSearch(at: filesLocation) }
+
+    private var fileResult: Result<WorkspaceFileSearch.Results, Error>? { session.fileResult(for: fileSearch) }
+
+    private var prompt: String {
+        switch session.fileSearchMode {
+        case .files: "Search files…"
+        case .contents: "Search file contents…"
+        case nil: session.choosingProject ? "Search..." : "Search commands, projects, threads, and messages..."
+        }
+    }
+
+    private var fileStatus: String? {
+        guard let mode = session.fileSearchMode else { return nil }
+        guard filesLocation != nil else { return "Open a thread with an available checkout to search its files." }
+        if mode == .contents {
+            if session.query.utf16.count > WorkspaceFileSearch.queryLimit {
+                return "Search is limited to \(WorkspaceFileSearch.queryLimit) characters."
+            }
+            if fileSearch == nil { return "Type to search file contents." }
+        }
+        switch fileResult {
+        case nil: return mode == .files && session.query.isEmpty ? "Indexing workspace files…" : "Searching…"
+        case .failure(let error): return error.localizedDescription
+        case .success(let result):
+            if result.invalidRegex { return "Invalid regular expression. Showing literal matches." }
+            if result.limited { return "Search limit reached. Refine your query for more matches." }
+            if result.matches.isEmpty { return mode == .files ? "No matching files" : "No matching lines" }
+            return nil
+        }
     }
 
     var body: some View {
@@ -34,27 +86,34 @@ struct CommandPaletteView: View {
         let rows = groups.flatMap(\.rows)
         let selected = session.selected(in: rows)?.id
         let searching = search != nil && session.messageMatches(for: search) == nil
+        let fileSearch = self.fileSearch
+        let mode = session.fileSearchMode
+        let fileStatus = self.fileStatus
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                if session.choosingProject {
+                if session.choosingProject || mode != nil {
                     Button(action: back) {
                         Label("Back", systemImage: "arrow.left").labelStyle(.iconOnly)
                     }
                     .accessibilityIdentifier("command-palette-back")
                 }
-                TextField(
-                    session.choosingProject ? "Search..." : "Search commands, projects, threads, and messages...",
-                    text: $session.query
-                )
+                TextField(prompt, text: $session.query)
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .accessibilityIdentifier("command-palette-search")
+                .disabled(mode != nil && filesLocation == nil)
+                if mode == .contents {
+                    searchOption("Aa", label: "Match case", id: "match-case", value: $session.fileOptions.caseSensitive)
+                    searchOption("ab", label: "Match whole word", id: "whole-word", value: $session.fileOptions.wholeWord)
+                    searchOption(".*", label: "Use regular expression", id: "regex", value: $session.fileOptions.regex)
+                }
             }
             if rows.isEmpty {
-                Text(searching ? "Searching messages…" : "No results")
+                Text(fileStatus ?? (searching ? "Searching messages…" : "No results"))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 80)
-                    .accessibilityIdentifier(searching ? "command-palette-searching" : "command-palette-empty")
+                    .accessibilityIdentifier(mode != nil ? "command-palette-file-status" :
+                                             searching ? "command-palette-searching" : "command-palette-empty")
             } else {
                 ScrollViewReader { reader in
                     ScrollView {
@@ -80,10 +139,15 @@ struct CommandPaletteView: View {
                     }
                 }
             }
+            if let fileStatus, !rows.isEmpty {
+                Text(fileStatus).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("command-palette-file-status")
+            }
             HStack {
                 Text("↑ ↓ Navigate")
-                if selected != nil { Text("↩ Select") }
+                if selected != nil { Text(mode == nil ? "↩ Select" : "↩ Open File") }
                 if session.choosingProject { Text("⌫ Back") }
+                if mode != nil { Text("⎋ Back") }
                 Spacer()
                 if searching && !rows.isEmpty {
                     Text("Searching messages…").accessibilityIdentifier("command-palette-searching")
@@ -97,10 +161,16 @@ struct CommandPaletteView: View {
         .padding(18)
         .frame(width: 520)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Command palette")
-        .accessibilityIdentifier("command-palette")
+        .accessibilityLabel(mode == .files ? "File picker" : mode == .contents ? "Search project contents" : "Command palette")
+        .accessibilityIdentifier(mode == .files ? "project-file-picker" : mode == .contents ? "project-content-search" : "command-palette")
         .defaultFocus($searchFocused, true)
         .onAppear { searchFocused = true }
+        .onChange(of: filesLocation) { _, _ in
+            if mode != nil {
+                session.resetResults()
+                searchFocused = true
+            }
+        }
         .task(id: search) {
             guard let search else { return }
             do {
@@ -113,6 +183,19 @@ struct CommandPaletteView: View {
             } catch {
                 guard !Task.isCancelled else { return }
                 session.receive([:], for: search)
+            }
+        }
+        .task(id: fileSearch) {
+            guard let fileSearch else { return }
+            do {
+                if !fileSearch.request.query.isEmpty { try await Task.sleep(for: .milliseconds(120)) }
+                let result = try await fileSearch.request.run()
+                try Task.checkCancellation()
+                guard activeFilesLocation() == fileSearch.request.location else { return }
+                session.receive(.success(result), for: fileSearch)
+            } catch {
+                guard !Task.isCancelled, activeFilesLocation() == fileSearch.request.location else { return }
+                session.receive(.failure(error), for: fileSearch)
             }
         }
         .background {
@@ -146,7 +229,7 @@ struct CommandPaletteView: View {
                 Image(systemName: row.icon)
                     .frame(width: 18)
                     .accessibilityHidden(true)
-                if case .openMessage = row.action, let snippet = row.detail {
+                if (row.action.isMessage || session.fileSearchMode == .contents), let snippet = row.detail {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title).lineLimit(1)
                         Text(snippet).lineLimit(1).font(.caption).foregroundStyle(.secondary)
@@ -179,6 +262,21 @@ struct CommandPaletteView: View {
         .accessibilityIdentifier("command-palette-\(identifier)")
     }
 
+    private func searchOption(_ title: String, label: String, id: String, value: Binding<Bool>) -> some View {
+        Button {
+            value.wrappedValue.toggle()
+            searchFocused = true
+        } label: {
+            Text(title).font(.system(.caption, design: .monospaced)).frame(minWidth: 18)
+        }
+        .tint(value.wrappedValue ? .accentColor : .secondary)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
+        .accessibilityIdentifier("command-palette-" + id)
+        .disabled(filesLocation == nil)
+    }
+
     private func back() {
         session.back()
         searchFocused = true
@@ -189,8 +287,18 @@ struct CommandPaletteView: View {
         case .ignored: return false
         case .handled: searchFocused = true
         case .close: finish(nil)
-        case .run(let action): finish(action)
+        case .run(let action):
+            if case .openWorkspaceFile(let destination) = action,
+               activeFilesLocation() != destination.target.location { return true }
+            finish(action)
         }
         return true
+    }
+}
+
+private extension CommandPaletteAction {
+    var isMessage: Bool {
+        if case .openMessage = self { return true }
+        return false
     }
 }

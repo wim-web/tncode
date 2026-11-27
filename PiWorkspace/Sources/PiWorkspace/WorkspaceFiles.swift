@@ -139,7 +139,7 @@ struct WorkspaceFileDraft {
 
 struct WorkspaceFiles: Sendable {
     static let textLimit = 1024 * 1024
-    private static let entryLimit = 20_000
+    static let entryLimit = 20_000
     private static let directoryFlags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
 
     private let root: URL
@@ -318,11 +318,33 @@ struct WorkspaceFiles: Sendable {
         }
     }
 
-    func fileURL(_ path: String) throws -> URL {
-        try withParent(of: path) { folder, name in
+    func fileURL(_ path: String, checkout: WorkspaceFileIdentity? = nil) throws -> URL {
+        try withParent(of: path, checkout: checkout) { folder, name in
             let file = try openFile(in: folder, name: name)
             close(file)
             return root.appendingPathComponent(path)
+        }
+    }
+
+    enum SearchText {
+        case text(String)
+        case skipped
+        case tooLarge
+    }
+
+    func searchText(_ path: String, checkout: WorkspaceFileIdentity, budget: inout Int) throws -> SearchText {
+        try withParent(of: path, checkout: checkout) { folder, name in
+            let file = try openFile(in: folder, name: name)
+            defer { close(file) }
+            if WorkspaceMediaFormat(fileName: name) != nil { return .skipped }
+            let metadata = try status(file)
+            let limit = min(Self.textLimit, budget)
+            guard metadata.st_size <= limit else { return .tooLarge }
+            let bytes = try read(file, limit: limit + 1, cancellable: true)
+            budget -= bytes.count
+            guard bytes.count <= limit, FileRevision(metadata) == FileRevision(try status(file)),
+                  let text = decode(bytes, truncated: false) else { return .skipped }
+            return .text(text)
         }
     }
 
@@ -506,7 +528,7 @@ struct WorkspaceFiles: Sendable {
     }
 }
 
-struct WorkspaceFileIdentity: Equatable, Sendable {
+struct WorkspaceFileIdentity: Hashable, Sendable {
     private let device: dev_t
     private let inode: ino_t
 

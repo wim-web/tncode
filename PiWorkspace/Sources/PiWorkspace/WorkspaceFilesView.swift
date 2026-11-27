@@ -2,6 +2,28 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct WorkspaceFileLineReveal: Equatable {
+    let target: WorkspaceFileTarget
+    let line: Int
+    let id = UUID()
+
+    func range(in text: NSString) -> NSRange? {
+        guard line > 0 else { return nil }
+        var start = 0
+        for number in 1...line {
+            let end = text.range(of: "\n", options: .literal, range: NSRange(location: start, length: text.length - start))
+            if number == line {
+                let limit = end.location == NSNotFound ? text.length : end.location
+                let cr = limit > start && text.character(at: limit - 1) == 13
+                return NSRange(location: start, length: limit - start - (cr ? 1 : 0))
+            }
+            guard end.location != NSNotFound else { return nil }
+            start = NSMaxRange(end)
+        }
+        return nil
+    }
+}
+
 struct WorkspaceFilesView: View {
     let location: WorkspaceFilesLocation
     let saves: WorkspaceFileSaves
@@ -12,6 +34,7 @@ struct WorkspaceFilesView: View {
     let addToComposer: (WorkspaceFileTarget) throws -> Void
     let beginMentionDrag: (WorkspaceFileTarget) -> NSItemProvider?
     @Binding var selection: String?
+    var lineReveal: WorkspaceFileLineReveal? = nil
 
     @State private var tree: Result<WorkspaceFileTree, Error>?
     @State private var expanded: Set<String> = []
@@ -75,6 +98,7 @@ struct WorkspaceFilesView: View {
                         }
                         WorkspaceFilePreviewView(
                             target: target, saves: saves, pasteboard: pasteboard, refreshing: refreshing,
+                            lineReveal: lineReveal?.target == target ? lineReveal : nil,
                             activeTarget: { activeLocation() == location ? self.target : nil },
                             showingExplorer: $showingExplorer, goToFolder: goToFolder,
                             folderEntries: { parent in entries.filter { $0.parent == parent && $0.kind != .link } },
@@ -339,6 +363,7 @@ private struct WorkspaceFilePreviewView: View {
     let saves: WorkspaceFileSaves
     let pasteboard: NSPasteboard
     let refreshing: Int
+    let lineReveal: WorkspaceFileLineReveal?
     let activeTarget: () -> WorkspaceFileTarget?
     @Binding var showingExplorer: Bool
     let goToFolder: (String) -> Void
@@ -352,6 +377,7 @@ private struct WorkspaceFilePreviewView: View {
     @State private var confirmDiscard = false
     @State private var wraps = true
     @State private var reload = 0
+    @State private var dismissedReveal: UUID?
     @AppStorage("files-render-markdown") private var rendersMarkdown = false
     @AppStorage("files-render-table") private var rendersTable = true
 
@@ -374,9 +400,17 @@ private struct WorkspaceFilePreviewView: View {
         format == .markdown ? $rendersMarkdown : $rendersTable
     }
 
+    private var activeLineReveal: WorkspaceFileLineReveal? {
+        lineReveal?.id == dismissedReveal ? nil : lineReveal
+    }
+
+    private func isRendering(_ format: WorkspaceFileRenderFormat) -> Bool {
+        activeLineReveal == nil && renderPreference(for: format).wrappedValue
+    }
+
     private var canWrap: Bool {
         if case .success(.largeText) = session?.preview { return true }
-        if let renderFormat, renderPreference(for: renderFormat).wrappedValue { return false }
+        if let renderFormat, isRendering(renderFormat) { return false }
         return session?.editorSource != nil
     }
 
@@ -393,13 +427,13 @@ private struct WorkspaceFilePreviewView: View {
                         .accessibilityIdentifier("files-unsaved")
                 }
                 if let renderFormat {
-                    let preference = renderPreference(for: renderFormat)
-                    let rendered = preference.wrappedValue
+                    let rendered = isRendering(renderFormat)
                     let previewIcon = renderFormat == .markdown ? "doc.richtext" : "tablecells"
                     fileButton(renderFormat.toggleLabel(rendered: rendered),
                                rendered ? "chevron.left.forwardslash.chevron.right" : previewIcon,
                                id: "files-toggle-rendered") {
-                        preference.wrappedValue.toggle()
+                        dismissedReveal = lineReveal?.id
+                        renderPreference(for: renderFormat).wrappedValue = !rendered
                     }
                 }
                 previewMenu
@@ -529,11 +563,11 @@ private struct WorkspaceFilePreviewView: View {
     private var content: some View {
         if let session, let source = session.editorSource {
             let text = draft?.text ?? source.text
-            if let renderFormat, renderPreference(for: renderFormat).wrappedValue {
+            if let renderFormat, isRendering(renderFormat) {
                 WorkspaceRenderedFileView(format: renderFormat, text: text, openLink: openMarkdownLink)
             } else {
                 FileTextView(text: text, editable: session.isEditable, wraps: wraps,
-                             identifier: "files-editor", saveSession: session) { text in
+                             identifier: "files-editor", lineReveal: activeLineReveal, saveSession: session) { text in
                     guard self.session === session else { return }
                     session.edit(text, from: source)
                 }
@@ -774,6 +808,7 @@ struct FileTextView: NSViewRepresentable {
     let wraps: Bool
     let identifier: String
     var reveal: (id: UUID, range: NSRange)?
+    var lineReveal: WorkspaceFileLineReveal?
     var saveSession: WorkspaceFileSaveSession?
     var edit: ((String) -> Void)?
 
@@ -823,6 +858,20 @@ struct FileTextView: NSViewRepresentable {
             context.coordinator.revealed = reveal.id
             textView.setSelectedRange(reveal.range)
             textView.scrollRangeToVisible(NSRange(location: reveal.range.location, length: 0))
+        }
+        if let lineReveal, context.coordinator.revealed != lineReveal.id {
+            let coordinator = context.coordinator
+            coordinator.revealed = lineReveal.id
+            if let range = lineReveal.range(in: textView.string as NSString) {
+                textView.setSelectedRange(range)
+                // A newly opened Files panel gets its size after the representable update.
+                Task { @MainActor [weak scroll, weak textView, weak coordinator] in
+                    guard let scroll, let textView, coordinator?.revealed == lineReveal.id,
+                          textView.selectedRange() == range else { return }
+                    scroll.layoutSubtreeIfNeeded()
+                    textView.scrollRangeToVisible(NSRange(location: range.location, length: 0))
+                }
+            }
         }
     }
 

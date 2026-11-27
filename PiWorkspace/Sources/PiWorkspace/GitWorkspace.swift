@@ -828,7 +828,8 @@ struct GitWorkspace: Sendable {
         index: URL? = nil,
         outputLimit: Int? = nil,
         acceptedStatuses: [Int32] = [0],
-        cancellable: Bool = false
+        cancellable: Bool = false,
+        timeout: DispatchTimeInterval? = nil
     ) async throws -> WorkspaceCommand.Capture {
         let directory = directory ?? path
         guard !directory.isEmpty else {
@@ -871,7 +872,7 @@ struct GitWorkspace: Sendable {
         process.environment = environment
 
         let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit,
-                                                        timeout: fetching ? .seconds(300) : nil,
+                                                        timeout: fetching ? .seconds(300) : timeout,
                                                         cancelOnTaskCancellation: cloning || fetching || cancellable)
         if !result.exitedNormally || !acceptedStatuses.contains(result.status) {
             throw WorkspaceError.commandFailed(command: arguments[0], status: result.status, message: result.errorMessage)

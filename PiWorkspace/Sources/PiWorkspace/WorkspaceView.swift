@@ -46,6 +46,7 @@ struct WorkspaceView: View {
     @State private var closingPanelTerminals: PanelTerminalClose?
     @State private var deletingSideChat: SideChatDeletion?
     @State private var selectedFiles: [WorkspaceFilesLocation: String] = [:]
+    @State private var fileLineReveal: WorkspaceFileLineReveal?
     @State private var choosingWorkspace = false
     @State private var choosingBranch: WorkspaceModel.BranchPickerScope?
     @State private var loadedBranch: (scope: WorkspaceModel.BranchPickerScope, branch: String?)?
@@ -479,6 +480,7 @@ struct WorkspaceView: View {
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
                                choosingProject: paletteChoosingProject,
+                               filesLocation: paletteFilesLocation, activeFilesLocation: { paletteFilesLocation },
                                searchMessages: model.searchMessages) { action in
                 guard model.showingCommandPalette else { return }
                 paletteAction = action
@@ -1680,6 +1682,7 @@ struct WorkspaceView: View {
                         openBranchPicker()
                     }, copyBranch: copyBranch) { path in
                         guard selectedFilesLocation == location else { return }
+                        fileLineReveal = nil
                         selectedFiles[location] = path
                         rightPanels[thread.id]?.show(.files)
                     }
@@ -1742,6 +1745,10 @@ struct WorkspaceView: View {
         return WorkspaceFilesLocation(thread: thread, project: project)
     }
 
+    private var paletteFilesLocation: WorkspaceFilesLocation? {
+        model.project?.isScratch == false ? selectedFilesLocation : nil
+    }
+
     @ViewBuilder
     private func filesPanel(_ project: Project, _ thread: Conversation) -> some View {
         if let location = WorkspaceFilesLocation(thread: thread, project: project) {
@@ -1756,7 +1763,10 @@ struct WorkspaceView: View {
                                },
                                beginMentionDrag: model.beginFileMentionDrag,
                                selection: Binding(get: { selectedFiles[location] },
-                                                  set: { selectedFiles[location] = $0 }))
+                                                  set: {
+                                                      fileLineReveal = nil
+                                                      selectedFiles[location] = $0
+                                                  }), lineReveal: fileLineReveal)
                 .id(location)
         } else {
             Text("Files will be available when the worktree is ready.")
@@ -3357,8 +3367,19 @@ struct WorkspaceView: View {
         }
         guard model.canOpenCommandPalette else { return }
         switch action {
-        case .chooseProject:
+        case .chooseProject, .searchWorkspace:
             break
+        case .openWorkspaceFile(let destination):
+            let target = destination.target
+            guard paletteFilesLocation == target.location else { return }
+            do {
+                _ = try WorkspaceFiles(directory: target.location.directory).fileURL(target.path, checkout: destination.checkout)
+                selectedFiles[target.location] = target.path
+                fileLineReveal = destination.line.map { WorkspaceFileLineReveal(target: target, line: $0) }
+                rightPanels[target.location.threadID, default: .init()].show(.files)
+            } catch {
+                model.error = error.localizedDescription
+            }
         case .newThread(let id):
             guard let project = model.projects.first(where: { $0.id == id }) else { return }
             guard project.folderIsAvailable else {

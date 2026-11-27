@@ -11,6 +11,8 @@ enum CommandPaletteAction: Hashable {
     case projectSettings(UUID)
     case searchThreads
     case findInCurrentThread(SidebarMessageSearch.Thread)
+    case searchWorkspace(WorkspaceFileSearch.Mode)
+    case openWorkspaceFile(WorkspaceFileSearch.Destination)
     case openProject(UUID)
     case openThread(UUID, project: UUID)
     case openMessage(UUID, project: UUID, occurrence: TranscriptOccurrence, term: TranscriptSearchTerm)
@@ -26,6 +28,11 @@ enum CommandPaletteAction: Hashable {
         case .projectSettings(let id): "project-settings-\(id)"
         case .searchThreads: "search-threads"
         case .findInCurrentThread: "find-current-thread"
+        case .searchWorkspace(.files): "go-to-file"
+        case .searchWorkspace(.contents): "search-project-contents"
+        case .openWorkspaceFile(let destination):
+            destination.line.map { "content-result-\(destination.target.path):\($0)" }
+                ?? "file-result-\(destination.target.path)"
         case .openProject(let id): "project-\(id)"
         case .openThread(let id, _): "thread-\(id)"
         case .openMessage(let id, _, let match, _): "message-\(id)-\(match.messageID)"
@@ -72,6 +79,8 @@ struct CommandPaletteGroup: Identifiable {
         case recentThreads = "Recent Threads"
         case threads = "Threads"
         case messages = "In messages"
+        case files = "Files"
+        case contents = "Matches"
     }
 
     let id: Kind
@@ -115,6 +124,10 @@ struct CommandPaletteContents {
             rows.append(.init(action: .findInCurrentThread(findThread), title: "Find in current thread",
                               icon: "text.magnifyingglass", searchTerms: "search messages"))
         }
+        rows.append(.init(action: .searchWorkspace(.files), title: "Go to file", icon: "doc.text.magnifyingglass",
+                          searchTerms: "open file file picker find file quick open"))
+        rows.append(.init(action: .searchWorkspace(.contents), title: "Search project contents",
+                          icon: "text.magnifyingglass", searchTerms: "find in files grep content search text search"))
         if preferredProject != nil {
             rows.append(.init(action: .home, title: "Go to home", icon: "house"))
         }
@@ -242,26 +255,43 @@ struct CommandPaletteSession {
         let latestMessageID: String?
     }
 
+    struct FileSearch: Equatable {
+        let request: WorkspaceFileSearch
+        let queryRevision: UUID
+    }
+
+    private struct WorkspaceSearchContext {
+        let mode: WorkspaceFileSearch.Mode
+        let parentQuery: String
+        let parentHighlight: CommandPaletteAction?
+    }
+
     private var parentQuery: String?
     private var highlight: CommandPaletteAction?
     private var queryRevision = UUID()
     private var searchResult: (search: Search, matches: [UUID: SidebarMessageSearch.Match])?
+    private var workspaceSearch: WorkspaceSearchContext?
+    private var fileResult: (search: FileSearch, result: Result<WorkspaceFileSearch.Results, Error>)?
 
     init(choosingProject: Bool = false) {
         parentQuery = choosingProject ? "" : nil
     }
 
     var choosingProject: Bool { parentQuery != nil }
-    var query = "" {
-        didSet {
-            highlight = nil
-            queryRevision = UUID()
-            searchResult = nil
-        }
+    var fileSearchMode: WorkspaceFileSearch.Mode? { workspaceSearch?.mode }
+    var query = "" { didSet { resetResults() } }
+    var fileOptions = WorkspaceFileSearch.Options() { didSet { resetResults() } }
+
+    mutating func resetResults() {
+        highlight = nil
+        queryRevision = UUID()
+        searchResult = nil
+        fileResult = nil
     }
 
     func messageSearch(in contents: CommandPaletteContents, latestMessageID: String?) -> Search? {
-        contents.messageSearch(for: query, choosingProject: choosingProject).map {
+        guard workspaceSearch == nil else { return nil }
+        return contents.messageSearch(for: query, choosingProject: choosingProject).map {
             Search(request: $0, queryRevision: queryRevision, latestMessageID: latestMessageID)
         }
     }
@@ -275,11 +305,36 @@ struct CommandPaletteSession {
         searchResult = (search, matches)
     }
 
+    func fileSearch(at location: WorkspaceFilesLocation?) -> FileSearch? {
+        guard let mode = fileSearchMode, let location else { return nil }
+        if mode == .contents {
+            guard query.utf16.count <= WorkspaceFileSearch.queryLimit,
+                  !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        }
+        let request = WorkspaceFileSearch(location: location, mode: mode, query: query, options: fileOptions)
+        return FileSearch(request: request, queryRevision: queryRevision)
+    }
+
+    func fileResult(for search: FileSearch?) -> Result<WorkspaceFileSearch.Results, Error>? {
+        fileResult?.search == search ? fileResult?.result : nil
+    }
+
+    mutating func receive(_ result: Result<WorkspaceFileSearch.Results, Error>, for search: FileSearch) {
+        guard search.queryRevision == queryRevision else { return }
+        fileResult = (search, result)
+    }
+
     func selected(in rows: [CommandPaletteRow]) -> CommandPaletteRow? {
         rows.first { $0.action == highlight } ?? rows.first
     }
 
     mutating func back() {
+        if let workspaceSearch {
+            self.workspaceSearch = nil
+            query = workspaceSearch.parentQuery
+            highlight = workspaceSearch.parentHighlight
+            return
+        }
         guard let parentQuery else { return }
         self.parentQuery = nil
         query = parentQuery
@@ -291,12 +346,21 @@ struct CommandPaletteSession {
             query = ""
             return .handled
         }
+        if case .searchWorkspace(let mode) = action {
+            workspaceSearch = WorkspaceSearchContext(mode: mode, parentQuery: query, parentHighlight: action)
+            fileOptions = .init()
+            query = ""
+            return .handled
+        }
         return .run(action)
     }
 
     mutating func handle(_ key: Key, rows: [CommandPaletteRow], repeated: Bool, composing: Bool) -> Response {
         guard !composing else { return .ignored }
         switch key {
+        case .escape where workspaceSearch != nil:
+            if !repeated { back() }
+            return .handled
         case .escape, .toggle:
             return repeated ? .handled : .close
         case .up, .down:
