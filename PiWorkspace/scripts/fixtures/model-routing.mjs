@@ -17,7 +17,16 @@ export async function withModelRoutingFixture(node, worker, runTests) {
     ["route-a", "normal-active-marker", "normal-active-marker"],
     ["route-b", "normal-queued-marker", "normal-active-marker"],
   ];
+  const inherited = [
+    ["route-a", "inherited-first-marker", "inherited-first-marker"],
+    ["route-b", "inherited-model-marker", "inherited-first-marker"],
+    ["route-b", "inherited-resumed-marker", "inherited-first-marker"],
+    ["route-b", "inherited-side-marker", "inherited-first-marker"],
+  ];
+  const markers = new Set([...expected, ...inherited].map(([, marker]) => marker));
   const routes = [];
+  const sideQuestion = "You are in a side chat beside the main thread. Answer the user's question without continuing the main thread's task.\n\ninherited-side-marker";
+  let sideHistory;
   let selectedMarkerOnA = 0;
   let foreignRequests = 0;
   const foreign = createServer((request, response) => {
@@ -28,9 +37,11 @@ export async function withModelRoutingFixture(node, worker, runTests) {
     const body = await new Response(request).json();
     const users = body.messages.filter(({ role }) => role === "user").map(({ content }) =>
       typeof content === "string" ? content : content.map(({ text }) => text).join(""));
-    const marker = users.at(-1)?.split("\n")[0];
+    const latest = users.at(-1);
+    const marker = latest === sideQuestion ? "inherited-side-marker" : latest?.split("\n")[0];
+    if (latest === sideQuestion) sideHistory = users;
     if (body.model === "route-a" && JSON.stringify(body.messages).includes("skip-selected-marker")) selectedMarkerOnA++;
-    if (!expected.some(([, text]) => text === marker)) {
+    if (!markers.has(marker)) {
       // Pi waits for this summary until the test selects the row and aborts compaction.
       return;
     }
@@ -64,8 +75,11 @@ export async function withModelRoutingFixture(node, worker, runTests) {
     });
     assert.equal(foreignRequests, 0);
     assert.equal(selectedMarkerOnA, 0);
-    assert.deepEqual(routes, expected);
-    console.log("Verified six model routes, zero foreign requests and no selected queue marker on A.");
+    assert.deepEqual(sideHistory, ["inherited-first-marker", "inherited-model-marker", "inherited-resumed-marker", sideQuestion]);
+    for (const sequence of [expected, inherited]) {
+      assert.deepEqual(routes.filter(([, marker]) => sequence.some(([, text]) => text === marker)), sequence);
+    }
+    console.log("Verified ten model requests across queue delivery, settings reset, relaunch and side chat; zero foreign requests.");
   } finally {
     for (const server of [owner, foreign]) {
       server.closeAllConnections();

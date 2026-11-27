@@ -189,6 +189,32 @@ final class QueuedMessageTests: XCTestCase {
     }
 
     @MainActor
+    func testUnrecordedFirstTurnLeavesTheDraftFreeToInheritANewAccount() throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.open()
+        defer { model.shutdown() }
+        model.startScratchThread()
+        let worker = fixture.worker
+        worker.emit(.ready([]))
+        let id = try XCTUnwrap(model.conversation?.id)
+        let original = model.effectiveModel
+        model.draft = "Keep my first prompt"
+        model.send()
+        let attempt = try XCTUnwrap(worker.prompts.first)
+        XCTAssertEqual(model.conversation?.historyModel, original)
+        worker.finish(attempt, recorded: false, error: "Rejected before recording")
+        XCTAssertNil(model.conversation?.historyModel)
+        XCTAssertEqual(model.draft, "Keep my first prompt")
+        var replacement = original
+        replacement.endpoint += "/another-endpoint"
+        try model.applySettings(replacement, in: .workspace, newKey: "", removeKey: false)
+        XCTAssertEqual(model.effectiveModel, replacement)
+        XCTAssertEqual(model.conversation?.id, id)
+        XCTAssertEqual(worker.prompts.count, 1)
+    }
+
+    @MainActor
     func testSubmittedThreadKeepsAccountAfterStopAndFailedReopen() async throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }

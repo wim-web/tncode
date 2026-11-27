@@ -691,15 +691,7 @@ final class WorkspaceModel: ObservableObject {
 
     private var threadHasNoSavedHistory: Bool {
         guard let store, let project, let conversation else { return false }
-        let history = store.history(project: project.id, conversation: conversation.id)
-        do {
-            return try !FileManager.default.contentsOfDirectory(atPath: history.path)
-                .contains { $0.hasSuffix(".jsonl") }
-        } catch let error as CocoaError {
-            return error.code == .fileReadNoSuchFile
-        } catch {
-            return false
-        }
+        return !store.hasSavedHistory(project: project.id, conversation: conversation.id)
     }
     var canSend: Bool {
         if sideChatCommand != nil { return canStartSideChat && queueEdit == nil && pendingAgentQuestion == nil }
@@ -1594,7 +1586,7 @@ final class WorkspaceModel: ObservableObject {
         let child = Conversation(id: destination.threadID, title: source.title + " fork",
                                  lastActiveAt: Date(), location: source.location, isDraft: false,
                                  forkOrigin: .init(threadID: source.id, messageID: messageID),
-                                 modelSelection: source.modelSelection)
+                                 modelSelection: source.modelSelection, historyModel: connectedModel)
         do {
             try store.prepareFork(destination, in: workspace)
             error = nil
@@ -1867,6 +1859,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private var lockedModelAccount: String? {
+        if let owner = conversation?.historyModel { return owner.account }
         guard phase.isRunning || messages.contains(where: { $0.role == .user }) ||
                 (phase == .closed && (conversation?.isDraft == false || !threadHasNoSavedHistory)) else { return nil }
         return connectedModel?.account ?? ((try? effectiveModel.validated()) ?? effectiveModel).account
@@ -1875,7 +1868,7 @@ final class WorkspaceModel: ObservableObject {
     private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
 
     func composerModelOptions() -> [ComposerModelOption] {
-        let profiles = [conversation?.modelSelection, inheritedModel, workspace.model].compactMap { $0 }
+        let profiles = [effectiveModel, inheritedModel, workspace.model]
         var seen = Set<ModelSettings.Identity>()
         var hasCredential: [String: Bool] = [:]
         var options: [ComposerModelOption] = []
@@ -1970,9 +1963,13 @@ final class WorkspaceModel: ObservableObject {
 
         let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let replacement = !removeKey && !key.isEmpty ? try KeyVault.validatedKey(key) : nil
-        try persist(updated)
+        try persistModelDefaults(updated)
         defer {
-            if affectsActiveProject || removeKey || replacement != nil { connect() }
+            let route = try? effectiveModel.validated()
+            if (affectsActiveProject && route != connectedModel) ||
+                ((removeKey || replacement != nil) && settings.account == route?.account) {
+                connect(keepingThread: true)
+            }
         }
         do {
             if removeKey { try vault.remove(settings.account) }
@@ -1990,8 +1987,26 @@ final class WorkspaceModel: ObservableObject {
         guard workspace.projects[index].modelOverride != nil else { return }
         var updated = workspace
         updated.projects[index].modelOverride = nil
-        try persist(updated)
-        if project?.id == id { connect() }
+        try persistModelDefaults(updated)
+        if project?.id == id, connectedModel != (try? effectiveModel.validated()) { connect(keepingThread: true) }
+    }
+
+    private func persistModelDefaults(_ updated: Workspace) throws {
+        guard let store else { throw WorkspaceError("Could not open the workspace.") }
+        var next = updated
+        for (p, project) in workspace.projects.enumerated() {
+            let previous = project.modelOverride ?? workspace.model
+            let replacement = next.projects[p].modelOverride ?? next.model
+            guard (try? previous.validated())?.account != (try? replacement.validated())?.account else { continue }
+            for (t, thread) in project.conversations.enumerated() where thread.modelSelection == nil {
+                guard thread.historyModel != nil || thread.isDraft == false || thread.forkOrigin != nil ||
+                        thread.composerSubmission != nil || thread.worktreeLaunch?.awaitingHistory == true ||
+                        store.hasSavedHistory(project: project.id, conversation: thread.id) else { continue }
+                let prior = workspace.modelSettings(for: thread, in: project)
+                next.projects[p].conversations[t].historyModel = (try? prior.validated()) ?? prior
+            }
+        }
+        try persist(next)
     }
 
     private func modelSettingsProjectIndex(_ id: UUID) throws -> Int {
@@ -2178,7 +2193,7 @@ final class WorkspaceModel: ObservableObject {
             let submission = Conversation.ComposerSubmission(
                 previousUserMessageID: messages.last { $0.role == .user }?.id, id: submissionID
             )
-            try saveThread(conversation.id) { $0.composerSubmission = submission }
+            try preparePrompt(in: conversation) { $0.composerSubmission = submission }
             fileMentionDrag = nil
         } catch {
             self.error = error.localizedDescription
@@ -2306,9 +2321,15 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func startQueuedMessage(_ item: QueuedMessage) {
-        guard canStartQueuedMessage, let process else { return }
+        guard canStartQueuedMessage, let process, let conversation else { return }
         queueDelivery.paused = true
         guard validateQueuedPrompt(item) else { return }
+        do {
+            try preparePrompt(in: conversation)
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
         do {
             try beginTurn(item.text, using: process, queuedID: item.id, skippingCompaction: item.skipCompaction == true,
                           attachments: item.attachments)
@@ -2531,6 +2552,17 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private func preparePrompt(in thread: Conversation, update: ((inout Conversation) -> Void)? = nil) throws {
+        guard let connectedModel, connectedModel == (try effectiveModel.validated()) else {
+            throw WorkspaceError("Reconnect this thread to its selected model before sending.")
+        }
+        guard thread.historyModel != connectedModel || update != nil else { return }
+        try saveThread(thread.id) {
+            $0.historyModel = connectedModel
+            update?(&$0)
+        }
+    }
+
     func cancel() {
         guard phase.canStop, let process, let activeTurnID else { return }
         pendingToolApproval = nil
@@ -2685,7 +2717,7 @@ final class WorkspaceModel: ObservableObject {
             guard try canUsePrompt(launch.prompt, attachments: conversation.composerAttachments) else {
                 throw WorkspaceError("Save an API key for this provider in Settings.")
             }
-            try saveThread(conversation.id) {
+            try preparePrompt(in: conversation) {
                 $0.worktreeLaunch?.stage = .sendPrompt
             }
         } catch {
@@ -2756,7 +2788,16 @@ final class WorkspaceModel: ObservableObject {
                 $0.composerText = launch.originalDraft
             }
             $0.worktreeLaunch = nil
+            if $0.isDraft == true, !messages.contains(where: { $0.role == .user }) { $0.historyModel = nil }
         }
+        if connectedModel != (try? effectiveModel.validated()) { connect(keepingThread: true) }
+    }
+
+    private func releaseUnsentModel(in history: [ChatMessage]) {
+        guard phase == .ready, let thread = conversation, thread.isDraft == true,
+              thread.historyModel != nil, thread.composerSubmission == nil,
+              thread.worktreeLaunch?.awaitingHistory != true, !history.contains(where: { $0.role == .user }) else { return }
+        try? saveThread(thread.id) { $0.historyModel = nil }
     }
 
     private func replyToCredential(_ id: String, read: Bool, account: String, worker: any PiConnection) throws {
@@ -2794,6 +2835,11 @@ final class WorkspaceModel: ObservableObject {
                 pending.result.resume(returning: true)
             }
             reconcileComposerSubmission(in: history, ended: true)
+            releaseUnsentModel(in: history)
+            if connectedModel != (try? effectiveModel.validated()) {
+                connect(keepingThread: true)
+                return
+            }
             if !confirmWorktreePrompt(in: history), preparingWorktree {
                 submitWorktreePrompt(using: worker)
             }
@@ -2885,6 +2931,7 @@ final class WorkspaceModel: ObservableObject {
                 failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")
             }
             if queueDelivery.paused { queueDelivery.skipAfterTurn = nil }
+            releaseUnsentModel(in: history)
             // Reopen the same history on the new model before the next queued turn.
             if connectedModel != (try? effectiveModel.validated()) {
                 connect(keepingThread: true)

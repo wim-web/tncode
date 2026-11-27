@@ -182,6 +182,7 @@ struct Conversation: Codable, Identifiable {
     var linkedPullRequests: [ThreadPullRequestLink]?
     var snoozedUntil: Date?
     var modelSelection: ModelSettings?
+    var historyModel: ModelSettings?
     var sideChats: [SideChat]?
 
     var workingLocation: ThreadLocation { location ?? .project }
@@ -386,7 +387,11 @@ struct Workspace: Codable {
     }
 
     func modelSettings(for thread: Conversation?, in project: Project) -> ModelSettings {
-        thread?.modelSelection ?? project.modelOverride ?? model
+        let choice = thread?.modelSelection ?? project.modelOverride ?? model
+        if let owner = thread?.historyModel, (try? choice.validated())?.account != owner.account {
+            return owner
+        }
+        return choice
     }
 
     var projects: [Project] = []
@@ -601,6 +606,17 @@ final class WorkspaceStore {
     func history(project: UUID, conversation: UUID) -> URL {
         Self.historyComponents(project: project, conversation: conversation).reduce(root) {
             $0.appendingPathComponent($1, isDirectory: true)
+        }
+    }
+
+    func hasSavedHistory(project: UUID, conversation: UUID) -> Bool {
+        let directory = history(project: project, conversation: conversation)
+        do {
+            return try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasSuffix(".jsonl") }
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return false
+        } catch {
+            return true
         }
     }
 

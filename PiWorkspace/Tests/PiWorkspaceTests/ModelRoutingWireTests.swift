@@ -3,6 +3,93 @@ import XCTest
 
 @MainActor
 final class ModelRoutingWireTests: XCTestCase {
+    func testInheritedRouteSurvivesSettingsResetRelaunchAndSideChat() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let endpoint = env["PI_ROUTING_OWNER"], let otherEndpoint = env["PI_ROUTING_OTHER"],
+              let node = env["PI_ROUTING_NODE"], let worker = env["PI_ROUTING_WORKER"] else {
+            throw XCTSkip("Run scripts/verify-model-routing.mjs for the loopback integration.")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("store")
+        let first = ModelSettings(provider: .local, model: "route-a", endpoint: endpoint)
+        var second = first
+        second.model = "route-b"
+        let other = ModelSettings(provider: .local, model: "route-foreign", endpoint: otherEndpoint)
+        let submitted = Conversation(id: UUID(), title: "New thread", isDraft: true)
+        let draft = Conversation(id: UUID(), title: "Unsent", isDraft: true, composerText: "Keep this draft")
+        let project = Project(id: UUID(), path: root.path, title: "Fixture", conversations: [submitted, draft],
+                              selectedConversation: submitted.id)
+        try WorkspaceStore(root: directory).save(.init(projects: [project], selectedProject: project.id,
+                                                       model: first, welcomeCompleted: true))
+        func launch() -> WorkspaceModel {
+            let model = WorkspaceModel(root: directory, keychainService: UUID().uuidString,
+                                       credentialExists: { $0 == first.account },
+                                       readCredential: { $0 == first.account ? "routing-fixture-key" : nil },
+                                       makeProcess: { config, cwd in
+                try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: node), arguments: [worker])
+            })
+            model.connect()
+            return model
+        }
+        func wait(_ model: WorkspaceModel, _ condition: () -> Bool) async throws {
+            for _ in 0..<500 {
+                if let error = model.error { throw WorkspaceError(error) }
+                if condition() { return }
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            throw WorkspaceError("Timed out waiting for the inherited model in \(model.phase).")
+        }
+        func send(_ text: String, through model: WorkspaceModel, on route: ModelSettings) async throws {
+            guard model.effectiveModel == route else {
+                throw WorkspaceError("The expected model was not selected before sending the fixture prompt.")
+            }
+            let count = model.messages.count
+            model.draft = text
+            model.send()
+            try await wait(model) { model.phase == .ready && model.messages.count == count + 2 }
+        }
+        do {
+            let model = launch()
+            try await wait(model) { model.phase == .ready }
+            try await send("inherited-first-marker", through: model, on: first)
+            XCTAssertNil(model.conversation?.modelSelection)
+            XCTAssertEqual(model.conversation?.historyModel, first)
+            try model.applySettings(second, in: .project(project.id), newKey: "", removeKey: false)
+            try await wait(model) { model.phase == .ready }
+            try await send("inherited-model-marker", through: model, on: second)
+            model.selectConversation(draft.id, in: project.id)
+            try await wait(model) { model.phase == .ready && model.conversation?.id == draft.id }
+            try model.applySettings(other, in: .workspace, newKey: "", removeKey: false)
+            try model.resetProjectModel(project.id)
+            try await wait(model) { model.phase == .ready }
+            XCTAssertEqual(model.draft, draft.composerText)
+            XCTAssertEqual(model.effectiveModel, other)
+            XCTAssertNil(model.conversation?.historyModel)
+            XCTAssertTrue(model.terminate())
+        }
+        let model = launch()
+        defer { _ = model.terminate() }
+        try await wait(model) { model.phase == .ready }
+        XCTAssertEqual(model.conversation?.id, draft.id)
+        XCTAssertEqual(model.draft, draft.composerText)
+        model.selectConversation(submitted.id, in: project.id)
+        try await wait(model) { model.phase == .ready && model.conversation?.id == submitted.id }
+        XCTAssertEqual(model.messages.filter { $0.role == .user }.map(\.text), ["inherited-first-marker", "inherited-model-marker"])
+        XCTAssertTrue(model.composerModelOptions().contains { $0.id == second.identity && $0.unavailableReason == nil })
+        XCTAssertFalse(model.canUseInheritedComposerModel)
+        try await send("inherited-resumed-marker", through: model, on: second)
+        model.startSideChat(in: submitted.id)
+        let scope = try XCTUnwrap(model.sideChatToOpen?.scope)
+        let child = try XCTUnwrap(model.sideChat(scope))
+        guard child.model == second else { return XCTFail("Side chat must use the parent’s account.") }
+        try await wait(model) { model.sideChatSession(scope)?.phase == .ready }
+        model.editSideChat("inherited-side-marker", in: scope)
+        model.sendSideChat(scope)
+        try await wait(model) { model.sideChatSession(scope)?.messages.last?.role == .assistant }
+        XCTAssertEqual(model.messages.filter { $0.role == .user }.count, 3)
+    }
+
     func testHistoryAndCompactionSelectionStayOnTheChosenRoute() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let endpoint = env["PI_ROUTING_OWNER"], let foreignEndpoint = env["PI_ROUTING_OTHER"],
