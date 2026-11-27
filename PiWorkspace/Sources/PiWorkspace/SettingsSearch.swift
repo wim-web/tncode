@@ -137,7 +137,7 @@ enum SettingsDeepLink: Equatable {
 @MainActor
 final class SettingsRequest: ObservableObject, Identifiable {
     struct Destination: Equatable {
-        let id = UUID()
+        let navigationID: UUID?
         let page: SettingsPage
         let anchor: SettingsAnchor?
         let projectID: UUID?
@@ -150,11 +150,11 @@ final class SettingsRequest: ObservableObject, Identifiable {
     var projectID: UUID? { destination.projectID }
 
     init(page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
-        destination = Destination(page: page, anchor: anchor, projectID: projectID)
+        destination = Destination(navigationID: nil, page: page, anchor: anchor, projectID: projectID)
     }
 
     func navigate(to page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
-        destination = Destination(page: page, anchor: anchor, projectID: projectID ?? destination.projectID)
+        destination = Destination(navigationID: UUID(), page: page, anchor: anchor, projectID: projectID ?? destination.projectID)
     }
 }
 

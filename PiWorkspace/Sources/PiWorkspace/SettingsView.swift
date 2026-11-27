@@ -13,8 +13,6 @@ struct SettingsView: View {
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
     @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
     @FocusState private var focus: SettingsFocus?
-    @State private var page: SettingsPage
-    @State private var jump: SettingsJump?
     @State private var search = SettingsSearch()
     @State private var modelDrafts: [UUID?: ModelSettingsDraft]
     @State private var projectTitles: [UUID: String] = [:]
@@ -24,7 +22,11 @@ struct SettingsView: View {
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
-    @State private var showingLicenses: Bool
+    private var page: SettingsPage { request.page }
+    private var showingLicenses: Binding<Bool> {
+        Binding(get: { request.destination.anchor == .licenses },
+                set: { navigate(to: .about, anchor: $0 ? .licenses : nil) })
+    }
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
          request: SettingsRequest, pasteboard: NSPasteboard = .general, openWelcome: @escaping () -> Void) {
@@ -34,9 +36,6 @@ struct SettingsView: View {
         self.browserDefaults = browserDefaults
         self.pasteboard = pasteboard
         self.openWelcome = openWelcome
-        _page = State(initialValue: request.page)
-        _jump = State(initialValue: request.destination.anchor.map { SettingsJump(anchor: $0) })
-        _showingLicenses = State(initialValue: request.destination.anchor == .licenses)
         let projectID = request.projectID
         let project = model.projects.first { $0.id == projectID }
         _modelDrafts = State(initialValue: [projectID: ModelSettingsDraft(workspace: model.workspace.model, project: project)])
@@ -111,7 +110,7 @@ struct SettingsView: View {
                 ScrollViewReader { reader in
                     Group {
                         if page == .about {
-                            AboutView(showingLicenses: $showingLicenses, settingsFocus: $focus,
+                            AboutView(showingLicenses: showingLicenses, settingsFocus: $focus,
                                       openWelcome: openWelcome, welcomeEnabled: model.canOpenWelcome)
                         } else if page == .usage {
                             UsageSettingsView(root: model.root, projects: model.workspace.projects)
@@ -125,13 +124,13 @@ struct SettingsView: View {
                             .id(page)
                         }
                     }
-                    .task(id: jump) {
+                    .task(id: request.destination) {
                         await Task.yield()
                         guard !Task.isCancelled else { return }
-                        if let anchor = jump?.anchor {
+                        if let anchor = request.destination.anchor {
                             reader.scrollTo(anchor)
                         } else {
-                            focus = jump == nil && page != .usage ? .search : .heading
+                            focus = request.destination.navigationID == nil && page != .usage ? .search : .heading
                         }
                     }
                 }
@@ -141,10 +140,11 @@ struct SettingsView: View {
         .frame(width: 784, height: 474)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings")
-        .environment(\.settingsJump, jump)
+        .environment(\.settingsDestination, request.destination)
         .background { WindowKeyMonitor(handle: handleKey) }
-        .onChange(of: request.destination) { _, destination in
-            navigate(to: destination.page, anchor: destination.anchor)
+        .onChange(of: request.destination) {
+            focus = nil
+            search.query = ""
         }
         .onChange(of: focus) { previous, _ in
             if previous == .anchor(.addProjectStartsIn) { commitProjectBaseDirectory() }
@@ -463,11 +463,7 @@ struct SettingsView: View {
     }
 
     private func navigate(to page: SettingsPage, anchor: SettingsAnchor? = nil) {
-        focus = nil
-        search.query = ""
-        self.page = page
-        showingLicenses = anchor == .licenses
-        jump = SettingsJump(anchor: anchor)
+        request.navigate(to: page, anchor: anchor, projectID: nil)
     }
 
     private func clearSearch() {
@@ -524,24 +520,19 @@ struct SettingsView: View {
     }
 }
 
-private struct SettingsJump: Equatable {
-    let id = UUID()
-    let anchor: SettingsAnchor?
-}
-
-private struct SettingsJumpKey: EnvironmentKey {
-    static let defaultValue: SettingsJump? = nil
+private struct SettingsDestinationKey: EnvironmentKey {
+    static let defaultValue: SettingsRequest.Destination? = nil
 }
 
 private extension EnvironmentValues {
-    var settingsJump: SettingsJump? {
-        get { self[SettingsJumpKey.self] }
-        set { self[SettingsJumpKey.self] = newValue }
+    var settingsDestination: SettingsRequest.Destination? {
+        get { self[SettingsDestinationKey.self] }
+        set { self[SettingsDestinationKey.self] = newValue }
     }
 }
 
 private struct SettingsTarget: ViewModifier {
-    @Environment(\.settingsJump) private var jump
+    @Environment(\.settingsDestination) private var destination
     let anchor: SettingsAnchor
     let focus: FocusState<SettingsFocus?>.Binding
 
@@ -549,7 +540,7 @@ private struct SettingsTarget: ViewModifier {
         content
             .focused(focus, equals: .anchor(anchor))
             .background {
-                if jump?.anchor == anchor {
+                if destination?.anchor == anchor {
                     RoundedRectangle(cornerRadius: 5)
                         .fill(Color.accentColor.opacity(0.12))
                         .padding(-4)
@@ -557,8 +548,8 @@ private struct SettingsTarget: ViewModifier {
             }
             .accessibilityIdentifier(anchor.rawValue)
             .id(anchor)
-            .task(id: jump?.anchor == anchor ? jump : nil) {
-                guard jump?.anchor == anchor else { return }
+            .task(id: destination?.anchor == anchor ? destination : nil) {
+                guard destination?.anchor == anchor else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 focus.wrappedValue = .anchor(anchor)

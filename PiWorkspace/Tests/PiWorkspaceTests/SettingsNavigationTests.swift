@@ -161,6 +161,16 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.expectLicenses()
     }
 
+    func testSecondLinkBeforeSheetPresentationOpensLatestDestination() async throws {
+        let first = try XCTUnwrap(URL(string: "pi-workspace://settings/appearance"))
+        let second = try XCTUnwrap(URL(string: "pi-workspace://settings/open-source-licenses"))
+        let fixture = try Fixture(link: first, linkBeforePresentation: second)
+        defer { fixture.close() }
+
+        try await fixture.expectLicenses()
+        XCTAssertNil(fixture.element("appearance-color-scheme"))
+    }
+
     func testSettingsLinkRecognizesLocalDestinationsOnly() throws {
         let project = UUID()
         let links: [(String, SettingsDeepLink?)] = [
@@ -325,7 +335,7 @@ final class SettingsNavigationTests: XCTestCase {
         let window: NSWindow
         let activationPolicy: NSApplication.ActivationPolicy
 
-        init(link: URL? = nil, projectIDs: [UUID] = [UUID()]) throws {
+        init(link: URL? = nil, linkBeforePresentation: URL? = nil, projectIDs: [UUID] = [UUID()]) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             suite = "SettingsNavigationTests.\(root.lastPathComponent)"
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -354,9 +364,12 @@ final class SettingsNavigationTests: XCTestCase {
             activationPolicy = app.activationPolicy()
             app.setActivationPolicy(.prohibited)
             app.finishLaunching()
-            host = NSHostingView(rootView: SettingsView(model: model, appearance: appearance,
-                                                       browserDefaults: defaults, request: request, openWelcome: {})
-                .defaultAppStorage(defaults))
+            let sheet = SettingsView(model: model, appearance: appearance, browserDefaults: defaults,
+                                     request: request, openWelcome: {})
+            if let linkBeforePresentation {
+                XCTAssertTrue(model.openSettingsLink(linkBeforePresentation))
+            }
+            host = NSHostingView(rootView: sheet.defaultAppStorage(defaults))
             let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
             window = OffscreenSettingsPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 784, height: 474)),
                                           styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
