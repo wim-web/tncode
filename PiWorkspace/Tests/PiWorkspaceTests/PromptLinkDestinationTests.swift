@@ -124,7 +124,7 @@ final class PromptLinkDestinationTests: XCTestCase {
         let review = try start(model, "provider=openai&model=gpt-5")
         XCTAssertTrue(model.composerModelOptions().contains { $0.settings.model == "gpt-5" && $0.unavailableReason == nil })
         try model.openPromptLinkDraft(review)
-        XCTAssertEqual(worker.opens.last?.config.model, "gpt-5")
+        XCTAssertEqual(worker.opens.last?.config?.model, "gpt-5")
         XCTAssertEqual(model.conversation?.modelSelection?.model, "gpt-5")
         XCTAssertEqual(model.projects.first?.conversations.first?.composerText, "Keep editing")
     }

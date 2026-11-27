@@ -493,11 +493,11 @@ final class ThreadRowActionTests: XCTestCase {
         defer { subscription.cancel() }
 
         let (oldModel, first) = try await beginLink()
-        XCTAssertEqual(first.command?.config.model, "target-model")
+        XCTAssertEqual(first.command?.config?.model, "target-model")
         try model.resetProjectModel(projectID)
         let afterReset = try XCTUnwrap(model.workspace.projects.first { $0.id == projectID })
         let newConfig = model.workspace.modelSettings(for: afterReset.conversations.first { $0.id == target }, in: afterReset)
-        XCTAssertEqual(newConfig.account, first.command?.config.account)
+        XCTAssertEqual(newConfig.account, first.command?.config?.account)
         XCTAssertEqual(newConfig.model, "workspace-model")
         first.onEvent?(.ready([]))
         let acceptedOldModel = await oldModel.value

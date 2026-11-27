@@ -6,6 +6,13 @@ struct WelcomeProjectsSection: View {
     @State private var scanState = ScanState.idle
     @State private var selected = Set<PiHistoryDiscovery.FolderID>()
     @State private var actionStatus: ActionStatus?
+    @State private var importRequest: ImportRequest?
+
+    private struct ImportRequest: Identifiable {
+        let id = UUID()
+        let candidate: PiHistoryDiscovery.Candidate
+        let session: PiHistoryDiscovery.Session
+    }
 
     private enum ScanState {
         case idle, scanning, failed(String), complete(PiHistoryDiscovery.Result)
@@ -72,6 +79,21 @@ struct WelcomeProjectsSection: View {
                 scanState = .failed(error.localizedDescription)
             }
         }
+        .task(id: importRequest?.id) {
+            guard let request = importRequest else { return }
+            let failure: String?
+            do {
+                try await model.openDiscoveredPiSession(request.session, in: request.candidate)
+                failure = nil
+            } catch is CancellationError {
+                failure = nil
+            } catch {
+                failure = error.localizedDescription
+            }
+            guard importRequest?.id == request.id else { return }
+            importRequest = nil
+            if let failure { actionStatus = .failed(failure) }
+        }
     }
 
     private func scanButton(_ label: String, id: String) -> some View {
@@ -80,6 +102,7 @@ struct WelcomeProjectsSection: View {
             scanState = .scanning
             scanRequest += 1
         }
+        .disabled(importRequest != nil)
         .accessibilityIdentifier(id)
     }
 
@@ -92,7 +115,7 @@ struct WelcomeProjectsSection: View {
         if result.candidates.isEmpty {
             status("No projects found in local Pi history.")
         } else {
-            let registered = Set(model.workspace.projects.compactMap { PiHistoryDiscovery.FolderID($0.path) })
+            let registered = Set(model.threadProjects.compactMap { PiHistoryDiscovery.FolderID($0.path) })
             let available = Set(result.candidates.map(\.id)).subtracting(registered)
             let picked = selected.intersection(available)
             HStack {
@@ -118,7 +141,7 @@ struct WelcomeProjectsSection: View {
             .frame(height: 160)
             .scrollBounceBehavior(.basedOnSize)
             HStack {
-                Text("Registration adds folders to your workspace. Pi sessions stay in local history.")
+                Text("Register folders or open an individual Pi transcript as a read-only copy.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -131,7 +154,7 @@ struct WelcomeProjectsSection: View {
                         actionStatus = .failed(error.localizedDescription)
                     }
                 }
-                .disabled(picked.isEmpty || model.operationsInProgress)
+                .disabled(picked.isEmpty || model.operationsInProgress || importRequest != nil)
                 .accessibilityIdentifier("welcome-pi-register")
             }
         }
@@ -166,12 +189,25 @@ struct WelcomeProjectsSection: View {
             DisclosureGroup {
                 ForEach(candidate.sessions) { session in
                     HStack {
-                        Text(session.title).lineLimit(2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(session.title).lineLimit(2)
+                                .accessibilityIdentifier("welcome-pi-session-\(session.id)")
+                            if let firstMessage = session.firstMessage {
+                                Text(firstMessage).lineLimit(1).foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer(minLength: 12)
                         Text(session.modified, style: .date).foregroundStyle(.secondary)
+                        Button("Open Transcript") {
+                            actionStatus = nil
+                            importRequest = ImportRequest(candidate: candidate, session: session)
+                        }
+                        .disabled(model.operationsInProgress || importRequest != nil)
+                        .accessibilityLabel("Open transcript for \(session.title)")
+                        .accessibilityHint(session.firstMessage ?? "")
+                        .accessibilityIdentifier("welcome-pi-import-\(session.id)")
                     }
                     .font(.caption)
-                    .accessibilityIdentifier("welcome-pi-session-\(session.id)")
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
@@ -181,7 +217,7 @@ struct WelcomeProjectsSection: View {
                 }
                 .font(.caption)
             }
-            .accessibilityIdentifier("welcome-pi-history-\(candidate.folder.path)")
+            .disclosureGroupStyle(HistoryDisclosureStyle(identifier: "welcome-pi-history-\(candidate.folder.path)"))
             Button("Open Project") {
                 do {
                     try model.openDiscoveredPiProject(candidate)
@@ -189,9 +225,33 @@ struct WelcomeProjectsSection: View {
                     actionStatus = .failed(error.localizedDescription)
                 }
             }
-            .disabled(model.operationsInProgress)
+            .disabled(model.operationsInProgress || importRequest != nil)
             .accessibilityLabel("Open \(candidate.title)")
             .accessibilityIdentifier("welcome-pi-open-\(candidate.folder.path)")
+        }
+    }
+}
+
+private struct HistoryDisclosureStyle: DisclosureGroupStyle {
+    let identifier: String
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                configuration.isExpanded.toggle()
+            } label: {
+                HStack(alignment: .top, spacing: 5) {
+                    Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    configuration.label
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier(identifier)
+            if configuration.isExpanded { configuration.content.padding(.leading, 12) }
         }
     }
 }

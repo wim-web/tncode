@@ -456,17 +456,9 @@ async function generateCommitMessage({ config, patch, style, instructions, relat
 async function open(command) {
   const { cwd, sessionDir, threadID, config, toolPermission, forkMessageID, sideChatSource } = command;
   if (!validID(threadID)) throw new Error("This conversation has an invalid ID.");
-  const runtime = await modelRuntime(config);
-  emit({
-    type: "modelCatalog",
-    models: Object.fromEntries(["openai", "anthropic"].map((provider) => [
-      provider, Object.fromEntries(runtime.getModels(provider).map(({ id, name }) => [id, name])),
-    ])),
-  });
-  const model = configuredModel(runtime, config);
-
-  const requireHistory = command.requireHistory || forkMessageID;
-  const missingHistory = sideChatSource ? "The side chat history is missing."
+  const requireHistory = command.requireHistory || forkMessageID || !config;
+  const missingHistory = !config ? "The imported Pi transcript is missing."
+    : sideChatSource ? "The side chat history is missing."
     : forkMessageID ? "The fork history is missing." : "The linked thread’s history is missing.";
   if (requireHistory) {
     if (!existsSync(sessionDir)) throw new Error(missingHistory);
@@ -479,6 +471,35 @@ async function open(command) {
   if (requireHistory && (!historyFile || statSync(historyFile).size === 0)) {
     throw new Error(missingHistory);
   }
+  if (!config) {
+    const entries = parseSessionEntries(readFileSync(historyFile, "utf8"));
+    if (entries[0]?.type !== "session" || entries[0].id !== threadID) {
+      throw new Error("The imported Pi transcript is invalid.");
+    }
+    const reader = SessionManager.inMemory(cwd, undefined, entries);
+    const messages = reader.getBranch().flatMap(entry => {
+      if (entry.type !== "message") return [];
+      const { role, content } = entry.message;
+      if (role !== "user" && role !== "assistant") return [];
+      const text = typeof content === "string" ? content : content.map(block => {
+        if (block.type === "image") return "[Image]";
+        return block.type === "text" ? block.text : "";
+      }).join("");
+      return text ? [{ id: entry.id, role, text }] : [];
+    });
+    if (!messages.length) throw new Error("The imported Pi transcript has no messages to display.");
+    emit({ type: "ready", messages });
+    return;
+  }
+
+  const runtime = await modelRuntime(config);
+  emit({
+    type: "modelCatalog",
+    models: Object.fromEntries(["openai", "anthropic"].map((provider) => [
+      provider, Object.fromEntries(runtime.getModels(provider).map(({ id, name }) => [id, name])),
+    ])),
+  });
+  const model = configuredModel(runtime, config);
   inheritedCutoff = sideChatSource?.cutoff;
   if (inheritedCutoff && !historyFile) {
     try {

@@ -199,7 +199,7 @@ private final class ForkFixture {
     func leaveForkJournal(for id: UUID, publish: Bool) throws {
         let store = try WorkspaceStore(root: root)
         var workspace = try store.load()
-        try store.prepareFork(.init(projectID: projectID, threadID: id), in: workspace)
+        try store.prepareHistory(.init(projectID: projectID, threadID: id), in: workspace)
         try writeHistory(id)
         if publish {
             workspace.projects[0].conversations.append(Conversation(

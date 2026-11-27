@@ -185,6 +185,8 @@ struct Conversation: Codable, Identifiable {
     var modelSelection: ModelSettings?
     var historyModel: ModelSettings?
     var sideChats: [SideChat]?
+    // Pi session files do not identify the authenticated account. Imported sessions are read-only.
+    var importedPiSessionID: String?
 
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
@@ -437,7 +439,7 @@ struct Workspace: Codable {
     }
 }
 
-struct PendingConversationFork: Codable {
+struct PendingConversationHistory: Codable {
     let projectID: UUID
     let threadID: UUID
 }
@@ -540,7 +542,7 @@ final class WorkspaceStore {
 
     private var index: URL { root.appendingPathComponent(Self.indexName) }
     private var previousIndex: URL { root.appendingPathComponent(Self.previousIndexName) }
-    private var pendingFork: URL { root.appendingPathComponent(".pending-fork.json") }
+    private var pendingHistory: URL { root.appendingPathComponent(".pending-fork.json") }
     var config: URL { root.appendingPathComponent("pi-config", isDirectory: true) }
 
     func load(restoringPrevious: Bool = false) throws -> Workspace {
@@ -677,47 +679,67 @@ final class WorkspaceStore {
         return folder
     }
 
-    func prepareFork(_ fork: PendingConversationFork, in workspace: Workspace) throws {
-        try recoverFork(in: workspace)
-        let directory = try forkDirectory(fork)
+    func prepareHistory(_ pending: PendingConversationHistory, in workspace: Workspace) throws {
+        try recoverHistory(in: workspace)
+        let directory = try historyDirectory(for: pending)
         guard !FileManager.default.fileExists(atPath: directory.path) else {
-            throw WorkspaceError("A history folder already exists for this fork. Try again.")
+            throw WorkspaceError("A history folder already exists for this conversation. Try again.")
         }
-        try write(JSONEncoder().encode(fork), to: pendingFork)
+        try write(JSONEncoder().encode(pending), to: pendingHistory)
+        try FileManager.default.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])
     }
 
-    func forkHasHistory(_ fork: PendingConversationFork) throws -> Bool {
-        let file = try forkDirectory(fork).appendingPathComponent(fork.threadID.uuidString + ".jsonl")
+    func writeImportedHistory(_ data: Data, to pending: PendingConversationHistory) throws {
+        let file = try historyDirectory(for: pending).appendingPathComponent(pending.threadID.uuidString + ".jsonl")
+        let fd = Darwin.open(file.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw Self.accessError(file, errno) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+            try handle.close()
+        } catch {
+            throw WorkspaceStoreError.access(file, error)
+        }
+    }
+
+    func forkHasHistory(_ fork: PendingConversationHistory) throws -> Bool {
+        let file = try historyDirectory(for: fork).appendingPathComponent(fork.threadID.uuidString + ".jsonl")
         let info = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         return info.isRegularFile == true && (info.fileSize ?? 0) > 0
     }
 
-    func recoverFork(in workspace: Workspace) throws {
-        guard let data = try read(pendingFork) else { return }
-        let fork = try JSONDecoder().decode(PendingConversationFork.self, from: data)
-        let saved = workspace.projects.contains { project in
-            project.id == fork.projectID && project.conversations.contains { $0.id == fork.threadID }
-        }
-        if !saved {
-            let directory = try forkDirectory(fork)
-            let file = directory.appendingPathComponent(fork.threadID.uuidString + ".jsonl")
+    func recoverHistory(in workspace: Workspace) throws {
+        guard let data = try read(pendingHistory) else { return }
+        let pending = try JSONDecoder().decode(PendingConversationHistory.self, from: data)
+        let project = workspace.projects.first { $0.id == pending.projectID }
+        if project?.conversations.contains(where: { $0.id == pending.threadID }) != true {
+            let directory = try historyDirectory(for: pending)
+            let file = directory.appendingPathComponent(pending.threadID.uuidString + ".jsonl")
             if unlink(file.path) != 0 && errno != ENOENT { throw Self.accessError(file, errno) }
             if rmdir(directory.path) != 0 && errno != ENOENT {
                 throw Self.accessError(directory, errno)
             }
+            if project == nil {
+                let parent = directory.deletingLastPathComponent()
+                if rmdir(parent.path) != 0 && errno != ENOENT && errno != ENOTEMPTY {
+                    throw Self.accessError(parent, errno)
+                }
+            }
         }
-        try FileManager.default.removeItem(at: pendingFork)
+        try FileManager.default.removeItem(at: pendingHistory)
     }
 
-    private func forkDirectory(_ fork: PendingConversationFork) throws -> URL {
+    private func historyDirectory(for pending: PendingConversationHistory) throws -> URL {
         let root = root.resolvingSymlinksInPath().standardizedFileURL
-        let directory = Self.historyComponents(project: fork.projectID, conversation: fork.threadID).reduce(root) {
+        let directory = Self.historyComponents(project: pending.projectID, conversation: pending.threadID).reduce(root) {
             $0.appendingPathComponent($1, isDirectory: true)
         }
         guard directory.resolvingSymlinksInPath().path == directory.path else {
-            throw WorkspaceError("The fork history folder must be inside this workspace.")
+            throw WorkspaceError("The conversation history folder must be inside this workspace.")
         }
         return directory
     }

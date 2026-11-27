@@ -74,7 +74,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private struct ForkRequest {
-        let destination: PendingConversationFork
+        let destination: PendingConversationHistory
         let child: Conversation
     }
 
@@ -152,8 +152,7 @@ final class WorkspaceModel: ObservableObject {
 
     @discardableResult
     func editDraft(_ text: String, in threadID: UUID, preserveDraftOnCredentialMatch: Bool = false) -> Bool {
-        guard let conversation, conversation.id == threadID, !conversation.archived,
-              conversation.worktreeLaunch == nil, conversation.composerSubmission == nil, text != draft,
+        guard canUseQueue, let conversation, conversation.id == threadID, text != draft,
               let p = selectedProjectIndex,
               let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == threadID }) else { return false }
         var text = text
@@ -525,7 +524,8 @@ final class WorkspaceModel: ObservableObject {
         let project = workspace.projects[p]
         let thread = project.conversations[t]
         guard target.draftGeneration == composerDraftGenerations[thread.id],
-              !thread.archived, thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
+              !thread.archived, thread.importedPiSessionID == nil,
+              thread.worktreeLaunch == nil, thread.composerSubmission == nil else { return false }
         if let id = target.queueEditID {
             guard conversation?.id == thread.id, queueEdit?.sessionID == id else { return false }
         }
@@ -566,7 +566,8 @@ final class WorkspaceModel: ObservableObject {
         queueEdit != nil && sideChatCommand == nil && hasPrompt && attachmentSendError == nil
     }
     private var canUseQueue: Bool {
-        conversation?.archived == false && conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil
+        conversation?.archived == false && conversation?.importedPiSessionID == nil &&
+            conversation?.worktreeLaunch == nil && conversation?.composerSubmission == nil
     }
     private var promptText: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasPrompt: Bool { !promptText.isEmpty || !composerAttachments.isEmpty }
@@ -645,7 +646,7 @@ final class WorkspaceModel: ObservableObject {
         do {
             let store = try WorkspaceStore(root: root)
             workspace = try store.load(restoringPrevious: restoringPrevious)
-            try? store.recoverFork(in: workspace)
+            try? store.recoverHistory(in: workspace)
             self.store = store
             refreshSnoozes()
             showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
@@ -739,7 +740,8 @@ final class WorkspaceModel: ObservableObject {
     }
     private var canChangeWorkingDirectory: Bool {
         guard !operationsInProgress,
-              let conversation, !conversation.archived, conversation.composerSubmission == nil else { return false }
+              let conversation, !conversation.archived, conversation.importedPiSessionID == nil,
+              conversation.composerSubmission == nil else { return false }
         if let launch = conversation.worktreeLaunch, launch.stage != .createCheckout || !launch.canInterrupt {
             return false
         }
@@ -769,7 +771,8 @@ final class WorkspaceModel: ObservableObject {
 
     func start() {
         guard !showingWelcome, process == nil, failedStartupDraftProject == nil else { return }
-        if let conversation, project?.isScratch == true || conversation.forkOrigin != nil || conversation.hasDraftContent ||
+        if let conversation, project?.isScratch == true || conversation.importedPiSessionID != nil ||
+            conversation.forkOrigin != nil || conversation.hasDraftContent ||
             conversation.composerSubmission != nil || conversation.worktreeLaunch != nil ||
             !(conversation.sideChats ?? []).isEmpty ||
             (conversation.isDraft == true && conversation.workingLocation != .project) ||
@@ -825,7 +828,7 @@ final class WorkspaceModel: ObservableObject {
         for continuation in requests.values { continuation.resume(returning: nil) }
         if forkRequest != nil {
             forkRequest = nil
-            try? store?.recoverFork(in: workspace)
+            try? store?.recoverHistory(in: workspace)
         }
         activeTurnID = nil
         pendingToolApproval = nil
@@ -1042,11 +1045,24 @@ final class WorkspaceModel: ObservableObject {
 
     func registerDiscoveredPiProjects(_ candidates: [PiHistoryDiscovery.Candidate]) throws {
         try checkCanOpenProject()
-        var registered = Set(workspace.projects.compactMap { PiHistoryDiscovery.FolderID($0.path) })
+        var registered = Set<PiHistoryDiscovery.FolderID>()
+        var detached: [PiHistoryDiscovery.FolderID: Int] = [:]
+        for (index, project) in workspace.projects.enumerated() {
+            guard let folder = PiHistoryDiscovery.FolderID(project.path) else { continue }
+            if project.detached == true {
+                if detached[folder] == nil { detached[folder] = index }
+            } else {
+                registered.insert(folder)
+            }
+        }
         var updated = workspace
         for candidate in candidates where registered.insert(candidate.id).inserted {
             let folder = try candidate.checkedFolder()
-            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+            if let index = detached[candidate.id] {
+                updated.projects[index].detached = false
+            } else {
+                updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+            }
         }
         try persist(updated)
     }
@@ -1077,6 +1093,63 @@ final class WorkspaceModel: ObservableObject {
             showArchive = conversation?.archived == true
             connect()
         }
+    }
+
+    func openDiscoveredPiSession(_ session: PiHistoryDiscovery.Session,
+                                 in candidate: PiHistoryDiscovery.Candidate) async throws {
+        try checkCanOpenProject()
+        let threadID = UUID()
+        let snapshot: Data?
+        if workspace.projects.contains(where: { project in
+            PiHistoryDiscovery.FolderID(project.path) == candidate.id &&
+                project.conversations.contains { $0.importedPiSessionID == session.id }
+        }) {
+            snapshot = nil
+        } else {
+            let read = Task.detached(priority: .userInitiated) {
+                try PiHistoryDiscovery.importHistory(session, from: candidate, threadID: threadID)
+            }
+            snapshot = try await withTaskCancellationHandler {
+                try await read.value
+            } onCancel: {
+                read.cancel()
+            }
+        }
+        try Task.checkCancellation()
+        guard showingWelcome, let store else { throw CancellationError() }
+        try checkCanOpenProject()
+        let folder = try candidate.checkedFolder()
+
+        var updated = workspace
+        let index = updated.projects.firstIndex { PiHistoryDiscovery.FolderID($0.path) == candidate.id }
+            ?? updated.projects.count
+        if index == updated.projects.count {
+            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+        }
+        let existing = updated.projects[index].conversations.first { $0.importedPiSessionID == session.id }
+        let projectID = updated.projects[index].id
+        updated.projects[index].detached = false
+        updated.projects[index].selectedConversation = existing?.id ?? threadID
+        updated.selectedProject = projectID
+        updated.welcomeCompleted = true
+        let pending = existing == nil ? PendingConversationHistory(projectID: projectID, threadID: threadID) : nil
+        defer {
+            if pending != nil { try? store.recoverHistory(in: workspace) }
+        }
+        if let pending {
+            guard let snapshot else { throw WorkspaceError("The selected project changed. Try opening the session again.") }
+            try store.prepareHistory(pending, in: workspace)
+            try store.writeImportedHistory(snapshot, to: pending)
+            updated.projects[index].conversations.insert(
+                Conversation(id: threadID, title: session.title, lastActiveAt: session.modified,
+                             isDraft: false, importedPiSessionID: session.id), at: 0
+            )
+        }
+        try persist(updated)
+        showingWelcome = false
+        failedStartupDraftProject = nil
+        showArchive = existing?.archived == true
+        connect()
     }
 
     func openDroppedProjects(_ urls: [URL]) throws -> Bool {
@@ -1890,7 +1963,7 @@ final class WorkspaceModel: ObservableObject {
             guard current == command else { throw WorkspaceError("The linked thread changed. Open the link again.") }
             try select(index, thread)
         }
-        let worker = try makeProcess(store.config, command.cwd)
+        let worker = try makeProcess(store.config, command.config == nil ? store.root.path : command.cwd)
         return try await withCheckedThrowingContinuation { result in
             pendingThreadLink = (worker, result)
             worker.onClose = { [weak self, weak worker] in
@@ -1912,7 +1985,8 @@ final class WorkspaceModel: ObservableObject {
         do {
             switch event {
             case let .credential(id, read):
-                try replyToCredential(id, read: read, account: command.config.account, worker: worker)
+                guard let config = command.config else { throw WorkspaceError("The Pi transcript cannot access model credentials.") }
+                try replyToCredential(id, read: read, account: config.account, worker: worker)
             case let .modelCatalog(catalog):
                 modelCatalog = catalog
             case .ready:
@@ -1921,7 +1995,7 @@ final class WorkspaceModel: ObservableObject {
                 resetConnection()
                 error = nil
                 attach(worker, config: command.config)
-                receive(event, from: worker, account: command.config.account)
+                receive(event, from: worker, account: command.config?.account)
                 finishOpeningThreadLink()
                 pending.result.resume(returning: true)
             case let .fatal(message):
@@ -1967,7 +2041,9 @@ final class WorkspaceModel: ObservableObject {
         guard !thread.workingLocation.needsWorktree, thread.worktreeLaunch == nil else {
             throw WorkspaceError("The linked thread’s checkout is unavailable.")
         }
-        try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "thread")
+        if thread.importedPiSessionID == nil {
+            try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "thread")
+        }
         var command = try openCommand(project: project, thread: thread, store: store)
         command.requireHistory = thread.isDraft != true
         return command
@@ -2110,19 +2186,19 @@ final class WorkspaceModel: ObservableObject {
     func forkResponse(_ messageID: String) {
         guard let message = messages.first(where: { $0.id == messageID }), canForkResponse(message),
               let project, let source = conversation, let store, let process else { return }
-        let destination = PendingConversationFork(projectID: project.id, threadID: UUID())
+        let destination = PendingConversationHistory(projectID: project.id, threadID: UUID())
         let child = Conversation(id: destination.threadID, title: source.title + " fork",
                                  lastActiveAt: Date(), location: source.location, isDraft: false,
                                  forkOrigin: .init(threadID: source.id, messageID: messageID),
                                  modelSelection: source.modelSelection, historyModel: connectedModel)
         do {
-            try store.prepareFork(destination, in: workspace)
+            try store.prepareHistory(destination, in: workspace)
             error = nil
             forkRequest = ForkRequest(destination: destination, child: child)
             try process.send(ForkConversation(threadID: child.id, messageID: messageID))
         } catch {
             forkRequest = nil
-            try? store.recoverFork(in: workspace)
+            try? store.recoverHistory(in: workspace)
             self.error = "Could not create the conversation fork. \(error.localizedDescription)"
         }
     }
@@ -2142,11 +2218,11 @@ final class WorkspaceModel: ObservableObject {
             updated.projects[index].selectedConversation = threadID
             try persist(updated)
         } catch {
-            try? store.recoverFork(in: workspace)
+            try? store.recoverHistory(in: workspace)
             self.error = error.localizedDescription
             return
         }
-        try? store.recoverFork(in: workspace)
+        try? store.recoverHistory(in: workspace)
         showArchive = false
         connect()
     }
@@ -2550,7 +2626,8 @@ final class WorkspaceModel: ObservableObject {
             let previous = project.modelOverride ?? workspace.model
             let replacement = next.projects[p].modelOverride ?? next.model
             guard (try? previous.validated())?.account != (try? replacement.validated())?.account else { continue }
-            for (t, thread) in project.conversations.enumerated() where thread.modelSelection == nil {
+            for (t, thread) in project.conversations.enumerated()
+                where thread.modelSelection == nil && thread.importedPiSessionID == nil {
                 guard thread.historyModel != nil || thread.isDraft == false || thread.forkOrigin != nil ||
                         thread.composerSubmission != nil || thread.worktreeLaunch?.awaitingHistory == true ||
                         store.hasSavedHistory(project: project.id, conversation: thread.id) else { continue }
@@ -3261,13 +3338,17 @@ final class WorkspaceModel: ObservableObject {
         }
         if let launch = conversation.worktreeLaunch, !preparingWorktree, !launch.awaitingHistory { return }
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard conversation.importedPiSessionID != nil ||
+                (FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory) && isDirectory.boolValue) else {
             connectionFailed("The thread’s workspace folder is no longer available.")
             return
         }
         do {
             let command = try openCommand(project: project, thread: conversation, store: store)
-            let worker = try makeProcess(store.config, directory)
+            if command.config == nil {
+                try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: conversation.id)
+            }
+            let worker = try makeProcess(store.config, command.config == nil ? store.root.path : directory)
             attach(worker, config: command.config)
             try worker.send(command)
         } catch {
@@ -3276,19 +3357,22 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func openCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
-        try OpenConversation(cwd: thread.workingLocation.directory(in: project),
-                             sessionDir: store.history(project: project.id, conversation: thread.id).path,
-                             threadID: thread.id.uuidString, config: workspace.modelSettings(for: thread, in: project).validated(),
-                             toolPermission: project.toolPermission, forkMessageID: thread.forkOrigin?.messageID)
+        let imported = thread.importedPiSessionID != nil
+        return try OpenConversation(cwd: thread.workingLocation.directory(in: project),
+                                    sessionDir: store.history(project: project.id, conversation: thread.id).path,
+                                    threadID: thread.id.uuidString,
+                                    config: imported ? nil : workspace.modelSettings(for: thread, in: project).validated(),
+                                    toolPermission: project.toolPermission, forkMessageID: thread.forkOrigin?.messageID,
+                                    requireHistory: imported)
     }
 
-    private func attach(_ worker: any PiConnection, config: ModelSettings) {
+    private func attach(_ worker: any PiConnection, config: ModelSettings?) {
         phase = .connecting
         process = worker
         connectedModel = config
         worker.onEvent = { [weak self, weak worker] event in
             guard let self, let worker, self.process === worker else { return }
-            self.receive(event, from: worker, account: config.account)
+            self.receive(event, from: worker, account: config?.account)
         }
         worker.onClose = { [weak self, weak worker] in
             guard let self, let worker, self.process === worker else { return }
@@ -3407,11 +3491,15 @@ final class WorkspaceModel: ObservableObject {
         try worker.send(result)
     }
 
-    private func receive(_ event: PiEvent, from worker: any PiConnection, account: String) {
+    private func receive(_ event: PiEvent, from worker: any PiConnection, account: String?) {
         switch event {
         case let .sentAttachment(requestID, payload):
             sentAttachmentRequests.removeValue(forKey: requestID)?.resume(returning: payload)
         case let .credential(id, read):
+            guard let account else {
+                connectionFailed("The Pi transcript cannot access model credentials.")
+                return
+            }
             do {
                 try replyToCredential(id, read: read, account: account, worker: worker)
             } catch {
@@ -3430,6 +3518,7 @@ final class WorkspaceModel: ObservableObject {
                 finishOpeningThreadLink()
                 pending.result.resume(returning: true)
             }
+            guard account != nil else { return }
             reconcileComposerSubmission(in: history, ended: true)
             releaseUnsentModel(in: history)
             if connectedModel != (try? effectiveModel.validated()) {
@@ -3547,6 +3636,7 @@ extension WorkspaceModel {
 
     var canStartSideChat: Bool {
         guard !gitMutationInProgress, !preparingWorktree, let parent = conversation, !parent.archived,
+              parent.importedPiSessionID == nil,
               parent.worktreeLaunch == nil, !parent.workingLocation.needsWorktree else { return false }
         return messages.contains { $0.role == .user }
     }

@@ -106,7 +106,7 @@ struct OpenConversation: Encodable, Equatable {
     let cwd: String
     let sessionDir: String
     let threadID: String
-    let config: ModelSettings
+    let config: ModelSettings? // Imported transcripts open without a model or credential route.
     let toolPermission: ToolPermission
     var forkMessageID: String?
     var requireHistory = false

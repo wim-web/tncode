@@ -1242,7 +1242,7 @@ struct WorkspaceView: View {
                            status: ThreadSnoozeStatus? = nil) -> some View {
         let selected = model.conversation?.id == link.id
         let emphasized = searchTerm.isEmpty ? selected : highlighted
-        let acceptsAttachments = !link.thread.archived && link.thread.worktreeLaunch == nil &&
+        let acceptsAttachments = !link.thread.archived && link.thread.importedPiSessionID == nil && link.thread.worktreeLaunch == nil &&
             link.thread.composerSubmission == nil && (!model.operationsInProgress || selected)
         return HStack(spacing: 5) {
             threadSelectionButton(link, showProject: showProject, emphasized: emphasized, acceptsAttachments: acceptsAttachments)
@@ -2901,7 +2901,8 @@ struct WorkspaceView: View {
     }
 
     private func composer(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
-        let canCompose = !thread.archived && (thread.worktreeLaunch == nil || model.phase.isRunning)
+        let canCompose = !thread.archived && thread.importedPiSessionID == nil &&
+            (thread.worktreeLaunch == nil || model.phase.isRunning)
         let question = model.pendingAgentQuestion
         return VStack(alignment: .leading, spacing: 8) {
             if let saveError = model.composerSaveError {
@@ -2920,6 +2921,12 @@ struct WorkspaceView: View {
                     .id(launch.id ?? thread.id)
             }
             snoozeConversationStatus(thread, project: project)
+            if thread.importedPiSessionID != nil {
+                Text("Read-only Pi transcript. The original account is unknown, so replies are unavailable here.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("imported-pi-transcript")
+            }
             if thread.archived {
                 Button("Restore Thread") {
                     restoreThread(thread.id, in: project.id)
