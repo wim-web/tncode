@@ -51,7 +51,7 @@ struct AboutView: View {
                     .accessibilityIdentifier("about-app-name")
             }
             VStack(spacing: 6) {
-                informationRow("Version", value: info.version, id: "about-version")
+                versionRow
                 informationRow("Build", value: info.build, id: "about-build")
                 Divider()
                 informationRow("Pi coding agent", value: componentVersion(DependencyNotice.piPackage),
@@ -79,6 +79,19 @@ struct AboutView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var versionRow: some View {
+        let row = informationRow("Version", value: info.version, id: "about-version")
+        if let settingsFocus {
+            row
+                .accessibilityElement(children: .contain)
+                .focusable()
+                .settingsTarget(.appVersion, focus: settingsFocus)
+        } else {
+            row
+        }
     }
 
     private func componentVersion(_ id: String) -> String? {

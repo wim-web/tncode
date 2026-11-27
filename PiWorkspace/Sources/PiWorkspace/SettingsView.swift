@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
+    @ObservedObject private var request: SettingsRequest
     let appearance: AppearanceSettings
     let browserDefaults: UserDefaults
     let pasteboard: NSPasteboard
@@ -22,17 +23,19 @@ struct SettingsView: View {
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
-    @State private var showingLicenses = false
+    @State private var showingLicenses: Bool
 
     init(model: WorkspaceModel, appearance: AppearanceSettings, browserDefaults: UserDefaults,
          request: SettingsRequest, pasteboard: NSPasteboard = .general, openWelcome: @escaping () -> Void) {
         self.model = model
+        self.request = request
         self.appearance = appearance
         self.browserDefaults = browserDefaults
         self.pasteboard = pasteboard
         self.openWelcome = openWelcome
         _page = State(initialValue: request.page)
-        _jump = State(initialValue: request.anchor.map { SettingsJump(anchor: $0) })
+        _jump = State(initialValue: request.destination.anchor.map { SettingsJump(anchor: $0) })
+        _showingLicenses = State(initialValue: request.destination.anchor == .licenses)
         let project = model.projects.first { $0.id == request.projectID }
         _modelDraft = State(initialValue: ModelSettingsDraft(workspace: model.workspace.model, project: project))
         _projectTitle = State(initialValue: project?.title ?? "")
@@ -123,6 +126,9 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings")
         .environment(\.settingsJump, jump)
         .background { WindowKeyMonitor(handle: handleKey) }
+        .onChange(of: request.destination) { _, destination in
+            navigate(to: destination.page, anchor: destination.anchor)
+        }
         .onChange(of: focus) { previous, _ in
             if previous == .anchor(.addProjectStartsIn) { commitProjectBaseDirectory() }
             if previous == .anchor(.worktreeLocation) { commitWorktreeDirectory(worktreeDirectory) }

@@ -665,6 +665,17 @@ final class WorkspaceModel: ObservableObject {
         settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id)
     }
 
+    func openSettingsLink(_ url: URL) -> Bool {
+        guard let link = SettingsDeepLink(url: url) else { return false }
+        if let settingsRequest {
+            settingsRequest.navigate(to: link)
+        } else {
+            openSettings(.about, anchor: link.anchor)
+        }
+        threadLinkError = nil
+        return true
+    }
+
     var canOpenCommandPalette: Bool {
         store != nil && !showingWelcome && !operationsInProgress &&
             !showingSettings && !showingQuitSaveFailure && projectPicker == nil

@@ -69,7 +69,7 @@ final class SettingsNavigationTests: XCTestCase {
 
     func testNativeSearchReachesScopedModelAndCustomBrowserURL() async throws {
         let fixture = try Fixture()
-        defer { fixture.window.close() }
+        defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
 
         let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
@@ -117,9 +117,74 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(saved.model.provider, .openai)
     }
 
+    func testNativeVersionSearchAndLinksKeepTheOpenSettingsDraft() async throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
+        let request = try XCTUnwrap(fixture.model.settingsRequest)
+        let licenses = try XCTUnwrap(URL(string: "pi-workspace://settings/open-source-licenses"))
+        let version = try XCTUnwrap(URL(string: "pi-workspace://settings/about#app-version"))
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+
+        try await fixture.typeQuery("Version", in: search)
+        try await fixture.until("Version is a distinct About search result") {
+            fixture.element("settings-result-app-version") != nil
+        }
+        try await fixture.key(kVK_Return, "\r")
+        try await fixture.expectVersion()
+
+        try await fixture.press("settings-nav-model")
+        let modelID = try await fixture.waitForField("model ID") { $0.stringValue == "local-override" }
+        XCTAssertTrue(fixture.window.makeFirstResponder(modelID))
+        let editor = try XCTUnwrap(modelID.currentEditor() as? NSTextView)
+        editor.insertText("unsaved-model", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        XCTAssertEqual(modelID.stringValue, "unsaved-model")
+
+        XCTAssertTrue(fixture.model.openSettingsLink(licenses))
+        try await fixture.expectLicenses()
+        XCTAssertTrue(fixture.model.openSettingsLink(version))
+        try await fixture.expectVersion()
+        XCTAssertTrue(fixture.model.settingsRequest === request)
+
+        try await fixture.press("settings-nav-model")
+        _ = try await fixture.waitForField("unsaved model ID") { $0.stringValue == "unsaved-model" }
+        XCTAssertEqual(fixture.model.workspace.activeProject?.modelOverride?.model, "local-override")
+
+        XCTAssertTrue(fixture.model.openSettingsLink(version))
+        try await fixture.expectVersion()
+    }
+
+    func testNativeLicenseLinkOpensDirectlyFromClosedSettings() async throws {
+        let link = try XCTUnwrap(URL(string: "pi-workspace://settings/open-source-licenses"))
+        let fixture = try Fixture(link: link)
+        defer { fixture.close() }
+        try await fixture.expectLicenses()
+    }
+
+    func testSettingsLinkRecognizesOnlyTheTwoDestinations() throws {
+        let links: [(String, SettingsDeepLink?)] = [
+            ("pi-workspace://settings/open-source-licenses", .licenses),
+            ("PI-WORKSPACE://SETTINGS/about#app-version", .version),
+            ("pi-workspace://settings/about", nil),
+            ("pi-workspace://settings/about#version", nil),
+            ("pi-workspace://settings/about?#app-version", nil),
+            ("pi-workspace://settings/open-source-licenses/", nil),
+            ("pi-workspace://settings/open-source-licenses#app-version", nil),
+            ("pi-workspace://settings:1/about#app-version", nil),
+            ("pi-workspace://user@settings/about#app-version", nil),
+            ("pi-workspace://thread/v1/about#app-version", nil),
+            ("pi-workspace://draft/v1/about#app-version", nil),
+            ("https://settings/about#app-version", nil)
+        ]
+        for (text, expected) in links {
+            let url = try XCTUnwrap(URL(string: text))
+            XCTAssertEqual(SettingsDeepLink(url: url), expected, text)
+        }
+    }
+
     func testNativeFolderPreferenceCommitsOnReturnAndBlur() async throws {
         let fixture = try Fixture()
-        defer { fixture.window.close() }
+        defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
         let first = fixture.root.appendingPathComponent("First Projects")
         let second = fixture.root.appendingPathComponent("Second Projects")
@@ -165,9 +230,9 @@ final class SettingsNavigationTests: XCTestCase {
         let model: WorkspaceModel
         let host: NSView
         let window: NSWindow
+        let activationPolicy: NSApplication.ActivationPolicy
 
-        init() throws {
-            _ = NSApplication.shared
+        init(link: URL? = nil) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             suite = "SettingsNavigationTests.\(root.lastPathComponent)"
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -181,9 +246,17 @@ final class SettingsNavigationTests: XCTestCase {
                 throw WorkspaceError("No Pi helper in this test.")
             })
             XCTAssertNil(model.startupFailure)
-            model.openSettings()
+            if let link {
+                XCTAssertTrue(model.openSettingsLink(link))
+            } else {
+                model.openSettings()
+            }
             let request = try XCTUnwrap(model.settingsRequest)
             let appearance = AppearanceSettings(defaults: defaults)
+            let app = NSApplication.shared
+            activationPolicy = app.activationPolicy()
+            app.setActivationPolicy(.prohibited)
+            app.finishLaunching()
             host = NSHostingView(rootView: SettingsView(model: model, appearance: appearance,
                                                        browserDefaults: defaults, request: request, openWelcome: {})
                 .defaultAppStorage(defaults))
@@ -200,6 +273,12 @@ final class SettingsNavigationTests: XCTestCase {
         deinit {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: root)
+        }
+
+        func close() {
+            window.contentView = nil
+            window.close()
+            NSApplication.shared.setActivationPolicy(activationPolicy)
         }
 
         func typeQuery(_ query: String, in field: NSTextField) async throws {
@@ -238,6 +317,41 @@ final class SettingsNavigationTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(15))
             }
             XCTAssertTrue(matches(), description, file: file, line: line)
+        }
+
+        func expectVersion() async throws {
+            try await until("Version anchor and app version value are visible") {
+                element("app-version") != nil &&
+                    (element("about-version") as? NSAccessibilityProtocol)?.accessibilityValue() as? String
+                        == (AboutInfo().version ?? "Unavailable")
+            }
+        }
+
+        func expectLicenses() async throws {
+            try await until("Open source licenses panel is visible") {
+                element("licenses-back") != nil &&
+                    element(DependencyNotice.load() == nil ? "licenses-unavailable" : "licenses-list") != nil
+            }
+            XCTAssertNil(element("app-version"))
+        }
+
+        func press(_ id: String) async throws {
+            try await until("Control \(id) is visible") { element(id) != nil }
+            let control = try XCTUnwrap(element(id))
+            XCTAssertTrue(control.accessibilityPerformPress?() == true)
+        }
+
+        func element(_ id: String) -> AnyObject? {
+            var visited = Set<ObjectIdentifier>()
+            func find(_ node: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let match = find(child as AnyObject) { return match }
+                }
+                return nil
+            }
+            return find(host) ?? find(window)
         }
 
         private func textField(_ matches: @escaping (NSTextField) -> Bool) -> NSTextField? {

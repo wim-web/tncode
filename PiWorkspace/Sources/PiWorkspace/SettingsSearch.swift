@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
@@ -57,15 +58,52 @@ enum SettingsAnchor: String {
     case resetModelOverride = "reset-model-override"
     case searchEngine = "browser-search-engine"
     case customSearchURL = "browser-custom-search-url"
+    case appVersion = "app-version"
     case licenses = "licenses-search"
     case welcomePage = "welcome-page"
 }
 
-struct SettingsRequest: Identifiable {
+enum SettingsDeepLink: String {
+    case licenses = "open-source-licenses"
+    case version = "about#app-version"
+
+    init?(url: URL) {
+        let authority = "\(ThreadLink.scheme)://settings/"
+        let text = url.absoluteString
+        guard text.prefix(authority.count).lowercased() == authority else { return nil }
+        self.init(rawValue: String(text.dropFirst(authority.count)))
+    }
+
+    var anchor: SettingsAnchor {
+        switch self {
+        case .licenses: .licenses
+        case .version: .appVersion
+        }
+    }
+}
+
+@MainActor
+final class SettingsRequest: ObservableObject, Identifiable {
+    struct Destination: Equatable {
+        let id = UUID()
+        let page: SettingsPage
+        let anchor: SettingsAnchor?
+    }
+
     let id = UUID()
-    let page: SettingsPage
-    let anchor: SettingsAnchor?
     let projectID: UUID?
+    @Published private(set) var destination: Destination
+
+    var page: SettingsPage { destination.page }
+
+    init(page: SettingsPage, anchor: SettingsAnchor?, projectID: UUID?) {
+        self.projectID = projectID
+        destination = Destination(page: page, anchor: anchor)
+    }
+
+    func navigate(to link: SettingsDeepLink) {
+        destination = Destination(page: .about, anchor: link.anchor)
+    }
 }
 
 enum SettingsFocus: Hashable {
@@ -167,6 +205,7 @@ struct SettingsSearch {
         .init(page: .browser, anchor: .searchEngine, title: "Search engine", keywords: "browser address DuckDuckGo Google Bing Brave Kagi Ecosia Custom"),
         .init(page: .browser, anchor: .customSearchURL, title: "Custom search URL", keywords: "browser search template %s"),
         .init(page: .about, title: "About", keywords: "app name version build dependencies"),
+        .init(page: .about, anchor: .appVersion, title: "Version", keywords: "app version build release"),
         .init(page: .about, anchor: .licenses, title: "Open source licenses", keywords: "dependencies third-party notices SwiftTerm Node Pi"),
         .init(page: .about, anchor: .welcomePage, title: "Welcome page", keywords: "onboarding setup first run getting started agents import projects"),
     ]

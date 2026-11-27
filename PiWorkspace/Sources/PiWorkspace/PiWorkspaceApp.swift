@@ -75,6 +75,10 @@ struct PiWorkspaceApp: App {
             }
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
                 .onOpenURL { url in
+                    if model.openSettingsLink(url) {
+                        launchWorkspace()
+                        return
+                    }
                     let request = UUID()
                     openingURL = request
                     Task {

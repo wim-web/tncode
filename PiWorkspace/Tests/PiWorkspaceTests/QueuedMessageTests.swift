@@ -3,6 +3,34 @@ import XCTest
 
 final class QueuedMessageTests: XCTestCase {
     @MainActor
+    func testSettingsLinksPreserveTheActiveTurnAndItsQueue() throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.open()
+        let worker = fixture.worker
+        let active = try worker.start("Active", in: model)
+        fixture.append(["First", "Second"], in: model)
+        let items = model.queuedMessages
+        model.draft = "Unsent follow-up"
+        let index = fixture.root.appendingPathComponent("workspace.json")
+        let saved = try Data(contentsOf: index)
+
+        let links = ["pi-workspace://settings/open-source-licenses", "pi-workspace://settings/about#app-version"]
+        for text in links {
+            let url = try XCTUnwrap(URL(string: text))
+            XCTAssertTrue(model.openSettingsLink(url))
+            XCTAssertEqual(model.conversation?.id, fixture.thread)
+            XCTAssertEqual(model.phase, .running)
+            XCTAssertEqual(model.queuedMessages, items)
+            XCTAssertEqual(model.draft, "Unsent follow-up")
+            XCTAssertEqual(try Data(contentsOf: index), saved)
+            XCTAssertEqual(worker.prompts.map(\.turnID), [active.turnID])
+        }
+        worker.finish(active)
+        XCTAssertEqual(worker.prompts.last?.queuedID, items[0].id)
+    }
+
+    @MainActor
     func testQueueEditsPreserveDraftAndDrainInOrderAfterTheActiveTurn() async throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }
