@@ -6,12 +6,19 @@ struct GitHubRepository: Hashable, Sendable {
 
     var cliName: String { "github.com/" + slug }
 
-    fileprivate init?(owner: Substring, name: Substring) {
+    init?(owner: Substring, name: Substring) {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
         guard [owner, name].allSatisfy({
             !$0.isEmpty && $0 != "." && $0 != ".." && $0.unicodeScalars.allSatisfy(allowed.contains)
         }) else { return nil }
         slug = "\(owner)/\(name)".lowercased()
+    }
+
+    static func webPath(in url: String) -> String? {
+        guard let components = URLComponents(string: url), components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "github.com", components.port == nil,
+              components.user == nil, components.password == nil else { return nil }
+        return components.percentEncodedPath
     }
 
     fileprivate init?(remote: String) {
@@ -46,10 +53,7 @@ struct GitHubPullRequestReference: Codable, Hashable, Sendable {
     }
 
     init?(url: String) {
-        guard let components = URLComponents(string: url), components.scheme?.lowercased() == "https",
-              components.host?.lowercased() == "github.com", components.port == nil,
-              components.user == nil, components.password == nil,
-              let path = components.percentEncodedPath.wholeMatch(of: #/\/([^\/]+)\/([^\/]+)\/pull\/([0-9]+)(?:\/(?:files|commits|checks))?\/?/#),
+        guard let path = GitHubRepository.webPath(in: url)?.wholeMatch(of: #/\/([^\/]+)\/([^\/]+)\/pull\/([0-9]+)(?:\/(?:files|commits|checks))?\/?/#),
               let repository = GitHubRepository(owner: path.1, name: path.2),
               let number = Int(path.3) else { return nil }
         self.init(repository: repository, number: number)
@@ -200,7 +204,7 @@ enum GitHubCheckLogError: LocalizedError {
 }
 
 struct GitHubReader: Sendable {
-    private let directory: String
+    let directory: String
     private let environment: [String: String]
     private let timeout: DispatchTimeInterval
 

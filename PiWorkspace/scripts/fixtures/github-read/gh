@@ -396,19 +396,34 @@ case "$*" in
         if [ "$mode" = check-logs-replaced ]; then checks='[]'; fi
         printf '{"headRefOid":"%s","statusCheckRollup":%s,"url":"https://%s/pull/42"}\n' "$head" "$checks" "$expected_repo"
         ;;
-    "issue view 71 --json number,title,state,author,labels,body --repo $expected_repo")
+    "issue view 42 --json number,title,state,author,labels,body,url --repo $expected_repo")
+        issue_title='Issue sharing a pull request number'
+        if [ "$expected_repo" = github.com/fixture/other ]; then issue_title='Issue in the other checkout'; fi
+        issue_url="https://$expected_repo/issues/42"
+        case "$mode" in
+            wrong-repo) issue_url=https://github.com/fixture/unrelated/issues/42 ;;
+            wrong-kind) issue_url="https://$expected_repo/pull/42" ;;
+        esac
+        printf '{"number":42,"title":"%s","state":"CLOSED","author":null,"labels":[],"body":"Fixture issue #42.","url":"%s"}\n' \
+            "$issue_title" "$issue_url"
+        ;;
+    "issue view 71 --json number,title,state,author,labels,body,url --repo $expected_repo")
         if [ "$mode" = missing ]; then
             printf '%s\n' "GraphQL: Could not resolve to an Issue with the number of 71." >&2
             exit 1
         fi
         if [ "$mode" = updated ]; then
-            printf '%s\n' '{"number":71,"title":"Checkout socket timeout (updated)","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"Updated fixture issue description."}'
+            title='Checkout socket timeout (updated)'
+            description='Updated fixture issue description.'
         else
-            printf '%s\n' '{"number":71,"title":"Checkout socket timeout","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"Fixture issue description."}'
+            title='Checkout socket timeout'
+            description='Fixture issue description.'
         fi
+        printf '{"number":71,"title":"%s","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"%s","url":"https://%s/issues/71"}\n' \
+            "$title" "$description" "$expected_repo"
         ;;
-    "issue view 73 --json number,title,state,author,labels,body --repo $expected_repo")
-        printf '%s\n' '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":""}'
+    "issue view 73 --json number,title,state,author,labels,body,url --repo $expected_repo")
+        printf '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":"","url":"https://%s/issues/73"}\n' "$expected_repo"
         ;;
     "pr view 42 --json $fields,headRefName,headRefOid,baseRefName,body,statusCheckRollup,url --repo $expected_repo")
         if [ "$mode" = missing ]; then

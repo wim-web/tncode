@@ -7,7 +7,14 @@ struct ThreadPullRequestLink: Codable, Identifiable {
     var id: GitHubPullRequestReference { reference }
 }
 
-struct ThreadPullRequestScope: Hashable {
+struct ThreadIssueLink: Codable, Identifiable {
+    let reference: GitHubIssueReference
+    let title: String
+
+    var id: GitHubIssueReference { reference }
+}
+
+struct ThreadGitHubScope: Hashable {
     let projectID: UUID
     let threadID: UUID
     let directory: String

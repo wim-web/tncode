@@ -1769,7 +1769,7 @@ struct WorkspaceView: View {
             .tint(.primary)
             .accessibilityIdentifier("conversation-title")
             Spacer()
-            if let scope = model.pullRequestScope, scope.canReadRepository || !thread.pullRequestLinks.isEmpty {
+            if let scope = model.gitHubScope, scope.canReadRepository || thread.hasGitHubLinks {
                 PullRequestsButton(workspace: model, scope: scope, pasteboard: workspacePasteboard)
                     .id(scope)
             }

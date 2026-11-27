@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PullRequestsButton: View {
     let workspace: WorkspaceModel
-    let scope: ThreadPullRequestScope
+    let scope: ThreadGitHubScope
     let pasteboard: NSPasteboard
     @State private var presented = false
 
@@ -26,25 +26,29 @@ private enum GitHubDetailLoad<Value> {
     case failed(String)
 }
 
-private struct GitHubBrowserView: View {
+struct GitHubBrowserView: View {
     private enum Tab: Hashable {
         case pullRequests, issues, linkedItems
     }
 
     @ObservedObject var workspace: WorkspaceModel
-    let scope: ThreadPullRequestScope
+    let scope: ThreadGitHubScope
     let pasteboard: NSPasteboard
     @Environment(\.dismiss) private var dismiss
     @State private var tab: Tab
+    @State private var linking: ThreadGitHubLinkRequest?
+    @State private var issueLinkError: String?
     @StateObject private var pullRequests: GitHubBrowserModel
     @StateObject private var issues: GitHubBrowserModel
+    private let reader: GitHubReader
 
-    init(workspace: WorkspaceModel, scope: ThreadPullRequestScope, pasteboard: NSPasteboard) {
+    init(workspace: WorkspaceModel, scope: ThreadGitHubScope, pasteboard: NSPasteboard) {
         self.workspace = workspace
         self.scope = scope
         self.pasteboard = pasteboard
         _tab = State(initialValue: scope.canReadRepository ? .pullRequests : .linkedItems)
-        let reader = GitHubReader(directory: scope.directory)
+        let reader = workspace.gitHubReader(in: scope)
+        self.reader = reader
         _pullRequests = StateObject(wrappedValue: .init(kind: .pullRequests, reader: reader))
         _issues = StateObject(wrappedValue: .init(kind: .issues, reader: reader))
     }
@@ -64,14 +68,44 @@ private struct GitHubBrowserView: View {
             }
             .padding([.horizontal, .top], 16)
             if tab == .linkedItems {
-                ThreadPullRequestsView(workspace: workspace, scope: scope, pasteboard: pasteboard)
+                ThreadLinkedItemsView(workspace: workspace, scope: scope, reader: reader, pasteboard: pasteboard) {
+                    linking = $0
+                }
             } else {
-                GitHubListView(directory: scope.directory, repositoryRevision: workspace.repositoryRevision,
-                               model: tab == .pullRequests ? pullRequests : issues)
+                if tab == .issues, let issueLinkError {
+                    Text(issueLinkError)
+                        .foregroundStyle(.red)
+                        .padding(8)
+                        .accessibilityIdentifier("issue-link-action-error")
+                }
+                GitHubListView(reader: reader, repositoryRevision: workspace.repositoryRevision,
+                               model: tab == .pullRequests ? pullRequests : issues,
+                               issueIsLinked: { reference in
+                                   workspace.gitHubScope == scope
+                                       && workspace.conversation?.issueLinks.contains(where: { $0.id == reference }) == true
+                               },
+                               changeIssueLink: changeIssueLink)
                 .id(tab)
             }
         }
         .frame(minWidth: 660, idealWidth: 730, minHeight: 425, idealHeight: 510)
+        .sheet(item: $linking) { link in
+            LinkThreadGitHubItemDialog(workspace: workspace, scope: scope, link: link)
+        }
+        .onChange(of: issues.selection) { _, _ in issueLinkError = nil }
+    }
+
+    private func changeIssueLink(_ reference: GitHubIssueReference, isLinked: Bool) {
+        issueLinkError = nil
+        if isLinked {
+            do {
+                try workspace.unlinkIssue(reference, in: scope)
+            } catch {
+                issueLinkError = error.localizedDescription
+            }
+        } else {
+            linking = .issue(reference)
+        }
     }
 
     private func tabButton(_ title: String, for destination: Tab, id: String) -> some View {
@@ -90,9 +124,11 @@ private struct GitHubBrowserView: View {
 }
 
 private struct GitHubListView: View {
-    let directory: String
+    let reader: GitHubReader
     let repositoryRevision: Int
     @ObservedObject var model: GitHubBrowserModel
+    let issueIsLinked: (GitHubIssueReference) -> Bool
+    let changeIssueLink: (GitHubIssueReference, Bool) -> Void
 
     private var prefix: String { model.kind.idPrefix }
     private var itemName: String { model.kind.itemName }
@@ -131,7 +167,7 @@ private struct GitHubListView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: directory)
+            Text(verbatim: reader.directory)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .font(.caption)
@@ -178,11 +214,13 @@ private struct GitHubListView: View {
             Group {
                 switch model.kind {
                 case .pullRequests:
-                    PullRequestDetailsView(reader: GitHubReader(directory: directory),
-                                           repository: selection.repository, number: selection.number)
+                    PullRequestDetailsView(reader: reader, repository: selection.repository, number: selection.number)
                         .id(repositoryRevision)
                 case .issues:
-                    IssueDetailsView(directory: directory, repository: selection.repository, number: selection.number)
+                    IssueDetailsView(number: selection.number, isLinked: issueIsLinked, changeLink: changeIssueLink) {
+                        try await reader.issueDetails(for: selection.number, in: selection.repository)
+                    }
+                    .id(repositoryRevision)
                 }
             }
             .id(selection)
@@ -484,10 +522,11 @@ private struct PullRequestFilterChoices: View {
     }
 }
 
-private struct IssueDetailsView: View {
-    let directory: String
-    let repository: GitHubRepository
+struct IssueDetailsView: View {
     let number: Int
+    var isLinked: ((GitHubIssueReference) -> Bool)? = nil
+    var changeLink: ((GitHubIssueReference, Bool) -> Void)? = nil
+    let read: () async throws -> GitHubIssueDetails
     @State private var refresh = 0
     @State private var content: GitHubDetailLoad<GitHubIssueDetails> = .loading
 
@@ -537,6 +576,11 @@ private struct IssueDetailsView: View {
                     .accessibilityIdentifier("issue-detail-labels")
             }
             HStack {
+                if let isLinked, let changeLink {
+                    let linked = isLinked(issue.reference)
+                    Button(linked ? "Unlink from thread" : "Link to thread") { changeLink(issue.reference, linked) }
+                        .accessibilityIdentifier(linked ? "issue-unlink-from-thread" : "issue-link-to-thread")
+                }
                 Link(destination: issue.url) {
                     Label("Open on GitHub", systemImage: "arrow.up.right.square")
                 }
@@ -568,7 +612,7 @@ private struct IssueDetailsView: View {
         guard !Task.isCancelled else { return }
         content = .loading
         do {
-            let issue = try await GitHubReader(directory: directory).issueDetails(for: number, in: repository)
+            let issue = try await read()
             guard !Task.isCancelled else { return }
             content = .loaded(issue)
         } catch {

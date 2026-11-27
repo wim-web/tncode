@@ -180,6 +180,7 @@ struct Conversation: Codable, Identifiable {
     var queuedMessages: [QueuedMessage]?
     var forkOrigin: ForkOrigin?
     var linkedPullRequests: [ThreadPullRequestLink]?
+    var linkedIssues: [ThreadIssueLink]?
     var snoozedUntil: Date?
     var modelSelection: ModelSettings?
     var historyModel: ModelSettings?
@@ -188,8 +189,10 @@ struct Conversation: Codable, Identifiable {
     var workingLocation: ThreadLocation { location ?? .project }
     var threadShelf: ThreadShelf { shelf ?? .active }
     var pullRequestLinks: [ThreadPullRequestLink] { linkedPullRequests ?? [] }
+    var issueLinks: [ThreadIssueLink] { linkedIssues ?? [] }
+    var hasGitHubLinks: Bool { !pullRequestLinks.isEmpty || !issueLinks.isEmpty }
     var hasDraftContent: Bool {
-        composerText != nil || !(composerAttachments ?? []).isEmpty || !pullRequestLinks.isEmpty || modelSelection != nil
+        composerText != nil || !(composerAttachments ?? []).isEmpty || hasGitHubLinks || modelSelection != nil
     }
     var canDiscardDraft: Bool {
         isDraft == true && !archived && worktreeLaunch == nil && composerSubmission == nil

@@ -6,18 +6,18 @@ import XCTest
 @MainActor
 final class ThreadPullRequestTests: XCTestCase {
     func testProjectSwitchMovesADraftContainingOnlyAPullRequestLink() async throws {
-        let fixture = try Fixture()
-        let source: ThreadPullRequestScope
+        let fixture = try ThreadGitHubFixture()
+        let source: ThreadGitHubScope
         let destination: UUID
         do {
             let model = fixture.open()
-            source = try XCTUnwrap(model.pullRequestScope)
+            source = try XCTUnwrap(model.gitHubScope)
             let folder = fixture.root.appendingPathComponent("other-project", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
             try model.openProject(folder)
             destination = try XCTUnwrap(model.project?.id)
             model.selectConversation(source.threadID, in: source.projectID)
-            let repository = try await model.pullRequestRepository(in: source)
+            let repository = try await model.gitHubRepository(in: source)
             try await model.linkPullRequest("#42", in: source, repository: repository)
             XCTAssertNil(model.conversation?.composerText)
             model.switchDraftProject(to: destination)
@@ -36,18 +36,18 @@ final class ThreadPullRequestTests: XCTestCase {
     }
 
     func testLinksPersistByThreadAndRepository() async throws {
-        let fixture = try Fixture()
+        let fixture = try ThreadGitHubFixture()
         let workspaceURL = fixture.workspace.appendingPathComponent("workspace.json")
         XCTAssertFalse(try String(contentsOf: workspaceURL, encoding: .utf8).contains("linkedPullRequests"))
-        let first: ThreadPullRequestScope
+        let first: ThreadGitHubScope
         let firstURL = "https://github.com/fixture/workspace/pull/42"
         let otherURL = "https://github.com/fixture/other/pull/42"
         do {
             let model = fixture.open()
-            first = try XCTUnwrap(model.pullRequestScope)
+            first = try XCTUnwrap(model.gitHubScope)
             XCTAssertEqual(first.directory, fixture.checkout.path)
             XCTAssertTrue(try XCTUnwrap(model.conversation).pullRequestLinks.isEmpty)
-            let repository = try await model.pullRequestRepository(in: first)
+            let repository = try await model.gitHubRepository(in: first)
             try await model.linkPullRequest(" #42 ", in: first, repository: repository)
 
             try fixture.setRemote("https://GitHub.com/FIXTURE/Workspace.git")
@@ -68,7 +68,7 @@ final class ThreadPullRequestTests: XCTestCase {
                 try await model.linkPullRequest("42", in: first, repository: repository)
             }
             fixture.expectedRepository = "github.com/fixture/other"
-            let other = try await model.pullRequestRepository(in: first)
+            let other = try await model.gitHubRepository(in: first)
             try await model.linkPullRequest("42", in: first, repository: other)
             XCTAssertEqual(model.conversation?.pullRequestLinks.map(\.reference.url.absoluteString), [firstURL, otherURL])
             model.terminate()
@@ -77,14 +77,14 @@ final class ThreadPullRequestTests: XCTestCase {
         let relaunched = fixture.open()
         defer { relaunched.terminate() }
         relaunched.start()
-        XCTAssertEqual(relaunched.pullRequestScope, first)
+        XCTAssertEqual(relaunched.gitHubScope, first)
         let saved = try XCTUnwrap(relaunched.conversation?.pullRequestLinks)
         XCTAssertEqual(saved.map(\.reference.url.absoluteString), [firstURL, otherURL])
         XCTAssertEqual(saved.map(\.reference.number), [42, 42])
         XCTAssertEqual(Set(saved.map(\.id)).count, 2)
 
         try fixture.setRemote("https://example.invalid/fixture/other.git")
-        await expectFailure("no github.com fetch remote") { try await relaunched.pullRequestRepository(in: first) }
+        await expectFailure("no github.com fetch remote") { try await relaunched.gitHubRepository(in: first) }
         try relaunched.unlinkPullRequest(saved[0].reference, in: first)
         XCTAssertEqual(relaunched.conversation?.pullRequestLinks.map(\.reference.url.absoluteString), [otherURL])
         try relaunched.unlinkPullRequest(saved[1].reference, in: first)
@@ -94,11 +94,11 @@ final class ThreadPullRequestTests: XCTestCase {
     }
 
     func testInvalidReferencesAndFailedReadsLeaveNoLink() async throws {
-        let fixture = try Fixture()
+        let fixture = try ThreadGitHubFixture()
         let model = fixture.open()
         defer { model.terminate() }
-        let scope = try XCTUnwrap(model.pullRequestScope)
-        let repository = try await model.pullRequestRepository(in: scope)
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let repository = try await model.gitHubRepository(in: scope)
         for input in ["#0", "-42", "https://github.com/fixture/workspace/issues/42",
                       "https://github.com.evil.invalid/fixture/workspace/pull/42",
                       "https://user@github.com/fixture/workspace/pull/42"] {
@@ -126,11 +126,11 @@ final class ThreadPullRequestTests: XCTestCase {
     }
 
     func testStaleReadCannotLinkAfterThreadSwitchOrRemoteChange() async throws {
-        let fixture = try Fixture()
+        let fixture = try ThreadGitHubFixture()
         let model = fixture.open()
         defer { model.terminate() }
-        let scope = try XCTUnwrap(model.pullRequestScope)
-        let repository = try await model.pullRequestRepository(in: scope)
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let repository = try await model.gitHubRepository(in: scope)
         try await fixture.holdRead {
             let task = Task { try await model.linkPullRequest("#42", in: scope, repository: repository) }
             try await fixture.waitForRead()
@@ -170,95 +170,105 @@ final class ThreadPullRequestTests: XCTestCase {
                           file: file, line: line)
         }
     }
+}
 
-    private final class Fixture {
-        let root: URL
-        let workspace: URL
-        let checkout: URL
-        let secondThread = UUID()
-        var expectedRepository = "github.com/fixture/workspace"
-        private var state: URL { root.appendingPathComponent("state") }
-        private var log: URL { root.appendingPathComponent("commands") }
-        private var gate: URL { root.appendingPathComponent("gh-gate") }
+final class ThreadGitHubFixture {
+    let root: URL
+    let workspace: URL
+    let checkout: URL
+    let secondThread = UUID()
+    var expectedRepository = "github.com/fixture/workspace"
+    var index: URL { workspace.appendingPathComponent("workspace.json") }
+    private var state: URL { root.appendingPathComponent("state") }
+    private var log: URL { root.appendingPathComponent("commands") }
+    private var gate: URL { root.appendingPathComponent("gh-gate") }
 
-        init() throws {
-            root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            workspace = root.appendingPathComponent("workspace", isDirectory: true)
-            checkout = root.appendingPathComponent("selected checkout", isDirectory: true)
-            let projectFolder = root.appendingPathComponent("project", isDirectory: true)
-            try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
-            try git("init", "--quiet")
-            try git("remote", "add", "origin", "git@github.com:fixture/workspace.git")
-            try setMode("initial")
-            let first = Conversation(id: UUID(), title: "First", location: .worktree(path: checkout.path, base: nil), isDraft: true)
-            let second = Conversation(id: secondThread, title: "Second")
-            let project = Project(id: UUID(), path: projectFolder.path, title: "Project",
-                                  conversations: [first, second], selectedConversation: first.id)
-            try WorkspaceStore(root: workspace).save(Workspace(projects: [project], selectedProject: project.id))
+    init() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        workspace = root.appendingPathComponent("workspace", isDirectory: true)
+        checkout = root.appendingPathComponent("selected checkout", isDirectory: true)
+        let projectFolder = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
+        try git("init", "--quiet")
+        try git("remote", "add", "origin", "git@github.com:fixture/workspace.git")
+        try setMode("initial")
+        let first = Conversation(id: UUID(), title: "First", location: .worktree(path: checkout.path, base: nil), isDraft: true)
+        let second = Conversation(id: secondThread, title: "Second")
+        let project = Project(id: UUID(), path: projectFolder.path, title: "Project",
+                              conversations: [first, second], selectedConversation: first.id)
+        try WorkspaceStore(root: workspace).save(Workspace(projects: [project], selectedProject: project.id))
+    }
+
+    deinit { try? FileManager.default.removeItem(at: root) }
+
+    @MainActor
+    func open() -> WorkspaceModel {
+        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let mock = package.appendingPathComponent("scripts/fixtures/github-read", isDirectory: true)
+        return WorkspaceModel(root: workspace, keychainService: "pi-workspace-github-fixture",
+                              credentialExists: { _ in false }, readCredential: { _ in nil },
+                              makeProcess: { _, _ in throw FixtureError.noSidecar },
+                              makeGitHubReader: { directory in
+            GitHubReader(directory: directory, environment: [
+                "PATH": mock.path + ":/usr/bin:/bin",
+                "HOME": self.root.path,
+                "PI_GH_FIXTURE_REPO": self.expectedRepository,
+                "PI_GH_FIXTURE_STATE": self.state.path,
+                "PI_GH_FIXTURE_LOG": self.log.path,
+                "PI_GH_FIXTURE_GATE": self.gate.path,
+            ])
+        })
+    }
+
+    func setRemote(_ url: String) throws { try git("remote", "set-url", "origin", url) }
+    func setMode(_ mode: String) throws { try Data(mode.utf8).write(to: state, options: .atomic) }
+
+    func makeOtherCheckout() throws -> URL {
+        let folder = root.appendingPathComponent("other checkout", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        try git("init", "--quiet", in: folder)
+        try git("remote", "add", "origin", "https://GitHub.com/FIXTURE/Other.git", in: folder)
+        return folder
+    }
+
+    func commands() throws -> [Substring] {
+        guard FileManager.default.fileExists(atPath: log.path) else { return [] }
+        return try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+    }
+
+    @MainActor
+    func holdRead(_ operation: () async throws -> Void) async throws {
+        try setMode("held")
+        defer {
+            try? releaseRead()
+            try? FileManager.default.removeItem(at: gate.appendingPathExtension("started"))
         }
+        try? FileManager.default.removeItem(at: gate.appendingPathExtension("release"))
+        try await operation()
+    }
 
-        deinit { try? FileManager.default.removeItem(at: root) }
-
-        @MainActor
-        func open() -> WorkspaceModel {
-            let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-                .deletingLastPathComponent().deletingLastPathComponent()
-            let mock = package.appendingPathComponent("scripts/fixtures/github-read", isDirectory: true)
-            return WorkspaceModel(root: workspace, keychainService: "pi-workspace-pr-fixture",
-                                  readCredential: { _ in nil }, makeProcess: { _, _ in throw FixtureError.noSidecar },
-                                  makeGitHubReader: { directory in
-                GitHubReader(directory: directory, environment: [
-                    "PATH": mock.path + ":/usr/bin:/bin",
-                    "HOME": self.root.path,
-                    "PI_GH_FIXTURE_REPO": self.expectedRepository,
-                    "PI_GH_FIXTURE_STATE": self.state.path,
-                    "PI_GH_FIXTURE_LOG": self.log.path,
-                    "PI_GH_FIXTURE_GATE": self.gate.path,
-                ])
-            })
+    func waitForRead() async throws {
+        let started = gate.appendingPathExtension("started")
+        for _ in 0..<200 {
+            if FileManager.default.fileExists(atPath: started.path) { return }
+            try await Task.sleep(for: .milliseconds(20))
         }
+        throw FixtureError.readDidNotStart
+    }
 
-        func setRemote(_ url: String) throws { try git("remote", "set-url", "origin", url) }
-        func setMode(_ mode: String) throws { try Data(mode.utf8).write(to: state, options: .atomic) }
+    func releaseRead() throws { try Data().write(to: gate.appendingPathExtension("release")) }
 
-        func commands() throws -> [Substring] {
-            guard FileManager.default.fileExists(atPath: log.path) else { return [] }
-            return try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
-        }
-
-        @MainActor
-        func holdRead(_ operation: () async throws -> Void) async throws {
-            try setMode("held")
-            defer {
-                try? releaseRead()
-                try? FileManager.default.removeItem(at: gate.appendingPathExtension("started"))
-            }
-            try? FileManager.default.removeItem(at: gate.appendingPathExtension("release"))
-            try await operation()
-        }
-
-        func waitForRead() async throws {
-            let started = gate.appendingPathExtension("started")
-            for _ in 0..<200 {
-                if FileManager.default.fileExists(atPath: started.path) { return }
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            throw FixtureError.readDidNotStart
-        }
-
-        func releaseRead() throws { try Data().write(to: gate.appendingPathExtension("release")) }
-
-        private func git(_ arguments: String...) throws {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-C", checkout.path] + arguments
-            process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
-                .merging(["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"], uniquingKeysWith: { _, new in new })
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { throw FixtureError.gitFailure(arguments) }
-        }
+    private func git(_ arguments: String..., in folder: URL? = nil) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", (folder ?? checkout).path] + arguments
+        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
+            .merging(["GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"], uniquingKeysWith: { _, new in new })
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw FixtureError.gitFailure(arguments) }
     }
 
     private enum FixtureError: Error {

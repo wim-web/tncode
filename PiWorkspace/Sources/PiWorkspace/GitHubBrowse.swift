@@ -126,14 +126,49 @@ struct GitHubListPage: Sendable {
     let next: Next?
 }
 
-struct GitHubIssueDetails: Sendable {
+struct GitHubIssueReference: Codable, Hashable, Sendable {
+    let repository: GitHubRepository
     let number: Int
+    let url: URL
+
+    init?(repository: GitHubRepository, number: Int) {
+        guard number > 0, let url = URL(string: "https://\(repository.cliName)/issues/\(number)") else { return nil }
+        self.repository = repository
+        self.number = number
+        self.url = url
+    }
+
+    init?(url: String) {
+        guard let path = GitHubRepository.webPath(in: url)?.wholeMatch(of: #/\/([^\/]+)\/([^\/]+)\/issues\/([0-9]+)\/?/#),
+              let repository = GitHubRepository(owner: path.1, name: path.2),
+              let number = Int(path.3) else { return nil }
+        self.init(repository: repository, number: number)
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        guard let reference = Self(url: try value.decode(String.self)) else {
+            throw DecodingError.dataCorruptedError(in: value, debugDescription: "Invalid GitHub issue URL")
+        }
+        self = reference
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        try value.encode(url.absoluteString)
+    }
+}
+
+struct GitHubIssueDetails: Sendable {
+    let reference: GitHubIssueReference
     let title: String
     let state: String
     let author: GitHubAuthor?
     let labels: [GitHubLabel]
     let body: String
-    let url: URL
+
+    var number: Int { reference.number }
+    var url: URL { reference.url }
 }
 
 struct GitHubPullRequestFilterOptions: Sendable {
@@ -257,18 +292,28 @@ extension GitHubReader {
     }
 
     func issueDetails(for number: Int, in expectedRepository: GitHubRepository) async throws -> GitHubIssueDetails {
-        guard number > 0 else { throw ReadError.invalidResponse(.issues) }
-        let repository = try await repository(matching: expectedRepository)
-        let response: IssueResponse = try await read(
-            ["issue", "view", String(number), "--json", "number,title,state,author,labels,body", "--repo", repository.cliName],
-            for: .issues
-        )
-        guard response.number == number, ["OPEN", "CLOSED"].contains(response.state),
-              let url = URL(string: "https://\(repository.cliName)/issues/\(number)") else {
+        guard let reference = GitHubIssueReference(repository: expectedRepository, number: number) else {
             throw ReadError.invalidResponse(.issues)
         }
-        return GitHubIssueDetails(number: number, title: response.title, state: response.state, author: response.author,
-                                  labels: response.labels ?? [], body: response.body ?? "", url: url)
+        _ = try await repository(matching: expectedRepository)
+        let details = try await linkedIssueDetails(for: reference)
+        _ = try await repository(matching: expectedRepository)
+        return details
+    }
+
+    func linkedIssueDetails(for reference: GitHubIssueReference) async throws -> GitHubIssueDetails {
+        // A saved link keeps its repository when the draft moves to another checkout.
+        let response: IssueResponse = try await read(
+            ["issue", "view", String(reference.number), "--json", "number,title,state,author,labels,body,url",
+             "--repo", reference.repository.cliName],
+            for: .issues
+        )
+        guard response.number == reference.number, ["OPEN", "CLOSED"].contains(response.state),
+              GitHubIssueReference(url: response.url) == reference else {
+            throw ReadError.invalidResponse(.issues)
+        }
+        return GitHubIssueDetails(reference: reference, title: response.title, state: response.state, author: response.author,
+                                  labels: response.labels ?? [], body: response.body ?? "")
     }
 
     private struct GraphQLResponse: Decodable {
@@ -322,6 +367,7 @@ extension GitHubReader {
         let author: GitHubAuthor?
         let labels: [GitHubLabel]?
         let body: String?
+        let url: String
     }
 }
 
