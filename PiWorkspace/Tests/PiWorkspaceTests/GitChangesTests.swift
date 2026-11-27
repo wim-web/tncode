@@ -5,6 +5,38 @@ import XCTest
 @testable import PiWorkspace
 
 final class GitChangesTests: XCTestCase {
+    func testGeneratedCommitRechecksTreeAndBranchAtTheRefUpdate() async throws {
+        let fixture = try ChangesFixture()
+        defer { fixture.remove() }
+        let root = fixture.alpha
+        let workspace = GitWorkspace(path: root.path)
+        let paths: Set<String> = ["disk.txt"]
+        let checkout = try await workspace.changesCheckout()
+        let hooks = fixture.root.appendingPathComponent("hooks")
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: false)
+        let hook = hooks.appendingPathComponent("pre-commit")
+        _ = try fixture.git(root, "config", "core.hooksPath", hooks.path)
+        _ = try fixture.git(root, "config", "user.name", "Fixture")
+        _ = try fixture.git(root, "config", "user.email", "fixture@example.invalid")
+        _ = try fixture.git(root, "config", "commit.gpgsign", "false")
+        _ = try fixture.git(root, "branch", "other")
+        let before = try fixture.index(root)
+        for script in ["printf 'late edit\\n' > disk.txt\ngit add disk.txt", "git symbolic-ref HEAD refs/heads/other"] {
+            try fixture.write("#!/bin/sh\n" + script + "\n", at: "pre-commit", in: hooks)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hook.path)
+            let context = try await workspace.commitContext(paths: paths, checkout: checkout)
+            do {
+                try await workspace.commit(message: "Generated subject", paths: paths, generatedFrom: context)
+                XCTFail("Git published a commit after the hook changed the selected tree or branch")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains("selected changes"), error.localizedDescription)
+            }
+            XCTAssertEqual(try fixture.git(root, "rev-parse", "topic-alpha", "other"), String(repeating: fixture.alphaHead + "\n", count: 2))
+            XCTAssertEqual(try fixture.index(root), before)
+            XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("disk.txt"), encoding: .utf8), "late edit\n")
+        }
+    }
+
     func testComparisonScopesReadOnlyInTwoLinkedCheckouts() async throws {
         let fixture = try ChangesFixture()
         defer { fixture.remove() }
