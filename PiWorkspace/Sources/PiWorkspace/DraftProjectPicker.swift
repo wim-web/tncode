@@ -24,8 +24,7 @@ struct DraftProjectPicker: View {
         return sorted
     }
 
-    var body: some View {
-        let projects = self.projects
+    private var results: (matches: [Project], actions: [Destination], destinations: [Destination]) {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let rank = Dictionary(uniqueKeysWithValues: projectOrder.enumerated().map { ($1, $0) })
         let matches = projects.filter { term.isEmpty || $0.title.localizedStandardContains(term) }.sorted {
@@ -34,14 +33,23 @@ struct DraftProjectPicker: View {
         let browseActions: [Destination] = model.project?.isScratch == true ? [.addProject] : [.noProject, .addProject]
         let actions = term.isEmpty ? browseActions : []
         let destinations = matches.map { Destination.project($0.id) } + actions
+        return (matches, actions, destinations)
+    }
+
+    private var currentDestination: Destination? { highlightedDestination(in: results.destinations) }
+
+    var body: some View {
+        let (matches, actions, destinations) = results
         let selected = highlightedDestination(in: destinations)
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Search projects", text: $query)
+            TextField("Search projects", text: Binding(get: { query }, set: { value in
+                if query != value { highlight = nil }
+                query = value
+            }))
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .accessibilityIdentifier("draft-project-search")
-                .onChange(of: query) { highlight = nil }
-                .onSubmit { if let selected { finish(selected) } }
+                .onSubmit { if let currentDestination { finish(currentDestination) } }
                 .submitScope()
             if destinations.isEmpty {
                 Text("No matching projects.")
@@ -92,12 +100,11 @@ struct DraftProjectPicker: View {
             if !newIDs.isEmpty { projectOrder.append(contentsOf: newIDs) }
         }
         .background {
-            WindowKeyMonitor { event, window in
+            WindowKeyMonitor(includesPopoverFieldEditor: true) { event, window in
                 guard (window.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
-                let selected = highlightedDestination(in: destinations)
                 let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
                 if searchFocused, modifiers == [.command, .shift],
-                   event.charactersIgnoringModifiers?.lowercased() == "p", case .project(let id)? = selected {
+                   event.charactersIgnoringModifiers?.lowercased() == "p", case .project(let id)? = currentDestination {
                     if !event.isARepeat { togglePin(id) }
                     return true
                 }
@@ -109,13 +116,14 @@ struct DraftProjectPicker: View {
                 guard searchFocused else { return false }
                 switch key {
                 case .up, .down:
-                    if let selected, let index = destinations.firstIndex(of: selected) {
+                    let destinations = results.destinations
+                    if let selected = highlightedDestination(in: destinations), let index = destinations.firstIndex(of: selected) {
                         let offset = key == .up ? -1 : 1
                         highlight = destinations[(index + offset + destinations.count) % destinations.count]
                     }
                     return true
                 case .select:
-                    if let selected, !event.isARepeat { finish(selected) }
+                    if !event.isARepeat, let currentDestination { finish(currentDestination) }
                     return true
                 default:
                     return false

@@ -245,6 +245,14 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testWorkspaceProjectFilterPopoverKeyboard() async throws {
+        try await checkProjectFilterKeyboard(keyParent: false)
+    }
+
+    func testWorkspaceProjectFilterKeyboardWithKeyParent() async throws {
+        try await checkProjectFilterKeyboard(keyParent: true)
+    }
+
+    private func checkProjectFilterKeyboard(keyParent: Bool) async throws {
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -261,11 +269,11 @@ final class SidebarPersistenceTests: XCTestCase {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
-                                                         workspacePasteboard: pasteboard), allowsKey: true)
+                                                         workspacePasteboard: pasteboard), allowsKey: keyParent)
         defer { window.close() }
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
                       "The popover needs a WindowServer connection to receive window-targeted events.")
-        window.makeKey()
+        if keyParent { window.makeKey() }
         let first = try await window.openSearchPopover("thread-filters")
         let alphaRow = "project-filter-choice-\(alpha.id)"
         let betaRow = "project-filter-choice-\(beta.id)"
@@ -279,40 +287,41 @@ final class SidebarPersistenceTests: XCTestCase {
         try await popup.click(betaRow, modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
         let editor = try XCTUnwrap(popup.searchEditor)
-        XCTAssertTrue(app.keyWindow === window)
-        XCTAssertTrue(window.firstResponder === editor)
+        let target: NSWindow = keyParent ? window : popup
+        XCTAssertTrue(app.keyWindow === target)
+        XCTAssertTrue(target.firstResponder === editor)
         editor.insertText("unmatched", replacementRange: editor.selectedRange())
         try await window.waitFor("no matching projects") { popup.element("project-filter-no-results") != nil }
-        try window.key(kVK_Return, "\r")
+        try target.key(kVK_Return, "\r")
         XCTAssertTrue(popup.isVisible)
 
         // Buffered keys can arrive before SwiftUI renders the new matches or highlight.
         editor.insertText("a", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
-        try window.key(kVK_DownArrow, "\u{f701}")
-        try window.key(kVK_Return, "\r", modifiers: .shift)
+        try target.key(kVK_DownArrow, "\u{f701}")
+        try target.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
         try await window.waitFor("highlighted Beta in the popover") {
             popup.element(betaRow)?.isAccessibilitySelected?() == true
         }
         XCTAssertTrue(popup.searchEditor === editor)
         XCTAssertEqual(editor.string, "a")
-        try window.key(kVK_Return, "\r", modifiers: .shift)
+        try target.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
         XCTAssertTrue(popup.isVisible)
 
-        popup.makeKey()
-        XCTAssertTrue(app.keyWindow === popup)
-        try window.key(kVK_Return, "\r", modifiers: .shift)
-        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        if !keyParent {
+            try window.key(kVK_Return, "\r", modifiers: .shift)
+            XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        }
         editor.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0),
                              replacementRange: NSRange(location: 0, length: 1))
         XCTAssertTrue(editor.hasMarkedText())
-        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        try target.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
         XCTAssertTrue(popup.isVisible)
         editor.unmarkText()
 
-        try popup.key(kVK_Return, "\r")
+        try target.key(kVK_Return, "\r")
         try await window.waitFor("Return to dismiss the popover") { !popup.isVisible }
         XCTAssertEqual(model.sidebarProjectFilter.selection, [beta.id])
     }
@@ -381,6 +390,14 @@ final class SidebarPersistenceTests: XCTestCase {
         try window.key(kVK_Escape, "\u{1b}")
         try await window.waitFor("chooser cancelled") { !reopened.isVisible }
         XCTAssertEqual(model.project?.id, beta.id)
+
+        let visible = try await window.openSearchPopover("draft-project-trigger")
+        let composer = try await window.field(withValue: model.draft)
+        XCTAssertTrue(window.makeFirstResponder(composer))
+        XCTAssertTrue(window.firstResponder === composer.currentEditor())
+        XCTAssertTrue(visible.isVisible)
+        try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertEqual(model.projects.filter { $0.pinned == true }.map(\.id), [beta.id])
     }
 
     func testEmptyScopedSidebarCanRestoreAllRowsWithoutChangingTheDraft() async throws {

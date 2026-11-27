@@ -95,7 +95,7 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
         .defaultFocus($searchFocused, true)
         .onAppear { searchFocused = true }
         .background {
-            WindowKeyMonitor { event, window in
+            WindowKeyMonitor(includesPopoverFieldEditor: true) { event, window in
                 guard searchFocused, let editor = window.firstResponder as? NSTextView,
                       editor.isFieldEditor, !editor.hasMarkedText() else { return false }
                 return handleKey(event)
