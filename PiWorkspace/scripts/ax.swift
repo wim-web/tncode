@@ -39,6 +39,7 @@ Usage:
   ax close-window PID WINDOW_IDENTIFIER
   ax select-folder PID ABSOLUTE_PATH
   ax select-path PID ABSOLUTE_PATH
+  ax save-fixture-file PID WORKSPACE EXPORT_DIRECTORY [--cancel]
   ax confirm PID IDENTIFIER
   ax focus-field PID TEXT_IDENTIFIER
   ax set PID IDENTIFIER < text.txt
@@ -111,6 +112,7 @@ private enum Operation {
     case segment(String, String)
     case closeWindow(String)
     case selectFolder(String)
+    case saveFixtureFile(workspace: String, directory: String, cancel: Bool)
     case confirm(String)
     case set(String)
     case type(String, replace: Bool)
@@ -191,6 +193,9 @@ private enum Operation {
             self = .closeWindow(id)
         case (let command, let path?) where ["select-folder", "select-path"].contains(command) && arguments.count == 1 && path.hasPrefix("/"):
             self = .selectFolder(path)
+        case ("save-fixture-file", let workspace?) where arguments.count == 2 ||
+                (arguments.count == 3 && arguments.last == "--cancel"):
+            self = .saveFixtureFile(workspace: workspace, directory: arguments[arguments.startIndex + 1], cancel: arguments.count == 3)
         case ("confirm", let id?) where arguments.count == 1:
             self = .confirm(id)
         case ("set", let id?) where arguments.count == 1:
@@ -794,6 +799,126 @@ private func postKey(
     }
 }
 
+private func saveFixtureFile(in app: AXUIElement, pid: pid_t, workspace: String, directory: String, cancel: Bool) throws {
+    let workspaceURL = URL(fileURLWithPath: workspace)
+    let root = workspaceURL.deletingLastPathComponent()
+    let folder = URL(fileURLWithPath: directory)
+    let marker = folder.appendingPathComponent(folder.lastPathComponent + "-proof.txt")
+    let destination = folder.appendingPathComponent("same.txt")
+    let files = FileManager.default
+    let attrs = try files.attributesOfItem(atPath: root.path)
+    let args = try processArguments(pid)
+    let running = NSRunningApplication(processIdentifier: pid)
+    guard root.deletingLastPathComponent().path == "/private/tmp", root.lastPathComponent.hasPrefix("pi-text-attachments-"),
+          attrs[.ownerAccountID] as? UInt32 == getuid(), attrs[.posixPermissions] as? UInt16 == 0o700,
+          workspaceURL.lastPathComponent == "workspace", (try? canonicalExistingPath(workspace)) == workspace,
+          folder.deletingLastPathComponent().path == root.path, folder.lastPathComponent.hasPrefix("export-"),
+          UUID(uuidString: String(folder.lastPathComponent.dropFirst("export-".count))) != nil,
+          (try? canonicalExistingPath(directory)) == directory,
+          (try? canonicalExistingPath(marker.path)) == marker.path,
+          try files.contentsOfDirectory(atPath: directory) == [marker.lastPathComponent],
+          running?.bundleIdentifier == "dev.piworkspace.app",
+          let bundlePath = running?.bundleURL?.path,
+          (try? canonicalExistingPath(bundlePath)) == root.appendingPathComponent("Pi Workspace.app").path,
+          let option = args.firstIndex(of: "--workspace"), args.dropFirst(option + 1).first == workspace else {
+        throw Failure("Save requires the signed fixture app, its private workspace, and a fresh export directory with its proof file.")
+    }
+    try requireKeyboardAccess()
+    func checkFocus() throws {
+        guard desktopAllowsInput(), NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
+            throw Failure("The fixture app must remain frontmost on the unlocked desktop.")
+        }
+    }
+    try checkFocus()
+    let panel = try element(withID: "save-panel", in: app)
+    func button(_ identifier: String, title: String) -> AXUIElement? {
+        guard let control = try? element(withID: identifier, in: panel),
+              attribute(kAXRoleAttribute, on: control) as? String == kAXButtonRole,
+              attribute(kAXTitleAttribute, on: control) as? String == title,
+              attribute(kAXEnabledAttribute, on: control) as? Bool == true else { return nil }
+        return control
+    }
+    func focusedField() -> AXUIElement? {
+        Tree(root: panel).map(\.element).first {
+            [kAXTextFieldRole, "AXComboBox"].contains(attribute(kAXRoleAttribute, on: $0) as? String ?? "") &&
+                attribute(kAXFocusedAttribute, on: $0) as? Bool == true
+        }
+    }
+    func wait<T>(_ message: String, seconds: Double = 4, _ read: () -> T?) throws -> T {
+        let deadline = ProcessInfo.processInfo.systemUptime + seconds
+        repeat {
+            try checkFocus()
+            if let value = read() { return value }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        } while ProcessInfo.processInfo.systemUptime < deadline
+        throw Failure(message)
+    }
+
+    _ = try wait("The native Save button was not enabled.") { button("OKButton", title: "Save") }
+    let original = focusedField()
+    func goField() -> AXUIElement? {
+        guard let field = focusedField(), field != original,
+              attribute(kAXSubroleAttribute, on: field) as? String != kAXSearchFieldSubrole else { return nil }
+        return field
+    }
+    try postKey(5, to: pid, flags: [.maskCommand, .maskShift], frontmost: true)
+    let field: AXUIElement
+    do {
+        field = try wait("Command-Shift-G did not open Go to Folder.", seconds: 1, goField)
+    } catch {
+        try checkFocus()
+        try postKey(44, to: pid, frontmost: true)
+        field = try wait("The native Go to Folder field is unavailable.", goField)
+    }
+    try postKey(0, to: pid, flags: .maskCommand, frontmost: true)
+    let path = Array(directory.utf16)
+    for offset in stride(from: 0, to: path.count, by: 10) {
+        guard goField() == field else { throw Failure("The Go to Folder field lost keyboard focus.") }
+        try postKey(0, to: pid, units: Array(path.dropFirst(offset).prefix(10)), frontmost: true)
+    }
+    _ = try wait("Go to Folder did not show the exact disposable path.") {
+        guard goField() == field,
+              let value = attribute(kAXValueAttribute, on: field) as? String,
+              value == directory || value == directory + "/" else { return nil as String? }
+        return value
+    }
+    try postKey(36, to: pid, units: [0x0D], frontmost: true)
+
+    let control = try wait("The Save panel did not expose the fixture directory URL and original filename.") {
+        guard let wherePopup = try? element(withID: "where popup", in: panel),
+              attribute(kAXValueAttribute, on: wherePopup) as? String == folder.lastPathComponent else { return nil as AXUIElement? }
+        let nodes = Tree(root: panel).map(\.element)
+        let listsProofFile = nodes.contains {
+            let raw = attribute(kAXURLAttribute, on: $0)
+            let url = (raw as? URL) ?? (raw as? String).flatMap { URL(string: $0) }
+            guard let url, url.isFileURL else { return false }
+            return (try? canonicalExistingPath(url.path)) == marker.path
+        }
+        let hasFilename = nodes.contains {
+            attribute(kAXRoleAttribute, on: $0) as? String == kAXTextFieldRole &&
+                attribute(kAXValueAttribute, on: $0) as? String == destination.lastPathComponent
+        }
+        guard listsProofFile, hasFilename else { return nil }
+        return cancel ? button("CancelButton", title: "Cancel") : button("OKButton", title: "Save")
+    }
+    try checkFocus()
+    guard try files.contentsOfDirectory(atPath: directory) == [marker.lastPathComponent] else {
+        throw Failure("The private export directory changed before confirmation.")
+    }
+    print("Verified Save panel destination: \(destination.path)")
+    let result = AXUIElementPerformAction(control, kAXPressAction as CFString)
+    // Sheet dismissal can invalidate the AX element before the action reply arrives.
+    if ![.cannotComplete, .invalidUIElement, .invalidUIElementObserver].contains(result) {
+        try requireSuccess(result, cancel ? "Cancel fixture save" : "Confirm fixture save")
+    }
+}
+
+private func canonicalExistingPath(_ path: String) throws -> String {
+    guard let resolved = realpath(path, nil) else { throw Failure("Fixture path does not exist.") }
+    defer { free(resolved) }
+    return String(cString: resolved)
+}
+
 private func run(_ arguments: [String]) throws {
     if arguments.isEmpty || arguments == ["--help"] || arguments == ["-h"] {
         print(usage)
@@ -1112,6 +1237,8 @@ private func run(_ arguments: [String]) throws {
         try requireSuccess(AXUIElementPerformAction(unsafeBitCast(raw, to: AXUIElement.self), kAXPressAction as CFString), "Close window")
     case .selectFolder(let path):
         try selectFolder(path, in: element(withID: "open-panel", in: app))
+    case .saveFixtureFile(let workspace, let directory, let cancel):
+        try saveFixtureFile(in: app, pid: pid, workspace: workspace, directory: directory, cancel: cancel)
     case .confirm(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXConfirmAction as CFString), "AXConfirm")
