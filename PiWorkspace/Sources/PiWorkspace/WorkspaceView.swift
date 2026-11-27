@@ -226,10 +226,33 @@ struct WorkspaceView: View {
         var id: String { thread.id.uuidString + "/" + (match?.messageID ?? "") }
     }
 
+    private struct SidebarSearchResults {
+        var key: MessageSearchKey?
+        var rows: [SearchRow] = []
+        var messageMatches: [UUID: SidebarMessageSearch.Match]?
+
+        var loading: Bool { messageMatches == nil && key?.search.threads.isEmpty == false }
+    }
+
     private struct SnoozedRow: Identifiable {
         let link: SidebarThread
         let deadline: Date
         var id: String { "snoozed-\(link.id)" }
+    }
+
+    private struct SidebarShelves {
+        let hasThreads: Bool
+        let pinned: [SidebarThread]
+        let active: [SidebarThread]
+        let groups: [SidebarProjectGroup]
+        let snoozed: [SnoozedRow]
+        let settled: [SidebarThread]
+    }
+
+    private struct SidebarProjectGroup: Identifiable {
+        let project: Project
+        let rows: [SidebarThread]
+        var id: UUID { project.id }
     }
 
     private enum TranscriptAnchor: Hashable {
@@ -274,12 +297,15 @@ struct WorkspaceView: View {
                                   fileContent: FilePreviewContent?) -> some View {
         let blocked = model.showingWelcome || imageIndex != nil || fileContent != nil || deletingSideChat != nil
         let saveRequest = fileSavePanelRequest
+        let scopedThreads = threads
+        let shelves = sidebarShelves(scopedThreads)
+        let search = sidebarSearchRows(scopedThreads)
         return ZStack {
             GeometryReader { window in
                 let viewportWidth = window.size.width
                 let width = WorkspaceLayout.sidebarWidth(in: viewportWidth, preferred: sidebarWidth, drag: sidebarDrag)
                 HStack(spacing: 0) {
-                    sidebar
+                    sidebar(shelves: shelves, search: search)
                         .frame(width: width)
                     WorkspaceDivider(label: "Resize sidebar", width: width, drag: $sidebarDrag,
                                      color: workspaceEdge) { translation in
@@ -363,6 +389,9 @@ struct WorkspaceView: View {
                 guard !event.isARepeat else { return false }
                 if case .toggle(let mode)? = CommandPaletteSession.Key(event) {
                     return openCommandPalette(in: window, startingAt: .init(fileSearchMode: mode))
+                }
+                if let shortcut = SidebarThreadShortcut(event) {
+                    return navigateSidebar(shortcut, shelves: shelves, searchRows: search.rows, in: window)
                 }
                 if handleNewThreadKey(event, in: window) { return true }
                 if handleRightPanelKey(event, modifiers: modifiers, in: window) { return true }
@@ -737,20 +766,25 @@ struct WorkspaceView: View {
         .background(canvas)
     }
 
-    private var sidebar: some View {
-        let scopedThreads = threads
+    private func sidebarSearchRows(_ scopedThreads: [SidebarThread]) -> SidebarSearchResults {
+        guard !searchTerm.isEmpty else { return SidebarSearchResults() }
         let titleMatches = scopedThreads.filter { $0.matchesTitle(searchTerm) }
         let messageCandidates = scopedThreads.filter { !$0.matchesTitle(searchTerm) }
         let key = MessageSearchKey(
             search: SidebarMessageSearch(query: searchTerm, threads: messageCandidates.map {
                 SidebarMessageSearch.Thread(projectID: $0.project.id, threadID: $0.id)
             }),
-            latestMessageID: searchTerm.isEmpty ? nil : model.messages.last?.id
+            latestMessageID: model.messages.last?.id
         )
         let messageMatches = messageSearchResult?.key == key ? messageSearchResult?.matches : nil
-        let searchRows = titleMatches.map { SearchRow(thread: $0, match: nil) } + messageCandidates.compactMap { link in
+        let rows = titleMatches.map { SearchRow(thread: $0, match: nil) } + messageCandidates.compactMap { link in
             messageMatches?[link.id].map { SearchRow(thread: link, match: $0) }
         }
+        return SidebarSearchResults(key: key, rows: rows, messageMatches: messageMatches)
+    }
+
+    private func sidebar(shelves: SidebarShelves, search: SidebarSearchResults) -> some View {
+        let searchRows = search.rows
         let visibleThreads = searchRows.map(\.thread)
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
@@ -792,7 +826,7 @@ struct WorkspaceView: View {
             .padding(.horizontal, 14)
             .frame(height: WorkspaceLayout.headerHeight)
 
-            sidebarSearch(visibleThreads, messageMatches: messageMatches ?? [:])
+            sidebarSearch(visibleThreads, messageMatches: search.messageMatches ?? [:])
 
             if model.showArchive {
                 Button {
@@ -809,12 +843,12 @@ struct WorkspaceView: View {
 
             ScrollViewReader { reader in
                 ScrollView {
-                    if searchTerm.isEmpty && !model.showArchive && model.projects.isEmpty && visibleThreads.isEmpty {
+                    if searchTerm.isEmpty && !model.showArchive && model.projects.isEmpty && !shelves.hasThreads {
                         sidebarEmptyState
                     } else if searchTerm.isEmpty {
                         LazyVStack(alignment: .leading, spacing: 3) {
-                            threadShelves(visibleThreads)
-                            if visibleThreads.isEmpty && !projectFilter.selection.isEmpty {
+                            threadShelves(shelves)
+                            if !shelves.hasThreads && !projectFilter.selection.isEmpty {
                                 VStack(spacing: 6) {
                                     Text("No threads in the selected projects")
                                         .foregroundStyle(.secondary)
@@ -829,7 +863,7 @@ struct WorkspaceView: View {
                         .padding(.horizontal, 8)
                         .padding(.bottom, 8)
                     } else if searchRows.isEmpty {
-                        Text(messageMatches == nil && !messageCandidates.isEmpty ? "Searching thread messages…" : "No matching threads")
+                        Text(search.loading ? "Searching thread messages…" : "No matching threads")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(7)
@@ -867,6 +901,14 @@ struct WorkspaceView: View {
                 .onChange(of: searchTerm) { _, term in
                     if !term.isEmpty, let row = searchRows.first { reader.scrollTo(row.id, anchor: .top) }
                 }
+                .onChange(of: model.conversation?.id) { _, id in
+                    guard searchTerm.isEmpty, let id else { return }
+                    if let snoozed = shelves.snoozed.first(where: { $0.link.id == id }) {
+                        reader.scrollTo(snoozed.id)
+                    } else {
+                        reader.scrollTo(id)
+                    }
+                }
             }
 
             if model.snoozeUndoCount > 0 {
@@ -896,8 +938,8 @@ struct WorkspaceView: View {
             if colorScheme == .dark { sidebarHeaderBackdrop }
         }
         .background(rail)
-        .task(id: key) {
-            guard !key.search.term.text.isEmpty else { return }
+        .task(id: search.key) {
+            guard let key = search.key else { return }
             do {
                 if !key.search.threads.isEmpty { try await Task.sleep(for: .milliseconds(150)) }
                 let matches = try await model.searchMessages(key.search)
@@ -1060,8 +1102,7 @@ struct WorkspaceView: View {
         .padding(.bottom, 10)
     }
 
-    @ViewBuilder
-    private func threadShelves(_ threads: [SidebarThread]) -> some View {
+    private func sidebarShelves(_ threads: [SidebarThread]) -> SidebarShelves {
         let awake = threads.filter { $0.thread.snoozeStatus(at: model.snoozeClock)?.isSnoozed != true }
         let active = model.showArchive ? threads : awake.filter { $0.thread.threadShelf == .active }
         let pinned = model.showArchive ? [] : awake.filter { $0.thread.threadShelf == .pinned }
@@ -1070,25 +1111,39 @@ struct WorkspaceView: View {
             guard case let .snoozed(until: deadline) = link.thread.snoozeStatus(at: model.snoozeClock) else { return nil }
             return SnoozedRow(link: link, deadline: deadline)
         }.sorted { $0.deadline < $1.deadline }
-        if !pinned.isEmpty {
+        let threadsByProject = grouped ? Dictionary(grouping: active, by: { $0.project.id }) : [:]
+        let groups = grouped ? filteredProjects.compactMap { project -> SidebarProjectGroup? in
+            let items = threadsByProject[project.id, default: []]
+            guard !items.isEmpty || (!model.showArchive && (project.pinned == true || project.inSidebarScope == true))
+            else { return nil }
+            return SidebarProjectGroup(project: project, rows: project.sidebarFolderCollapsed == true ? [] : items)
+        } : []
+        return SidebarShelves(hasThreads: !threads.isEmpty,
+                              pinned: pinned, active: grouped ? active.filter { $0.project.isScratch } : active,
+                              groups: groups, snoozed: snoozed, settled: settled)
+    }
+
+    private func visibleSnoozedRows(_ rows: [SnoozedRow]) -> [SnoozedRow] {
+        if model.workspace.snoozedShelfExpanded == true { return rows }
+        return rows.filter { $0.link.id == model.conversation?.id }
+    }
+
+    @ViewBuilder
+    private func threadShelves(_ shelves: SidebarShelves) -> some View {
+        if !shelves.pinned.isEmpty {
             Text("Pinned").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 .padding(.leading, 7).padding(.bottom, 4)
-            ForEach(pinned) { link in threadRow(link, showProject: true) }
+            ForEach(shelves.pinned) { link in threadRow(link, showProject: true) }
         }
         if grouped {
-            ForEach(active.filter { $0.project.isScratch }) { link in threadRow(link, showProject: true) }
-            let threadsByProject = Dictionary(grouping: active, by: { $0.project.id })
-            ForEach(filteredProjects) { project in
-                let items = threadsByProject[project.id, default: []]
-                if !items.isEmpty || (!model.showArchive &&
-                    (project.pinned == true || project.inSidebarScope == true)) {
-                    projectGroup(project, items: items)
-                }
+            ForEach(shelves.active) { link in threadRow(link, showProject: true) }
+            ForEach(shelves.groups) { group in
+                projectGroup(group.project, items: group.rows)
             }
         } else {
-            ForEach(active) { link in threadRow(link, showProject: true) }
+            ForEach(shelves.active) { link in threadRow(link, showProject: true) }
         }
-        if !snoozed.isEmpty {
+        if !shelves.snoozed.isEmpty {
             let expanded = model.workspace.snoozedShelfExpanded == true
             Button {
                 model.setSnoozedShelfExpanded(!expanded)
@@ -1096,23 +1151,24 @@ struct WorkspaceView: View {
                 Label("Snoozed", systemImage: expanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                Text(snoozed.count.formatted()).font(.caption).foregroundStyle(.secondary)
+                Text(shelves.snoozed.count.formatted()).font(.caption).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .padding(.top, 6)
             .padding(.leading, 5)
             .accessibilityIdentifier("snoozed-shelf")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            ForEach(snoozed.filter { expanded || $0.link.id == model.conversation?.id }) { row in
+            ForEach(visibleSnoozedRows(shelves.snoozed)) { row in
                 threadRow(row.link, showProject: true, status: .snoozed(until: row.deadline))
             }
         }
-        if !settled.isEmpty {
+        if !shelves.settled.isEmpty {
             DisclosureGroup(isExpanded: $settledExpanded) {
-                ForEach(settled) { link in threadRow(link, showProject: true) }
+                ForEach(shelves.settled) { link in threadRow(link, showProject: true) }
             } label: {
                 Text("Settled").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
+            .accessibilityIdentifier("settled-shelf")
             .padding(.top, 6)
             .padding(.leading, 5)
         }
@@ -1179,9 +1235,7 @@ struct WorkspaceView: View {
             .padding(.vertical, 6)
             .contextMenu { projectActions(project) }
 
-            if expanded {
-                ForEach(items) { link in threadRow(link, showProject: false).padding(.leading, 13) }
-            }
+            ForEach(items) { link in threadRow(link, showProject: false).padding(.leading, 13) }
         }
     }
 
@@ -3321,13 +3375,41 @@ struct WorkspaceView: View {
         window === NSApp.mainWindow && acceptsWorkspaceKeys(in: window)
     }
 
-    private func acceptsWorkspaceKeys(in window: NSWindow) -> Bool {
+    private func acceptsWorkspaceKeys(in window: NSWindow, allowsTerminalFocus: Bool = false) -> Bool {
         !model.showingWelcome && !model.showingSettings && !model.showingCommandPalette &&
             !model.showingQuitSaveFailure && model.projectPicker == nil && draftProjectPicker == nil &&
             composerModelPicker == nil &&
-            window.attachedSheet == nil && NSApp.modalWindow == nil && !ThreadTerminal.hasFocus(in: window) &&
+            window.attachedSheet == nil && NSApp.modalWindow == nil &&
+            (allowsTerminalFocus || !ThreadTerminal.hasFocus(in: window)) &&
             !choosingWorkspace && !choosingThreadProject && choosingBranch == nil && terminalWorkspaceChange == nil &&
             rename == nil && removingProject == nil && archiveConfirmation == nil && closingTerminals == nil
+    }
+
+    private func navigateSidebar(_ shortcut: SidebarThreadShortcut, shelves: SidebarShelves,
+                                 searchRows: [SearchRow], in window: NSWindow) -> Bool {
+        let allowsTerminalFocus: Bool
+        if case .number = shortcut { allowsTerminalFocus = true } else { allowsTerminalFocus = false }
+        guard acceptsWorkspaceKeys(in: window, allowsTerminalFocus: allowsTerminalFocus),
+              !showingSidebarFilters, !showingComposerStash, closingPanelTerminals == nil,
+              customSnooze == nil, model.promptLinkReview == nil,
+              !model.operationsInProgress, model.editingQueuedMessageID == nil,
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+        let searching = !searchTerm.isEmpty
+        let rows = searching ? searchRows.map(\.thread) : shelves.pinned + shelves.active + shelves.groups.flatMap(\.rows)
+            + visibleSnoozedRows(shelves.snoozed).map(\.link) + (settledExpanded ? shelves.settled : [])
+        let selected = model.conversation.flatMap { thread in
+            model.project?.isScratch == true || model.showsInSidebar(thread) ? thread.id : nil
+        }
+        let current = rows.firstIndex { $0.id == selected && $0.project.id == model.project?.id }
+        guard let index = shortcut.targetIndex(count: rows.count, current: current, hasSelection: selected != nil)
+        else { return false }
+        let target = rows[index]
+        if searching {
+            openThread(target, messageMatch: searchRows[index].match)
+        } else {
+            model.selectConversation(target.id, in: target.project.id)
+        }
+        return true
     }
 
     private func navigate(_ direction: WorkspaceModel.NavigationDirection, in window: NSWindow) -> Bool {
