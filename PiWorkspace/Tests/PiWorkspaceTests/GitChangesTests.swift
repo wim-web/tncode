@@ -24,7 +24,7 @@ final class GitChangesTests: XCTestCase {
         for script in ["printf 'late edit\\n' > disk.txt\ngit add disk.txt", "git symbolic-ref HEAD refs/heads/other"] {
             try fixture.write("#!/bin/sh\n" + script + "\n", at: "pre-commit", in: hooks)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hook.path)
-            let context = try await workspace.commitContext(paths: paths, checkout: checkout)
+            let context = try await workspace.commitContext(paths: paths, checkout: checkout.revision)
             do {
                 try await workspace.commit(message: "Generated subject", paths: paths, generatedFrom: context)
                 XCTFail("Git published a commit after the hook changed the selected tree or branch")

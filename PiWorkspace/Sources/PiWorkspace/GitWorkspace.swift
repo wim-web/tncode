@@ -799,12 +799,6 @@ struct GitWorkspace: Sendable {
         try manager.createDirectory(at: scratch, withIntermediateDirectories: false,
                                     attributes: [.posixPermissions: 0o700])
         defer { try? manager.removeItem(at: scratch) }
-        if let context {
-            guard context.paths == paths else { throw WorkspaceError.staleSelection }
-            try await verifyCheckoutRevision(context.checkout)
-            let (tree, _) = try await selectedCommitTree(selection.paths, checkout: context.checkout, in: scratch)
-            guard tree == context.tree else { throw WorkspaceError.staleSelection }
-        }
         let temporaryIndex = scratch.appendingPathComponent("index")
         do {
             try manager.copyItem(at: index, to: temporaryIndex)
@@ -814,24 +808,95 @@ struct GitWorkspace: Sendable {
 
         let pathspec = scratch.appendingPathComponent("paths")
         let pathspecArguments = ["--pathspec-from-file=" + pathspec.path, "--pathspec-file-nul"]
-        let excludedStaged = Set(selection.excluded.filter(\.isStaged).flatMap(\.commitPaths))
-        if context == nil, !excludedStaged.isEmpty {
-            try Self.writePathspec(excludedStaged.sorted(), to: pathspec)
-            _ = try await run(["reset", "--quiet"] + pathspecArguments, in: root, index: temporaryIndex)
+        let arguments = ["commit", "--only", "--message", message] + pathspecArguments
+        if let context {
+            guard context.paths == paths else { throw WorkspaceError.staleSelection }
+            try await verifyCheckoutRevision(context.checkout)
+            let (tree, _) = try await selectedCommitTree(selection.paths, checkout: context.checkout, in: scratch)
+            guard tree == context.tree else { throw WorkspaceError.staleSelection }
+            let treeID = try Self.decode(tree.dropLast(), command: "write-tree")
+            try Self.writePathspec(selection.paths.sorted(), to: pathspec)
+            // Install the reviewed entries alongside the user's excluded staging after the commit succeeds.
+            _ = try await run(["reset", "--quiet", treeID] + pathspecArguments, in: root, index: temporaryIndex)
+            let commitIndex = scratch.appendingPathComponent("commit-index")
+            try manager.copyItem(at: temporaryIndex, to: commitIndex)
+            try await commitGenerated(arguments, context: context, tree: treeID, index: commitIndex, installIndex: temporaryIndex)
+        } else {
+            let excludedStaged = Set(selection.excluded.filter(\.isStaged).flatMap(\.commitPaths))
+            if !excludedStaged.isEmpty {
+                try Self.writePathspec(excludedStaged.sorted(), to: pathspec)
+                _ = try await run(["reset", "--quiet"] + pathspecArguments, in: root, index: temporaryIndex)
+            }
+            let untracked = selection.files.filter(\.isUntracked).map(\.path)
+            if !untracked.isEmpty {
+                try Self.writePathspec(untracked, to: pathspec)
+                _ = try await run(["add", "--intent-to-add"] + pathspecArguments, in: root, index: temporaryIndex)
+            }
+            try Self.writePathspec(selection.paths.sorted(), to: pathspec)
+            _ = try await run(arguments, in: root, index: temporaryIndex)
         }
-        let untracked = selection.files.filter(\.isUntracked).map(\.path)
-        if !untracked.isEmpty {
-            try Self.writePathspec(untracked, to: pathspec)
-            _ = try await run(["add", "--intent-to-add"] + pathspecArguments, in: root, index: temporaryIndex)
-        }
-        try Self.writePathspec(selection.paths.sorted(), to: pathspec)
-        if let context { try await verifyCheckoutRevision(context.checkout) }
-        _ = try await run(["commit", "--only", "--message", message] + pathspecArguments,
-                          in: root, index: temporaryIndex)
 
         guard rename(temporaryIndex.path, indexPath) == 0 else {
             throw WorkspaceError.indexInstallFailed(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
         }
+    }
+
+    private func commitGenerated(_ arguments: [String], context: CommitContext, tree: String, index: URL,
+                                 installIndex: URL) async throws {
+        let root = context.checkout.root
+        let original = try await revParse(["--path-format=absolute", "--git-path", "hooks"], in: root)
+        let hooks = index.deletingLastPathComponent().appendingPathComponent("hooks")
+        let manager = FileManager.default
+        try manager.createDirectory(at: hooks, withIntermediateDirectories: false)
+        // Git's prepared reference transaction sees the final commit object and holds the ref lock.
+        // Forward repository hooks at their original paths so their arguments, stdin and sibling files still work.
+        let dispatcher = #"""
+        #!/bin/sh
+        set -eu
+        export GIT_CONFIG_PARAMETERS="$PI_ORIGINAL_GIT_PARAMETERS"
+        name=${0##*/}
+        original="$PI_COMMIT_HOOKS/$name"
+        if test "$name" = post-commit; then export GIT_INDEX_FILE="$PI_COMMIT_INSTALL_INDEX"; fi
+        if test "$name" = reference-transaction && test "$1" = prepared; then
+            updates=$(mktemp "$0.XXXXXX")
+            cat > "$updates"
+            while read -r old new ref; do
+                case "$new" in *[!0]*) ;; *) continue ;; esac
+                actual=$(/usr/bin/git symbolic-ref --quiet HEAD) || actual=HEAD
+                headers=$(/usr/bin/git --no-replace-objects cat-file commit "$new" | sed -n '/^$/q; /^tree /p; /^parent /p')
+                if test "$actual" != "$PI_COMMIT_REF" || { test "$ref" != "$actual" && test "$ref" != HEAD; } ||
+                   test "$headers" != "$PI_COMMIT_HEADERS"; then
+                    echo 'The selected changes or checkout changed. Review the changes and try again.' >&2
+                    exit 1
+                fi
+            done < "$updates"
+            if test -x "$original"; then exec "$original" "$@" < "$updates"; fi
+        elif test -x "$original"; then
+            exec "$original" "$@"
+        fi
+        """#
+        let guardHook = hooks.appendingPathComponent("reference-transaction")
+        try Data(dispatcher.utf8).write(to: guardHook)
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: guardHook.path)
+        guard manager.isExecutableFile(atPath: guardHook.path) else { throw CocoaError(.fileWriteNoPermission) }
+        var directory: ObjCBool = false
+        if manager.fileExists(atPath: original, isDirectory: &directory), directory.boolValue {
+            for name in try manager.contentsOfDirectory(atPath: original) where name != "reference-transaction" {
+                guard manager.isExecutableFile(atPath: (original as NSString).appendingPathComponent(name)) else { continue }
+                try manager.createSymbolicLink(atPath: hooks.appendingPathComponent(name).path,
+                                               withDestinationPath: guardHook.lastPathComponent)
+            }
+        }
+        let environment = [
+            "PI_COMMIT_HOOKS": original,
+            "PI_COMMIT_INSTALL_INDEX": installIndex.path,
+            "PI_COMMIT_HEADERS": "tree " + tree + (context.checkout.head.map { "\nparent " + $0 } ?? ""),
+            "PI_COMMIT_REF": context.checkout.branch.map { "refs/heads/" + $0 } ?? "HEAD",
+            "PI_ORIGINAL_GIT_PARAMETERS": ProcessInfo.processInfo.environment["GIT_CONFIG_PARAMETERS"] ?? ""
+        ]
+        try await verifyCheckoutRevision(context.checkout)
+        _ = try await run(["-c", "core.hooksPath=" + hooks.path] + arguments, in: root, index: index,
+                          environment: environment)
     }
 
     private func changes(in directory: String? = nil) async throws -> [GitFileChange] {
@@ -901,6 +966,7 @@ struct GitWorkspace: Sendable {
         _ arguments: [String],
         in directory: String? = nil,
         index: URL? = nil,
+        environment additionalEnvironment: [String: String] = [:],
         outputLimit: Int? = nil,
         acceptedStatuses: [Int32] = [0],
         cancellable: Bool = false,
@@ -944,6 +1010,7 @@ struct GitWorkspace: Sendable {
             environment["SSH_ASKPASS_REQUIRE"] = "never"
             environment["GCM_INTERACTIVE"] = "never"
         }
+        environment.merge(additionalEnvironment) { _, override in override }
         process.environment = environment
 
         let result = try await WorkspaceCommand.capture(process, outputLimit: outputLimit,
