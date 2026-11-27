@@ -652,7 +652,7 @@ private final class SidebarOffscreenPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private extension NSWindow {
+extension NSWindow {
     func openSearchPopover(_ trigger: String) async throws -> (popover: NSPopover, window: NSWindow) {
         var shown: NSPopover?
         let observer = NotificationCenter.default.publisher(for: NSPopover.willShowNotification).sink { note in
@@ -670,7 +670,9 @@ private extension NSWindow {
         let popover = try XCTUnwrap(shown)
         return (popover, try XCTUnwrap(popover.contentViewController?.view.window))
     }
+}
 
+private extension NSWindow {
     func element(_ identifier: String) -> AnyObject? {
         guard let contentView else { return nil }
         contentView.layoutSubtreeIfNeeded()

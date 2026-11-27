@@ -3548,7 +3548,7 @@ struct WorkspaceView: View {
             case .addProject:
                 model.openFolder(draftOrigin: session.scope)
                 if model.projectPicker?.draftOrigin == session.scope {
-                    focusAfterPicker = session.restoreComposerFocus ? session.scope : nil
+                    focusAfterPicker = session.scope
                     return
                 }
             case .project(let id):
