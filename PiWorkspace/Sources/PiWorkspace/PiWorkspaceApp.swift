@@ -70,7 +70,9 @@ struct PiWorkspaceApp: App {
                     WorkspaceStartupRecoveryView(model: model, failure: failure, pasteboard: workspacePasteboard)
                 } else {
                     WorkspaceView(model: model, chatWidthMode: appearance.chatWidth, browserDefaults: browserDefaults, workspacePasteboard: workspacePasteboard)
-                        .onAppear(perform: launchWorkspace)
+                        .onReceive(appDelegate.$finishedLaunching.first(where: { $0 })) { _ in
+                            launchWorkspace()
+                        }
                 }
             }
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
@@ -181,6 +183,12 @@ struct PiWorkspaceApp: App {
 @MainActor
 final class WorkspaceApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var model: WorkspaceModel?
+    @Published private(set) var finishedLaunching = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI can present the window before routing the URL that launched it.
+        finishedLaunching = true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
