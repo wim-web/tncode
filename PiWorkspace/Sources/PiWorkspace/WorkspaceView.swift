@@ -65,6 +65,8 @@ struct WorkspaceView: View {
     @State private var checkoutsWithBranches: Set<String> = []
     @State private var copyTask: Task<Void, Never>?
     @FocusState private var focusedComposer: UUID?
+    @FocusState private var focusedDraftProject: UUID?
+    @State private var focusScratchHeadline: DraftProjectScope?
     @State private var composerFileMentionRevision: Int?
     @State private var showingComposerStash = false
     @FocusState private var welcomeFocus: WelcomeFocus?
@@ -357,6 +359,7 @@ struct WorkspaceView: View {
             if model.threadFind?.thread != scope { model.threadFind = nil }
         }
         .onChange(of: model.draftProjectScope) { _, scope in
+            if focusScratchHeadline != scope { focusScratchHeadline = nil }
             if let draftProjectPicker, draftProjectPicker.scope != scope { self.draftProjectPicker = nil }
             if composerModelPicker?.scope != scope { composerModelPicker = nil }
             showingComposerStash = false
@@ -1895,8 +1898,35 @@ struct WorkspaceView: View {
                     .foregroundStyle(accent)
                     .font(project.isScratch ? .callout.weight(.medium) : nil)
                     .help("Choose a project")
+                    .focusable()
+                    .focused($focusedDraftProject, equals: thread.id)
                     .accessibilityIdentifier("draft-project-trigger")
+                    .task(id: focusScratchHeadline) {
+                        guard let request = focusScratchHeadline, project.isScratch, request.threadID == thread.id else { return }
+                        await Task.yield()
+                        if !Task.isCancelled && model.draftProjectScope == request {
+                            focusedDraftProject = thread.id
+                        }
+                    }
+                    .onChange(of: focusedDraftProject) { _, id in
+                        if id == thread.id { focusScratchHeadline = nil }
+                    }
                     if !project.isScratch { Text("?").padding(.leading, -4) }
+                }
+                if !project.isScratch {
+                    Button("or start without a project") {
+                        guard let source = model.draftProjectScope, source.threadID == thread.id else { return }
+                        model.switchDraftProject(to: nil, from: source)
+                        if model.project?.isScratch == true, let destination = model.draftProjectScope {
+                            revealOpenedProject()
+                            focusedComposer = nil
+                            focusScratchHeadline = destination
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("draft-start-without-project")
                 }
             } else {
                 Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
@@ -2707,6 +2737,7 @@ struct WorkspaceView: View {
                 .task(id: target) {
                     await Task.yield()
                     if !Task.isCancelled && model.conversation?.id == threadID &&
+                        focusedDraftProject != threadID && focusScratchHeadline?.threadID != threadID &&
                         !model.showingWelcome && model.projectPicker == nil && draftProjectPicker == nil &&
                         !terminalIsVisible && rightPanels[threadID]?.visibleTerminal == nil &&
                         !model.showingSettings && !model.showingCommandPalette && model.activeThreadFind == nil {
