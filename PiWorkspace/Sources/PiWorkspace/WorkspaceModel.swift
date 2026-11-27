@@ -2138,10 +2138,16 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func archiveConversation(_ id: UUID, in projectID: UUID, archived: Bool) throws {
-        guard canChangeArchive(for: id),
-              let p = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }),
-              let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }),
-              workspace.projects[p].conversations[t].archived != archived else { return }
+        guard canChangeArchive(for: id) else { return }
+        guard let p = workspace.projects.firstIndex(where: { $0.id == projectID && $0.detached != true }) else {
+            if archived { return }
+            throw WorkspaceError("This project is no longer open. Reopen it and try again.")
+        }
+        guard let t = workspace.projects[p].conversations.firstIndex(where: { $0.id == id }) else {
+            if archived { return }
+            throw WorkspaceError("This thread is no longer available.")
+        }
+        guard workspace.projects[p].conversations[t].archived != archived else { return }
         let isOpen = project?.id == projectID && conversation?.id == id
         if archived && isOpen && workspace.projects[p].isScratch {
             let thread = Conversation(id: UUID(), title: "New thread", isDraft: true)

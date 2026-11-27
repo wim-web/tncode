@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, threads, appearance, chat, project, model, worktrees, usage, browser, about
+    case general, threads, appearance, chat, project, model, worktrees, usage, browser, archived, about
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .worktrees: "Worktrees"
         case .usage: "Usage"
         case .browser: "Browser Settings"
+        case .archived: "Archive"
         case .about: "About"
         }
     }
@@ -32,6 +33,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .worktrees: "arrow.triangle.branch"
         case .usage: "chart.bar"
         case .browser: "globe"
+        case .archived: "archivebox"
         case .about: "info.circle"
         }
     }
@@ -44,6 +46,7 @@ enum SidebarPreference {
 enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
     case archiveConfirmation = "archive-confirmation"
+    case archive
     case snoozeOptions = "snooze-options"
     case addProjectStartsIn = "add-project-starts-in"
     case worktreeLocation = "storage-worktrees-location"
@@ -74,6 +77,7 @@ enum SettingsAnchor: String {
 enum SettingsDeepLink: Equatable {
     case page(SettingsPage)
     case archiveConfirmation
+    case archivedThreads
     case licenses
     case version
     case project(UUID)
@@ -81,7 +85,7 @@ enum SettingsDeepLink: Equatable {
     private static let pages: [String: SettingsPage] = [
         "": .general, "/": .general, "/general": .general, "/threads": .threads,
         "/appearance": .appearance, "/chat": .chat, "/model": .model,
-        "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser, "/about": .about
+        "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser, "/archived": .archived, "/about": .about
     ]
 
     static func handles(_ url: URL) -> Bool {
@@ -104,6 +108,8 @@ enum SettingsDeepLink: Equatable {
             self = .version
         case ("settings", "/general#archive-confirmation"):
             self = .archiveConfirmation
+        case ("settings", "/archived#archive"):
+            self = .archivedThreads
         case ("settings", _):
             if let page = Self.pages[String(route)] {
                 self = .page(page)
@@ -125,6 +131,7 @@ enum SettingsDeepLink: Equatable {
         switch self {
         case .page(let page): page
         case .archiveConfirmation: .general
+        case .archivedThreads: .archived
         case .licenses, .version: .about
         case .project: .project
         }
@@ -135,6 +142,7 @@ enum SettingsDeepLink: Equatable {
         case .licenses: .licenses
         case .version: .appVersion
         case .archiveConfirmation: .archiveConfirmation
+        case .archivedThreads: .archive
         default: nil
         }
     }
@@ -268,6 +276,8 @@ struct SettingsSearch {
         .init(page: .browser, title: "Browser Settings", keywords: "web preview WKWebView browsing"),
         .init(page: .browser, anchor: .searchEngine, title: "Search engine", keywords: "browser address DuckDuckGo Google Bing Brave Kagi Ecosia Custom"),
         .init(page: .browser, anchor: .customSearchURL, title: "Custom search URL", keywords: "browser search template %s"),
+        .init(page: .archived, title: "Archive", keywords: ""),
+        .init(page: .archived, anchor: .archive, title: "Archived threads", keywords: "unarchive restore reopen history projects checkouts"),
         .init(page: .about, title: "About", keywords: "app name version build dependencies"),
         .init(page: .about, anchor: .appVersion, title: "Version", keywords: "app version build release"),
         .init(page: .about, anchor: .licenses, title: "Open source licenses", keywords: "dependencies third-party notices SwiftTerm Node Pi"),

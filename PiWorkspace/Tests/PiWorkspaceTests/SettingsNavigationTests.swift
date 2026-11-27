@@ -38,6 +38,11 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(search.results(available: availability).first?.anchor, .licenses)
         search.query = "onboarding"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .welcomePage)
+        search.query = "archived threads"
+        XCTAssertEqual(search.results(available: availability).first?.id, "archive")
+        XCTAssertEqual(search.results(available: availability).first?.page, .archived)
+        search.query = "unarchive"
+        XCTAssertEqual(search.results(available: availability).first?.anchor, .archive)
         search.query = "external disk"
         XCTAssertEqual(search.results(available: availability).first?.page, .worktrees)
         XCTAssertEqual(search.results(available: availability).first?.anchor, .worktreeLocation)
@@ -205,6 +210,9 @@ final class SettingsNavigationTests: XCTestCase {
             ("pi-workspace://settings/", .page(.general)),
             ("pi-workspace://settings/general", .page(.general)),
             ("pi-workspace://settings/general#archive-confirmation", .archiveConfirmation),
+            ("pi-workspace://settings/archived", .page(.archived)),
+            ("pi-workspace://settings/archived#archive", .archivedThreads),
+            ("pi-workspace://settings/archived#archive-confirmation", nil),
             ("pi-workspace://settings/threads#archive-confirmation", nil),
             ("pi-workspace://settings/general?#archive-confirmation", nil),
             ("pi-workspace://settings/appearance", .page(.appearance)),
@@ -269,6 +277,11 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.expectControls("settings-heading-appearance", "appearance-color-scheme", "appearance-chat-width")
         try open("settings/chat")
         try await fixture.expectControls("settings-heading-chat", "send-shortcut", "follow-up-behavior")
+        try open("settings/archived")
+        try await fixture.expectControls("settings-heading-archived", "archive", "archive-project", "archive-empty")
+        try open("settings/archived#archive")
+        XCTAssertEqual(request.destination.anchor, .archive)
+        try await fixture.expectControls("archive", "archive-empty")
 
         try open("projects/\(first)")
         try await fixture.expectControls("settings-heading-project", "project-settings-name", "project-settings-pin")

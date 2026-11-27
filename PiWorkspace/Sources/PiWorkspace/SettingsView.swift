@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
     @State private var archiveConfirmationError: String?
+    @State private var archiveScope = ArchiveScope.all
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
@@ -99,7 +100,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if [.general, .threads, .chat, .project, .worktrees, .usage, .about].contains(page) ||
+                    if [.general, .threads, .chat, .project, .worktrees, .usage, .archived, .about].contains(page) ||
                         (page == .model && projectScopeUnavailable) {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
@@ -276,6 +277,8 @@ struct SettingsView: View {
             startFromRemoteSetting
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
+        case .archived:
+            ArchivedThreadsSettingsView(model: model, scope: $archiveScope, settingsFocus: $focus)
         case .about, .usage:
             EmptyView()
         }
