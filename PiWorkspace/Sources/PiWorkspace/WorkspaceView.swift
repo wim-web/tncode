@@ -3390,7 +3390,7 @@ struct WorkspaceView: View {
         let allowsTerminalFocus: Bool
         if case .number = shortcut { allowsTerminalFocus = true } else { allowsTerminalFocus = false }
         guard acceptsWorkspaceKeys(in: window, allowsTerminalFocus: allowsTerminalFocus),
-              !showingSidebarFilters, !showingComposerStash, closingPanelTerminals == nil,
+              !showingSidebarFilters, !showingComposerStash,
               customSnooze == nil, model.promptLinkReview == nil,
               !model.operationsInProgress, model.editingQueuedMessageID == nil,
               (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
