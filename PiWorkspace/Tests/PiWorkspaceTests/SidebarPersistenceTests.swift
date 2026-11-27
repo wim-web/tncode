@@ -261,62 +261,47 @@ final class SidebarPersistenceTests: XCTestCase {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
-                                                         workspacePasteboard: pasteboard))
+                                                         workspacePasteboard: pasteboard), allowsKey: true)
         defer { window.close() }
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
                       "The popover needs a WindowServer connection to receive window-targeted events.")
-        var shown: NSPopover?
-        let observer = NotificationCenter.default.publisher(for: NSPopover.willShowNotification).sink { note in
-            shown = note.object as? NSPopover
-            // AppKit may constrain the child of our offscreen panel to a screen edge.
-            shown?.animates = false
-            shown?.contentViewController?.view.window?.alphaValue = 0
-            shown?.contentViewController?.view.window?.ignoresMouseEvents = true
-        }
-        defer { observer.cancel() }
-
-        func openPicker() async throws -> NSWindow {
-            shown = nil
-            try await window.press("thread-filters")
-            try await window.waitFor("the presented project filter's field editor") {
-                shown?.isShown == true && shown?.contentViewController?.view.window?.searchEditor != nil
-            }
-            return try XCTUnwrap(shown?.contentViewController?.view.window)
-        }
-
-        let first = try await openPicker()
+        window.makeKey()
+        let first = try await window.openSearchPopover("thread-filters")
         let alphaRow = "project-filter-choice-\(alpha.id)"
         let betaRow = "project-filter-choice-\(beta.id)"
         try await first.click(alphaRow)
         try await window.waitFor("the first popover to close") { !first.isVisible }
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
 
-        let popup = try await openPicker()
+        let popup = try await window.openSearchPopover("thread-filters")
         try await popup.click(betaRow, modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
         try await popup.click(betaRow, modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
         let editor = try XCTUnwrap(popup.searchEditor)
-        XCTAssertTrue(app.keyWindow === popup)
+        XCTAssertTrue(app.keyWindow === window)
+        XCTAssertTrue(window.firstResponder === editor)
         editor.insertText("unmatched", replacementRange: editor.selectedRange())
         try await window.waitFor("no matching projects") { popup.element("project-filter-no-results") != nil }
-        try popup.key(kVK_Return, "\r")
-        XCTAssertTrue(shown?.isShown == true)
+        try window.key(kVK_Return, "\r")
+        XCTAssertTrue(popup.isVisible)
 
         // Buffered keys can arrive before SwiftUI renders the new matches or highlight.
         editor.insertText("a", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
-        try popup.key(kVK_DownArrow, "\u{f701}")
-        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        try window.key(kVK_DownArrow, "\u{f701}")
+        try window.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
         try await window.waitFor("highlighted Beta in the popover") {
             popup.element(betaRow)?.isAccessibilitySelected?() == true
         }
         XCTAssertTrue(popup.searchEditor === editor)
         XCTAssertEqual(editor.string, "a")
-        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        try window.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
-        XCTAssertTrue(shown?.isShown == true)
+        XCTAssertTrue(popup.isVisible)
 
+        popup.makeKey()
+        XCTAssertTrue(app.keyWindow === popup)
         try window.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
         editor.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0),
@@ -324,12 +309,78 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertTrue(editor.hasMarkedText())
         try popup.key(kVK_Return, "\r", modifiers: .shift)
         XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
-        XCTAssertTrue(shown?.isShown == true)
+        XCTAssertTrue(popup.isVisible)
         editor.unmarkText()
 
         try popup.key(kVK_Return, "\r")
-        try await window.waitFor("Return to dismiss the popover") { shown?.isShown == false }
+        try await window.waitFor("Return to dismiss the popover") { !popup.isVisible }
         XCTAssertEqual(model.sidebarProjectFilter.selection, [beta.id])
+    }
+
+    func testWorkspaceDraftProjectPopoverKeyboard() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draft = Conversation(id: UUID(), title: "Draft", isDraft: true, composerText: "Keep this")
+        let alpha = Project(id: UUID(), path: root.appending(path: "alpha").path, title: "Alpha",
+                            conversations: [draft], selectedConversation: draft.id)
+        let beta = Project(id: UUID(), path: root.appending(path: "beta").path, title: "Beta")
+        for project in [alpha, beta] {
+            try FileManager.default.createDirectory(atPath: project.path, withIntermediateDirectories: true)
+        }
+        try WorkspaceStore(root: root).save(Workspace(projects: [alpha, beta], selectedProject: alpha.id, welcomeCompleted: true))
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        defer { model.terminate() }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                         workspacePasteboard: pasteboard), allowsKey: true)
+        defer { window.close() }
+        try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0, "WindowServer unavailable.")
+        window.makeKey()
+        let popup = try await window.openSearchPopover("draft-project-trigger")
+        let editor = try XCTUnwrap(popup.searchEditor)
+        XCTAssertTrue(app.keyWindow === window)
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertTrue(editor.window === popup)
+
+        let other = SidebarOffscreenPanel(TextField("Other field", text: .constant("")))
+        defer { other.close() }
+        try other.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertTrue(model.projects.allSatisfy { $0.pinned != true })
+        try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertEqual(model.projects.filter { $0.pinned == true }.map(\.id), [alpha.id])
+        try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertTrue(model.projects.allSatisfy { $0.pinned != true })
+
+        editor.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0),
+                             replacementRange: editor.selectedRange())
+        XCTAssertTrue(editor.hasMarkedText())
+        try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertTrue(model.projects.allSatisfy { $0.pinned != true })
+        editor.unmarkText()
+        editor.insertText("missing", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        try await window.waitFor("no matches") { popup.element("draft-project-no-results") != nil }
+        editor.insertText("a", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        try window.key(kVK_DownArrow, "\u{f701}")
+        try window.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
+        XCTAssertEqual(model.projects.filter { $0.pinned == true }.map(\.id), [beta.id])
+        try await window.waitFor("filtered picker") { popup.element("draft-project-pin-\(beta.id)") != nil }
+        try window.key(kVK_Return, "\r")
+        try await window.waitFor("chooser closed") { !popup.isVisible }
+        XCTAssertEqual(model.project?.id, beta.id)
+        XCTAssertEqual(model.conversation?.id, draft.id)
+        XCTAssertEqual(model.draft, draft.composerText)
+
+        let reopened = try await window.openSearchPopover("draft-project-trigger")
+        try window.key(kVK_Escape, "\u{1b}")
+        try await window.waitFor("chooser cancelled") { !reopened.isVisible }
+        XCTAssertEqual(model.project?.id, beta.id)
     }
 
     func testEmptyScopedSidebarCanRestoreAllRowsWithoutChangingTheDraft() async throws {
@@ -553,10 +604,13 @@ private struct SidebarPickerFixture: View {
 }
 
 private final class SidebarOffscreenPanel: NSPanel {
-    convenience init<Content: View>(_ content: Content) {
+    private var allowsKey = false
+
+    convenience init<Content: View>(_ content: Content, allowsKey: Bool = false) {
         let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
         self.init(contentRect: NSRect(origin: origin, size: NSSize(width: 1080, height: 720)),
                   styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)
+        self.allowsKey = allowsKey
         isReleasedWhenClosed = false
         let host = NSHostingView(rootView: content)
         host.sizingOptions = []
@@ -572,11 +626,28 @@ private final class SidebarOffscreenPanel: NSPanel {
     }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 }
 
 private extension NSWindow {
+    func openSearchPopover(_ trigger: String) async throws -> NSWindow {
+        var shown: NSPopover?
+        let observer = NotificationCenter.default.publisher(for: NSPopover.willShowNotification).sink { note in
+            shown = note.object as? NSPopover
+            // AppKit may constrain the child of our offscreen panel to a screen edge.
+            shown?.animates = false
+            shown?.contentViewController?.view.window?.alphaValue = 0
+            shown?.contentViewController?.view.window?.ignoresMouseEvents = true
+        }
+        defer { observer.cancel() }
+        try await press(trigger)
+        try await waitFor("the presented project picker's field editor") {
+            shown?.isShown == true && shown?.contentViewController?.view.window?.searchEditor != nil
+        }
+        return try XCTUnwrap(shown?.contentViewController?.view.window)
+    }
+
     func element(_ identifier: String) -> AnyObject? {
         guard let contentView else { return nil }
         contentView.layoutSubtreeIfNeeded()
