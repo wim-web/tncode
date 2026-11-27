@@ -106,11 +106,20 @@ final class BrowserPreviewTests: XCTestCase {
         }
 
         let configured = BrowserSearchSettings(engine: .custom, customURL: " \(origin)search/%s?q=%s&lang=en ")
-        XCTAssertTrue(configured.save(to: defaults))
         for template in [
             "\(origin)search?q=", "file:///tmp/%s", "https://%s.example/",
-            "http://%s@127.0.0.1:\(port)/?q=%s", "http://user:password@127.0.0.1:\(port)/?q=%s",
             "http://127.0.0.1:99999999999999999999/?q=%s", "/search?q=%s"
+        ] {
+            XCTAssertTrue(BrowserSearchSettings(engine: .custom, customURL: template).save(to: defaults), template)
+            let saved = BrowserSearchSettings.load(from: defaults)
+            XCTAssertEqual(saved.customURL, template)
+            XCTAssertEqual(BrowserAddress.resolve("query", searchSettings: saved)?.absoluteString,
+                           "https://duckduckgo.com/?q=query", template)
+        }
+        XCTAssertTrue(configured.save(to: defaults))
+        for template in [
+            "http://%s@127.0.0.1:\(port)/?q=%s", "http://user:password@127.0.0.1:\(port)/?q=%s",
+            String(repeating: "x", count: 2049)
         ] {
             XCTAssertFalse(BrowserSearchSettings(engine: .custom, customURL: template).save(to: defaults), template)
         }

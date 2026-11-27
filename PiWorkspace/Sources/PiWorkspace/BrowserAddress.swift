@@ -25,6 +25,13 @@ struct BrowserSearchSettings: Equatable {
     }
 
     private static let defaultsKey = "browserSearchSettings"
+    static let maximumTemplateLength = 2048
+
+    enum TemplateIssue: String {
+        case incomplete = "Enter an HTTP or HTTPS URL containing %s. Searches use DuckDuckGo until then."
+        case tooLong = "Use up to 2,048 characters for the search URL."
+        case credentials = "Remove the username and password from the search URL."
+    }
 
     var engine: Engine = .duckDuckGo
     var customURL = ""
@@ -33,12 +40,23 @@ struct BrowserSearchSettings: Equatable {
         customURL.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    var templateIssue: TemplateIssue? {
+        let template = trimmedCustomURL
+        guard template.utf16.count <= Self.maximumTemplateLength else { return .tooLong }
+        let example = template.replacingOccurrences(of: "%s", with: "a")
+        if let parts = URLComponents(string: example), parts.user != nil || parts.password != nil {
+            return .credentials
+        }
+        return BrowserAddress.isValidSearchTemplate(template) ? nil : .incomplete
+    }
+
     var canSave: Bool {
-        engine != .custom || BrowserAddress.isValidSearchTemplate(trimmedCustomURL)
+        guard engine == .custom, let issue = templateIssue else { return true }
+        return issue == .incomplete
     }
 
     var searchTemplate: String {
-        engine == .custom && canSave ? trimmedCustomURL : engine.template
+        engine == .custom && templateIssue == nil ? trimmedCustomURL : engine.template
     }
 
     static func load(from defaults: UserDefaults = .standard) -> Self {
@@ -49,10 +67,10 @@ struct BrowserSearchSettings: Equatable {
 
     @discardableResult
     func save(to defaults: UserDefaults = .standard) -> Bool {
+        guard canSave else { return false }
         let template = trimmedCustomURL
-        let isValid = BrowserAddress.isValidSearchTemplate(template)
-        guard engine != .custom || isValid else { return false }
-        let savedTemplate = isValid || template.isEmpty ? template : Self.load(from: defaults).customURL
+        let useEditedTemplate = engine == .custom || template.isEmpty || BrowserAddress.isValidSearchTemplate(template)
+        let savedTemplate = useEditedTemplate ? template : Self.load(from: defaults).customURL
         defaults.set([
             "engine": engine.rawValue,
             "customURL": savedTemplate
@@ -101,7 +119,7 @@ enum BrowserAddress {
     }
 
     static func isValidSearchTemplate(_ template: String) -> Bool {
-        guard template.utf16.count <= 2048, template.contains("%s"),
+        guard template.utf16.count <= BrowserSearchSettings.maximumTemplateLength, template.contains("%s"),
               let url = webURL(template.replacingOccurrences(of: "%s", with: "a")),
               let other = webURL(template.replacingOccurrences(of: "%s", with: "b")) else { return false }
         return url.host() == other.host() && url.port == other.port

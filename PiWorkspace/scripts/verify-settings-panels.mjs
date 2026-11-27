@@ -4,6 +4,49 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+export async function verifyBrowserSearchSettings(driver, { root, launch, quit, record }) {
+  const { pick, press, dismiss, visible, value, tree, openSettingsLink, setField, until } = driver;
+  const searchURL = "browser-custom-search-url", reset = "reset-browser-search-engine";
+  const unfinished = "http://127.0.0.1:1/search?q=";
+  const path = join(root, "workspace.json");
+  mkdirSync(root, { recursive: true });
+  writeFileSync(path, JSON.stringify({ welcomeCompleted: true, projects: [],
+    model: { provider: "local", model: "settings-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 } }), { mode: 0o600 });
+  const open = async () => {
+    await launch("empty-open-project", root);
+    openSettingsLink("pi-workspace://settings/browser");
+    await until(() => visible("browser-search-engine"), "browser search settings");
+  };
+  const close = async () => {
+    dismiss("browser-settings-save");
+    await until(() => !tree().includes('id="browser-settings-save"') && visible("empty-open-project"), "browser settings saved");
+    await quit();
+  };
+  await open();
+  const before = readFileSync(path);
+  assert(!tree().includes('id="' + reset + '"'));
+  pick("browser-search-engine", "Custom");
+  await setField(searchURL, unfinished);
+  await until(() => tree().includes("Searches use DuckDuckGo until then.") && visible("browser-settings-save").includes("enabled=true"),
+              "an unfinished template can be saved with the fallback visible");
+  await close();
+  await open();
+  assert(value(searchURL).includes("value=" + JSON.stringify(unfinished)));
+  press(reset);
+  await until(() => visible("browser-engine-DuckDuckGo") && !tree().includes('id="' + reset + '"') &&
+    !tree().includes('id="' + searchURL + '"'), "reset restored the default engine and cleared its custom URL");
+  await close();
+  await open();
+  assert(!tree().includes('id="' + reset + '"'));
+  pick("browser-search-engine", "Custom");
+  await until(() => value(searchURL).includes('value=""'), "the previous custom template was cleared across relaunch");
+  dismiss("browser-settings-cancel");
+  await until(() => visible("empty-open-project") && !tree().includes('id="browser-settings-save"'), "cancel returned to Home");
+  await quit();
+  assert.deepEqual(readFileSync(path), before);
+  record("A custom URL without %s survived relaunch and displayed the DuckDuckGo fallback. Reset restored DuckDuckGo and cleared the URL after another relaunch. The workspace index stayed byte-identical.");
+}
+
 export async function verifyChatSettings(driver, { root, otherRoot, launch, quit, record }) {
   const { press, dismiss, visible, value, tree, setField, until } = driver;
   const selected = id => /\bvalue=1\b/.test(value(id));

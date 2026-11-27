@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { resetProjectModel, setProjectModel, verifyBrowserFind, verifyPRFilesCheckout, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
-import { restoreAppearance, verifyAbout, verifyAppearance, verifyChatSettings, verifySettingsLinks, verifySettingsSearch } from "./verify-settings-panels.mjs";
+import { restoreAppearance, verifyAbout, verifyAppearance, verifyBrowserSearchSettings, verifyChatSettings, verifySettingsLinks, verifySettingsSearch } from "./verify-settings-panels.mjs";
 import { verifyFiles, verifySQLiteFiles } from "./verify-workspace-files.mjs";
 import { verifyArchiveFiles } from "./verify-archive-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
@@ -49,7 +49,7 @@ assert(ax, "Pass the path to the macOS AX driver.");
 const backgroundChecks = ["--startup-draft-only", "--recovery-actions-only", "--pr-files-only", "--right-terminal-only",
   "--model-account-only", "--local-changes-only", "--side-chat-only", "--settings-links-only", "--queue-edit-only", "--snooze-options-only",
   "--prompt-links-only", "--pr-prompt-links-only", "--chat-settings-only", "--issue-edits-only", "--sqlite-files-only", "--browser-find-only",
-  "--project-icons-only", "--archived-threads-only", "--archive-files-only"];
+  "--project-icons-only", "--archived-threads-only", "--archive-files-only", "--browser-search-settings-only"];
 const backgroundScenario = process.argv.slice(3).find(flag => backgroundChecks.includes(flag));
 if (backgroundScenario) assert.equal(process.argv.length, 4, "Run a background scenario on its own.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), backgroundScenario ? /accessibility=true/ : /accessibility=true keyboard=true/);
@@ -1156,7 +1156,7 @@ async function verifyConversations() {
     }
     record("Dragged and resized the in-chat Mini Player; redocking retained the live document, draft and zoom. Browser tabs kept separate history and shared storage only within their profile. Moving the page to a separate window and closing it preserved the tab.");
     record("Zoom changed the rendered width of a 100 CSS-pixel button. Refresh fetched a new revision, Stop cancelled an outstanding GET, and the error view showed details and reloaded the repaired local server.");
-    record("Browser Settings rejected a custom URL missing %s. Enter navigated a bare loopback host and sent the exact search term to the chosen local engine. An unsupported address kept the page.");
+    record("Browser Settings displayed the DuckDuckGo fallback for a custom URL missing %s. Enter navigated a bare loopback host and sent the exact search term to the chosen local engine. An unsupported address kept the page.");
     await setProjectModel(panelDriver, "fixture-project-model");
     const widths = await verifyAppearance(panelDriver);
     record("Light, Dark and all three width choices were reachable. Composer widths in points were " + JSON.stringify(widths) + "; the draft kept its text.");
@@ -1389,6 +1389,9 @@ try {
     await verifyChatSettings(panelDriver, { root: join(directory, "chat-settings"),
       otherRoot: join(directory, "other-chat-settings"), launch, quit, record });
   }
+  if (backgroundScenario === "--browser-search-settings-only") {
+    await verifyBrowserSearchSettings(panelDriver, { root: join(directory, "browser-search-settings"), launch, quit, record });
+  }
   if (backgroundScenario === "--prompt-links-only") {
     let requests = 0;
     server.on("request", () => { requests++; });
@@ -1532,6 +1535,9 @@ try {
   if (backgroundScenario === "--chat-settings-only") {
     preferenceChecks.push([join(directory, "chat-settings"), "browser", "chat.sendShortcut"],
                           [join(directory, "chat-settings"), "browser", "chat.followUpBehavior"]);
+  }
+  if (backgroundScenario === "--browser-search-settings-only") {
+    preferenceChecks.push([join(directory, "browser-search-settings"), "browser", "browserSearchSettings"]);
   }
   if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
   for (const [root, feature, key] of preferenceChecks) {

@@ -213,8 +213,8 @@ async function verifyAddressSearch({ press, visible, tree, until, setField, menu
   pick("browser-search-engine", "Custom");
   await until(() => visible("browser-custom-search-url"), "custom search URL");
   await setField("browser-custom-search-url", baseURL + "/preview/search");
-  assert(visible("browser-settings-save").includes("enabled=false"));
-  assert(visible("browser-search-url-validation"));
+  assert(visible("browser-settings-save").includes("enabled=true"));
+  assert(tree().includes("Searches use DuckDuckGo until then."));
   await setField("browser-custom-search-url", baseURL + "/preview/search?q=%s");
   press("browser-settings-save");
   await until(() => !tree().includes('id="browser-settings-save"'), "saved search settings");

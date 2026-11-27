@@ -8,21 +8,31 @@ struct BrowserSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Picker("Search engine", selection: $draft.engine) {
-                ForEach(BrowserSearchSettings.Engine.allCases, id: \.self) { engine in
-                    Text(engine.rawValue).tag(engine).accessibilityIdentifier("browser-engine-\(engine.rawValue)")
+            HStack {
+                Picker("Search engine", selection: $draft.engine) {
+                    ForEach(BrowserSearchSettings.Engine.allCases, id: \.self) { engine in
+                        Text(engine.rawValue).tag(engine).accessibilityIdentifier("browser-engine-\(engine.rawValue)")
+                    }
+                }
+                .pickerStyle(.menu)
+                .settingsTarget(.searchEngine, focus: settingsFocus)
+                if draft != BrowserSearchSettings() {
+                    Button("Reset") {
+                        draft = BrowserSearchSettings()
+                        draft.save(to: defaults)
+                    }
+                    .accessibilityLabel("Reset search engine to default")
+                    .accessibilityIdentifier("reset-browser-search-engine")
                 }
             }
-            .pickerStyle(.menu)
-            .settingsTarget(.searchEngine, focus: settingsFocus)
             if draft.engine == .custom {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Custom search URL").accessibilityHidden(true)
                     TextField("Custom search URL", text: $draft.customURL,
                               prompt: Text("https://example.com/search?q=%s"))
                         .settingsTarget(.customSearchURL, focus: settingsFocus)
-                    if !draft.canSave {
-                        Text("Use %s for the search terms in an HTTP or HTTPS URL.")
+                    if let issue = draft.templateIssue {
+                        Text(issue.rawValue)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("browser-search-url-validation")
