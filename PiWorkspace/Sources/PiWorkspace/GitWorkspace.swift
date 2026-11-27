@@ -24,6 +24,12 @@ struct GitCheckout: Sendable {
     let lockReason: String?
 }
 
+struct GitCheckoutRevision: Sendable {
+    let root: String
+    let branch: String?
+    let head: String?
+}
+
 struct GitBranchRef: Identifiable, Sendable {
     let id: String
     let upstream: String
@@ -696,14 +702,25 @@ struct GitWorkspace: Sendable {
     }
 
     struct CommitContext {
-        let checkout: GitChangesCheckout
+        let checkout: GitCheckoutRevision
         let paths: Set<String>
         let tree: Data
         let patch: String
     }
 
-    func commitContext(paths: Set<String>, checkout: GitChangesCheckout) async throws -> CommitContext {
-        try await verifyChangesCheckout(checkout)
+    func verifyCheckoutRevision(_ checkout: GitCheckoutRevision) async throws {
+        try Task.checkCancellation()
+        let branch = try await currentBranch()
+        guard try await repositoryRoot() == checkout.root,
+              branch.map({ Data($0.utf8) }) == checkout.branch.map({ Data($0.utf8) }),
+              try await headObjectID() == checkout.head else {
+            throw WorkspaceError.changesCheckoutChanged
+        }
+        try Task.checkCancellation()
+    }
+
+    func commitContext(paths: Set<String>, checkout: GitCheckoutRevision) async throws -> CommitContext {
+        try await verifyCheckoutRevision(checkout)
         let root = checkout.root
         let selection = try await commitSelection(paths, in: root)
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("pi-commit-" + UUID().uuidString)
@@ -715,13 +732,13 @@ struct GitWorkspace: Sendable {
             "diff", "--cached", "--patch", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
             "--ignore-submodules=none", "--submodule=short"
         ] + (checkout.head.map { [$0] } ?? []), in: root, index: index, outputLimit: 12_288, cancellable: true)
-        try await verifyChangesCheckout(checkout)
+        try await verifyCheckoutRevision(checkout)
         let text = String(decoding: patch.output.bytes, as: UTF8.self)
         return CommitContext(checkout: checkout, paths: paths, tree: tree,
                              patch: text + (patch.output.truncated ? "\n[Diff truncated]" : ""))
     }
 
-    private func selectedCommitTree(_ paths: Set<String>, checkout: GitChangesCheckout, in scratch: URL)
+    private func selectedCommitTree(_ paths: Set<String>, checkout: GitCheckoutRevision, in scratch: URL)
         async throws -> (Data, URL) {
         let index = scratch.appendingPathComponent("selected-index")
         let pathspec = scratch.appendingPathComponent("selected-paths")
@@ -784,7 +801,7 @@ struct GitWorkspace: Sendable {
         defer { try? manager.removeItem(at: scratch) }
         if let context {
             guard context.paths == paths else { throw WorkspaceError.staleSelection }
-            try await verifyChangesCheckout(context.checkout)
+            try await verifyCheckoutRevision(context.checkout)
             let (tree, _) = try await selectedCommitTree(selection.paths, checkout: context.checkout, in: scratch)
             guard tree == context.tree else { throw WorkspaceError.staleSelection }
         }
@@ -808,7 +825,7 @@ struct GitWorkspace: Sendable {
             _ = try await run(["add", "--intent-to-add"] + pathspecArguments, in: root, index: temporaryIndex)
         }
         try Self.writePathspec(selection.paths.sorted(), to: pathspec)
-        if let context { try await verifyChangesCheckout(context.checkout) }
+        if let context { try await verifyCheckoutRevision(context.checkout) }
         _ = try await run(["commit", "--only", "--message", message] + pathspecArguments,
                           in: root, index: temporaryIndex)
 
@@ -1089,6 +1106,7 @@ extension GitWorkspace {
         case emptyRepositoryPath
         case emptySelection
         case staleSelection
+        case changesCheckoutChanged
         case overlappingSelection(String)
         case indexLocked
         case indexInstallFailed(POSIXError)
@@ -1119,6 +1137,8 @@ extension GitWorkspace {
                 return "Select at least one file to commit."
             case .staleSelection:
                 return "The selected changes have changed. Review the refreshed file list and try again."
+            case .changesCheckoutChanged:
+                return "The checkout or comparison branch changed. Refresh Git changes to continue."
             case .overlappingSelection(let path):
                 return "The selected changes overlap \(path). Include all related paths to commit them together."
             case .indexLocked:

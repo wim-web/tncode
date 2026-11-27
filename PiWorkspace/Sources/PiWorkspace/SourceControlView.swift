@@ -642,7 +642,7 @@ struct SourceControlView: View {
         commitGeneration = Task {
             defer { commitGeneration = nil }
             do {
-                let context = try await git.commitContext(paths: paths, checkout: checkout)
+                let context = try await git.commitContext(paths: paths, checkout: checkout.revision)
                 try verifyLocation()
                 let subject = try await model.generateCommitSubject(context.patch, in: checkout.root, settings: settings)
                 try verifyLocation()

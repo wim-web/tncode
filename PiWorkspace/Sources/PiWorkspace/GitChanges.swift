@@ -9,6 +9,7 @@ struct GitChangesCheckout: Sendable {
     let baseChoices: [GitChangesBaseChoice]
     let repository: GitHubRepository?
 
+    var revision: GitCheckoutRevision { .init(root: root, branch: branch, head: head) }
     var headLabel: String { branch ?? head.map { String($0.prefix(7)) } ?? "HEAD" }
 }
 
@@ -103,7 +104,6 @@ private enum GitChangesError: LocalizedError {
     case noCommonCommit(String, shallow: Bool)
     case unavailableCommit
     case unavailableParent(String)
-    case checkoutChanged
 
     var errorDescription: String? {
         switch self {
@@ -116,8 +116,6 @@ private enum GitChangesError: LocalizedError {
             "The selected commit is unavailable locally."
         case .unavailableParent(let sha):
             "Commit \(sha.prefix(7))’s first parent is unavailable locally."
-        case .checkoutChanged:
-            "The checkout or comparison branch changed. Refresh Git changes to continue."
         }
     }
 }
@@ -342,20 +340,13 @@ extension GitWorkspace {
     }
 
     func verifyChangesCheckout(_ checkout: GitChangesCheckout) async throws {
-        try Task.checkCancellation()
-        let branch = try await currentBranch()
-        guard try await repositoryRoot() == checkout.root,
-              branch.map({ Data($0.utf8) }) == checkout.branch.map({ Data($0.utf8) }),
-              try await headObjectID() == checkout.head else {
-            throw GitChangesError.checkoutChanged
-        }
-        try Task.checkCancellation()
+        try await verifyCheckoutRevision(checkout.revision)
     }
 
     private func verifyChangesTarget(_ target: GitChangesTarget) async throws {
         try await verifyChangesCheckout(target.checkout)
         if let ref = target.baseRef, try await changesObjectID(ref, root: target.checkout.root) != target.baseTip {
-            throw GitChangesError.checkoutChanged
+            throw WorkspaceError.changesCheckoutChanged
         }
     }
 
