@@ -16,12 +16,15 @@ Usage:
   ax release-test-pasteboard TEST_PASTEBOARD
   ax activate PID
   ax open-thread-link PID LOCAL_WORKSPACE_URL [--no-activate]
+  ax open-settings-link PID LOCAL_SETTINGS_URL [--no-activate]
+  ax open-prompt-link PID LOCAL_PROMPT_URL [--no-activate]
   ax open-menu PID MENU_TITLE
+  ax cancel-menu PID MENU_BUTTON_IDENTIFIER
   ax menu-command PID CHARACTER
   ax menu-item PID TITLE [--no-activate]
-  ax pick PID POPUP_IDENTIFIER OPTION_TITLE
+  ax pick PID POPUP_IDENTIFIER OPTION_TITLE [--no-activate]
   ax dump PID [--values] [--no-labels] [--depth N]
-  ax get PID IDENTIFIER [--values] [--no-labels] [--depth N]
+  ax get PID IDENTIFIER [--values] [--no-labels] [--help-text] [--depth N]
   ax selected-text PID TEXT_AREA_IDENTIFIER
   ax selection PID TEXT_IDENTIFIER [UTF16_OFFSET UTF16_LENGTH]
   ax frame PID IDENTIFIER [--popover]
@@ -37,6 +40,7 @@ Usage:
   ax select-folder PID ABSOLUTE_PATH
   ax select-path PID ABSOLUTE_PATH
   ax confirm PID IDENTIFIER
+  ax focus-field PID TEXT_IDENTIFIER
   ax set PID IDENTIFIER < text.txt
   ax type PID IDENTIFIER [--replace] < text.txt
   ax key PID KEYCODE [cmd] [shift] [opt] [ctrl] [fn]
@@ -59,6 +63,7 @@ private struct Failure: Error, CustomStringConvertible {
 private struct DisplayOptions {
     var values = false
     var labels = true
+    var helpText = false
     var maxDepth: Int?
 
     init(_ arguments: ArraySlice<String>) throws {
@@ -69,6 +74,8 @@ private struct DisplayOptions {
                 values = true
             case "--no-labels":
                 labels = false
+            case "--help-text":
+                helpText = true
             case "--depth":
                 guard let rawDepth = next.next(), let depth = Int(rawDepth), depth >= 0 else {
                     throw Failure("--depth requires a nonnegative integer.")
@@ -83,8 +90,10 @@ private struct DisplayOptions {
 
 private enum Operation {
     case activate
-    case openThreadLink(String)
+    case openWorkspaceLink(URL)
     case openMenu(String)
+    case focusField(String)
+    case cancelMenu(String)
     case menuCommand(String)
     case menuItem(String)
     case pick(String, String)
@@ -114,9 +123,24 @@ private enum Operation {
         case ("activate", nil):
             self = .activate
         case ("open-thread-link", let url?) where arguments.count == 1:
-            self = .openThreadLink(url)
+            guard let target = URL(string: url), target.scheme == "pi-workspace",
+                  let host = target.host, ["thread", "draft"].contains(host) else { throw Failure("Expected a thread or draft link.") }
+            self = .openWorkspaceLink(target)
+        case ("open-settings-link", let url?) where arguments.count == 1:
+            guard ["pi-workspace://settings/open-source-licenses", "pi-workspace://settings/about#app-version"].contains(url),
+                  let target = URL(string: url) else { throw Failure("Expected an About settings link.") }
+            self = .openWorkspaceLink(target)
+        case ("open-prompt-link", let url?) where arguments.count == 1:
+            guard let parts = URLComponents(string: url), parts.scheme == "pi-workspace", parts.host == "new",
+                  parts.user == nil, parts.password == nil, parts.port == nil, parts.fragment == nil,
+                  parts.percentEncodedPath == "/v1", let target = parts.url else { throw Failure("Expected a local prompt link.") }
+            self = .openWorkspaceLink(target)
         case ("open-menu", let title?) where arguments.count == 1:
             self = .openMenu(title)
+        case ("focus-field", let id?) where arguments.count == 1:
+            self = .focusField(id)
+        case ("cancel-menu", let id?) where arguments.count == 1:
+            self = .cancelMenu(id)
         case ("menu-command", let key?) where arguments.count == 1 && key.count == 1:
             self = .menuCommand(key)
         case ("menu-item", let title?) where arguments.count == 1:
@@ -208,6 +232,18 @@ private func requireSuccess(_ result: AXError, _ action: String) throws {
     }
 }
 
+private func focusField(_ target: AXUIElement) throws {
+    if attribute(kAXFocusedAttribute, on: target) as? Bool == true { return }
+    try requireSuccess(AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue), "Set AXFocused")
+    let deadline = ProcessInfo.processInfo.systemUptime + 0.5
+    while attribute(kAXFocusedAttribute, on: target) as? Bool != true {
+        guard ProcessInfo.processInfo.systemUptime < deadline else {
+            throw Failure("Could not confirm keyboard focus on the specified element.")
+        }
+        Thread.sleep(forTimeInterval: 0.01)
+    }
+}
+
 private func attribute(_ name: String, on element: AXUIElement) -> CFTypeRef? {
     var result: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else {
@@ -245,6 +281,10 @@ private func line(for element: AXUIElement, options: DisplayOptions) throws -> S
         parts.append("enabled=\(enabled)")
     }
     if attribute(kAXFocusedAttribute, on: element) as? Bool == true { parts.append("focused=true") }
+    if attribute(kAXSelectedAttribute, on: element) as? Bool == true { parts.append("selected=true") }
+    if options.helpText, let help = attribute(kAXHelpAttribute, on: element) as? String {
+        parts.append("help=\(try quoted(help))")
+    }
 
     if options.values {
         let subrole = attribute(kAXSubroleAttribute, on: element) as? String
@@ -797,7 +837,7 @@ private func run(_ arguments: [String]) throws {
         throw Failure("A positive PID is required. See ax --help.")
     }
     var operands = arguments.dropFirst(2)
-    let noActivate = ["menu-item", "key-focused", "open-thread-link", "press"].contains(arguments[0]) && operands.last == "--no-activate"
+    let noActivate = ["menu-item", "key-focused", "open-thread-link", "open-settings-link", "open-prompt-link", "press", "pick"].contains(arguments[0]) && operands.last == "--no-activate"
     if noActivate { operands = operands.dropLast() }
     let operation = try Operation(arguments[0], operands)
     guard kill(pid, 0) == 0 else { throw Failure("The specified PID is unavailable.") }
@@ -820,15 +860,13 @@ private func run(_ arguments: [String]) throws {
     switch operation {
     case .activate:
         try activateForInput(app, pid: pid)
-    case .openThreadLink(let link):
+    case .openWorkspaceLink(let url):
         let args = try processArguments(pid)
         guard let running = NSRunningApplication(processIdentifier: pid), running.bundleIdentifier == "dev.piworkspace.app",
               let bundle = running.bundleURL, bundle.deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-test-app-"),
               let option = args.firstIndex(of: "--workspace"), args.indices.contains(option + 1),
-              URL(fileURLWithPath: args[option + 1]).deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-verification-"),
-              let url = URL(string: link), url.scheme == "pi-workspace",
-              let host = url.host, ["thread", "draft"].contains(host) else {
-            throw Failure("Opening a thread link requires the dedicated app copy and its verification workspace.")
+              URL(fileURLWithPath: args[option + 1]).deletingLastPathComponent().lastPathComponent.hasPrefix("pi-workspace-verification-") else {
+            throw Failure("Opening a workspace link requires the dedicated app copy and its verification workspace.")
         }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = !noActivate
@@ -847,6 +885,12 @@ private func run(_ arguments: [String]) throws {
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025))
         }
         guard receiver == pid else { throw Failure("Launch Services did not reuse the verification process.") }
+    case .cancelMenu(let id):
+        let button = try element(withID: id, in: app)
+        guard let menu = Tree(root: button, maxDepth: 2).first(where: {
+            attribute(kAXRoleAttribute, on: $0.element) as? String == kAXMenuRole
+        })?.element else { throw Failure("The requested button has no open menu.") }
+        try requireSuccess(AXUIElementPerformAction(menu, kAXCancelAction as CFString), "Cancel menu")
     case .openMenu(let title):
         try activateForInput(app, pid: pid)
         guard let raw = attribute(kAXMenuBarAttribute, on: app), CFGetTypeID(raw) == AXUIElementGetTypeID() else {
@@ -895,7 +939,7 @@ private func run(_ arguments: [String]) throws {
             throw Failure("The requested control is not a popup or menu button.")
         }
         for attempt in 0..<2 {
-            if attempt > 0 { try activateForInput(app, pid: pid) }
+            if attempt > 0 && !noActivate { try activateForInput(app, pid: pid) }
             try requireSuccess(AXUIElementPerformAction(popup, kAXPressAction as CFString), "Open \(id)")
             let deadline = ProcessInfo.processInfo.systemUptime + 0.9
             repeat {
@@ -1071,6 +1115,8 @@ private func run(_ arguments: [String]) throws {
     case .confirm(let id):
         let target = try element(withID: id, in: app)
         try requireSuccess(AXUIElementPerformAction(target, kAXConfirmAction as CFString), "AXConfirm")
+    case .focusField(let id):
+        try focusField(element(withID: id, in: app))
     case .set(let id):
         let target = try element(withID: id, in: app)
         let text = try inputText()
@@ -1080,17 +1126,7 @@ private func run(_ arguments: [String]) throws {
         try requireKeyboardAccess()
         let target = try element(withID: id, in: app)
         let text = try inputText()
-        let focused = kAXFocusedAttribute as CFString
-        if attribute(kAXFocusedAttribute, on: target) as? Bool != true {
-            try requireSuccess(AXUIElementSetAttributeValue(target, focused, kCFBooleanTrue), "Set AXFocused")
-        }
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.5
-        while attribute(kAXFocusedAttribute, on: target) as? Bool != true {
-            guard ProcessInfo.processInfo.systemUptime < deadline else {
-                throw Failure("Could not confirm keyboard focus on the specified element.")
-            }
-            Thread.sleep(forTimeInterval: 0.01)
-        }
+        try focusField(target)
         if replace {
             var selected = false
             if let current = attribute(kAXValueAttribute, on: target) as? String {
