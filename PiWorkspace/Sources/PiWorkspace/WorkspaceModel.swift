@@ -2305,7 +2305,7 @@ final class WorkspaceModel: ObservableObject {
         guard canUpdateQueuedMessage, let edit = queueEdit else { return }
         do {
             let text = promptText
-            guard try canUsePrompt(text, attachments: edit.attachments, fromComposer: true) else { return }
+            guard try canUsePrompt(text, attachments: edit.attachments, fromComposer: true, requiresKey: false) else { return }
             try saveQueue { queue in
                 guard let index = queue.firstIndex(where: { $0.id == edit.id }) else { return }
                 queue[index].text = text
@@ -2441,10 +2441,11 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func canUsePrompt(_ text: String, attachments: [ComposerAttachment]? = nil,
-                              fromComposer: Bool = false) throws -> Bool {
+                              fromComposer: Bool = false, requiresKey: Bool = true) throws -> Bool {
         if let reason = attachmentSendError(for: attachments ?? []) { throw WorkspaceError(reason) }
         let settings = try effectiveModel.validated()
         guard let key = try readCredential(settings.account) else {
+            if !requiresKey { return true }
             openSettings(.model, anchor: .apiKey)
             return false
         }

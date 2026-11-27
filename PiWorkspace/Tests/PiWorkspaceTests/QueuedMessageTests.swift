@@ -3,6 +3,51 @@ import XCTest
 
 final class QueuedMessageTests: XCTestCase {
     @MainActor
+    func testEditingAPausedQueueWithoutAKeyPreservesTheDraftAndChecksAtDelivery() throws {
+        let fixture = try QueueFixture()
+        defer { fixture.cleanUp() }
+        let note = try ComposerAttachment(name: "queue.txt", payload: ComposerAttachment.payload(for: Data("queued note".utf8)))
+        let item = QueuedMessage(text: "Before editing", attachments: [note])
+        do {
+            let store = try WorkspaceStore(root: fixture.root)
+            var saved = try store.load()
+            saved.projects[0].conversations[0].composerText = "Ordinary draft"
+            saved.projects[0].conversations[0].queuedMessages = [item]
+            try store.save(saved)
+        }
+        var credential: String?
+        let worker = QueueWorker()
+        let model = WorkspaceModel(root: fixture.root, keychainService: UUID().uuidString,
+                                   credentialExists: { _ in credential != nil }, readCredential: { _ in credential },
+                                   makeProcess: { _, _ in worker })
+        defer { model.shutdown() }
+        model.connect()
+        worker.emit(.ready([]))
+        model.editQueuedMessage(item.id)
+        model.draft = "Updated follow-up"
+        credential = "queued note"
+        model.updateQueuedMessage()
+        XCTAssertEqual(model.editingQueuedMessageID, item.id)
+        XCTAssertEqual(model.queuedMessages, [item])
+        XCTAssertTrue(model.error?.contains("attachment") == true)
+        credential = nil
+        model.updateQueuedMessage()
+        XCTAssertNil(model.settingsRequest)
+        XCTAssertNil(model.editingQueuedMessageID)
+        XCTAssertEqual(model.draft, "Ordinary draft")
+        let expected = QueuedMessage(id: item.id, text: "Updated follow-up", attachments: [note])
+        XCTAssertEqual(model.queuedMessages, [expected])
+        let index = fixture.root.appendingPathComponent("workspace.json")
+        let saved = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
+        XCTAssertEqual(saved.activeProject?.conversations.first?.queuedMessages, [expected])
+        XCTAssertTrue(worker.prompts.isEmpty)
+        model.resumeQueuedMessages()
+        XCTAssertEqual(model.settingsRequest?.destination.anchor, .apiKey)
+        XCTAssertEqual(model.queuedMessages, [expected])
+        XCTAssertTrue(worker.prompts.isEmpty)
+    }
+
+    @MainActor
     func testSettingsLinksPreserveTheActiveTurnAndItsQueue() throws {
         let fixture = try QueueFixture()
         defer { fixture.cleanUp() }
