@@ -15,8 +15,17 @@ struct DraftProjectPicker: View {
     @State private var projectOrder: [UUID] = []
     @FocusState private var searchFocused: Bool
 
+    private var projects: [Project] {
+        var sorted = SidebarProjectFilter.orderedProjects(model.projects.sorted { $0.lastActivity > $1.lastActivity })
+        if let current = sorted.firstIndex(where: { $0.id == model.project?.id }), current != 0 {
+            let preferred = sorted.remove(at: current)
+            sorted.insert(preferred, at: 0)
+        }
+        return sorted
+    }
+
     var body: some View {
-        let projects = SidebarProjectFilter.orderedProjects(model.projects.sorted { $0.lastActivity > $1.lastActivity })
+        let projects = self.projects
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let rank = Dictionary(uniqueKeysWithValues: projectOrder.enumerated().map { ($1, $0) })
         let matches = projects.filter { term.isEmpty || $0.title.localizedStandardContains(term) }.sorted {
@@ -152,6 +161,7 @@ struct DraftProjectPicker: View {
                 Button { togglePin(project.id) } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
                         .foregroundStyle(.secondary)
+                        .opacity(pinned || destination == selected ? 1 : 0)
                         .frame(width: 26, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -160,6 +170,9 @@ struct DraftProjectPicker: View {
                 .accessibilityLabel(action)
                 .accessibilityIdentifier("draft-project-pin-\(project.id)")
             }
+        }
+        .onHover { hovering in
+            if hovering { highlight = destination }
         }
         .background(destination == selected ? Color.accentColor.opacity(0.15) : .clear,
                     in: RoundedRectangle(cornerRadius: 5))

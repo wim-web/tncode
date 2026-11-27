@@ -76,6 +76,8 @@ final class DraftProjectPickerTests: XCTestCase {
                 XCTAssertEqual(window.element(alphaPin)?.accessibilityLabel?(), "Pin \(fixture.alpha.title)")
             }
             try await window.waitFor("focused search") { window.searchEditor != nil }
+            try window.checkOrder(fixture.alphaRow, then: fixture.gammaRow)
+            try window.checkOrder(fixture.gammaRow, then: fixture.betaRow)
             try window.setQuery(" CAFE ")
             try await window.waitFor("both accent-insensitive matches") {
                 window.element(fixture.alphaRow) != nil && window.element(fixture.betaRow) != nil &&
@@ -111,7 +113,8 @@ final class DraftProjectPickerTests: XCTestCase {
             try await reopened.waitFor("picker reopened in pin order") {
                 reopened.element(betaPin) != nil && reopened.searchEditor != nil
             }
-            try reopened.checkOrder(fixture.betaRow, then: fixture.alphaRow)
+            try reopened.checkOrder(fixture.alphaRow, then: fixture.betaRow)
+            try reopened.checkOrder(fixture.betaRow, then: fixture.gammaRow)
             XCTAssertEqual(reopened.searchEditor?.string, "")
         }
 
@@ -129,7 +132,8 @@ final class DraftProjectPickerTests: XCTestCase {
         let window = DraftPickerOffscreenPanel(model: restored) { _ in XCTFail("Unexpected destination") }
         defer { window.close() }
         try await window.waitFor("restored pinned row") { window.element(betaPin)?.accessibilityLabel?() == "Unpin \(fixture.beta.title)" }
-        try window.checkOrder(fixture.betaRow, then: fixture.alphaRow)
+        try window.checkOrder(fixture.alphaRow, then: fixture.betaRow)
+        try window.checkOrder(fixture.betaRow, then: fixture.gammaRow)
     }
 
     func testScratchPickerWithNoRegisteredProjectOffersAddProject() async throws {
@@ -160,6 +164,7 @@ final class DraftProjectPickerTests: XCTestCase {
     private final class Fixture {
         let alpha: Project
         let beta: Project
+        let gamma: Project
         let draft: Conversation
         private let root: URL
         private let policy: NSApplication.ActivationPolicy
@@ -167,12 +172,14 @@ final class DraftProjectPickerTests: XCTestCase {
 
         var alphaRow: String { "draft-project-\(alpha.id)" }
         var betaRow: String { "draft-project-\(beta.id)" }
+        var gammaRow: String { "draft-project-\(gamma.id)" }
 
         init(scratchOnly: Bool = false) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             let alphaFolder = root.appending(path: "first")
             let betaFolder = root.appending(path: "second")
-            for folder in [alphaFolder, betaFolder] {
+            let gammaFolder = root.appending(path: "third")
+            for folder in [alphaFolder, betaFolder, gammaFolder] {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             }
             let note = try ComposerAttachment(name: "Draft note.txt", payload: ComposerAttachment.payload(for: Data("unsent note".utf8)))
@@ -181,9 +188,10 @@ final class DraftProjectPickerTests: XCTestCase {
             alpha = Project(id: UUID(), path: alphaFolder.path, title: "Café Tools", inSidebarScope: true,
                             conversations: [draft], selectedConversation: draft.id, createdAt: Date(timeIntervalSince1970: 100))
             beta = Project(id: UUID(), path: betaFolder.path, title: "Café Tools Next", createdAt: Date(timeIntervalSince1970: 50))
+            gamma = Project(id: UUID(), path: gammaFolder.path, title: "Other project", createdAt: Date(timeIntervalSince1970: 200))
             policy = NSApplication.shared.activationPolicy()
             let store = try WorkspaceStore(root: workspaceRoot)
-            let projects = scratchOnly ? [try store.makeScratchProject(for: draft)] : [alpha, beta]
+            let projects = scratchOnly ? [try store.makeScratchProject(for: draft)] : [alpha, beta, gamma]
             try store.save(Workspace(projects: projects, selectedProject: projects.first?.id, welcomeCompleted: true))
             NSApplication.shared.setActivationPolicy(.prohibited)
             NSApplication.shared.finishLaunching()
