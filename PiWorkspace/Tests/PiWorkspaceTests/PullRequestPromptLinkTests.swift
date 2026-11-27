@@ -187,6 +187,84 @@ final class PullRequestPromptLinkTests: XCTestCase {
         try fixture.checkOriginalCheckouts(in: model)
     }
 
+    func testDamagedPRForkKeepsCurrentWorkerSelectionAndBothDrafts() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"] else {
+            throw XCTSkip("Set PI_PROMPT_LINK_TEST_APP to exercise the bundled Pi worker.")
+        }
+        let app = URL(fileURLWithPath: path)
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let parent = try fixture.seedHistory(app: app, thread: fixture.mainDraft.id)
+        let queued = QueuedMessage(text: "Keep this queued message")
+        do {
+            let store = try WorkspaceStore(root: fixture.workspace)
+            var workspace = try store.load()
+            workspace.model = ModelSettings(provider: .local, model: "palette-fixture")
+            workspace.projects[0].conversations[0].isDraft = false
+            workspace.projects[1].conversations[0].queuedMessages = [queued]
+            try store.save(workspace)
+        }
+        let model = fixture.open(app: app)
+        defer { model.terminate() }
+        let panel = LinkPanel(model: model)
+        defer { panel.close() }
+        model.selectConversation(fixture.mainDraft.id, in: fixture.project.id)
+        try await panel.waitUntil("parent history") { model.messages.last?.id == parent.latestID }
+        model.forkResponse(parent.latestID)
+        try await panel.waitUntil("real Pi fork") { model.phase == .ready && model.conversation?.forkOrigin?.messageID == parent.latestID }
+        let childID = try XCTUnwrap(model.conversation?.id)
+        let scope = try XCTUnwrap(model.gitHubScope)
+        try await model.linkPullRequest(fixture.prURL, in: scope, repository: model.gitHubRepository(in: scope))
+        model.draft = "Preserve this fork follow-up"
+        let sourceProject = try XCTUnwrap(model.projects.first { $0.path == fixture.other.path })
+        model.selectConversation(fixture.unrelatedDraft.id, in: sourceProject.id)
+        try await panel.waitUntil("unrelated worker ready") { model.phase == .ready }
+        let source = try XCTUnwrap(fixture.latestWorker)
+        let child = fixture.workspace.appendingPathComponent("sessions/\(fixture.project.id)/\(childID)/\(childID).jsonl")
+        let original = try Data(contentsOf: child)
+        let header = original.prefix(through: try XCTUnwrap(original.firstIndex(of: 10)))
+        try header.write(to: child, options: .atomic)
+        let parentFile = URL(fileURLWithPath: parent.historyPath)
+        let parentBytes = try Data(contentsOf: parentFile)
+        let saved = try fixture.saved()
+        let link = try fixture.link(prompt: "Replace+this")
+        var selections: [UUID?] = []
+        let subscription = model.$workspace.sink { selections.append($0.activeProject?.selectedConversation) }
+        defer { subscription.cancel() }
+        for action in ["prompt-link-pr-replace-draft", "prompt-link-pr-open-thread"] {
+            XCTAssertTrue(model.openPromptLink(link))
+            panel.showReview()
+            try await panel.waitFor(action)
+            try panel.press(action)
+            try await panel.waitUntil("Pi rejected the damaged fork") {
+                panel.element("prompt-link-action-error") != nil || model.error != nil
+            }
+            XCTAssertEqual(model.conversation?.id, fixture.unrelatedDraft.id)
+            XCTAssertEqual(model.phase, .ready)
+            XCTAssertNotNil(source.onEvent)
+            XCTAssertEqual(model.draft, fixture.unrelatedDraft.composerText)
+            XCTAssertEqual(model.queuedMessages, [queued])
+            XCTAssertEqual(Set(selections), [fixture.unrelatedDraft.id])
+            XCTAssertEqual(try fixture.saved(), saved)
+            XCTAssertEqual(try Data(contentsOf: child), header)
+            XCTAssertEqual(try Data(contentsOf: parentFile), parentBytes)
+            try panel.check("prompt-link-action-error", includes: "fork history is incomplete")
+            model.promptLinkReview = nil
+        }
+        try original.write(to: child, options: .atomic)
+        XCTAssertTrue(model.openPromptLink(link))
+        panel.showReview()
+        try await panel.waitFor("prompt-link-pr-replace-draft")
+        try panel.press("prompt-link-pr-replace-draft")
+        try await panel.waitUntil("restored fork") { model.messages.last?.id == parent.latestID && model.phase == .ready }
+        XCTAssertEqual(model.conversation?.id, childID)
+        XCTAssertEqual(model.draft, "Replace this")
+        XCTAssertNil(source.onEvent)
+        XCTAssertEqual(try Data(contentsOf: parentFile), parentBytes)
+        XCTAssertEqual(try Data(contentsOf: child), original)
+        XCTAssertEqual(model.projects.first { $0.id == sourceProject.id }?.conversations.first?.queuedMessages, [queued])
+    }
+
     func testWrongRepositoryResponseAndChangedLocalRemoteCannotConfirm() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -242,6 +320,7 @@ private final class Fixture {
     let mainDraft = Conversation(id: UUID(), title: "Local draft", isDraft: true, composerText: "Keep my local edit")
     private(set) var oldHead = ""
     private(set) var newHead = ""
+    private(set) weak var latestWorker: PiProcess?
     private(set) var connectionDirectories: [String] = []
 
     init() throws {
@@ -295,9 +374,11 @@ private final class Fixture {
                               makeProcess: { [weak self] config, directory in
             self?.connectionDirectories.append(directory)
             if let app {
-                return try PiProcess(config: config, cwd: directory,
+                let worker = try PiProcess(config: config, cwd: directory,
                                      executable: app.appendingPathComponent("Contents/Helpers/node"),
                                      arguments: [app.appendingPathComponent("Contents/Resources/Sidecar/worker.mjs").path])
+                self?.latestWorker = worker
+                return worker
             }
             throw WorkspaceError("This fixture does not start Pi.")
         }, makeGitHubReader: { GitHubReader(directory: $0, environment: environment, timeout: .seconds(5)) })
