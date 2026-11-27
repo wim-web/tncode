@@ -16,17 +16,100 @@ enum ThreadSnoozeStatus: Equatable {
 }
 
 enum ThreadSnoozeSchedule {
+    static let maximumOptions = 8
+    static let maximumMinutes = 30 * 24 * 60
+
     enum Unit: String, CaseIterable, Identifiable {
         case minutes = "Minutes"
         case hours = "Hours"
         case days = "Days"
 
         var id: Self { self }
-        var seconds: TimeInterval {
+        var minutesPerUnit: Int {
             switch self {
-            case .minutes: 60
-            case .hours: 3600
-            case .days: 86400
+            case .minutes: 1
+            case .hours: 60
+            case .days: 1440
+            }
+        }
+
+        static func forMinutes(_ minutes: Int) -> Self {
+            allCases.reversed().first { minutes.isMultiple(of: $0.minutesPerUnit) } ?? .minutes
+        }
+    }
+
+    enum Day: String, Codable, CaseIterable {
+        case today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+
+        private var weekday: Int? {
+            switch self {
+            case .today, .tomorrow: nil
+            case .sunday: 1
+            case .monday: 2
+            case .tuesday: 3
+            case .wednesday: 4
+            case .thursday: 5
+            case .friday: 6
+            case .saturday: 7
+            }
+        }
+
+        func daysAhead(at now: Date, calendar: Calendar) -> Int {
+            guard let weekday else { return self == .today ? 0 : 1 }
+            let gap = (weekday - calendar.component(.weekday, from: now) + 7) % 7
+            return gap == 0 ? 7 : gap
+        }
+    }
+
+    enum Option: Codable, Hashable {
+        case after(minutes: Int)
+        case at(day: Day, time: String)
+
+        var isValid: Bool {
+            switch self {
+            case let .after(minutes): (1...maximumMinutes).contains(minutes)
+            case let .at(_, time): clockComponents(time) != nil
+            }
+        }
+
+        var id: String {
+            switch self {
+            case .after(60): "one-hour"
+            case .after(180): "three-hours"
+            case .at(.today, "18:00"): "this-evening"
+            case .at(.tomorrow, "09:00"): "tomorrow"
+            case .at(.monday, "09:00"): "next-week"
+            case let .after(minutes): "after-\(minutes)"
+            case let .at(day, time): "at-\(day.rawValue)-\(time)"
+            }
+        }
+
+        func resolve(at now: Date, calendar: Calendar = localCalendar) -> Preset? {
+            guard isValid else { return nil }
+            switch self {
+            case let .after(minutes):
+                let unit = Unit.forMinutes(minutes)
+                let amount = minutes / unit.minutesPerUnit
+                let name = unit.rawValue.lowercased()
+                let elapsed = TimeInterval(minutes * 60)
+                return Preset(id: id, label: "In \(amount) \(amount == 1 ? String(name.dropLast()) : name)",
+                              shownDeadline: now.addingTimeInterval(elapsed), elapsed: elapsed)
+            case let .at(day, time):
+                let days = day.daysAhead(at: now, calendar: calendar)
+                guard let (hour, minute) = clockComponents(time),
+                      let date = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: now)),
+                      let deadline = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: date,
+                                                   matchingPolicy: .nextTimePreservingSmallerComponents),
+                      deadline > now else { return nil }
+                let label: String
+                switch days {
+                case 0: label = hour < 12 ? "This morning" : hour < 17 ? "This afternoon" : "This evening"
+                case 1: label = "Tomorrow"
+                default:
+                    let name = day.rawValue.capitalized
+                    label = day == .monday ? "Next week" : days == 7 ? "Next \(name)" : name
+                }
+                return Preset(id: id, label: label, shownDeadline: deadline)
             }
         }
     }
@@ -48,28 +131,23 @@ enum ThreadSnoozeSchedule {
         return calendar
     }
 
-    static func presets(at now: Date, calendar: Calendar = localCalendar) -> [Preset] {
-        let daysToMonday = (9 - calendar.component(.weekday, from: now)) % 7
-        var presets = [
-            Preset(id: "one-hour", label: "In 1 hour", shownDeadline: now.addingTimeInterval(3600), elapsed: 3600),
-            Preset(id: "three-hours", label: "In 3 hours", shownDeadline: now.addingTimeInterval(10800), elapsed: 10800)
-        ]
-        let localTimes = [
-            ("this-evening", "This evening", 0, 18),
-            ("tomorrow", "Tomorrow", 1, 9),
-            ("next-week", daysToMonday == 1 ? "Tomorrow" : "Next week", daysToMonday == 0 ? 7 : daysToMonday, 9)
-        ]
-        for (id, label, days, hour) in localTimes {
-            if let day = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: now)),
-               let deadline = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day,
-                                             matchingPolicy: .nextTimePreservingSmallerComponents),
-               deadline > now {
-                presets.append(Preset(id: id, label: label, shownDeadline: deadline))
-            }
-        }
+    static let defaultOptions: [Option] = [
+        .after(minutes: 60), .after(minutes: 180), .at(day: .today, time: "18:00"),
+        .at(day: .tomorrow, time: "09:00"), .at(day: .monday, time: "09:00")
+    ]
+
+    static func nextOption(in options: [Option]) -> Option {
+        let candidates = defaultOptions + [.after(minutes: 30), .at(day: .saturday, time: "09:00"),
+                                            .after(minutes: 1440)]
+        return candidates.first { !options.contains($0) } ?? .after(minutes: 60)
+    }
+
+    static func presets(at now: Date, options: [Option] = defaultOptions,
+                        calendar: Calendar = localCalendar) -> [Preset] {
         var minutes = Set<Double>()
         let wakeMinute: (Preset) -> Double = { floor($0.shownDeadline.timeIntervalSince1970 / 60) }
-        return presets.sorted { wakeMinute($0) < wakeMinute($1) }
+        return options.compactMap { $0.resolve(at: now, calendar: calendar) }
+            .sorted { wakeMinute($0) < wakeMinute($1) }
             .filter { minutes.insert(wakeMinute($0)).inserted }
     }
 
@@ -80,11 +158,9 @@ enum ThreadSnoozeSchedule {
 
     static func deadline(date: String, time: String, after now: Date, calendar: Calendar = localCalendar) -> Date? {
         let dayParts = date.split(separator: "-", omittingEmptySubsequences: false)
-        let timeParts = time.split(separator: ":", omittingEmptySubsequences: false)
-        guard dayParts.map(\.count) == [4, 2, 2], timeParts.map(\.count) == [2, 2],
+        guard dayParts.map(\.count) == [4, 2, 2],
               let year = Int(dayParts[0]), let month = Int(dayParts[1]), let day = Int(dayParts[2]),
-              let hour = Int(timeParts[0]), let minute = Int(timeParts[1]),
-              (0..<24).contains(hour), (0..<60).contains(minute),
+              let (hour, minute) = clockComponents(time),
               let start = calendar.date(from: DateComponents(year: year, month: month, day: day)),
               let wake = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: start,
                                        matchingPolicy: .strict, repeatedTimePolicy: .first),
@@ -95,7 +171,7 @@ enum ThreadSnoozeSchedule {
 
     static func deadline(amount: String, unit: Unit, after now: Date) -> Date? {
         guard let amount = Double(amount.trimmingCharacters(in: .whitespacesAndNewlines)), amount > 0 else { return nil }
-        let wake = now.addingTimeInterval(amount * unit.seconds)
+        let wake = now.addingTimeInterval(amount * TimeInterval(unit.minutesPerUnit * 60))
         return isFuture(wake, after: now) ? wake : nil
     }
 
@@ -117,5 +193,12 @@ enum ThreadSnoozeSchedule {
         formatter.timeZone = calendar.timeZone
         formatter.dateFormat = format
         return formatter.string(from: date)
+    }
+
+    private static func clockComponents(_ time: String) -> (hour: Int, minute: Int)? {
+        let parts = time.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.map(\.count) == [2, 2], parts.allSatisfy({ $0.utf8.allSatisfy { (48...57).contains($0) } }),
+              let hour = Int(parts[0]), let minute = Int(parts[1]), hour < 24, minute < 60 else { return nil }
+        return (hour, minute)
     }
 }

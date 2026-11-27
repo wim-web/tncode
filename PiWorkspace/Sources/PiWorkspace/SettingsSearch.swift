@@ -2,13 +2,14 @@ import Combine
 import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, appearance, project, model, worktrees, usage, browser, about
+    case general, threads, appearance, project, model, worktrees, usage, browser, about
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: "General"
+        case .threads: "Threads"
         case .appearance: "Appearance"
         case .project: "Project Overview"
         case .model: "Model Settings"
@@ -22,6 +23,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: "gearshape"
+        case .threads: "bubble.left.and.bubble.right"
         case .appearance: "paintbrush"
         case .project: "folder"
         case .model: "cpu"
@@ -39,6 +41,7 @@ enum SidebarPreference {
 
 enum SettingsAnchor: String {
     case groupByProject = "settings-group-by-project"
+    case snoozeOptions = "snooze-options"
     case addProjectStartsIn = "add-project-starts-in"
     case worktreeLocation = "storage-worktrees-location"
     case startFromRemote = "start-from-origin"
@@ -180,6 +183,8 @@ struct SettingsSearch {
         .init(page: .general, title: "General", keywords: "preferences sidebar threads"),
         .init(page: .general, anchor: .groupByProject, title: "Group by Project", keywords: "sidebar thread list grouping"),
         .init(page: .general, anchor: .addProjectStartsIn, title: "Add project starts in", keywords: "base directory folder browser path home"),
+        .init(page: .threads, title: "Threads", keywords: "conversation preferences"),
+        .init(page: .threads, anchor: .snoozeOptions, title: "Snooze options", keywords: "presets wake duration time weekday reset add remove"),
         .init(page: .appearance, title: "Appearance", keywords: "visual display theme"),
         .init(page: .appearance, anchor: .colorScheme, title: "Color scheme", keywords: "theme light dark system"),
         .init(page: .appearance, anchor: .chatWidth, title: "Chat width", keywords: "conversation composer comfortable wide full"),

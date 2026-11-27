@@ -45,6 +45,30 @@ final class ThreadSnoozeTests: XCTestCase {
                        instant("2027-03-14T20:00:00Z"))
     }
 
+    func testConfiguredOptionsSortByWakeMinuteAndKeepTheFirstTie() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let now = instant("2027-03-14T22:00:24Z")
+        let fixed = ThreadSnoozeSchedule.Option.at(day: .today, time: "15:30")
+        let elapsed = ThreadSnoozeSchedule.Option.after(minutes: 30)
+        let options: [ThreadSnoozeSchedule.Option] = [
+            .at(day: .sunday, time: "18:00"), .at(day: .today, time: "14:59"),
+            fixed, elapsed, .after(minutes: 1440), .at(day: .tomorrow, time: "09:00"), elapsed
+        ]
+        let menu = ThreadSnoozeSchedule.presets(at: now, options: options, calendar: calendar)
+        XCTAssertEqual(menu.map(\.label), ["This afternoon", "Tomorrow", "In 1 day", "Next Sunday"])
+        XCTAssertEqual(menu.map(\.shownDeadline), [instant("2027-03-14T22:30:00Z"), instant("2027-03-15T16:00:00Z"),
+                                                   instant("2027-03-15T22:00:24Z"), instant("2027-03-22T01:00:00Z")])
+        XCTAssertEqual(menu.first?.deadline(at: now.addingTimeInterval(21)), instant("2027-03-14T22:30:00Z"))
+        XCTAssertTrue(ThreadSnoozeSchedule.presets(at: now, options: [], calendar: calendar).isEmpty)
+        let defaults = ThreadSnoozeSchedule.defaultOptions
+        XCTAssertEqual(ThreadSnoozeSchedule.nextOption(in: []), defaults[0])
+        XCTAssertEqual(ThreadSnoozeSchedule.nextOption(in: defaults), elapsed)
+        XCTAssertEqual(ThreadSnoozeSchedule.nextOption(in: defaults + [elapsed]), .at(day: .saturday, time: "09:00"))
+        XCTAssertFalse(ThreadSnoozeSchedule.Option.at(day: .friday, time: "24:00").isValid)
+        XCTAssertFalse(ThreadSnoozeSchedule.Option.after(minutes: 43201).isValid)
+    }
+
     func testNativeShelfWakeUndoAndQueueEditOwnership() async throws {
         let fixture = try Fixture()
         let model = fixture.open()
@@ -177,7 +201,9 @@ final class ThreadSnoozeTests: XCTestCase {
         defer { model.terminate() }
         let initial = fixture.now
         var submitted = false
-        let host = OffscreenSnoozeView(CustomSnoozeView(model: model, target: fixture.selected) { submitted = $0 })
+        let host = OffscreenSnoozeView(CustomSnoozeView(model: model, target: fixture.selected, editOptions: {}) {
+            submitted = $0
+        })
         defer { host.close() }
 
         fixture.now.addTimeInterval(7200)
@@ -192,12 +218,124 @@ final class ThreadSnoozeTests: XCTestCase {
                        Date(timeIntervalSince1970: floor(initial.timeIntervalSince1970 / 60) * 60 + 3600))
     }
 
+    func testNativeSnoozeOptionsPreserveDraftQueueAndDeadlinesAcrossReopen() async throws {
+        if let path = ProcessInfo.processInfo.environment[Self.snoozeEditorFixture] {
+            let fixture = try Fixture(opening: URL(fileURLWithPath: path))
+            try await runSnoozeOptionsEditor(fixture)
+            return
+        }
+
+        let fixture = try Fixture()
+        let oldDeadline = fixture.now.addingTimeInterval(172800)
+        let runner = Process()
+        runner.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        runner.arguments = ["xctest", "-XCTest", "\(String(reflecting: Self.self))/\(#function.dropLast(2))",
+                            Bundle(for: Self.self).bundleURL.path]
+        var environment = ProcessInfo.processInfo.environment
+        environment[Self.snoozeEditorFixture] = fixture.root.path
+        runner.environment = environment
+        try runner.run()
+        runner.waitUntilExit()
+        guard runner.terminationStatus == 0 else {
+            throw WorkspaceError("The first AppKit process failed the snooze options workflow.")
+        }
+
+        let reopened = fixture.open()
+        defer { reopened.terminate() }
+        XCTAssertNil(reopened.startupFailure)
+        XCTAssertEqual(reopened.draft, "Open draft")
+        XCTAssertEqual(reopened.queuedMessages, [fixture.queue])
+        let host = OffscreenSnoozeView(workspace: reopened)
+        defer { host.close() }
+        try await host.withSnoozeMenu(for: fixture.archived.threadID) { menu in
+            XCTAssertTrue(try XCTUnwrap(menu.items.first).title.hasPrefix("In 31 minutes"))
+            fixture.now.addTimeInterval(21)
+            try host.choose("In 31 minutes", from: menu)
+        }
+        _ = try await host.waitFor("snoozed-shelf")
+        let deadline = fixture.now.addingTimeInterval(31 * 60)
+        let storedDeadline = try XCTUnwrap(fixture.saved()[fixture.archived.threadID]?.snoozedUntil)
+        XCTAssertEqual(storedDeadline, deadline)
+        print("Relaunch process \(ProcessInfo.processInfo.processIdentifier) stored a snooze \(storedDeadline.timeIntervalSince(fixture.now)) seconds from selection")
+
+        reopened.openSettings(.threads, anchor: .snoozeOptions)
+        try await host.press("reset-snooze-options")
+        XCTAssertNil(host.element("reset-snooze-options"))
+        XCTAssertNil(try fixture.savedWorkspace().snoozeOptions)
+        XCTAssertEqual(reopened.workspace.effectiveSnoozeOptions, ThreadSnoozeSchedule.defaultOptions)
+        XCTAssertEqual(try fixture.saved()[fixture.archived.threadID]?.snoozedUntil, deadline)
+        XCTAssertEqual(try fixture.saved()[fixture.pinned.threadID]?.snoozedUntil, oldDeadline)
+    }
+
+    private static let snoozeEditorFixture = "PI_WORKSPACE_SNOOZE_EDITOR_FIXTURE"
+
+    private func runSnoozeOptionsEditor(_ fixture: Fixture) async throws {
+        let oldDeadline = fixture.now.addingTimeInterval(172800)
+        let edited = ThreadSnoozeSchedule.Option.after(minutes: 31)
+        let model = fixture.open()
+        defer { model.terminate() }
+        try model.snooze(fixture.pinned, amount: "2", unit: .days)
+        model.draft = "Open draft"
+        model.editQueuedMessage(fixture.queue.id)
+        model.draft = "In-progress queue edit"
+
+        let host = OffscreenSnoozeView(workspace: model)
+        defer { host.close() }
+        try await host.withSnoozeMenu(for: fixture.selected.threadID) { menu in
+            try host.choose("Custom…", from: menu)
+        }
+        try await host.press("edit-snooze-options")
+        _ = try await host.waitFor("settings-heading-threads")
+        _ = try await host.waitFor("snooze-options")
+        XCTAssertNil(host.element("confirm-custom-snooze"))
+        XCTAssertNil(try fixture.saved()[fixture.selected.threadID]?.snoozedUntil)
+
+        try await host.press("add-snooze-option")
+        _ = try await host.waitFor("remove-snooze-option-6")
+        XCTAssertEqual(try fixture.savedWorkspace().effectiveSnoozeOptions.last, .after(minutes: 30))
+        try await host.editAmount(from: "30", to: "31")
+        XCTAssertTrue(try fixture.savedWorkspace().effectiveSnoozeOptions.contains(edited))
+        let editedRow = try host.durationRow(amount: "31")
+        try await host.press("remove-snooze-option-\(editedRow == 1 ? 2 : 1)")
+        let options = try fixture.savedWorkspace().effectiveSnoozeOptions
+        XCTAssertEqual(options.count, 5)
+        XCTAssertTrue(options.contains(edited))
+
+        let backup = fixture.root.appendingPathComponent(WorkspaceStore.previousIndexName)
+        let savedBackup = fixture.root.appendingPathComponent("held-backup.json")
+        try FileManager.default.moveItem(at: backup, to: savedBackup)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+        try await host.press("add-snooze-option")
+        _ = try await host.waitFor("snooze-options-save-error")
+        XCTAssertEqual(model.workspace.effectiveSnoozeOptions, options)
+        XCTAssertEqual(try fixture.savedWorkspace().effectiveSnoozeOptions, options)
+        XCTAssertNil(host.element("remove-snooze-option-6"))
+        try FileManager.default.removeItem(at: backup)
+        try FileManager.default.moveItem(at: savedBackup, to: backup)
+        try await host.press("add-snooze-option")
+        _ = try await host.waitFor("remove-snooze-option-6")
+        XCTAssertNil(host.element("snooze-options-save-error"))
+        XCTAssertEqual(Set(try fixture.savedWorkspace().effectiveSnoozeOptions),
+                       Set(ThreadSnoozeSchedule.defaultOptions + [edited]))
+
+        try await host.press("settings-close")
+        try await host.waitForSheetDismissal()
+        XCTAssertEqual(model.conversation?.id, fixture.selected.threadID)
+        XCTAssertEqual(model.editingQueuedMessageID, fixture.queue.id)
+        XCTAssertEqual(model.draft, "In-progress queue edit")
+        XCTAssertEqual(try fixture.saved()[fixture.selected.threadID]?.composerText, "Open draft")
+        XCTAssertEqual(try fixture.saved()[fixture.selected.threadID]?.queuedMessages, [fixture.queue])
+        XCTAssertEqual(try fixture.saved()[fixture.pinned.threadID]?.snoozedUntil, oldDeadline)
+        print("Snooze options persisted by AppKit process \(ProcessInfo.processInfo.processIdentifier)")
+    }
+
     private func instant(_ value: String) -> Date { ISO8601DateFormatter().date(from: value)! }
 
     private final class Fixture {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Snooze \(UUID())")
+        let root: URL
+        private let ownsRoot: Bool
         var now = Date(timeIntervalSince1970: 1_804_964_424)
-        let queue = QueuedMessage(text: "Original queued message")
+        let queue: QueuedMessage
         let initial: Workspace
         let selected: ThreadSnoozeTarget
         let pinned: ThreadSnoozeTarget
@@ -205,6 +343,9 @@ final class ThreadSnoozeTests: XCTestCase {
         let archived: ThreadSnoozeTarget
 
         init() throws {
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("Snooze \(UUID())")
+            ownsRoot = true
+            queue = QueuedMessage(text: "Original queued message")
             let projectID = UUID(), otherProjectID = UUID()
             selected = .init(projectID: projectID, threadID: UUID())
             pinned = .init(projectID: otherProjectID, threadID: UUID())
@@ -224,12 +365,33 @@ final class ThreadSnoozeTests: XCTestCase {
             try WorkspaceStore(root: root).save(initial)
         }
 
-        deinit { try? FileManager.default.removeItem(at: root) }
+        init(opening root: URL) throws {
+            self.root = root
+            ownsRoot = false
+            let index = root.appendingPathComponent(WorkspaceStore.indexName)
+            initial = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
+            let project = try XCTUnwrap(initial.activeProject)
+            let thread = try XCTUnwrap(project.conversations.first { $0.id == project.selectedConversation })
+            let other = try XCTUnwrap(initial.projects.first { $0.id != project.id })
+            selected = .init(projectID: project.id, threadID: thread.id)
+            pinned = .init(projectID: other.id, threadID: try XCTUnwrap(other.conversations.first?.id))
+            settled = .init(projectID: project.id, threadID: try XCTUnwrap(project.conversations.first { $0.title == "Settled" }?.id))
+            archived = .init(projectID: project.id, threadID: try XCTUnwrap(project.conversations.first { $0.title == "Archive target" }?.id))
+            queue = try XCTUnwrap(thread.queuedMessages?.first)
+        }
+
+        deinit {
+            if ownsRoot { try? FileManager.default.removeItem(at: root) }
+        }
 
         func saved(at location: URL? = nil) throws -> [UUID: Conversation] {
-            let index = (location ?? root).appendingPathComponent("workspace.json")
-            let state = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
+            let state = try savedWorkspace(at: location)
             return Dictionary(uniqueKeysWithValues: state.projects.flatMap(\.conversations).map { ($0.id, $0) })
+        }
+
+        func savedWorkspace(at location: URL? = nil) throws -> Workspace {
+            let index = (location ?? root).appendingPathComponent("workspace.json")
+            return try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: index))
         }
 
         @MainActor
@@ -264,8 +426,7 @@ private final class OffscreenSnoozeView {
         let board = NSPasteboard.withUniqueName()
         let defaultsName = "dev.piworkspace.snooze-tests.\(UUID())"
         let defaults = UserDefaults(suiteName: defaultsName)!
-        self.init(WorkspaceView(model: model, chatWidthMode: .comfortable,
-                                browserDefaults: defaults, workspacePasteboard: board)
+        self.init(WorkspaceWithSnoozeSettings(model: model, defaults: defaults, pasteboard: board)
             .defaultAppStorage(defaults))
         pasteboard = board
         self.defaults = defaults
@@ -307,13 +468,21 @@ private final class OffscreenSnoozeView {
             }
             return nil
         }
-        return find(host) ?? find(window)
+        return find(host) ?? find(window) ?? window.sheets.lazy.compactMap(find).first
     }
 
     func waitFor(_ id: String) async throws -> AnyObject {
         for _ in 0..<150 {
             host.layoutSubtreeIfNeeded()
-            if let found = element(id) { return found }
+            for sheet in window.sheets {
+                sheet.contentView?.layoutSubtreeIfNeeded()
+            }
+            if let found = element(id) {
+                XCTAssertTrue(window.sheets.allSatisfy { sheet in
+                    sheet.alphaValue == 0 || NSScreen.screens.allSatisfy { !$0.frame.intersects(sheet.frame) }
+                })
+                return found
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
         let message = "Timed out waiting for \(id)."
@@ -326,10 +495,84 @@ private final class OffscreenSnoozeView {
         XCTAssertTrue(button.accessibilityPerformPress?() == true)
         await Task.yield()
     }
+
+    func waitForSheetDismissal() async throws {
+        for _ in 0..<100 {
+            if window.sheets.isEmpty { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw WorkspaceError("The AppKit sheet did not dismiss.")
+    }
+
+    func withSnoozeMenu(for threadID: UUID, choose: (NSMenu) throws -> Void) async throws {
+        let row = try await waitFor("thread-row-\(threadID)")
+        let frame = try XCTUnwrap(row.accessibilityFrame?())
+        let location = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+        let event = try XCTUnwrap(NSEvent.mouseEvent(with: .rightMouseDown, location: location, modifierFlags: [],
+                                                     timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                     eventNumber: 0, clickCount: 1, pressure: 1))
+        try autoreleasepool {
+            let menu = try XCTUnwrap(host.menu(for: event), "The sidebar row provides an AppKit context menu")
+            menu.update()
+            let snooze = try XCTUnwrap(menu.item(withTitle: "Snooze")?.submenu)
+            snooze.update()
+            try choose(snooze)
+        }
+    }
+
+    func choose(_ prefix: String, from menu: NSMenu) throws {
+        let index = try XCTUnwrap(menu.items.firstIndex { $0.title.hasPrefix(prefix) }, prefix)
+        menu.performActionForItem(at: index)
+    }
+
+    func durationRow(amount: String) throws -> Int {
+        let id = try XCTUnwrap(durationField(amount: amount).identifier?.rawValue)
+        return try XCTUnwrap(Int(id.split(separator: "-").last ?? ""))
+    }
+
+    private func durationField(amount: String) throws -> NSTextField {
+        func find(_ view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.identifier?.rawValue.hasPrefix("snooze-option-amount-") == true,
+               field.stringValue == amount { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return try XCTUnwrap(window.attachedSheet?.contentView.flatMap(find), "Native amount field \(amount)")
+    }
+
+    func editAmount(from amount: String, to text: String) async throws {
+        let field = try durationField(amount: amount)
+        let sheet = try XCTUnwrap(field.window)
+        XCTAssertTrue(sheet.makeFirstResponder(field))
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        XCTAssertTrue(sheet.makeFirstResponder(nil))
+        await Task.yield()
+    }
+}
+
+private struct WorkspaceWithSnoozeSettings: View {
+    @ObservedObject var model: WorkspaceModel
+    let defaults: UserDefaults
+    let pasteboard: NSPasteboard
+
+    var body: some View {
+        WorkspaceView(model: model, chatWidthMode: .comfortable,
+                      browserDefaults: defaults, workspacePasteboard: pasteboard)
+            .sheet(item: $model.settingsRequest) { request in
+                SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+                             browserDefaults: defaults, request: request, pasteboard: pasteboard, openWelcome: {})
+            }
+    }
 }
 
 private final class SnoozeTestPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func beginSheet(_ sheetWindow: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
+        sheetWindow.alphaValue = 0
+        super.beginSheet(sheetWindow, completionHandler: handler)
+        sheetWindow.setFrameOrigin(frame.origin)
+    }
 }

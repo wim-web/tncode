@@ -83,7 +83,7 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
-                    if page == .general || page == .project || page == .worktrees || page == .about || page == .usage {
+                    if page == .general || page == .threads || page == .project || page == .worktrees || page == .about || page == .usage {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
                     }
@@ -229,6 +229,8 @@ struct SettingsView: View {
                 Divider()
                 projectBaseDirectorySetting
             }
+        case .threads:
+            SnoozeOptionsSettingsView(model: model, settingsFocus: $focus)
         case .appearance:
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
         case .project:

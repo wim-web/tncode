@@ -408,8 +408,12 @@ struct Workspace: Codable {
     var stashedPrompts: [StashedPrompt]?
     var threadLinkID: UUID?
     var snoozedShelfExpanded: Bool?
+    var snoozeOptions: [ThreadSnoozeSchedule.Option]?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
+    var effectiveSnoozeOptions: [ThreadSnoozeSchedule.Option] {
+        snoozeOptions ?? ThreadSnoozeSchedule.defaultOptions
+    }
 }
 
 struct PendingConversationFork: Codable {

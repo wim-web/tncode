@@ -17,11 +17,14 @@ struct CustomSnoozeView: View {
 
     let model: WorkspaceModel
     let target: ThreadSnoozeTarget
+    let editOptions: () -> Void
     let close: (Bool) -> Void
 
-    init(model: WorkspaceModel, target: ThreadSnoozeTarget, close: @escaping (Bool) -> Void) {
+    init(model: WorkspaceModel, target: ThreadSnoozeTarget, editOptions: @escaping () -> Void,
+         close: @escaping (Bool) -> Void) {
         self.model = model
         self.target = target
+        self.editOptions = editOptions
         self.close = close
         let fields = ThreadSnoozeSchedule.localFields(for: model.initialCustomSnoozeDate)
         _date = State(initialValue: fields.date)
@@ -65,6 +68,8 @@ struct CustomSnoozeView: View {
                     .accessibilityIdentifier("snooze-validation-error")
             }
             HStack {
+                Button("Edit snooze options", action: editOptions)
+                    .accessibilityIdentifier("edit-snooze-options")
                 Spacer()
                 Button("Cancel") { close(false) }
                     .keyboardShortcut(.cancelAction)

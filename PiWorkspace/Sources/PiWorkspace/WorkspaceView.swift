@@ -58,6 +58,7 @@ struct WorkspaceView: View {
     @State private var terminalDrawerReservedHeight: CGFloat = 0
     @State private var settledExpanded = false
     @State private var customSnooze: SnoozeRequest?
+    @State private var openOptionsAfterSnooze = false
     @State private var rename: RenameTarget?
     @State private var title = ""
     @State private var removingProject: Project?
@@ -432,8 +433,15 @@ struct WorkspaceView: View {
         .sheet(isPresented: $choosingWorkspace) {
             if let project = model.project { ThreadLocationView(project: project, model: model) }
         }
-        .sheet(item: $customSnooze) { request in
-            CustomSnoozeView(model: model, target: request.target) { confirmed in
+        .sheet(item: $customSnooze, onDismiss: {
+            guard openOptionsAfterSnooze else { return }
+            openOptionsAfterSnooze = false
+            model.openSettings(.threads, anchor: .snoozeOptions)
+        }) { request in
+            CustomSnoozeView(model: model, target: request.target, editOptions: {
+                openOptionsAfterSnooze = true
+                customSnooze = nil
+            }) { confirmed in
                 customSnooze = nil
                 if confirmed { finishSnooze(request) }
             }
@@ -1332,14 +1340,15 @@ struct WorkspaceView: View {
                 .accessibilityIdentifier("wake-thread")
         } else {
             Menu("Snooze") {
-                ForEach(model.snoozePresets) { preset in
+                let presets = model.snoozePresets
+                ForEach(presets) { preset in
                     let time = ThreadSnoozeSchedule.deadlineLabel(preset.shownDeadline, after: model.snoozeClock)
                     Button("\(preset.label) · \(time)") {
                         if model.snooze(target, preset: preset) { finishSnooze(request) }
                     }
                     .accessibilityIdentifier("snooze-preset-\(preset.id)")
                 }
-                Divider()
+                if !presets.isEmpty { Divider() }
                 Button("Custom…") { customSnooze = request }
                     .accessibilityIdentifier("open-custom-snooze")
             }

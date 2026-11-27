@@ -1761,7 +1761,19 @@ final class WorkspaceModel: ObservableObject {
     }
 
     var snoozePresets: [ThreadSnoozeSchedule.Preset] {
-        ThreadSnoozeSchedule.presets(at: now())
+        ThreadSnoozeSchedule.presets(at: now(), options: workspace.effectiveSnoozeOptions)
+    }
+
+    var snoozeOptionsTime: Date { now() }
+
+    func updateSnoozeOptions(_ options: [ThreadSnoozeSchedule.Option]) throws {
+        guard options.count <= ThreadSnoozeSchedule.maximumOptions, options.allSatisfy(\.isValid) else {
+            throw WorkspaceError("Choose valid snooze options.")
+        }
+        guard options != workspace.effectiveSnoozeOptions else { return }
+        var updated = workspace
+        updated.snoozeOptions = options == ThreadSnoozeSchedule.defaultOptions ? nil : options
+        try persist(updated)
     }
 
     var initialCustomSnoozeDate: Date { now().addingTimeInterval(3600) }
