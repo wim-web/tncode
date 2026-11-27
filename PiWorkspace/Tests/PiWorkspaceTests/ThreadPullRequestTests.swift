@@ -177,6 +177,7 @@ final class ThreadGitHubFixture {
     let workspace: URL
     let checkout: URL
     let secondThread = UUID()
+    var issueWrites = false
     var expectedRepository = "github.com/fixture/workspace"
     var index: URL { workspace.appendingPathComponent("workspace.json") }
     private var state: URL { root.appendingPathComponent("state") }
@@ -206,7 +207,8 @@ final class ThreadGitHubFixture {
     func open() -> WorkspaceModel {
         let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let mock = package.appendingPathComponent("scripts/fixtures/github-read", isDirectory: true)
+        let mock = package.appendingPathComponent("scripts/fixtures/\(issueWrites ? "github-issue" : "github-read")",
+                                                  isDirectory: true)
         return WorkspaceModel(root: workspace, keychainService: "pi-workspace-github-fixture",
                               credentialExists: { _ in false }, readCredential: { _ in nil },
                               makeProcess: { _, _ in throw FixtureError.noSidecar },
@@ -218,6 +220,7 @@ final class ThreadGitHubFixture {
                 "PI_GH_FIXTURE_STATE": self.state.path,
                 "PI_GH_FIXTURE_LOG": self.log.path,
                 "PI_GH_FIXTURE_GATE": self.gate.path,
+                "PI_GH_ISSUE_DIR": self.root.path,
             ])
         })
     }
@@ -259,6 +262,38 @@ final class ThreadGitHubFixture {
     }
 
     func releaseRead() throws { try Data().write(to: gate.appendingPathExtension("release")) }
+
+    struct IssueWireRequest: Decodable {
+        let kind: String
+        let repo: String
+        let number: Int
+        let cwd: String
+        let method: String?
+        let payload: [String: String]?
+    }
+
+    func issueWritesLog() throws -> [IssueWireRequest] {
+        let requests = root.appendingPathComponent("issue-requests.jsonl")
+        guard FileManager.default.fileExists(atPath: requests.path) else { return [] }
+        return try String(contentsOf: requests, encoding: .utf8).split(separator: "\n")
+            .map { try JSONDecoder().decode(IssueWireRequest.self, from: Data($0.utf8)) }
+            .filter { $0.kind == "write" }
+    }
+
+    func waitForIssuePreflight() async throws {
+        for _ in 0..<200 {
+            if FileManager.default.fileExists(atPath: root.appendingPathComponent("issue-read-started").path) { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw FixtureError.readDidNotStart
+    }
+
+    func releaseIssuePreflight() throws { try Data().write(to: root.appendingPathComponent("issue-write-released")) }
+
+    func resetIssuePreflight() throws {
+        try FileManager.default.removeItem(at: root.appendingPathComponent("issue-read-started"))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("issue-write-released"))
+    }
 
     private func git(_ arguments: String..., in folder: URL? = nil) throws {
         let process = Process()

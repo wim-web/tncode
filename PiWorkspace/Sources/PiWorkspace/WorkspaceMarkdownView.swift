@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceMarkdownView: NSViewRepresentable {
     let markdown: AttributedString
     let openLink: (URL) -> Void
+    var accessibilityID = "files-rendered-markdown"
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -17,7 +18,7 @@ struct WorkspaceMarkdownView: NSViewRepresentable {
         view.layoutManager?.allowsNonContiguousLayout = true
         view.delegate = context.coordinator
         view.setAccessibilityLabel("Rendered Markdown")
-        view.setAccessibilityIdentifier("files-rendered-markdown")
+        view.setAccessibilityIdentifier(accessibilityID)
         view.textStorage?.setAttributedString(renderText())
         return scroll
     }

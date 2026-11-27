@@ -40,12 +40,14 @@ struct GitHubBrowserView: View {
     @State private var issueLinkError: String?
     @StateObject private var pullRequests: GitHubBrowserModel
     @StateObject private var issues: GitHubBrowserModel
+    @ObservedObject private var issueSessions: GitHubIssueSessions
     private let reader: GitHubReader
 
     init(workspace: WorkspaceModel, scope: ThreadGitHubScope, pasteboard: NSPasteboard) {
         self.workspace = workspace
         self.scope = scope
         self.pasteboard = pasteboard
+        issueSessions = workspace.gitHubIssueSessions
         _tab = State(initialValue: scope.canReadRepository ? .pullRequests : .linkedItems)
         let reader = workspace.gitHubReader(in: scope)
         self.reader = reader
@@ -54,6 +56,12 @@ struct GitHubBrowserView: View {
     }
 
     var body: some View {
+        let threadRevision = workspace.threadSelectionRevision
+        let repositoryRevision = workspace.repositoryRevision
+        let scopeIsCurrent = {
+            workspace.gitHubScope == scope && workspace.threadSelectionRevision == threadRevision
+                && workspace.repositoryRevision == repositoryRevision
+        }
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 if scope.canReadRepository {
@@ -68,7 +76,8 @@ struct GitHubBrowserView: View {
             }
             .padding([.horizontal, .top], 16)
             if tab == .linkedItems {
-                ThreadLinkedItemsView(workspace: workspace, scope: scope, reader: reader, pasteboard: pasteboard) {
+                ThreadLinkedItemsView(workspace: workspace, scope: scope, reader: reader, pasteboard: pasteboard,
+                                      issueSelectionIsCurrent: { tab == .linkedItems && scopeIsCurrent() }) {
                     linking = $0
                 }
             } else {
@@ -78,8 +87,10 @@ struct GitHubBrowserView: View {
                         .padding(8)
                         .accessibilityIdentifier("issue-link-action-error")
                 }
-                GitHubListView(reader: reader, repositoryRevision: workspace.repositoryRevision,
+                GitHubListView(reader: reader, repositoryRevision: repositoryRevision,
                                model: tab == .pullRequests ? pullRequests : issues,
+                               issueSessions: issueSessions,
+                               issueScopeIsCurrent: { tab == .issues && scopeIsCurrent() },
                                issueIsLinked: { reference in
                                    workspace.gitHubScope == scope
                                        && workspace.conversation?.issueLinks.contains(where: { $0.id == reference }) == true
@@ -127,6 +138,8 @@ private struct GitHubListView: View {
     let reader: GitHubReader
     let repositoryRevision: Int
     @ObservedObject var model: GitHubBrowserModel
+    @ObservedObject var issueSessions: GitHubIssueSessions
+    let issueScopeIsCurrent: @MainActor () -> Bool
     let issueIsLinked: (GitHubIssueReference) -> Bool
     let changeIssueLink: (GitHubIssueReference, Bool) -> Void
 
@@ -217,10 +230,15 @@ private struct GitHubListView: View {
                     PullRequestDetailsView(reader: reader, repository: selection.repository, number: selection.number)
                         .id(repositoryRevision)
                 case .issues:
-                    IssueDetailsView(number: selection.number, isLinked: issueIsLinked, changeLink: changeIssueLink) {
-                        try await reader.issueDetails(for: selection.number, in: selection.repository)
+                    if let reference = GitHubIssueReference(repository: selection.repository, number: selection.number) {
+                        IssueDetailsView(number: reference.number, reader: reader, session: issueSessions.session(for: reference),
+                                         localSelectionIsCurrent: {
+                                             issueScopeIsCurrent() && model.selection == selection && model.repository == reference.repository
+                                         }, isLinked: issueIsLinked, changeLink: changeIssueLink) {
+                            try await reader.issueDetails(for: reference.number, in: reference.repository)
+                        }
+                        .id(repositoryRevision)
                     }
-                    .id(repositoryRevision)
                 }
             }
             .id(selection)
@@ -276,9 +294,12 @@ private struct GitHubListView: View {
 
     private func row(_ item: GitHubListItem, repository: GitHubRepository) -> some View {
         let selected = model.selection?.repository == repository && model.selection?.number == item.number
+        let title = model.kind == .issues
+            ? GitHubIssueReference(repository: repository, number: item.number).flatMap { issueSessions.editedTitles[$0] }
+            : nil
         return Button { model.select(item, in: repository) } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: item.title)
+                Text(verbatim: title ?? item.title)
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
                 HStack(spacing: 4) {
@@ -518,106 +539,6 @@ private struct PullRequestFilterChoices: View {
         } catch {
             guard !Task.isCancelled else { return }
             answer = (request, .failed(error.localizedDescription))
-        }
-    }
-}
-
-struct IssueDetailsView: View {
-    let number: Int
-    var isLinked: ((GitHubIssueReference) -> Bool)? = nil
-    var changeLink: ((GitHubIssueReference, Bool) -> Void)? = nil
-    let read: () async throws -> GitHubIssueDetails
-    @State private var refresh = 0
-    @State private var content: GitHubDetailLoad<GitHubIssueDetails> = .loading
-
-    var body: some View {
-        Group {
-            switch content {
-            case .loading:
-                ProgressView("Loading #\(number)…")
-            case .failed(let message):
-                VStack(spacing: 12) {
-                    Text(message)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("issue-detail-error")
-                    Button("Retry") { refresh += 1 }
-                        .accessibilityIdentifier("issue-detail-retry")
-                }
-                .padding(24)
-            case .loaded(let issue):
-                ScrollView {
-                    summary(issue)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: refresh) { await load() }
-    }
-
-    private func summary(_ issue: GitHubIssueDetails) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(verbatim: "#\(issue.number) \(issue.title)")
-                .font(.title3.weight(.semibold))
-                .accessibilityIdentifier("issue-detail-title")
-            HStack {
-                Text(issue.state.capitalized)
-                    .accessibilityIdentifier("issue-detail-state")
-                if let login = issue.author?.login, !login.isEmpty {
-                    Text(verbatim: "· @\(login)")
-                        .accessibilityIdentifier("issue-detail-author")
-                }
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            if !issue.labels.isEmpty {
-                Text(verbatim: issue.labels.map(\.name).joined(separator: ", "))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("issue-detail-labels")
-            }
-            HStack {
-                if let isLinked, let changeLink {
-                    let linked = isLinked(issue.reference)
-                    Button(linked ? "Unlink from thread" : "Link to thread") { changeLink(issue.reference, linked) }
-                        .accessibilityIdentifier(linked ? "issue-unlink-from-thread" : "issue-link-to-thread")
-                }
-                Link(destination: issue.url) {
-                    Label("Open on GitHub", systemImage: "arrow.up.right.square")
-                }
-                .accessibilityIdentifier("issue-open")
-                Spacer()
-                Button { refresh += 1 } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh issue")
-                .accessibilityLabel("Refresh issue")
-                .accessibilityIdentifier("issue-detail-refresh")
-            }
-            Divider()
-            Text("Description").font(.headline)
-            if issue.body.isEmpty {
-                Text("No description").foregroundStyle(.secondary)
-            } else {
-                Text(verbatim: issue.body)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("issue-detail-body")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-    }
-
-    @MainActor
-    private func load() async {
-        guard !Task.isCancelled else { return }
-        content = .loading
-        do {
-            let issue = try await read()
-            guard !Task.isCancelled else { return }
-            content = .loaded(issue)
-        } catch {
-            guard !Task.isCancelled else { return }
-            content = .failed(error.localizedDescription)
         }
     }
 }

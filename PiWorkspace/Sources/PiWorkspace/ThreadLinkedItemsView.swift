@@ -10,9 +10,11 @@ struct ThreadLinkedItemsView: View {
     let scope: ThreadGitHubScope
     let reader: GitHubReader
     let pasteboard: NSPasteboard
+    let issueSelectionIsCurrent: @MainActor () -> Bool
     let onLink: (ThreadGitHubLinkRequest) -> Void
     @Environment(\.openURL) private var openURL
     @State private var selection: Selection?
+    @State private var selectionRevision = UUID()
     @State private var error: String?
 
     var body: some View {
@@ -97,8 +99,9 @@ struct ThreadLinkedItemsView: View {
     private func issueRow(_ link: ThreadIssueLink) -> some View {
         let reference = link.reference
         let selected = selection == .issue(reference)
-        return Button { selection = .issue(reference) } label: {
-            rowLabel(link.title, repository: reference.repository, number: reference.number)
+        return Button { select(.issue(reference)) } label: {
+            let title = workspace.gitHubIssueSessions.editedTitles[reference] ?? link.title
+            rowLabel(title, repository: reference.repository, number: reference.number)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -108,7 +111,8 @@ struct ThreadLinkedItemsView: View {
     }
 
     private func issueDetails(_ reference: GitHubIssueReference) -> some View {
-        VStack(spacing: 0) {
+        let revision = selectionRevision
+        return VStack(spacing: 0) {
             HStack {
                 Text(verbatim: reference.repository.slug)
                     .lineLimit(1)
@@ -124,7 +128,14 @@ struct ThreadLinkedItemsView: View {
             }
             .padding(12)
             Divider()
-            IssueDetailsView(number: reference.number) { try await reader.linkedIssueDetails(for: reference) }
+            IssueDetailsView(number: reference.number, reader: reader,
+                             session: workspace.gitHubIssueSessions.session(for: reference),
+                             localSelectionIsCurrent: {
+                                 issueSelectionIsCurrent() && selectionRevision == revision && selection == .issue(reference)
+                                     && workspace.conversation?.issueLinks.contains(where: { $0.id == reference }) == true
+                             }) {
+                try await reader.linkedIssueDetails(for: reference)
+            }
         }
     }
 
@@ -133,7 +144,7 @@ struct ThreadLinkedItemsView: View {
         let identifier = "\(reference.repository.slug)-\(reference.number)"
         let selected = selection == .pullRequest(reference)
         return HStack(spacing: 6) {
-            Button { selection = .pullRequest(reference) } label: {
+            Button { select(.pullRequest(reference)) } label: {
                 rowLabel(link.title, repository: reference.repository, number: reference.number)
             }
             .buttonStyle(.plain)
@@ -188,11 +199,17 @@ struct ThreadLinkedItemsView: View {
     private func unlink(_ item: Selection, perform operation: () throws -> Void) {
         do {
             try operation()
-            if selection == item { selection = nil }
+            if selection == item { select(nil) }
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func select(_ item: Selection?) {
+        guard selection != item else { return }
+        selectionRevision = UUID()
+        selection = item
     }
 }
 

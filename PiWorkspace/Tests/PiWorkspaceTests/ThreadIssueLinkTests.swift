@@ -252,6 +252,183 @@ final class ThreadIssueLinkTests: XCTestCase {
                           file: file, line: line)
         }
     }
+
+    func testIssueEditsAndCommentsThroughBothNativeEntryPoints() async throws {
+        let fixture = try ThreadGitHubFixture()
+        fixture.issueWrites = true
+        let model = fixture.open()
+        defer { model.terminate() }
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let repository = try await model.gitHubRepository(in: scope)
+        try await model.linkIssue("#71", in: scope, repository: repository)
+        model.draft = "Keep this chat draft"
+        XCTAssertTrue(model.savePendingComposer())
+        let before = try Data(contentsOf: fixture.index)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        defer { panel.close() }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-71")
+        try await panel.press("issue-edit-title")
+        let invalidTitle = String(repeating: "a", count: 1025)
+        try await panel.enterDetailText("issue-title-editor", text: invalidTitle)
+        try await panel.press("issue-title-save")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("1,024") == true }
+        try await panel.expectDetailText("issue-title-editor", invalidTitle)
+        XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+
+        let title = "Edited issue title"
+        try await panel.enterDetailText("issue-title-editor", text: " \(title) ")
+        try fixture.setMode("no-auth")
+        try await panel.press("issue-title-save")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("gh auth login") == true }
+        try await panel.expectDetailText("issue-title-editor", " \(title) ")
+        XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+        try fixture.setMode("edit-denied")
+        try await panel.press("issue-title-save")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("can’t edit") == true }
+        try await panel.expectDetailText("issue-title-editor", " \(title) ")
+        XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+        try fixture.setMode("write-forbidden")
+        try await panel.press("issue-title-save")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("denied access") == true }
+        try await panel.expectDetailText("issue-title-editor", " \(title) ")
+        try fixture.setMode("commit-unreadable")
+        try await panel.press("issue-title-save")
+        _ = try await panel.find("issue-detail-title") { panel.text($0) == "#71 " + title }
+
+        try await panel.press("issue-edit-description")
+        try await panel.enterDetailText("issue-description-editor", text: "Cancel this edit")
+        try await panel.press("issue-description-cancel")
+        _ = try await panel.find("issue-detail-body") { panel.text($0) == "Original issue 71 body" }
+        try fixture.setMode("initial")
+        try await panel.press("issue-edit-description")
+        try await panel.enterDetailText("issue-description-editor", text: "")
+        try await panel.press("issue-description-save")
+        _ = try await panel.find("issue-detail-body-empty")
+        XCTAssertNil(panel.element("issue-detail-body"))
+
+        let comment = "A **comment** with \"quotes\"\n@fixture-path \\ and 😀"
+        try await panel.enterDetailText("issue-comment-editor", text: comment)
+        try fixture.setMode("write-invalid")
+        try await panel.press("issue-comment-submit")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("rejected") == true }
+        try await panel.expectDetailText("issue-comment-editor", comment)
+        try await panel.press("github-tab-linked-items")
+        try await panel.press("linked-issue-row-fixture/workspace-71")
+        _ = try await panel.find("issue-detail-title") { panel.text($0) == "#71 " + title }
+        try await panel.expectDetailText("issue-comment-editor", comment)
+        try fixture.setMode("initial")
+        try await panel.press("issue-comment-submit")
+        _ = try await panel.find("issue-comment-body-posted-2") { panel.text($0) == comment }
+        try await panel.expectDetailText("issue-comment-editor", "")
+
+        try await panel.press("issue-edit-description")
+        let description = "Updated **description**\nSecond line with $HOME and @file"
+        try await panel.enterDetailText("issue-description-editor", text: description)
+        try await panel.press("issue-description-save")
+        _ = try await panel.find("issue-detail-body") { panel.text($0) == description }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-72")
+        _ = try await panel.find("issue-detail-body") { panel.text($0) == "Original issue 72 body" }
+        try await panel.expectDetailText("issue-comment-editor", "")
+        XCTAssertEqual(model.draft, "Keep this chat draft")
+        XCTAssertEqual(try Data(contentsOf: fixture.index), before)
+        let writes = try fixture.issueWritesLog()
+        XCTAssertEqual(writes.map(\.method), ["PATCH", "PATCH", "PATCH", "POST", "POST", "PATCH"])
+        XCTAssertEqual(Set(writes.map(\.repo)), ["fixture/workspace"])
+        XCTAssertEqual(Set(writes.map(\.number)), [71])
+        XCTAssertEqual(Set(writes.map { URL(fileURLWithPath: $0.cwd).resolvingSymlinksInPath().path }),
+                       [fixture.checkout.resolvingSymlinksInPath().path])
+        XCTAssertEqual(writes.map(\.payload), [
+            ["title": title], ["title": title], ["body": ""], ["body": comment], ["body": comment], ["body": description]
+        ])
+    }
+
+    func testUnconfirmedCommentChecksForNewActivityBeforeAllowingAnotherPost() async throws {
+        let fixture = try ThreadGitHubFixture()
+        fixture.issueWrites = true
+        let model = fixture.open()
+        defer { model.terminate() }
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let repository = try await model.gitHubRepository(in: scope)
+        try await model.linkIssue("#71", in: scope, repository: repository)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        defer { panel.close() }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-71")
+        try await panel.enterDetailText("issue-comment-editor", text: "Repeated text")
+        let send = try await panel.find("issue-comment-submit")
+        try fixture.setMode("lost-pending")
+        XCTAssertTrue(send.accessibilityPerformPress?() == true)
+        _ = send.accessibilityPerformPress?()
+        _ = try await panel.find("issue-write-check")
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+        XCTAssertNotNil(panel.element("issue-comment-body-previous-1"))
+        XCTAssertNil(panel.element("issue-comment-body-posted-2"))
+        XCTAssertEqual(panel.element("issue-comment-submit")?.isAccessibilityEnabled?(), false)
+        try await panel.press("github-tab-linked-items")
+        try await panel.press("linked-issue-row-fixture/workspace-71")
+        try await panel.press("issue-write-check")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("has not confirmed") == true }
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+        XCTAssertEqual(panel.element("issue-comment-editor").flatMap(panel.text), "Repeated text")
+        try fixture.setMode("reveal")
+        try await panel.press("issue-write-check")
+        _ = try await panel.find("issue-comment-body-posted-2")
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+        try await panel.expectDetailText("issue-comment-editor", "")
+        XCTAssertNil(panel.element("issue-write-check"))
+    }
+
+    func testIssueWritePreflightRejectsChangedCheckoutThreadAndIssue() async throws {
+        let fixture = try ThreadGitHubFixture()
+        fixture.issueWrites = true
+        let model = fixture.open()
+        defer { model.terminate() }
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let repository = try await model.gitHubRepository(in: scope)
+        try await model.linkIssue("#71", in: scope, repository: repository)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        defer { panel.close() }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-71")
+        let draft = "Keep this issue draft"
+        try await panel.enterDetailText("issue-comment-editor", text: draft)
+        for change in ["issue", "thread", "checkout"] {
+            try fixture.setMode("hold-preflight")
+            try await panel.press("issue-comment-submit")
+            try await fixture.waitForIssuePreflight()
+            switch change {
+            case "issue":
+                try await panel.press("issue-row-72")
+                try await panel.press("issue-row-71")
+            case "thread":
+                model.selectConversation(fixture.secondThread, in: scope.projectID)
+                model.selectConversation(scope.threadID, in: scope.projectID)
+            default:
+                try fixture.setRemote("https://github.com/fixture/other.git")
+            }
+            try fixture.releaseIssuePreflight()
+            _ = try await panel.find("issue-write-error") {
+                panel.text($0)?.contains("changed") == true
+            }
+            XCTAssertEqual(panel.element("issue-comment-editor").flatMap(panel.text), draft)
+            XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+            try fixture.setMode("initial")
+            try fixture.resetIssuePreflight()
+        }
+        try await panel.press("github-tab-linked-items")
+        try await panel.press("linked-issue-row-fixture/workspace-71")
+        _ = try await panel.find("issue-write-blocked") { panel.text($0)?.contains("selected checkout") == true }
+        XCTAssertEqual(panel.element("issue-comment-submit")?.isAccessibilityEnabled?(), false)
+        XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+    }
 }
 
 @MainActor
@@ -302,9 +479,12 @@ private final class OffscreenBrowser {
 
     func find(_ id: String, matching predicate: (AnyObject) -> Bool = { _ in true }) async throws -> AnyObject {
         for _ in 0..<150 {
-            if let node = element(id), node.isAccessibilityEnabled?() != false, predicate(node) { return node }
+            if let node = element(id), (node is NSTextView || node.isAccessibilityEnabled?() != false), predicate(node) {
+                return node
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
+        XCTFail("Missing or unexpected AX element \(id). Value: \(element(id).flatMap(text) ?? "(none)")")
         throw WorkspaceError("Missing AX element \(id)")
     }
 
@@ -314,6 +494,7 @@ private final class OffscreenBrowser {
     }
 
     func text(_ node: AnyObject) -> String? {
+        if let editor = node as? NSTextView { return editor.string }
         let value = (node as? NSObject)?.perform(NSSelectorFromString("accessibilityValue"))?.takeUnretainedValue()
         return (value as? String) ?? node.accessibilityLabel?()
     }
@@ -330,6 +511,30 @@ private final class OffscreenBrowser {
         let editor = try XCTUnwrap(input.currentEditor() as? NSTextView)
         editor.insertText(value, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
         XCTAssertEqual(editor.string, value)
+    }
+
+    func expectDetailText(_ id: String, _ expected: String) async throws {
+        _ = try await find(id) { self.text($0) == expected }
+    }
+
+    func enterDetailText(_ id: String, text: String) async throws {
+        let node = try await find(id)
+        if let editor = node as? NSTextView {
+            XCTAssertTrue(editor.window?.makeFirstResponder(editor) == true, id)
+            XCTAssertTrue(editor.isEditable, id)
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            XCTAssertEqual(editor.string, text, id)
+        } else {
+            func field(in view: NSView) -> NSTextField? {
+                if let field = view as? NSTextField, field.placeholderString == "Issue title" { return field }
+                return view.subviews.lazy.compactMap(field).first
+            }
+            let input = try XCTUnwrap(window.contentView.flatMap(field), id)
+            XCTAssertTrue(window.makeFirstResponder(input))
+            let editor = try XCTUnwrap(input.currentEditor() as? NSTextView)
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        }
+        _ = try await find(id) { self.text($0) == text }
     }
 
     private final class Panel: NSPanel {

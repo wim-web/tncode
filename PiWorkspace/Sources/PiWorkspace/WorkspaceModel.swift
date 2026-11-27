@@ -115,6 +115,7 @@ final class WorkspaceModel: ObservableObject {
     private var composerDraftGenerations: [UUID: UUID] = [:]
     private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
     private(set) var threadSelectionRevision = 0
+    let gitHubIssueSessions = GitHubIssueSessions()
     private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
     private var promotedDraftLinks: [UUID: UUID] = [:]
     private var fileMentionDrag: FileMentionDrag?

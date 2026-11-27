@@ -1,0 +1,130 @@
+#!/usr/bin/python3
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import time
+
+args = sys.argv[1:]
+fixture = Path(os.environ["PI_GH_ISSUE_DIR"]).resolve(strict=True)
+assert fixture.is_dir() and str(fixture).startswith(("/private/tmp/", "/private/var/folders/"))
+assert os.environ["GH_HOST"] == "github.com"
+assert os.environ["GH_PROMPT_DISABLED"] == "1"
+assert not any(os.environ.get(key) for key in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GH_REPO"))
+mode = Path(os.environ["PI_GH_FIXTURE_STATE"]).read_text().strip()
+db = fixture / "issues.json"
+data = json.loads(db.read_text()) if db.exists() else {}
+log = fixture / "issue-requests.jsonl"
+write_gate = fixture / "issue-write-released"
+read_gate = fixture / "issue-read-started"
+
+def fail(message, code=1):
+    print(message, file=sys.stderr)
+    sys.exit(code)
+
+def output(value):
+    print(json.dumps(value, ensure_ascii=False))
+
+def save():
+    temporary = db.with_suffix(".next")
+    temporary.write_text(json.dumps(data, ensure_ascii=False))
+    temporary.replace(db)
+
+def record(kind, **values):
+    with log.open("a") as file:
+        file.write(json.dumps({"kind": kind, "cwd": os.getcwd(), **values}, ensure_ascii=False) + "\n")
+
+def issue_for(repo, number):
+    assert repo in {"fixture/workspace", "fixture/other"} and number in {42, 71, 72}
+    key = f"{repo}/{number}"
+    if key in data:
+        return data[key]
+    url = f"https://github.com/{repo}/issues/{number}"
+    titles = {42: "Issue sharing a pull request number", 71: "Fix a fixture issue", 72: "Unrelated issue"}
+    return data.setdefault(key, {
+        "id": key, "number": number, "url": url, "state": "OPEN", "title": titles[number],
+        "author": {"login": "fixture-author"}, "body": f"Original issue {number} body",
+        "labels": [{"name": "bug"}],
+        "comments": [{
+            "id": "previous-1", "body": "Repeated text", "url": url + "#issuecomment-1",
+            "author": {"login": "fixture-viewer"}, "createdAt": "2026-05-01T12:00:00Z", "viewerDidAuthor": True
+        }]
+    })
+
+if args[:2] == ["issue", "view"]:
+    assert len(args) == 7 and args[3:6] == ["--json", "number,title,state,author,labels,body,url", "--repo"]
+    number, repo = int(args[2]), args[-1].removeprefix("github.com/")
+    details = issue_for(repo, number)
+    record("view", repo=repo, number=number)
+    output({key: details[key] for key in ("number", "title", "state", "author", "labels", "body", "url")})
+elif args[:2] == ["api", "graphql"] and "query NativeIssueDetail" in " ".join(args):
+    assert args[2:5] == ["--hostname", "github.com", "--raw-field"]
+    assert args[5].startswith("query=query NativeIssueDetail(")
+    assert "issue(number:$number)" in args[5] and "viewerCanUpdate" in args[5] and "viewerDidAuthor" in args[5]
+    assert args[6::2] == ["--raw-field", "--raw-field", "--field"]
+    owner, repo_name, number_value = args[7::2]
+    assert owner.startswith("owner=") and repo_name.startswith("name=") and number_value.startswith("number=")
+    repo, number = owner[6:] + "/" + repo_name[5:], int(number_value[7:])
+    record("snapshot", repo=repo, number=number)
+    if mode == "hold-preflight" and not read_gate.exists():
+        read_gate.touch(exist_ok=False)
+        deadline = time.monotonic() + 8
+        while not write_gate.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert write_gate.exists()
+    if mode == "no-auth":
+        fail("To get started, run gh auth login", 4)
+    details = issue_for(repo, number)
+    if mode == "reveal" and (comment := details.pop("pending", None)):
+        details["comments"].append(comment)
+        save()
+    result = {key: details[key] for key in ("id", "number", "title", "url", "body")}
+    result["viewerCanUpdate"] = mode != "edit-denied"
+    result["comments"] = {"totalCount": len(details["comments"]), "nodes": details["comments"][-25:]}
+    if mode == "wrong-target":
+        result["url"] = details["url"].replace("/issues/", "/pull/")
+    output({"data": {"viewer": {"id": "fixture-user"}, "repository": {"issue": result}}})
+elif len(args) >= 2 and (args[0] == "api" and re.fullmatch(r"repos/fixture/(workspace|other)/issues/(42|71|72)(/comments)?", args[1])):
+    assert len(args) == 10
+    _, endpoint, hostname_flag, hostname, method_flag, method, header_flag, header, input_flag, filename = args
+    assert (hostname_flag, hostname, method_flag, header_flag, header, input_flag) == (
+        "--hostname", "github.com", "--method", "--header", "Content-Type: application/json", "--input"
+    )
+    assert Path(filename).parent.stat().st_mode & 0o777 == 0o700
+    parts = endpoint.split("/")
+    repo, number = "/".join(parts[1:3]), int(parts[4])
+    payload = json.loads(Path(filename).read_text())
+    record("write", repo=repo, number=number, method=method, endpoint=endpoint, payload=payload)
+    if mode == "write-forbidden":
+        fail("gh: Resource not accessible (HTTP 403)")
+    if mode == "write-invalid":
+        fail("gh: Validation Failed (HTTP 422)")
+    details = issue_for(repo, number)
+    if method == "PATCH":
+        assert len(parts) == 5 and payload.keys() in ({"title"}, {"body"})
+        details.update(payload)
+        response = {"number": number, "html_url": details["url"], "title": details["title"], "body": details["body"]}
+    else:
+        assert method == "POST" and len(parts) == 6 and payload.keys() == {"body"}
+        ident = 1 + len(details["comments"])
+        url = details["url"] + f"#issuecomment-{ident}"
+        comment = {"id": f"posted-{ident}", "body": payload["body"], "url": url,
+                   "author": {"login": "fixture-viewer"}, "createdAt": "2026-05-02T12:00:00Z", "viewerDidAuthor": True}
+        if mode == "lost-pending":
+            details["pending"] = comment
+        else:
+            details["comments"].append(comment)
+        response = {"id": ident, "html_url": url, "body": payload["body"]}
+    save()
+    if mode == "commit-unreadable":
+        print("unreadable acknowledgement")
+    elif mode == "lost-pending":
+        fail("connection reset while awaiting response")
+    else:
+        output(response)
+elif args and (args[0] == "pr" or args[:2] == ["api", "graphql"]):
+    fallback = Path(__file__).resolve().parents[1] / "github-read" / "gh"
+    os.execv(str(fallback), [str(fallback), *args])
+else:
+    fail("Unexpected fixture invocation: " + repr(args))

@@ -405,8 +405,10 @@ struct GitHubReader: Sendable {
         return repository
     }
 
-    func read<Value: Decodable>(_ arguments: [String], for kind: GitHubBrowseKind) async throws -> Value {
-        let output = try await capture(arguments, for: kind)
+    func read<Value: Decodable>(
+        _ arguments: [String], for kind: GitHubBrowseKind, outputLimit: Int = 2 * 1024 * 1024
+    ) async throws -> Value {
+        let output = try await capture(arguments, for: kind, outputLimit: outputLimit)
         guard !output.truncated else { throw ReadError.responseTooLarge }
         do {
             return try JSONDecoder().decode(Value.self, from: output.bytes)
@@ -415,8 +417,10 @@ struct GitHubReader: Sendable {
         }
     }
 
-    private func capture(
-        _ arguments: [String], for kind: GitHubBrowseKind, tailLimit: Int? = nil
+    func capture(
+        _ arguments: [String], for kind: GitHubBrowseKind, tailLimit: Int? = nil,
+        outputLimit: Int = 2 * 1024 * 1024,
+        beforeIssueWrite: (@MainActor () throws -> Void)? = nil
     ) async throws -> WorkspaceCommand.Output {
         try Task.checkCancellation()
         let cli = (environment["PATH"] ?? "").split(separator: ":")
@@ -447,10 +451,11 @@ struct GitHubReader: Sendable {
         process.arguments = arguments
         process.environment = childEnvironment
 
+        try await beforeIssueWrite?()
         let result: WorkspaceCommand.Capture
         do {
             result = try await WorkspaceCommand.capture(
-                process, outputLimit: tailLimit ?? 2 * 1024 * 1024, timeout: timeout,
+                process, outputLimit: tailLimit ?? outputLimit, timeout: timeout,
                 cancelOnTaskCancellation: true, keepOutputTail: tailLimit != nil
             )
         } catch is CancellationError {
@@ -479,6 +484,9 @@ struct GitHubReader: Sendable {
             }
             if stderr.contains("http 410") {
                 throw ReadError.gone
+            }
+            if beforeIssueWrite != nil, stderr.contains("http 422") || stderr.contains("http 400") {
+                throw ReadError.issueValidation
             }
             if ["error connecting", "dial tcp", "network is unreachable", "timeout", "no such host"]
                 .contains(where: stderr.contains) {
@@ -539,7 +547,7 @@ struct GitHubReader: Sendable {
         case checkoutUnavailable, noGitHubRemote, ambiguousRemote, repositoryChanged
         case cliUnavailable, launchFailed, authentication, accessDenied, network, timedOut
         case notFound(GitHubBrowseKind), readFailed(GitHubBrowseKind), invalidResponse(GitHubBrowseKind)
-        case responseTooLarge, invalidSearch, gone
+        case responseTooLarge, invalidSearch, gone, issueValidation
 
         var errorDescription: String? {
             switch self {
@@ -559,6 +567,7 @@ struct GitHubReader: Sendable {
             case .invalidResponse(let kind): "GitHub CLI returned an unreadable \(kind.itemName) response."
             case .invalidSearch: "Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces."
             case .gone: "GitHub no longer has this resource."
+            case .issueValidation: "GitHub rejected the issue change. Review the text and try again."
             }
         }
     }
