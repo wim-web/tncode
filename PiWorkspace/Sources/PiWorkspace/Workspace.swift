@@ -572,6 +572,23 @@ final class WorkspaceStore {
         try write(updated, to: index)
     }
 
+    private var pendingIssueCommentsFile: URL { root.appendingPathComponent("pending-issue-comments.json") }
+
+    private func pendingIssueComments() throws -> [String: PendingIssueComment] {
+        guard let data = try read(pendingIssueCommentsFile) else { return [:] }
+        return try JSONDecoder().decode([String: PendingIssueComment].self, from: data)
+    }
+
+    func pendingIssueComment(for reference: GitHubIssueReference) throws -> PendingIssueComment? {
+        try pendingIssueComments()[reference.url.absoluteString]
+    }
+
+    func setPendingIssueComment(_ comment: PendingIssueComment?, for reference: GitHubIssueReference) throws {
+        var pending = try pendingIssueComments()
+        pending[reference.url.absoluteString] = comment
+        try write(JSONEncoder().encode(pending), to: pendingIssueCommentsFile)
+    }
+
     private func ensureCorruptIndexArchived(_ data: Data) throws {
         // Reuse the archive if a prior recovery stopped before replacing the index.
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

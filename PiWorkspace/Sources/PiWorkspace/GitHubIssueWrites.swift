@@ -84,6 +84,8 @@ struct GitHubIssueActivity: Decodable {
     struct Comments: Decodable {
         let totalCount: Int
         let nodes: [Comment]
+
+        var hasCompleteWindow: Bool { nodes.count == min(totalCount, 25) }
     }
 
     let id: String
@@ -100,30 +102,41 @@ struct GitHubIssueSnapshot {
     let activity: GitHubIssueActivity
 }
 
-struct GitHubIssueReceipt {
-    let change: GitHubIssueChange
-    let before: GitHubIssueSnapshot
+struct PendingIssueComment: Codable {
+    let body: String
+    let issueID: String
+    let viewerID: String
+    let previousIDs: [String]
 
     func isVisible(in current: GitHubIssueSnapshot) -> Bool {
-        guard current.activity.id == before.activity.id else { return false }
-        guard case .comment(let text) = change else {
-            return change.matches(title: current.activity.title, body: current.activity.body)
-        }
-
-        guard current.viewerID == before.viewerID else { return false }
-        let previous = before.activity.comments
+        guard current.activity.id == issueID, current.viewerID == viewerID else { return false }
         let comments = current.activity.comments
+        guard comments.hasCompleteWindow else { return false }
         let newComments: ArraySlice<GitHubIssueActivity.Comment>
-        if let last = previous.nodes.last, let index = comments.nodes.lastIndex(where: { $0.id == last.id }) {
-            let existing = Set(previous.nodes.map(\.id))
-            newComments = comments.nodes.suffix(from: index + 1).filter { !existing.contains($0.id) }[...]
-        } else if previous.totalCount == 0 {
-            newComments = comments.nodes[...]
+        if let lastCommentID = previousIDs.last {
+            guard let anchor = comments.nodes.firstIndex(where: { $0.id == lastCommentID }) else { return false }
+            let known = Set(previousIDs)
+            newComments = comments.nodes.suffix(from: anchor + 1).filter { !known.contains($0.id) }[...]
         } else {
-            return false
+            guard comments.totalCount == comments.nodes.count else { return false }
+            newComments = comments.nodes[...]
         }
-        // An earlier identical comment cannot acknowledge this request.
-        return newComments.filter { $0.viewerDidAuthor && $0.body.utf8.elementsEqual(text.utf8) }.count == 1
+        return newComments.filter { $0.viewerDidAuthor && $0.body.utf8.elementsEqual(body.utf8) }.count == 1
+    }
+}
+
+enum GitHubIssueReceipt {
+    case edit(GitHubIssueChange, issueID: String)
+    case comment(PendingIssueComment)
+
+    init(change: GitHubIssueChange, before: GitHubIssueSnapshot) throws {
+        if case .comment(let body) = change {
+            guard before.activity.comments.hasCompleteWindow else { throw GitHubReader.ReadError.invalidResponse(.issues) }
+            self = .comment(.init(body: body, issueID: before.activity.id, viewerID: before.viewerID,
+                                  previousIDs: before.activity.comments.nodes.map(\.id)))
+        } else {
+            self = .edit(change, issueID: before.activity.id)
+        }
     }
 }
 
@@ -193,6 +206,8 @@ extension GitHubReader {
                     throw GitHubIssueWriteError.acknowledgementLost
                 }
             }
+        } catch is CancellationError {
+            throw GitHubIssueWriteError.acknowledgementLost
         } catch let error as ReadError {
             switch error {
             case .authentication, .accessDenied, .notFound, .gone, .issueValidation, .cliUnavailable:

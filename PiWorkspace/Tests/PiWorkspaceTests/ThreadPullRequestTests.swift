@@ -184,10 +184,14 @@ final class ThreadGitHubFixture {
     private var log: URL { root.appendingPathComponent("commands") }
     private var gate: URL { root.appendingPathComponent("gh-gate") }
 
-    init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    private let ownsRoot: Bool
+
+    init(reopening existingRoot: URL? = nil) throws {
+        ownsRoot = existingRoot == nil
+        root = existingRoot ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         workspace = root.appendingPathComponent("workspace", isDirectory: true)
         checkout = root.appendingPathComponent("selected checkout", isDirectory: true)
+        if existingRoot != nil { return }
         let projectFolder = root.appendingPathComponent("project", isDirectory: true)
         try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
@@ -201,7 +205,7 @@ final class ThreadGitHubFixture {
         try WorkspaceStore(root: workspace).save(Workspace(projects: [project], selectedProject: project.id))
     }
 
-    deinit { try? FileManager.default.removeItem(at: root) }
+    deinit { if ownsRoot { try? FileManager.default.removeItem(at: root) } }
 
     @MainActor
     func open() -> WorkspaceModel {
@@ -269,15 +273,19 @@ final class ThreadGitHubFixture {
         let number: Int
         let cwd: String
         let method: String?
+        let mode: String?
         let payload: [String: String]?
     }
 
-    func issueWritesLog() throws -> [IssueWireRequest] {
+    func issueRequestsLog() throws -> [IssueWireRequest] {
         let requests = root.appendingPathComponent("issue-requests.jsonl")
         guard FileManager.default.fileExists(atPath: requests.path) else { return [] }
         return try String(contentsOf: requests, encoding: .utf8).split(separator: "\n")
             .map { try JSONDecoder().decode(IssueWireRequest.self, from: Data($0.utf8)) }
-            .filter { $0.kind == "write" }
+    }
+
+    func issueWritesLog() throws -> [IssueWireRequest] {
+        try issueRequestsLog().filter { $0.kind == "write" }
     }
 
     func waitForIssuePreflight() async throws {
@@ -288,7 +296,7 @@ final class ThreadGitHubFixture {
         throw FixtureError.readDidNotStart
     }
 
-    func releaseIssuePreflight() throws { try Data().write(to: root.appendingPathComponent("issue-write-released")) }
+    func releaseIssueWrite() throws { try Data().write(to: root.appendingPathComponent("issue-write-released")) }
 
     func resetIssuePreflight() throws {
         try FileManager.default.removeItem(at: root.appendingPathComponent("issue-read-started"))

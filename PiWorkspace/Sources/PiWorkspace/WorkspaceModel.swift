@@ -115,7 +115,10 @@ final class WorkspaceModel: ObservableObject {
     private var composerDraftGenerations: [UUID: UUID] = [:]
     private var pendingAttachmentImports: [ComposerAttachmentTarget: Int] = [:]
     private(set) var threadSelectionRevision = 0
-    let gitHubIssueSessions = GitHubIssueSessions()
+    lazy var gitHubIssueSessions = GitHubIssueSessions { [weak self] in
+        guard let store = self?.store else { throw WorkspaceError("Could not open the workspace.") }
+        return store
+    }
     private var navigationHistory: [NavigationDirection: [NavigationDestination]] = [:]
     private var promotedDraftLinks: [UUID: UUID] = [:]
     private var fileMentionDrag: FileMentionDrag?

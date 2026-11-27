@@ -5,9 +5,15 @@ final class GitHubIssueSessions: ObservableObject {
     private var sessions: [GitHubIssueReference: GitHubIssueSession] = [:]
     @Published private(set) var editedTitles: [GitHubIssueReference: String] = [:]
 
+    private let store: () throws -> WorkspaceStore
+
+    init(store: @escaping () throws -> WorkspaceStore) { self.store = store }
+
     func session(for reference: GitHubIssueReference) -> GitHubIssueSession {
         if let session = sessions[reference] { return session }
-        let session = GitHubIssueSession { [weak self] title in self?.editedTitles[reference] = title }
+        let session = GitHubIssueSession(reference: reference, store: store) { [weak self] title in
+            self?.editedTitles[reference] = title
+        }
         sessions[reference] = session
         return session
     }
@@ -31,6 +37,7 @@ final class GitHubIssueSession: ObservableObject {
 
     private enum Operation {
         case idle, sending, checking, unconfirmed(GitHubIssueReceipt)
+        case restoreFailed, clearFailed(PendingIssueComment, rejection: String?)
     }
 
     @Published private(set) var operationError: String?
@@ -40,18 +47,44 @@ final class GitHubIssueSession: ObservableObject {
     @Published var comment = ""
     private let didEditTitle: (String) -> Void
 
-    init(didEditTitle: @escaping (String) -> Void) { self.didEditTitle = didEditTitle }
+    private let reference: GitHubIssueReference
+    private let store: () throws -> WorkspaceStore
+
+    init(reference: GitHubIssueReference, store: @escaping () throws -> WorkspaceStore, didEditTitle: @escaping (String) -> Void) {
+        self.reference = reference
+        self.store = store
+        self.didEditTitle = didEditTitle
+        restorePendingComment()
+    }
+
+    private func restorePendingComment() {
+        do {
+            if let pending = try store().pendingIssueComment(for: reference) {
+                comment = pending.body
+                operation = .unconfirmed(.comment(pending))
+                operationError = GitHubIssueWriteError.commentUnconfirmed.localizedDescription
+            } else {
+                operation = .idle
+                operationError = nil
+            }
+        } catch {
+            operation = .restoreFailed
+            operationError = "Couldn’t read the saved comment receipt. \(error.localizedDescription)"
+        }
+    }
 
     var busy: Bool {
         switch operation {
         case .sending, .checking: true
-        case .idle, .unconfirmed: false
+        default: false
         }
     }
 
     var needsCheck: Bool {
-        if case .unconfirmed = operation { return true }
-        return false
+        switch operation {
+        case .unconfirmed, .restoreFailed, .clearFailed: true
+        default: false
+        }
     }
 
     var locked: Bool { busy || needsCheck }
@@ -68,7 +101,7 @@ final class GitHubIssueSession: ObservableObject {
         edit = nil
     }
 
-    func submit(_ change: GitHubIssueChange, to reference: GitHubIssueReference, expectedID: String,
+    func submit(_ change: GitHubIssueChange, expectedID: String,
                 via reader: GitHubReader, isCurrent: @escaping @MainActor () -> Bool) {
         guard !locked, isCurrent() else { return }
         do {
@@ -91,13 +124,26 @@ final class GitHubIssueSession: ObservableObject {
                     finish(change)
                     return
                 }
+                let receipt = try GitHubIssueReceipt(change: change, before: before)
+                var recorded: PendingIssueComment?
                 do {
-                    try await reader.writeIssue(change, to: reference) {
+                    try await reader.writeIssue(change, to: reference) { [self] in
                         guard isCurrent() else { throw GitHubIssueWriteError.selectionChanged }
+                        if case .comment(let pending) = receipt {
+                            do {
+                                try store().setPendingIssueComment(pending, for: reference)
+                            } catch {
+                                throw WorkspaceError("Couldn’t save the comment receipt before posting. \(error.localizedDescription)")
+                            }
+                            recorded = pending
+                        }
                     }
-                    finish(change)
+                    if let recorded { clear(recorded) } else { finish(change) }
                 } catch GitHubIssueWriteError.acknowledgementLost {
-                    await reconcile(.init(change: change, before: before), in: reference, via: reader)
+                    if change.isComment && recorded == nil { throw GitHubIssueWriteError.acknowledgementLost }
+                    await reconcile(receipt, via: reader, isCurrent: isCurrent)
+                } catch {
+                    if let recorded { clear(recorded, rejection: error.localizedDescription) } else { throw error }
                 }
             } catch {
                 fail(error)
@@ -105,30 +151,60 @@ final class GitHubIssueSession: ObservableObject {
         }
     }
 
-    func check(in reference: GitHubIssueReference, via reader: GitHubReader, isCurrent: () -> Bool) {
-        guard case .unconfirmed(let receipt) = operation, isCurrent() else { return }
-        operation = .checking
-        operationError = nil
-        Task { await reconcile(receipt, in: reference, via: reader) }
+    func check(via reader: GitHubReader, isCurrent: @escaping @MainActor () -> Bool) {
+        guard isCurrent() else { return }
+        switch operation {
+        case .restoreFailed:
+            restorePendingComment()
+        case .clearFailed(let pending, let rejection):
+            clear(pending, rejection: rejection)
+        case .unconfirmed(let receipt):
+            operation = .checking
+            operationError = nil
+            Task { await reconcile(receipt, via: reader, isCurrent: isCurrent) }
+        default:
+            break
+        }
     }
 
-    private func reconcile(_ receipt: GitHubIssueReceipt, in reference: GitHubIssueReference, via reader: GitHubReader) async {
+    private func reconcile(_ receipt: GitHubIssueReceipt, via reader: GitHubReader, isCurrent: @MainActor () -> Bool) async {
         operation = .checking
         do {
+            _ = try await reader.repository(matching: reference.repository)
             let current = try await reader.issueSnapshot(for: reference)
-            if receipt.isVisible(in: current) {
-                finish(receipt.change)
-            } else if receipt.change.isComment || current.activity.id != receipt.before.activity.id {
-                operation = .unconfirmed(receipt)
-                operationError = (receipt.change.isComment ? GitHubIssueWriteError.commentUnconfirmed
-                    : GitHubIssueWriteError.selectionChanged).localizedDescription
-            } else {
-                fail(GitHubIssueWriteError.editUnconfirmed)
-                revision += 1
+            _ = try await reader.repository(matching: reference.repository)
+            guard isCurrent() else { throw GitHubIssueWriteError.selectionChanged }
+            switch receipt {
+            case .comment(let pending):
+                guard pending.isVisible(in: current) else { throw GitHubIssueWriteError.commentUnconfirmed }
+                clear(pending)
+            case .edit(let change, let issueID):
+                guard current.activity.id == issueID else { throw GitHubIssueWriteError.selectionChanged }
+                if change.matches(title: current.activity.title, body: current.activity.body) {
+                    finish(change)
+                } else {
+                    fail(GitHubIssueWriteError.editUnconfirmed)
+                    revision += 1
+                }
             }
         } catch {
             operation = .unconfirmed(receipt)
             operationError = error.localizedDescription
+        }
+    }
+
+    private func clear(_ pending: PendingIssueComment, rejection: String? = nil) {
+        do {
+            try store().setPendingIssueComment(nil, for: reference)
+            if let rejection {
+                operation = .idle
+                operationError = rejection
+            } else {
+                finish(.comment(pending.body))
+            }
+        } catch {
+            operation = .clearFailed(pending, rejection: rejection)
+            operationError = "Couldn’t clear the saved comment receipt. \(error.localizedDescription)"
         }
     }
 
@@ -255,7 +331,7 @@ struct IssueDetailsView: View {
             }
             if session.needsCheck {
                 Button("Check result") {
-                    session.check(in: issue.reference, via: reader, isCurrent: localSelectionIsCurrent)
+                    session.check(via: reader, isCurrent: localSelectionIsCurrent)
                 }
                 .accessibilityIdentifier("issue-write-check")
             }
@@ -436,7 +512,7 @@ struct IssueDetailsView: View {
     private func submit(_ change: GitHubIssueChange, loaded: Loaded) {
         guard loaded.writeBlocked == nil, let id = loaded.snapshot?.activity.id else { return }
         let shown = presentation
-        session.submit(change, to: loaded.issue.reference, expectedID: id, via: reader) {
+        session.submit(change, expectedID: id, via: reader) {
             presentation == shown && localSelectionIsCurrent()
         }
     }

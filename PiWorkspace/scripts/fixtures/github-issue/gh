@@ -66,7 +66,7 @@ elif args[:2] == ["api", "graphql"] and "query NativeIssueDetail" in " ".join(ar
     owner, repo_name, number_value = args[7::2]
     assert owner.startswith("owner=") and repo_name.startswith("name=") and number_value.startswith("number=")
     repo, number = owner[6:] + "/" + repo_name[5:], int(number_value[7:])
-    record("snapshot", repo=repo, number=number)
+    record("snapshot", repo=repo, number=number, mode=mode)
     if mode == "hold-preflight" and not read_gate.exists():
         read_gate.touch(exist_ok=False)
         deadline = time.monotonic() + 8
@@ -84,7 +84,19 @@ elif args[:2] == ["api", "graphql"] and "query NativeIssueDetail" in " ".join(ar
     result["comments"] = {"totalCount": len(details["comments"]), "nodes": details["comments"][-25:]}
     if mode == "wrong-target":
         result["url"] = details["url"].replace("/issues/", "/pull/")
-    output({"data": {"viewer": {"id": "fixture-user"}, "repository": {"issue": result}}})
+    if mode == "window-moved":
+        # The baseline comment has fallen beyond the bounded read.
+        result["comments"] = {"totalCount": 26, "nodes": [
+            {**details["comments"][-1], "id": f"later-{index}"} for index in range(25)
+        ]}
+    if mode == "replacement-issue":
+        result["id"] = "replacement-id"
+    if mode == "different-author":
+        for comment in result["comments"]["nodes"]:
+            if comment["id"] != "previous-1":
+                comment["viewerDidAuthor"] = False
+    viewer = "another-user" if mode == "different-viewer" else "fixture-user"
+    output({"data": {"viewer": {"id": viewer}, "repository": {"issue": result}}})
 elif len(args) >= 2 and (args[0] == "api" and re.fullmatch(r"repos/fixture/(workspace|other)/issues/(42|71|72)(/comments)?", args[1])):
     assert len(args) == 10
     _, endpoint, hostname_flag, hostname, method_flag, method, header_flag, header, input_flag, filename = args
@@ -111,7 +123,7 @@ elif len(args) >= 2 and (args[0] == "api" and re.fullmatch(r"repos/fixture/(work
         url = details["url"] + f"#issuecomment-{ident}"
         comment = {"id": f"posted-{ident}", "body": payload["body"], "url": url,
                    "author": {"login": "fixture-viewer"}, "createdAt": "2026-05-02T12:00:00Z", "viewerDidAuthor": True}
-        if mode == "lost-pending":
+        if mode in ("lost-pending", "hold-ack"):
             details["pending"] = comment
         else:
             details["comments"].append(comment)
@@ -119,6 +131,12 @@ elif len(args) >= 2 and (args[0] == "api" and re.fullmatch(r"repos/fixture/(work
     save()
     if mode == "commit-unreadable":
         print("unreadable acknowledgement")
+    elif mode == "hold-ack":
+        (fixture / "comment-committed").touch()
+        deadline = time.monotonic() + 15
+        while not write_gate.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        fail("connection reset while awaiting response")
     elif mode == "lost-pending":
         fail("connection reset while awaiting response")
     else:

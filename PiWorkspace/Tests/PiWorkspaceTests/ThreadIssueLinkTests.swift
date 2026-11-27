@@ -384,6 +384,167 @@ final class ThreadIssueLinkTests: XCTestCase {
         XCTAssertNil(panel.element("issue-write-check"))
     }
 
+    func testCommentRetryAfterRestart() async throws {
+        // Launch the first editor in a separate XCTest process so only on-disk state survives.
+        let launchRoot = "PI_TEST_COMMENT_FIRST_LAUNCH"
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        if let path = ProcessInfo.processInfo.environment[launchRoot] {
+            let fixture = try ThreadGitHubFixture(reopening: URL(fileURLWithPath: path))
+            fixture.issueWrites = true
+            let model = fixture.open()
+            let scope = try XCTUnwrap(model.gitHubScope)
+            model.draft = "Keep the chat draft"
+            XCTAssertTrue(model.savePendingComposer())
+            let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+            defer { panel.close() }
+            try await panel.press("github-tab-issues")
+            try await panel.press("issue-row-71")
+            _ = try await panel.find("issue-comment-body-previous-1")
+            try await panel.press("issue-detail-refresh")
+            _ = try await panel.find("issue-detail-refresh") { _ in
+                (try? fixture.issueRequestsLog().filter { $0.kind == "snapshot" }.count) == 2
+            }
+            XCTAssertEqual(try fixture.issueRequestsLog().map(\.kind), ["view", "snapshot", "view", "snapshot"])
+            try await panel.enterDetailText("issue-comment-editor", text: "Repeated text")
+            try fixture.setMode("hold-ack")
+            try await panel.press("issue-comment-submit")
+            let committed = fixture.root.appendingPathComponent("comment-committed")
+            for _ in 0..<200 {
+                if FileManager.default.fileExists(atPath: committed.path) { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: committed.path))
+            XCTAssertNotNil(panel.element("issue-write-progress"))
+            XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+            XCTAssertTrue(model.terminate())
+            return
+        }
+
+        let fixture = try ThreadGitHubFixture()
+        fixture.issueWrites = true
+        let first = Process()
+        first.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        first.arguments = ["xctest", "-XCTest", "PiWorkspaceTests.ThreadIssueLinkTests/testCommentRetryAfterRestart",
+                           Bundle(for: Self.self).bundlePath]
+        first.environment = ProcessInfo.processInfo.environment.merging([launchRoot: fixture.root.path]) { _, new in new }
+        try first.run()
+        first.waitUntilExit()
+        guard first.terminationStatus == 0 else {
+            return XCTFail("First editor process exited with \(first.terminationStatus)")
+        }
+        try fixture.releaseIssueWrite()
+        let model = fixture.open()
+        defer { model.terminate() }
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let folder = try fixture.makeOtherCheckout()
+        try model.openProject(folder)
+        let other = try XCTUnwrap(model.gitHubScope)
+        model.draft = "Other checkout chat"
+        XCTAssertTrue(model.savePendingComposer())
+        fixture.expectedRepository = "github.com/fixture/other"
+        let otherRepository = try await model.gitHubRepository(in: other)
+        try await model.linkIssue("#71", in: other, repository: otherRepository)
+        let otherPanel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: other, pasteboard: board))
+        try await otherPanel.press("github-tab-linked-items")
+        try await otherPanel.press("linked-issue-row-fixture/other-71")
+        try await otherPanel.expectDetailText("issue-comment-editor", "")
+        XCTAssertNil(otherPanel.element("issue-write-check"))
+        otherPanel.close()
+        fixture.expectedRepository = "github.com/fixture/workspace"
+        model.selectConversation(scope.threadID, in: scope.projectID)
+        let index = try Data(contentsOf: fixture.index)
+        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        defer { panel.close() }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-71")
+        _ = try await panel.find("issue-comment-body-previous-1")
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+        try await panel.expectDetailText("issue-comment-editor", "Repeated text")
+        XCTAssertEqual(panel.element("issue-comment-submit")?.isAccessibilityEnabled?(), false)
+        try await panel.press("issue-write-check")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("has not confirmed") == true }
+        try fixture.setMode("reveal")
+        try await panel.press("issue-detail-refresh")
+        _ = try await panel.find("issue-comment-body-posted-2")
+        for mode in ["different-viewer", "different-author", "replacement-issue", "window-moved"] {
+            try fixture.setMode(mode)
+            try await panel.press("issue-write-check")
+            _ = try await panel.find("issue-write-check") { _ in
+                (try? fixture.issueRequestsLog().contains { $0.kind == "snapshot" && $0.mode == mode }) == true
+            }
+            try await panel.expectDetailText("issue-comment-editor", "Repeated text")
+        }
+        try fixture.setMode("initial")
+        try fixture.setRemote("https://github.com/fixture/other.git")
+        try await panel.press("issue-write-check")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("changed") == true }
+        try fixture.setRemote("https://github.com/fixture/workspace.git")
+        try await panel.press("issue-write-check")
+        try await panel.expectDetailText("issue-comment-editor", "")
+        let reference = try XCTUnwrap(GitHubIssueReference(url: "https://github.com/fixture/workspace/issues/71"))
+        let snapshot = try await model.gitHubReader(in: scope).issueSnapshot(for: reference)
+        XCTAssertEqual(snapshot.viewerID, "fixture-user")
+        XCTAssertEqual(snapshot.activity.comments.nodes.map(\.id), ["previous-1", "posted-2"])
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+        XCTAssertEqual(model.draft, "Keep the chat draft")
+
+        try await panel.enterDetailText("issue-comment-editor", text: "Repeated text")
+        try await panel.press("issue-comment-submit")
+        _ = try await panel.find("issue-comment-body-posted-3")
+        let confirmed = try await model.gitHubReader(in: scope).issueSnapshot(for: reference)
+        XCTAssertEqual(confirmed.activity.comments.nodes.map(\.id), ["previous-1", "posted-2", "posted-3"])
+        XCTAssertTrue(confirmed.activity.comments.nodes.allSatisfy { $0.viewerDidAuthor && $0.body == "Repeated text" })
+        XCTAssertEqual(try Data(contentsOf: fixture.index), index)
+        model.selectConversation(other.threadID, in: other.projectID)
+        XCTAssertEqual(model.draft, "Other checkout chat")
+        let writes = try fixture.issueWritesLog()
+        XCTAssertEqual(writes.map(\.method), ["POST", "POST"])
+        XCTAssertTrue(writes.allSatisfy {
+            $0.repo == "fixture/workspace" && $0.number == 71 && $0.payload == ["body": "Repeated text"] &&
+                URL(fileURLWithPath: $0.cwd).resolvingSymlinksInPath().path == fixture.checkout.resolvingSymlinksInPath().path
+        })
+    }
+
+    func testCommentReceiptStorageFailureKeepsDraftAndBlocksDuplicateDispatch() async throws {
+        let fixture = try ThreadGitHubFixture()
+        fixture.issueWrites = true
+        let model = fixture.open()
+        defer { model.terminate() }
+        let scope = try XCTUnwrap(model.gitHubScope)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        defer { panel.close() }
+        try await panel.press("github-tab-issues")
+        try await panel.press("issue-row-71")
+        try await panel.enterDetailText("issue-comment-editor", text: "Save receipt first")
+        let file = fixture.workspace.appendingPathComponent("pending-issue-comments.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.workspace.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.workspace.path) }
+        try await panel.press("issue-comment-submit")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("save the comment receipt") == true }
+        try await panel.expectDetailText("issue-comment-editor", "Save receipt first")
+        XCTAssertTrue(try fixture.issueWritesLog().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.workspace.path)
+
+        try fixture.setMode("lost-pending")
+        try await panel.press("issue-comment-submit")
+        _ = try await panel.find("issue-write-check")
+        let pending = try Data(contentsOf: file)
+        try Data("unreadable journal".utf8).write(to: file, options: .atomic)
+        try fixture.setMode("reveal")
+        try await panel.press("issue-write-check")
+        _ = try await panel.find("issue-write-error") { panel.text($0)?.contains("clear the saved comment receipt") == true }
+        XCTAssertEqual(panel.element("issue-comment-submit")?.isAccessibilityEnabled?(), false)
+        try pending.write(to: file, options: .atomic)
+        try await panel.press("issue-write-check")
+        try await panel.expectDetailText("issue-comment-editor", "")
+        _ = try await panel.find("issue-comment-body-posted-2")
+        XCTAssertEqual(try fixture.issueWritesLog().count, 1)
+    }
+
     func testIssueWritePreflightRejectsChangedCheckoutThreadAndIssue() async throws {
         let fixture = try ThreadGitHubFixture()
         fixture.issueWrites = true
@@ -414,7 +575,7 @@ final class ThreadIssueLinkTests: XCTestCase {
             default:
                 try fixture.setRemote("https://github.com/fixture/other.git")
             }
-            try fixture.releaseIssuePreflight()
+            try fixture.releaseIssueWrite()
             _ = try await panel.find("issue-write-error") {
                 panel.text($0)?.contains("changed") == true
             }
