@@ -233,6 +233,10 @@ final class SettingsNavigationTests: XCTestCase {
         try open("projects/\(first)")
         try await fixture.expectControls("settings-heading-project", "project-settings-name", "project-settings-pin")
         try edit(try await fixture.waitForField("Alpha name") { $0.stringValue == "Alpha" }, to: "Unsaved Alpha")
+        try open("projects/\(second)")
+        _ = try await fixture.waitForField("Beta name") { $0.stringValue == "Beta" }
+        try open("projects/\(first)")
+        _ = try await fixture.waitForField("unsaved Alpha name") { $0.stringValue == "Unsaved Alpha" }
         try await fixture.press("project-settings-model")
         try edit(try await fixture.waitForField("Alpha model") { $0.stringValue == "local-override" }, to: "unsaved-alpha")
         try open("settings/projects?project=\(second)")
