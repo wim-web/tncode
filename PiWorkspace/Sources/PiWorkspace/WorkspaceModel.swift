@@ -947,6 +947,18 @@ final class WorkspaceModel: ObservableObject {
         try persist(updated)
     }
 
+    func restoreDeviceWorkspaceDefaults() throws {
+        guard confirmsThreadArchive || workspace.addProjectBaseDirectory?.isEmpty == false ||
+              !workspace.startNewWorktreesFromRemote ||
+              workspace.effectiveSnoozeOptions != ThreadSnoozeSchedule.defaultOptions else { return }
+        var updated = workspace
+        updated.confirmThreadArchive = nil
+        updated.addProjectBaseDirectory = nil
+        updated.newWorktreesStartFromRemote = nil
+        updated.snoozeOptions = nil
+        try persist(updated)
+    }
+
     func openFolder(relinking id: UUID? = nil, startThread: Bool = false, draftOrigin: DraftProjectScope? = nil) {
         guard !operationsInProgress, draftOrigin == nil ||
               (id == nil && !startThread && draftOrigin == draftProjectScope && canSwitchDraftProject) else { return }

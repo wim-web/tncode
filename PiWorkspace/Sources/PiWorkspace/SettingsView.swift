@@ -4,7 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
     @ObservedObject private var request: SettingsRequest
-    let appearance: AppearanceSettings
+    @ObservedObject private var appearance: AppearanceSettings
     let browserDefaults: UserDefaults
     let pasteboard: NSPasteboard
     let openWelcome: () -> Void
@@ -21,6 +21,8 @@ struct SettingsView: View {
     @State private var projectBaseDirectory: String
     @State private var projectBaseDirectoryError: String?
     @State private var archiveConfirmationError: String?
+    @State private var confirmingDeviceRestore = false
+    @State private var deviceRestoreError: String?
     @State private var archiveScope = ArchiveScope.all
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
@@ -89,6 +91,14 @@ struct SettingsView: View {
                         Button("About") { openWindow(id: AboutView.windowID) }
                             .accessibilityIdentifier("settings-about")
                     }
+                    if page == .general {
+                        Button("Restore device defaults") {
+                            confirmingDeviceRestore = true
+                            focus = .heading
+                        }
+                        .accessibilityIdentifier("restore-device-defaults")
+                        .disabled(changedDeviceSettings.isEmpty)
+                    }
                     if [.general, .threads, .chat, .project, .worktrees, .usage, .archived, .about].contains(page) ||
                         (page == .model && projectScopeUnavailable) {
                         Button("Done", action: closeSettings)
@@ -133,12 +143,24 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings")
         .environment(\.settingsDestination, request.destination)
         .background { WindowKeyMonitor(handle: handleKey) }
+        .alert("Restore default settings?", isPresented: $confirmingDeviceRestore,
+               presenting: changedDeviceSettings) { _ in
+            Button("Confirm", role: .destructive, action: restoreDeviceDefaults)
+                .accessibilityIdentifier("confirm-restore-device-defaults")
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("cancel-restore-device-defaults")
+        } message: { changes in
+            Text("This will reset: \(changes.joined(separator: ", ")).")
+        }
         .onChange(of: request.destination) {
             focus = nil
             search.query = ""
         }
         .onChange(of: focus) { previous, _ in
-            if previous == .anchor(.addProjectStartsIn) { commitProjectBaseDirectory() }
+            if previous == .anchor(.addProjectStartsIn), !confirmingDeviceRestore {
+                commitProjectBaseDirectory()
+            }
             if previous == .anchor(.worktreeLocation) { commitWorktreeDirectory(worktreeDirectory) }
         }
     }
@@ -232,6 +254,12 @@ struct SettingsView: View {
         switch page {
         case .general:
             VStack(alignment: .leading, spacing: 18) {
+                if let deviceRestoreError {
+                    Text(deviceRestoreError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("restore-device-defaults-error")
+                }
                 Toggle("Group by Project", isOn: $groupByProject)
                     .settingsTarget(.groupByProject, focus: $focus)
                 Divider()
@@ -281,6 +309,50 @@ struct SettingsView: View {
         Text("This project is no longer open.")
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("settings-project-unavailable")
+    }
+
+    private var changedDeviceSettings: [String] {
+        let workspace = model.workspace
+        return [
+            ("Color scheme", appearance.colorScheme != .system),
+            ("Chat width", appearance.chatWidth != .comfortable),
+            ("Snooze options", workspace.effectiveSnoozeOptions != ThreadSnoozeSchedule.defaultOptions),
+            ("Send shortcut", sendShortcut != .initial),
+            ("Follow-up behavior", followUpBehavior != .initial),
+            ("Start from remote", !workspace.startNewWorktreesFromRemote),
+            ("Add project starts in", workspace.addProjectBaseDirectory?.isEmpty == false ||
+             !projectBaseDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+            ("Archive confirmation", model.confirmsThreadArchive),
+            ("Terminal close confirmation", confirmTerminalClose != TerminalPreference.defaultConfirmClose),
+            ("Search engine", BrowserSearchSettings.load(from: browserDefaults) != BrowserSearchSettings())
+        ].compactMap { label, changed in changed ? label : nil }
+    }
+
+    private func restoreDeviceDefaults() {
+        do {
+            try model.restoreDeviceWorkspaceDefaults()
+        } catch {
+            deviceRestoreError = error.localizedDescription
+            return
+        }
+        if appearance.colorScheme != .system || appearance.chatWidth != .comfortable {
+            appearance.restoreDefaults()
+        }
+        if sendShortcut != .initial { sendShortcut = .initial }
+        if followUpBehavior != .initial { followUpBehavior = .initial }
+        if confirmTerminalClose != TerminalPreference.defaultConfirmClose {
+            confirmTerminalClose = TerminalPreference.defaultConfirmClose
+        }
+        let browserDefaultsValue = BrowserSearchSettings()
+        if BrowserSearchSettings.load(from: browserDefaults) != browserDefaultsValue {
+            browserDefaultsValue.save(to: browserDefaults)
+        }
+        browserDraft = browserDefaultsValue
+        projectBaseDirectory = ""
+        projectBaseDirectoryError = nil
+        archiveConfirmationError = nil
+        startFromRemoteError = nil
+        deviceRestoreError = nil
     }
 
     private var chatSettings: some View {
@@ -523,6 +595,7 @@ struct SettingsView: View {
     }
 
     private func handleKey(_ event: NSEvent, window: NSWindow) -> Bool {
+        guard !confirmingDeviceRestore else { return false }
         let editor = window.firstResponder as? NSTextView
         guard editor?.hasMarkedText() != true else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])

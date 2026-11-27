@@ -458,6 +458,71 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(fixture.model.workspace.addProjectBaseDirectory, second.path)
     }
 
+    func testRestoreDeviceDefaultsPreservesWorkspaceAndPendingScopedEdits() async throws {
+        let projectID = UUID()
+        let threadID = UUID()
+        let queue = [QueuedMessage(text: "Keep the queued prompt")]
+        let fixture = try Fixture(projectIDs: [projectID], browserSettings: .init()) { workspace, defaults in
+            var thread = Conversation(id: threadID, title: "Keep this thread")
+            thread.composerText = "Keep the unsent draft"
+            thread.queuedMessages = queue
+            thread.location = .worktree(path: "/fixture/existing-checkout", base: nil)
+            thread.worktreeStartsFromRemote = false
+            workspace.projects[0].conversations = [thread]
+            workspace.projects[0].selectedConversation = threadID
+            workspace.worktreesDirectory = "/fixture/worktree-storage"
+            defaults.set(true, forKey: SidebarPreference.groupByProject)
+        }
+        defer { fixture.close() }
+        let restore = "restore-device-defaults"
+        let index = fixture.root.appendingPathComponent(WorkspaceStore.indexName)
+        let cleanIndex = try Data(contentsOf: index)
+        let request = try XCTUnwrap(fixture.model.settingsRequest)
+
+        try await fixture.until("Restore is disabled when only unrelated preferences differ") {
+            fixture.isEnabled(restore) == false
+        }
+        XCTAssertEqual(try Data(contentsOf: index), cleanIndex)
+        try await fixture.press("settings-nav-model")
+        try await fixture.until("Restore is absent from Model settings") { fixture.element(restore) == nil }
+        let modelField = try await fixture.waitForField("Project model ID") { $0.stringValue == "local-override" }
+        try fixture.edit(modelField, to: "pending-project-model")
+        try await fixture.press("settings-nav-worktrees")
+        try await fixture.activate("start-from-origin")
+        try await fixture.expectControls("reset-start-from-origin")
+        try await fixture.press("settings-nav-general")
+        try await fixture.press("archive-confirmation")
+        try await fixture.activate("terminal-close-confirmation")
+        try await fixture.expectControls("reset-terminal-close-confirmation")
+        try await fixture.until("Restore is enabled") { fixture.isEnabled(restore) == true }
+
+        let folder = try await fixture.waitForField("Add project starts in") { $0.placeholderString == "~/" }
+        try fixture.edit(folder, to: "/fixture/pending-project-start")
+        let dirtyIndex = try Data(contentsOf: index)
+        try await fixture.press(restore)
+        try await fixture.activate("cancel-restore-device-defaults")
+        try await fixture.until("Cancel dismisses the confirmation") {
+            fixture.element("cancel-restore-device-defaults") == nil
+        }
+        XCTAssertEqual(try Data(contentsOf: index), dirtyIndex)
+        XCTAssertEqual(folder.stringValue, "/fixture/pending-project-start")
+        XCTAssertFalse(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
+
+        try await fixture.press(restore)
+        try await fixture.activate("confirm-restore-device-defaults")
+        try await fixture.until("Restore cleared both the saved settings and the pending folder value") {
+            fixture.isEnabled(restore) == false && folder.stringValue.isEmpty
+        }
+        XCTAssertTrue(fixture.model.settingsRequest === request)
+        XCTAssertTrue(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
+        try await fixture.press("settings-nav-model")
+        _ = try await fixture.waitForField("Pending project edit") { $0.stringValue == "pending-project-model" }
+        try await fixture.press("settings-nav-general")
+        try await fixture.press("settings-close")
+        XCTAssertEqual(try Data(contentsOf: index), cleanIndex)
+        XCTAssertTrue(fixture.defaults.bool(forKey: SidebarPreference.groupByProject))
+    }
+
     @MainActor
     private final class Fixture {
         let root: URL
@@ -470,7 +535,9 @@ final class SettingsNavigationTests: XCTestCase {
         let ownsDefaults: Bool
 
         init(link: URL? = nil, linkBeforePresentation: URL? = nil, projectIDs: [UUID] = [UUID()],
-             suiteName: String? = nil) throws {
+             suiteName: String? = nil,
+             browserSettings: BrowserSearchSettings = .init(engine: .custom, customURL: "https://example.test/?q=%s"),
+             configure: (inout Workspace, UserDefaults) -> Void = { _, _ in }) throws {
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             suite = suiteName ?? "SettingsNavigationTests.\(root.lastPathComponent)"
             ownsDefaults = suiteName == nil
@@ -481,10 +548,10 @@ final class SettingsNavigationTests: XCTestCase {
                 project.modelOverride = ModelSettings(provider: .local, model: index == 0 ? "local-override" : "beta-override")
                 return project
             }
-            try WorkspaceStore(root: root).save(
-                Workspace(projects: projects, selectedProject: projectIDs.first, welcomeCompleted: true)
-            )
-            XCTAssertTrue(BrowserSearchSettings(engine: .custom, customURL: "https://example.test/?q=%s").save(to: defaults))
+            var workspace = Workspace(projects: projects, selectedProject: projectIDs.first, welcomeCompleted: true)
+            configure(&workspace, defaults)
+            try WorkspaceStore(root: root).save(workspace)
+            XCTAssertTrue(browserSettings.save(to: defaults))
             model = WorkspaceModel(root: root, keychainService: suite, makeProcess: { _, _ in
                 throw WorkspaceError("No Pi helper in this test.")
             })
@@ -590,7 +657,25 @@ final class SettingsNavigationTests: XCTestCase {
         func press(_ id: String) async throws {
             try await until("Control \(id) is visible") { element(id) != nil }
             let control = try XCTUnwrap(element(id))
-            XCTAssertTrue(control.accessibilityPerformPress?() == true)
+            XCTAssertTrue(control.accessibilityPerformPress?() == true, "Press \(id)")
+        }
+
+        func activate(_ id: String) async throws {
+            try await until("Control \(id) is visible") { element(id) != nil }
+            let control = try XCTUnwrap(element(id))
+            // Switches and alert buttons can handle this action without reporting success offscreen.
+            _ = control.accessibilityPerformPress?()
+        }
+
+        func edit(_ field: NSTextField, to text: String) throws {
+            XCTAssertTrue(window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            XCTAssertEqual(field.stringValue, text)
+        }
+
+        func isEnabled(_ id: String) -> Bool? {
+            element(id)?.isAccessibilityEnabled?()
         }
 
         func element(_ id: String) -> AnyObject? {
@@ -603,7 +688,7 @@ final class SettingsNavigationTests: XCTestCase {
                 }
                 return nil
             }
-            return find(host) ?? find(window)
+            return find(host) ?? window.attachedSheet.flatMap(find) ?? find(window)
         }
 
         private func textField(_ matches: @escaping (NSTextField) -> Bool) -> NSTextField? {
