@@ -221,23 +221,26 @@ struct CommandPaletteContents {
 }
 
 struct CommandPaletteSession {
-    enum Key {
-        case toggle, escape, up, down, select, backspace
+    enum Key: Equatable {
+        case toggle(WorkspaceFileSearch.Mode?)
+        case escape, up, down, select, backspace
 
         init?(_ event: NSEvent) {
             let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            if modifiers == .command, event.charactersIgnoringModifiers == "k" {
-                self = .toggle
-                return
-            }
-            guard modifiers.isEmpty else { return nil }
-            switch Int(event.keyCode) {
-            case kVK_Escape: self = .escape
-            case kVK_UpArrow: self = .up
-            case kVK_DownArrow: self = .down
-            case kVK_Return, kVK_ANSI_KeypadEnter: self = .select
-            case kVK_Delete: self = .backspace
-            default: return nil
+            switch (event.charactersIgnoringModifiers?.lowercased(), modifiers) {
+            case ("k", .command): self = .toggle(nil)
+            case ("p", .command): self = .toggle(.files)
+            case ("f", [.command, .shift]): self = .toggle(.contents)
+            default:
+                guard modifiers.isEmpty else { return nil }
+                switch Int(event.keyCode) {
+                case kVK_Escape: self = .escape
+                case kVK_UpArrow: self = .up
+                case kVK_DownArrow: self = .down
+                case kVK_Return, kVK_ANSI_KeypadEnter: self = .select
+                case kVK_Delete: self = .backspace
+                default: return nil
+                }
             }
         }
     }
@@ -273,8 +276,11 @@ struct CommandPaletteSession {
     private var workspaceSearch: WorkspaceSearchContext?
     private var fileResult: (search: FileSearch, result: Result<WorkspaceFileSearch.Results, Error>)?
 
-    init(choosingProject: Bool = false) {
+    init(choosingProject: Bool = false, fileSearchMode: WorkspaceFileSearch.Mode? = nil) {
         parentQuery = choosingProject ? "" : nil
+        if let fileSearchMode {
+            setWorkspaceSearch(fileSearchMode)
+        }
     }
 
     var choosingProject: Bool { parentQuery != nil }
@@ -347,21 +353,33 @@ struct CommandPaletteSession {
             return .handled
         }
         if case .searchWorkspace(let mode) = action {
-            workspaceSearch = WorkspaceSearchContext(mode: mode, parentQuery: query, parentHighlight: action)
-            fileOptions = .init()
-            query = ""
+            setWorkspaceSearch(mode, parentQuery: query, parentHighlight: action)
             return .handled
         }
         return .run(action)
     }
 
+    private mutating func setWorkspaceSearch(_ mode: WorkspaceFileSearch.Mode?, parentQuery: String = "",
+                                             parentHighlight: CommandPaletteAction? = nil) {
+        workspaceSearch = mode.map { WorkspaceSearchContext(mode: $0, parentQuery: parentQuery,
+                                                            parentHighlight: parentHighlight) }
+        fileOptions = .init()
+        query = ""
+    }
+
     mutating func handle(_ key: Key, rows: [CommandPaletteRow], repeated: Bool, composing: Bool) -> Response {
         guard !composing else { return .ignored }
         switch key {
+        case .toggle(let mode):
+            guard !repeated else { return .handled }
+            guard mode != fileSearchMode else { return .close }
+            parentQuery = nil
+            setWorkspaceSearch(mode)
+            return .handled
         case .escape where workspaceSearch != nil:
             if !repeated { back() }
             return .handled
-        case .escape, .toggle:
+        case .escape:
             return repeated ? .handled : .close
         case .up, .down:
             if let selected = selected(in: rows), let index = rows.firstIndex(where: { $0.id == selected.id }) {

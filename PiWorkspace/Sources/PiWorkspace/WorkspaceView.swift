@@ -56,7 +56,7 @@ struct WorkspaceView: View {
     @State private var focusAfterThreadChoice: DraftProjectScope?
     @State private var draftProjectPicker: DraftProjectPickerPresentation?
     @State private var composerModelPicker: ComposerModelPresentation?
-    @State private var paletteChoosingProject = false
+    @State private var paletteStart = CommandPaletteSession()
     @State private var paletteAction: CommandPaletteAction?
     @State private var paletteReturnFocus: PaletteReturnFocus?
     @State private var openTerminals: [ThreadTerminalDrawerState] = []
@@ -331,8 +331,8 @@ struct WorkspaceView: View {
                 }
                 if handleFindKey(event, in: window) { return true }
                 guard !event.isARepeat else { return false }
-                if case .toggle? = CommandPaletteSession.Key(event) {
-                    return openCommandPalette(in: window)
+                if case .toggle(let mode)? = CommandPaletteSession.Key(event) {
+                    return openCommandPalette(in: window, startingAt: .init(fileSearchMode: mode))
                 }
                 if handleNewThreadKey(event, in: window) { return true }
                 let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
@@ -479,7 +479,7 @@ struct WorkspaceView: View {
         return workspaceContent
         .sheet(isPresented: $model.showingCommandPalette, onDismiss: finishCommandPalette) {
             CommandPaletteView(contents: paletteContents, latestMessageID: model.messages.last?.id,
-                               choosingProject: paletteChoosingProject,
+                               startingAt: paletteStart,
                                filesLocation: paletteFilesLocation, activeFilesLocation: { paletteFilesLocation },
                                searchMessages: model.searchMessages) { action in
                 guard model.showingCommandPalette else { return }
@@ -3231,7 +3231,7 @@ struct WorkspaceView: View {
             startThread(in: project.id)
             return true
         }
-        return openCommandPalette(in: window, choosingProject: true)
+        return openCommandPalette(in: window, startingAt: .init(choosingProject: true))
     }
 
     private func acceptsWorkspaceCommands(in window: NSWindow) -> Bool {
@@ -3269,11 +3269,6 @@ struct WorkspaceView: View {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
         let editor = window.firstResponder as? NSTextView
         guard (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
-        if event.charactersIgnoringModifiers?.lowercased() == "f", modifiers == [.command, .shift] {
-            searchFocused = true
-            return true
-        }
-
         let editingOtherField = editor?.isFieldEditor == true && !(editor is ComposerTextField.Editor)
         if editingOtherField, !findFocused { return false }
         guard !documentHasFocus(in: window) else { return false }
@@ -3337,16 +3332,17 @@ struct WorkspaceView: View {
     }
 
     @discardableResult
-    private func openCommandPalette(in eventWindow: NSWindow? = nil, choosingProject: Bool = false) -> Bool {
+    private func openCommandPalette(in eventWindow: NSWindow? = nil, startingAt session: CommandPaletteSession = .init()) -> Bool {
         guard model.canOpenCommandPalette, let window = eventWindow ?? NSApp.keyWindow,
               eventWindow != nil || window === NSApp.mainWindow,
-              acceptsWorkspaceKeys(in: window) else { return false }
+              acceptsWorkspaceKeys(in: window),
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
         if findFocused {
             paletteReturnFocus = .threadFind
         } else {
             paletteReturnFocus = searchFocused ? .search : focusedComposer.map(PaletteReturnFocus.composer)
         }
-        paletteChoosingProject = choosingProject
+        paletteStart = session
         model.showingCommandPalette = true
         return true
     }

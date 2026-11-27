@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
+    private enum SearchField: Hashable {
+        case command
+        case workspace(WorkspaceFileSearch.Mode)
+    }
+
     let contents: CommandPaletteContents
     let latestMessageID: String?
     let searchMessages: (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match]
@@ -9,9 +14,9 @@ struct CommandPaletteView: View {
     let finish: (CommandPaletteAction?) -> Void
 
     @State private var session: CommandPaletteSession
-    @FocusState private var searchFocused: Bool
+    @FocusState private var focusedField: SearchField?
 
-    init(contents: CommandPaletteContents, latestMessageID: String?, choosingProject: Bool = false,
+    init(contents: CommandPaletteContents, latestMessageID: String?, startingAt session: CommandPaletteSession = .init(),
          filesLocation: WorkspaceFilesLocation? = nil, activeFilesLocation: @escaping () -> WorkspaceFilesLocation? = { nil },
          searchMessages: @escaping (SidebarMessageSearch) async throws -> [UUID: SidebarMessageSearch.Match],
          finish: @escaping (CommandPaletteAction?) -> Void) {
@@ -21,7 +26,7 @@ struct CommandPaletteView: View {
         self.activeFilesLocation = activeFilesLocation
         self.searchMessages = searchMessages
         self.finish = finish
-        _session = State(initialValue: CommandPaletteSession(choosingProject: choosingProject))
+        _session = State(initialValue: session)
     }
 
     private var search: CommandPaletteSession.Search? {
@@ -51,6 +56,8 @@ struct CommandPaletteView: View {
     private var fileSearch: CommandPaletteSession.FileSearch? { session.fileSearch(at: filesLocation) }
 
     private var fileResult: Result<WorkspaceFileSearch.Results, Error>? { session.fileResult(for: fileSearch) }
+
+    private var searchField: SearchField { session.fileSearchMode.map(SearchField.workspace) ?? .command }
 
     private var prompt: String {
         switch session.fileSearchMode {
@@ -99,9 +106,10 @@ struct CommandPaletteView: View {
                 }
                 TextField(prompt, text: $session.query)
                 .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
+                .focused($focusedField, equals: searchField)
                 .accessibilityIdentifier("command-palette-search")
                 .disabled(mode != nil && filesLocation == nil)
+                .id(searchField)
                 if mode == .contents {
                     searchOption("Aa", label: "Match case", id: "match-case", value: $session.fileOptions.caseSensitive)
                     searchOption("ab", label: "Match whole word", id: "whole-word", value: $session.fileOptions.wholeWord)
@@ -163,12 +171,16 @@ struct CommandPaletteView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(mode == .files ? "File picker" : mode == .contents ? "Search project contents" : "Command palette")
         .accessibilityIdentifier(mode == .files ? "project-file-picker" : mode == .contents ? "project-content-search" : "command-palette")
-        .defaultFocus($searchFocused, true)
-        .onAppear { searchFocused = true }
+        .defaultFocus($focusedField, searchField)
+        .task(id: searchField) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            focusedField = searchField
+        }
         .onChange(of: filesLocation) { _, _ in
             if mode != nil {
                 session.resetResults()
-                searchFocused = true
+                focusedField = searchField
             }
         }
         .task(id: search) {
@@ -201,12 +213,15 @@ struct CommandPaletteView: View {
         .background {
             WindowKeyMonitor { event, window in
                 guard let key = CommandPaletteSession.Key(event) else { return false }
-                let editor = window.firstResponder as? NSTextView
-                let editing = editor?.isFieldEditor == true
-                guard key == .escape || key == .toggle || (searchFocused && editing) else { return false }
+                switch key {
+                case .escape, .toggle: break
+                default:
+                    guard focusedField == searchField,
+                          (window.firstResponder as? NSTextView)?.isFieldEditor == true else { return false }
+                }
                 let currentRows = self.groups(for: self.search).flatMap(\.rows)
                 return handle(session.handle(key, rows: currentRows, repeated: event.isARepeat,
-                                             composing: editor?.hasMarkedText() == true))
+                                             composing: (window.firstResponder as? NSTextInputClient)?.hasMarkedText() == true))
             }
         }
     }
@@ -265,7 +280,7 @@ struct CommandPaletteView: View {
     private func searchOption(_ title: String, label: String, id: String, value: Binding<Bool>) -> some View {
         Button {
             value.wrappedValue.toggle()
-            searchFocused = true
+            focusedField = searchField
         } label: {
             Text(title).font(.system(.caption, design: .monospaced)).frame(minWidth: 18)
         }
@@ -279,13 +294,13 @@ struct CommandPaletteView: View {
 
     private func back() {
         session.back()
-        searchFocused = true
+        focusedField = searchField
     }
 
     private func handle(_ response: CommandPaletteSession.Response) -> Bool {
         switch response {
         case .ignored: return false
-        case .handled: searchFocused = true
+        case .handled: focusedField = searchField
         case .close: finish(nil)
         case .run(let action):
             if case .openWorkspaceFile(let destination) = action,

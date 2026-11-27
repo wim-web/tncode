@@ -152,6 +152,169 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: alphaFile, encoding: .utf8), Repository.alphaText + "External change\n")
     }
 
+    func testWorkspaceSearchShortcutsSwitchModesAndOpenTheLinkedCheckout() async throws {
+        let fixture = try await Repository()
+        defer { fixture.remove() }
+        let app = try OffscreenWorkspace(fixture: fixture)
+        defer { app.close() }
+        let composer = try await app.focusComposer()
+
+        try app.goToFile()
+        try await app.waitForMode("project-file-picker")
+        try app.type("discarded file query")
+        try app.goToFile()
+        try await app.waitFor("same shortcut closes and restores the composer") {
+            app.window.attachedSheet == nil && composer.currentEditor() === app.window.firstResponder
+        }
+        XCTAssertEqual(app.model.draft, "Keep Alpha composer")
+
+        try app.searchContents()
+        try await app.waitForMode("project-content-search")
+        try app.type("discarded content query")
+        try app.key(kVK_Escape, "\u{1b}")
+        try await app.waitForMode("command-palette")
+        try app.type(">search project contents")
+        try await app.enterMode("project-content-search", command: "search-project-contents")
+        try app.searchContents()
+        try await app.waitFor("same shortcut closes an action-opened search") { app.window.attachedSheet == nil }
+
+        try await app.openPalette(">search project contents")
+        try await app.enterMode("project-content-search", command: "search-project-contents")
+        try app.goToFile()
+        try await app.waitForMode("project-file-picker")
+        try app.key(kVK_Escape, "\u{1b}")
+        try await app.waitForMode("command-palette")
+
+        try app.type("discarded command query")
+        try app.goToFile()
+        try await app.waitForMode("project-file-picker")
+        try app.type("discarded file query")
+        try app.searchContents()
+        try await app.waitForMode("project-content-search")
+        try app.type("discarded content query")
+        try app.key(kVK_ANSI_K, "k", modifiers: .command)
+        try await app.waitForMode("command-palette")
+
+        try app.goToFile()
+        try await app.waitForMode("project-file-picker")
+        try app.type("src/log.txt")
+        try await app.waitFor("exact path result") { app.element("command-palette-file-result-src/log.txt") != nil }
+        try app.key(kVK_Return, "\r")
+        try await app.waitFor("selected Alpha file opened in Files") {
+            app.window.attachedSheet == nil && app.editor?.string == Repository.alphaText
+        }
+        let editor = try XCTUnwrap(app.editor)
+        XCTAssertTrue(app.window.makeFirstResponder(editor))
+
+        try app.searchContents()
+        try await app.waitForMode("project-content-search")
+        try app.type("orbital-lantern")
+        try await app.waitFor("content results with duplicate filenames") {
+            app.element("command-palette-content-result-other/log.txt:1") != nil &&
+                app.element("command-palette-content-result-src/log.txt:3") != nil
+        }
+        try app.key(kVK_DownArrow, "\u{f701}")
+        try app.key(kVK_Return, "\r")
+        try await app.waitFor("selected Alpha file and exact line") {
+            app.window.attachedSheet == nil && app.selectedLine == "Alpha line OrBiTaL-lantern"
+        }
+        XCTAssertTrue(app.editor === editor)
+        XCTAssertEqual(app.editor?.string, Repository.alphaText)
+        XCTAssertEqual(app.model.draft, "Keep Alpha composer")
+    }
+
+    func testWorkspaceSearchShortcutsRespectTerminalCompositionAndSettingsFocus() async throws {
+        let fixture = try await Repository()
+        defer { fixture.remove() }
+        let app = try OffscreenWorkspace(fixture: fixture)
+        defer { app.close() }
+        let composer = try await app.focusComposer()
+        let editor = try XCTUnwrap(composer.currentEditor() as? ComposerTextField.Editor)
+        let end = NSRange(location: editor.string.utf16.count, length: 0)
+        editor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0), replacementRange: end)
+        XCTAssertTrue(editor.hasMarkedText())
+        let marked = editor.markedRange()
+        try app.goToFile()
+        try app.searchContents()
+        XCTAssertFalse(app.model.showingCommandPalette)
+        XCTAssertEqual(editor.markedRange(), marked)
+        XCTAssertTrue(app.window.firstResponder === editor)
+        editor.insertText("", replacementRange: marked)
+
+        let terminal = TerminalSessionView(frame: NSRect(x: 0, y: 0, width: 70, height: 48))
+        terminal.setPresentation(true, focusRequest: nil)
+        app.window.contentView?.addSubview(terminal)
+        XCTAssertTrue(app.window.makeFirstResponder(terminal))
+        try app.goToFile()
+        try app.searchContents()
+        XCTAssertFalse(app.model.showingCommandPalette)
+        XCTAssertTrue(app.window.firstResponder === terminal)
+        terminal.removeFromSuperview()
+
+        let settings = try app.openSettings()
+        try await app.waitFor("settings field takes focus") { app.element("settings") != nil && app.input != nil }
+        let settingsEditor = try XCTUnwrap(app.input)
+        try app.type("Model")
+        try app.goToFile()
+        try app.searchContents()
+        XCTAssertTrue(settings.firstResponder === settingsEditor)
+        XCTAssertEqual(settingsEditor.string, "Model")
+        XCTAssertFalse(app.model.showingCommandPalette)
+
+        app.model.settingsRequest = nil
+        try app.goToFile(in: app.window)
+        try app.searchContents(in: app.window)
+        XCTAssertFalse(app.model.showingCommandPalette)
+        app.window.endSheet(settings)
+        try await app.waitFor("settings sheet closed") { app.window.attachedSheet == nil }
+        settings.close()
+
+        try app.goToFile()
+        try await app.waitForMode("project-file-picker")
+        let paletteEditor = try XCTUnwrap(app.input)
+        paletteEditor.setMarkedText("仮", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange())
+        XCTAssertTrue(paletteEditor.hasMarkedText())
+        let paletteMarked = paletteEditor.markedRange()
+        try app.goToFile()
+        try app.searchContents()
+        XCTAssertTrue(app.model.showingCommandPalette)
+        XCTAssertNotNil(app.element("project-file-picker"))
+        XCTAssertEqual(paletteEditor.markedRange(), paletteMarked)
+        paletteEditor.insertText("", replacementRange: paletteMarked)
+        try app.goToFile()
+        try await app.waitFor("file picker closes after composition ends") { app.window.attachedSheet == nil }
+        XCTAssertEqual(app.model.draft, "Keep Alpha composer")
+    }
+
+    func testWorkspaceSearchShortcutsReportMissingCheckout() async throws {
+        let fixture = try await Repository()
+        defer { fixture.remove() }
+        let app = try OffscreenWorkspace(fixture: fixture)
+        defer { app.close() }
+        _ = try await app.focusComposer()
+        try FileManager.default.removeItem(at: fixture.alphaCheckout)
+
+        func hasMissingStatus() -> Bool {
+            guard let status = app.element("command-palette-file-status") else { return false }
+            let value = (status as? NSObject)?.perform(NSSelectorFromString("accessibilityValue"))?.takeUnretainedValue()
+            let text = (value as? String) ?? status.accessibilityLabel?()
+            return text == "The file or folder is missing."
+        }
+
+        try app.goToFile()
+        try await app.waitFor("file picker reports the missing checkout") {
+            app.element("project-file-picker") != nil && hasMissingStatus()
+        }
+        try app.searchContents()
+        try await app.waitForMode("project-content-search")
+        try app.type("main")
+        try await app.waitFor("content search reports the missing checkout", until: hasMissingStatus)
+        try app.key(kVK_Return, "\r")
+        XCTAssertTrue(app.model.showingCommandPalette)
+        XCTAssertNil(app.editor)
+        XCTAssertEqual(app.model.draft, "Keep Alpha composer")
+    }
+
     private struct Repository {
         static let alphaText = "alpha 😀\r\nsome filler\r\nAlpha line OrBiTaL-lantern\r\nliteral[\r\nanother orbital-lantern\r\n"
         static let betaLine = 164
@@ -283,14 +446,52 @@ final class WorkspaceFilePaletteTests: XCTestCase {
             fieldEditor.insertText(value, replacementRange: NSRange(location: 0, length: fieldEditor.string.utf16.count))
         }
 
-        func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = []) throws {
-            let target = window.attachedSheet ?? window
+        func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], in target: NSWindow? = nil) throws {
+            let target = target ?? window.attachedSheet ?? window
             let event = try XCTUnwrap(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
                 windowNumber: target.windowNumber, context: nil, characters: characters,
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(code)
             ))
             app.sendEvent(event)
+        }
+
+        func goToFile(in target: NSWindow? = nil) throws {
+            try key(kVK_ANSI_P, "p", modifiers: .command, in: target)
+        }
+
+        func searchContents(in target: NSWindow? = nil) throws {
+            try key(kVK_ANSI_F, "F", modifiers: [.command, .shift], in: target)
+        }
+
+        func focusComposer() async throws -> ComposerTextField.Field {
+            func composer(in view: NSView) -> ComposerTextField.Field? {
+                if let field = view as? ComposerTextField.Field, field.accessibilityIdentifier() == "composer" { return field }
+                return view.subviews.lazy.compactMap { composer(in: $0) }.first
+            }
+            try await waitFor("composer") { window.contentView.flatMap(composer(in:)) != nil }
+            let field = try XCTUnwrap(window.contentView.flatMap(composer(in:)))
+            XCTAssertTrue(window.makeFirstResponder(field))
+            return field
+        }
+
+        func openSettings() throws -> NSWindow {
+            model.openSettings()
+            let sheet = NSWindow(contentRect: NSRect(origin: window.frame.origin, size: CGSize(width: 784, height: 474)),
+                                 styleMask: [.titled], backing: .buffered, defer: false)
+            sheet.isReleasedWhenClosed = false
+            sheet.contentView = NSHostingView(rootView: SettingsView(
+                model: model, appearance: AppearanceSettings(defaults: defaults), browserDefaults: defaults,
+                request: try XCTUnwrap(model.settingsRequest), pasteboard: pasteboard, openWelcome: {}
+            ).defaultAppStorage(defaults))
+            window.beginSheet(sheet)
+            return sheet
+        }
+
+        func waitForMode(_ identifier: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+            try await waitFor("\(identifier) with an empty query", file: file, line: line) {
+                element(identifier) != nil && input?.string == ""
+            }
         }
 
         func openPalette(_ query: String) async throws {
@@ -319,7 +520,8 @@ final class WorkspaceFilePaletteTests: XCTestCase {
             return (window.attachedSheet?.contentView).flatMap(find) ?? window.contentView.flatMap(find)
         }
 
-        func waitFor(_ description: String, until ready: () -> Bool) async throws {
+        func waitFor(_ description: String, file: StaticString = #filePath, line: UInt = #line,
+                     until ready: () -> Bool) async throws {
             for _ in 0..<160 {
                 window.contentView?.layoutSubtreeIfNeeded()
                 if let sheet = window.attachedSheet {
@@ -329,7 +531,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
                 if ready() { return }
                 try await Task.sleep(for: .milliseconds(20))
             }
-            XCTFail("Timed out waiting for \(description)")
+            XCTFail("Timed out waiting for \(description)", file: file, line: line)
             throw WorkspaceError("Timed out waiting for \(description)")
         }
     }

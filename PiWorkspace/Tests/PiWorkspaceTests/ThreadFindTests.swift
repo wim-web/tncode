@@ -355,7 +355,7 @@ final class ThreadFindTests: XCTestCase {
         try await app.until("same query succeeds after retry") { model.activeThreadFind?.status.label == "1 of 2" && model.activeThreadFind?.selection?.messageID == seed.messageID }
         XCTAssertEqual(app.field("Find in thread")?.stringValue, term)
 
-        try await app.key(kVK_ANSI_F, "f", [.command, .shift])
+        XCTAssertTrue(app.window.makeFirstResponder(try XCTUnwrap(app.field("Search threads"))))
         try await app.until("sidebar search took focus") { app.isEditing("Search threads") }
         try app.type("sidebar filter")
         try await app.key(kVK_ANSI_F, "f", .command)
@@ -403,8 +403,10 @@ final class ThreadFindTests: XCTestCase {
         XCTAssertTrue(app.window.makeFirstResponder(terminal))
         try await app.key(kVK_ANSI_F, "f", .command)
         try await app.key(kVK_ANSI_F, "f", [.command, .shift])
+        try await app.key(kVK_ANSI_P, "p", .command)
         try await app.key(kVK_Escape, "\u{1b}")
         XCTAssertTrue(app.window.firstResponder === terminal)
+        XCTAssertFalse(model.showingCommandPalette)
         XCTAssertEqual(model.activeThreadFind?.status.label, "1 of 2")
         terminal.removeFromSuperview()
 
