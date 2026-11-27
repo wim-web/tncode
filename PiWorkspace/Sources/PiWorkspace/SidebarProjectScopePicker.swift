@@ -16,19 +16,25 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
         case project(UUID)
     }
 
-    private var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var results: (matches: [Project], choices: [Choice]) {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let projects = SidebarProjectFilter.orderedProjects(model.projects)
+        let matches = term.isEmpty ? projects : projects.filter { $0.title.localizedStandardContains(term) }
+        let choices = (term.isEmpty ? [Choice.all] : []) + matches.map { Choice.project($0.id) }
+        return (matches, choices)
+    }
 
     var body: some View {
-        let projects = SidebarProjectFilter.orderedProjects(model.projects)
-        let matches = searchTerm.isEmpty ? projects : projects.filter { $0.title.localizedStandardContains(searchTerm) }
-        let choices = (searchTerm.isEmpty ? [Choice.all] : []) + matches.map { Choice.project($0.id) }
-        let active = highlight.flatMap { choices.contains($0) ? $0 : nil } ?? choices.first
+        let (matches, choices) = results
+        let active = activeChoice(in: choices)
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Search projects", text: $query)
+            TextField("Search projects", text: Binding(get: { query }, set: { value in
+                if value != query { highlight = nil }
+                query = value
+            }))
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .accessibilityIdentifier("project-filter-search")
-                .onChange(of: query) { highlight = nil }
             if choices.isEmpty {
                 Text("No matching projects.")
                     .foregroundStyle(.secondary)
@@ -38,7 +44,7 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
                 ScrollViewReader { reader in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            if searchTerm.isEmpty {
+                            if choices.first == .all {
                                 Button("All Projects") { select(.all) }
                                     .accessibilityIdentifier("project-filter-all")
                                     .accessibilityAddTraits(active == .all ? .isSelected : [])
@@ -92,7 +98,7 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
             WindowKeyMonitor { event, window in
                 guard searchFocused, let editor = window.firstResponder as? NSTextView,
                       editor.isFieldEditor, !editor.hasMarkedText() else { return false }
-                return handleKey(event, choices: choices, active: active)
+                return handleKey(event)
             }
         }
     }
@@ -111,18 +117,24 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
         dismiss()
     }
 
-    private func handleKey(_ event: NSEvent, choices: [Choice], active: Choice?) -> Bool {
+    private func activeChoice(in choices: [Choice]) -> Choice? {
+        if let highlight, choices.contains(highlight) { return highlight }
+        return choices.first
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         switch Int(event.keyCode) {
         case kVK_UpArrow, kVK_DownArrow:
             guard modifiers.isEmpty else { return false }
-            if let active, let index = choices.firstIndex(of: active) {
+            let choices = results.choices
+            if let active = activeChoice(in: choices), let index = choices.firstIndex(of: active) {
                 let offset = event.keyCode == kVK_UpArrow ? -1 : 1
                 highlight = choices[(index + offset + choices.count) % choices.count]
             }
         case kVK_Return, kVK_ANSI_KeypadEnter:
             guard modifiers.isEmpty || modifiers == .shift else { return false }
-            guard let active, !event.isARepeat else { return true }
+            guard !event.isARepeat, let active = activeChoice(in: results.choices) else { return true }
             if modifiers.isEmpty {
                 select(active)
             } else if case .project(let id) = active {

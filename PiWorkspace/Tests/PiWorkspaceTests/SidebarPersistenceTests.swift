@@ -104,28 +104,10 @@ final class SidebarPersistenceTests: XCTestCase {
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
                       "AppKit needs a WindowServer connection to route mouse events to the fixture panel.")
         let choice = "project-filter-choice-\(project.id)"
-        let button = try await window.waitForElement(choice)
-        let frame = try XCTUnwrap(button.accessibilityFrame?())
-        let center = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
-        func click(_ modifiers: NSEvent.ModifierFlags) throws {
-            for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
-                let event = try XCTUnwrap(NSEvent.mouseEvent(
-                    with: type, location: center, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
-                ))
-                // Dequeuing sets NSApp.currentEvent. Dispatch the original because the queue
-                // can remap an offscreen event's window coordinates on a scaled display.
-                app.postEvent(event, atStart: true)
-                let queued = try XCTUnwrap(app.nextEvent(matching: type == .leftMouseDown ? .leftMouseDown : .leftMouseUp,
-                                                         until: .now, inMode: .default, dequeue: true))
-                XCTAssertEqual(queued.windowNumber, window.windowNumber)
-                app.sendEvent(event)
-            }
-        }
-        try click([])
+        try await window.click(choice)
         XCTAssertEqual(exclusiveSelections, 1)
         XCTAssertEqual(toggles, [])
-        try click(.shift)
+        try await window.click(choice, modifiers: .shift)
         XCTAssertEqual(exclusiveSelections, 1)
         XCTAssertEqual(toggles, [false])
         XCTAssertTrue(window.element("project-filter-\(project.id)")?.accessibilityPerformPress?() == true)
@@ -260,6 +242,94 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertTrue(restored.sidebarProjectFilter.selection.isEmpty)
         let saved = try JSONDecoder().decode(Workspace.self, from: Data(contentsOf: restoredIndex))
         XCTAssertTrue(saved.projects.allSatisfy { $0.inSidebarScope != true })
+    }
+
+    func testWorkspaceProjectFilterPopoverKeyboard() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let alpha = Project(id: UUID(), path: root.appendingPathComponent("alpha").path, title: "Alpha")
+        let beta = Project(id: UUID(), path: root.appendingPathComponent("beta").path, title: "Beta")
+        try WorkspaceStore(root: root).save(Workspace(projects: [alpha, beta], welcomeCompleted: true))
+        let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil })
+        defer { model.terminate() }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                                         workspacePasteboard: pasteboard))
+        defer { window.close() }
+        try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
+                      "The popover needs a WindowServer connection to receive window-targeted events.")
+        var shown: NSPopover?
+        let observer = NotificationCenter.default.publisher(for: NSPopover.willShowNotification).sink { note in
+            shown = note.object as? NSPopover
+            // AppKit may constrain the child of our offscreen panel to a screen edge.
+            shown?.animates = false
+            shown?.contentViewController?.view.window?.alphaValue = 0
+            shown?.contentViewController?.view.window?.ignoresMouseEvents = true
+        }
+        defer { observer.cancel() }
+
+        func openPicker() async throws -> NSWindow {
+            shown = nil
+            try await window.press("thread-filters")
+            try await window.waitFor("the presented project filter's field editor") {
+                shown?.isShown == true && shown?.contentViewController?.view.window?.searchEditor != nil
+            }
+            return try XCTUnwrap(shown?.contentViewController?.view.window)
+        }
+
+        let first = try await openPicker()
+        let alphaRow = "project-filter-choice-\(alpha.id)"
+        let betaRow = "project-filter-choice-\(beta.id)"
+        try await first.click(alphaRow)
+        try await window.waitFor("the first popover to close") { !first.isVisible }
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+
+        let popup = try await openPicker()
+        try await popup.click(betaRow, modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
+        try await popup.click(betaRow, modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        let editor = try XCTUnwrap(popup.searchEditor)
+        XCTAssertTrue(app.keyWindow === popup)
+        editor.insertText("unmatched", replacementRange: editor.selectedRange())
+        try await window.waitFor("no matching projects") { popup.element("project-filter-no-results") != nil }
+        try popup.key(kVK_Return, "\r")
+        XCTAssertTrue(shown?.isShown == true)
+
+        // Buffered keys can arrive before SwiftUI renders the new matches or highlight.
+        editor.insertText("a", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        try popup.key(kVK_DownArrow, "\u{f701}")
+        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id, beta.id])
+        try await window.waitFor("highlighted Beta in the popover") {
+            popup.element(betaRow)?.isAccessibilitySelected?() == true
+        }
+        XCTAssertTrue(popup.searchEditor === editor)
+        XCTAssertEqual(editor.string, "a")
+        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        XCTAssertTrue(shown?.isShown == true)
+
+        try window.key(kVK_Return, "\r", modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        editor.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0),
+                             replacementRange: NSRange(location: 0, length: 1))
+        XCTAssertTrue(editor.hasMarkedText())
+        try popup.key(kVK_Return, "\r", modifiers: .shift)
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [alpha.id])
+        XCTAssertTrue(shown?.isShown == true)
+        editor.unmarkText()
+
+        try popup.key(kVK_Return, "\r")
+        try await window.waitFor("Return to dismiss the popover") { shown?.isShown == false }
+        XCTAssertEqual(model.sidebarProjectFilter.selection, [beta.id])
     }
 
     func testEmptyScopedSidebarCanRestoreAllRowsWithoutChangingTheDraft() async throws {
@@ -496,6 +566,17 @@ private final class SidebarOffscreenPanel: NSPanel {
         orderBack(nil)
     }
 
+    override func close() {
+        contentView = nil
+        super.close()
+    }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+private extension NSWindow {
     func element(_ identifier: String) -> AnyObject? {
         guard let contentView else { return nil }
         contentView.layoutSubtreeIfNeeded()
@@ -567,6 +648,25 @@ private final class SidebarOffscreenPanel: NSPanel {
         throw WorkspaceError("Timed out waiting for \(description).")
     }
 
+    func click(_ identifier: String, modifiers: NSEvent.ModifierFlags = []) async throws {
+        let button = try await waitForElement(identifier)
+        let frame = try XCTUnwrap(button.accessibilityFrame?())
+        let center = convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+        for type: NSEvent.EventType in [.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: type, location: center, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+            // Dequeuing sets NSApp.currentEvent. Dispatch the original because the queue
+            // can remap an offscreen event's window coordinates on a scaled display.
+            NSApp.postEvent(event, atStart: true)
+            let queued = try XCTUnwrap(NSApp.nextEvent(matching: type == .leftMouseDown ? .leftMouseDown : .leftMouseUp,
+                                                      until: .now, inMode: .default, dequeue: true))
+            XCTAssertEqual(queued.windowNumber, windowNumber)
+            NSApp.sendEvent(event)
+        }
+    }
+
     func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], repeating: Bool = false) throws {
         let event = try XCTUnwrap(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
@@ -575,13 +675,4 @@ private final class SidebarOffscreenPanel: NSPanel {
         ))
         NSApp.sendEvent(event)
     }
-
-    override func close() {
-        contentView = nil
-        super.close()
-    }
-
-    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
 }
