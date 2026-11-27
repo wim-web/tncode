@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import WebKit
 
@@ -118,29 +119,31 @@ struct BrowserSessionView: View {
 
     @ObservedObject var session: BrowserPreviewSession
     let location: Location
+    @FocusState private var addressFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                control("Back", "chevron.left", id: "browser-back", action: session.goBack)
+                browserControl("Back", "chevron.left", id: "browser-back", action: session.goBack)
                     .disabled(!session.canGoBack)
-                control("Forward", "chevron.right", id: "browser-forward", action: session.goForward)
+                browserControl("Forward", "chevron.right", id: "browser-forward", action: session.goForward)
                     .disabled(!session.canGoForward)
-                control(session.isLoading ? "Stop Loading" : "Reload",
+                browserControl(session.isLoading ? "Stop Loading" : "Reload",
                         session.isLoading ? "xmark" : "arrow.clockwise",
                         id: "browser-reload", action: session.reloadOrStop)
                     .disabled(!session.canReload)
                 TextField("Search or enter URL", text: $session.address)
+                    .focused($addressFocused)
                     .accessibilityIdentifier("browser-address")
                     .onSubmit(session.openAddress)
-                control("Go", "arrow.right", id: "browser-go", action: session.openAddress)
+                browserControl("Go", "arrow.right", id: "browser-go", action: session.openAddress)
                     .disabled(session.address.isEmpty)
                 switch location {
                 case let .panel(miniPlayer, popOut):
-                    control("Open Mini Player", "pip.enter", id: "browser-open-mini", action: miniPlayer)
-                    control("Open in Floating Window", "macwindow", id: "browser-undock", action: popOut)
+                    browserControl("Open Mini Player", "pip.enter", id: "browser-open-mini", action: miniPlayer)
+                    browserControl("Open in Floating Window", "macwindow", id: "browser-undock", action: popOut)
                 case .window(let dock):
-                    control("Dock Browser Tab", "sidebar.right", id: "browser-dock", action: dock)
+                    browserControl("Dock Browser Tab", "sidebar.right", id: "browser-dock", action: dock)
                 }
             }
             .padding(.horizontal, 8)
@@ -154,7 +157,8 @@ struct BrowserSessionView: View {
                     .accessibilityLabel("Browser Profile: \(session.profile.rawValue)")
                     .accessibilityIdentifier("browser-profile")
                 Spacer()
-                control("Zoom Out", "minus", id: "browser-zoom-out", action: session.zoomOut)
+                browserControl("Find on page", "magnifyingglass", id: "browser-find", action: session.openFind)
+                browserControl("Zoom Out", "minus", id: "browser-zoom-out", action: session.zoomOut)
                     .disabled(!session.canZoomOut)
                 Button("\(session.zoom)%", action: session.resetZoom)
                     .monospacedDigit()
@@ -162,7 +166,7 @@ struct BrowserSessionView: View {
                     .accessibilityLabel("Reset Zoom")
                     .accessibilityValue("\(session.zoom)%")
                     .accessibilityIdentifier("browser-reset-zoom")
-                control("Zoom In", "plus", id: "browser-zoom-in", action: session.zoomIn)
+                browserControl("Zoom In", "plus", id: "browser-zoom-in", action: session.zoomIn)
                     .disabled(!session.canZoomIn)
             }
             .padding(.horizontal, 8)
@@ -178,22 +182,11 @@ struct BrowserSessionView: View {
                     .accessibilityIdentifier("browser-error")
                 Divider()
             }
-            BrowserPageContent(session: session, surface: location.surface, emptyHint: "Search or enter a URL to open a page.")
+            BrowserPageContent(session: session, surface: location.surface, emptyHint: "Search or enter a URL to open a page.",
+                               addressFocused: addressFocused)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser-preview")
-    }
-
-    private func control(_ title: String, _ symbol: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 21, height: 21)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(id)
     }
 }
 
@@ -201,8 +194,19 @@ struct BrowserPageContent: View {
     @ObservedObject var session: BrowserPreviewSession
     let surface: BrowserSurface
     let emptyHint: String
+    var addressFocused = false
+    @FocusState private var findFocused: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            if surface != .miniPlayer { findBar }
+            page
+            if surface == .miniPlayer { findBar }
+        }
+        .background { WindowKeyMonitor(handle: handleFindKey) }
+    }
+
+    private var page: some View {
         ZStack {
             if case let .unreachable(url, message, domain, code) = session.problem {
                 BrowserUnreachableView(url: url, message: message, errorCode: "\(domain) \(code)",
@@ -223,6 +227,97 @@ struct BrowserPageContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var findBar: some View {
+        if let find = session.find {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    TextField("Find in page", text: Binding(get: { session.find?.query ?? "" }, set: session.editFindQuery))
+                        .textFieldStyle(.roundedBorder)
+                        .focused($findFocused)
+                        .accessibilityIdentifier("browser-find-query")
+                    browserControl("Previous match", "chevron.up", id: "browser-find-previous") {
+                        session.stepFind(backward: true)
+                    }
+                    .disabled(find.status != .match)
+                    browserControl("Next match", "chevron.down", id: "browser-find-next") {
+                        session.stepFind(backward: false)
+                    }
+                    .disabled(find.status != .match)
+                    browserControl("Close find", "xmark", id: "browser-find-close") {
+                        session.closeFind(returningFocus: true)
+                    }
+                }
+                if let status = find.status.label {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("browser-find-status")
+                }
+            }
+            .padding(6)
+            .background(.regularMaterial)
+            .task(id: find.focusRequest) {
+                await Task.yield()
+                guard !Task.isCancelled, session.find?.focusRequest == find.focusRequest,
+                      session.surface == surface else { return }
+                if findFocused { (session.webView.window?.firstResponder as? NSTextView)?.selectAll(nil) }
+                else { findFocused = true }
+            }
+        }
+    }
+
+    private func handleFindKey(_ event: NSEvent, window: NSWindow) -> Bool {
+        guard session.surface == surface, window.attachedSheet == nil, NSApp.modalWindow == nil,
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
+        let editingField = (window.firstResponder as? NSTextView)?.isFieldEditor == true
+        let editingFindField = editingField && findFocused
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "f",
+           session.hasPageFocus(in: window) || editingFindField || (editingField && addressFocused) {
+            if editingFindField { (window.firstResponder as? NSTextView)?.selectAll(nil) }
+            else { session.openFind() }
+            return true
+        }
+        guard editingFindField else { return false }
+        switch Int(event.keyCode) {
+        case kVK_Escape where modifiers.isEmpty:
+            session.closeFind(returningFocus: true)
+            return true
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            guard modifiers.isEmpty || modifiers == .shift else { return false }
+            session.stepFind(backward: modifiers == .shift)
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+private func browserControl(_ title: String, _ symbol: String, id: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: symbol)
+            .frame(width: 21, height: 21)
+            .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(title)
+    .accessibilityLabel(title)
+    .accessibilityIdentifier(id)
+}
+
+private extension BrowserPageFind.Status {
+    var label: String? {
+        switch self {
+        case .idle: nil
+        case .loading: "Waiting for the page to load…"
+        case .searching: "Searching…"
+        case .match: "Match found"
+        case .noMatches: "No matches"
+        case .unavailable: "Find on page isn’t available for this page."
+        }
     }
 }
 

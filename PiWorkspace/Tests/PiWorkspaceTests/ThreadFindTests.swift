@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import SwiftUI
+import WebKit
 import XCTest
 @testable import PiWorkspace
 
@@ -156,7 +157,35 @@ final class ThreadFindTests: XCTestCase {
         XCTAssertNotEqual(newThreadSelection, selection)
         XCTAssertEqual(model.draft, unicode)
 
+        try app.press("toggle-browser")
+        try await app.until("browser tab attached") { app.webView != nil }
+        let web = try XCTUnwrap(app.webView)
+        let page = try XCTUnwrap(URL(string: "http://127.0.0.1/find-fixture"))
+        web.loadSimulatedRequest(URLRequest(url: page), responseHTML: "<title>Find fixture</title><p>Page-only text</p>")
+        try await app.until("browser fixture loaded") { web.title == "Find fixture" && !web.isLoading }
+        XCTAssertTrue(app.window.makeFirstResponder(web))
+        try await app.key(kVK_ANSI_F, "f", .command)
+        try await app.until("browser Find took focus") { app.isEditing("Find in page") }
+        XCTAssertNil(model.activeThreadFind)
+        try app.type("Page-only text")
+        try await app.until("browser Find returned a match") { app.element("browser-find-status") != nil }
+        try await app.key(kVK_Escape, "\u{1b}")
+        try await app.until("browser Find closed") { app.field("Find in page") == nil }
+        let selected = try await web.evaluateJavaScript("getSelection().toString()") as? String
+        XCTAssertEqual(selected, "")
+
+        let browserFindCommand = "command-palette-find-in-browser-page"
+        try await app.key(kVK_ANSI_K, "k", .command)
+        try await app.until("the browser Find palette command") { app.element(browserFindCommand) != nil }
+        try app.press(browserFindCommand)
+        try await app.until("the palette opened browser Find") {
+            app.window.attachedSheet == nil && app.isEditing("Find in page")
+        }
+        try app.press("browser-find-close")
+        XCTAssertEqual(model.draft, unicode)
+
         try await openFind(selection)
+        XCTAssertNil(app.field("Find in page"))
         XCTAssertTrue(model.savePendingEditsForQuit())
         let savedRoot = root.appendingPathComponent("relaunch")
         try FileManager.default.createDirectory(at: savedRoot, withIntermediateDirectories: true)
@@ -495,7 +524,15 @@ final class ThreadFindTests: XCTestCase {
             return editor === window.firstResponder
         }
 
-        func press(_ id: String) throws {
+        var webView: WKWebView? {
+            func find(in view: NSView) -> WKWebView? {
+                if let web = view as? WKWebView { return web }
+                return view.subviews.lazy.compactMap { find(in: $0) }.first
+            }
+            return window.contentView.flatMap { find(in: $0) }
+        }
+
+        func element(_ id: String) -> AnyObject? {
             var visited = Set<ObjectIdentifier>()
             func find(in node: AnyObject) -> AnyObject? {
                 guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
@@ -505,8 +542,13 @@ final class ThreadFindTests: XCTestCase {
                 }
                 return nil
             }
-            let host = try XCTUnwrap(window.contentView)
-            let button = try XCTUnwrap(find(in: host) ?? find(in: window), id)
+            return window.attachedSheet?.contentView.flatMap { find(in: $0) }
+                ?? window.contentView.flatMap { find(in: $0) }
+                ?? find(in: window)
+        }
+
+        func press(_ id: String) throws {
+            let button = try XCTUnwrap(element(id), id)
             XCTAssertTrue(button.accessibilityPerformPress?() == true)
         }
 

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Network
 import SwiftUI
 import WebKit
@@ -165,9 +166,157 @@ final class BrowserPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testFindInPageUsesTheFocusedWebViewAndRejectsResultsFromAReplacedPage() async throws {
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        app.setActivationPolicy(.prohibited)
+        defer { app.setActivationPolicy(policy) }
+        app.finishLaunching()
+        try XCTSkipIf(NSScreen.screens.isEmpty, "Native key events need a WindowServer display.")
+        let fixture = try LoopbackBrowserPage { path in
+            switch path {
+            case "/first": "<title>First</title><p id='a'>Lantern</p><p id='b'>lantern</p><p id='c'>lantern</p>"
+            case "/other": "<title>Other tab</title><p id='other'>Poppy</p>"
+            default: "<title>Replacement</title><p id='replacement'>Daisy</p>"
+            }
+        }
+        defer { fixture.listener.cancel() }
+        let origin = try await start(fixture)
+        let tabs = BrowserFindFixture()
+        let first = try XCTUnwrap(tabs.preview.selectedTab)
+        let second = try XCTUnwrap(tabs.preview.tabs.last)
+        let offscreen = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 1500, y: 0)
+        let window = OffscreenBrowserFindPanel(
+            contentRect: NSRect(origin: offscreen, size: NSSize(width: 640, height: 480)),
+            styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: BrowserFindFixtureView(fixture: tabs))
+        window.contentView = host
+        window.setFrameOrigin(offscreen)
+        XCTAssertTrue(NSScreen.screens.allSatisfy { !$0.frame.intersects(window.frame) })
+        window.orderBack(nil)
+
+        func element(_ id: String) -> AnyObject? {
+            var visited = Set<ObjectIdentifier>()
+            func find(_ node: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let match = find(child as AnyObject) { return match }
+                }
+                return nil
+            }
+            host.layoutSubtreeIfNeeded()
+            return find(host) ?? find(window)
+        }
+        func press(_ id: String) throws {
+            XCTAssertTrue(try XCTUnwrap(element(id), id).accessibilityPerformPress?() == true, id)
+        }
+        func key(_ code: Int, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) throws {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: UInt16(code)
+            ))
+            app.sendEvent(event)
+        }
+        func findEditor(in tab: BrowserPreviewSession) async throws -> NSTextView {
+            try await waitFor("the browser Find field to take keyboard focus") {
+                element("browser-find-query") != nil && (window.firstResponder as? NSTextView)?.isFieldEditor == true
+                    && !tab.hasPageFocus(in: window)
+            }
+            return try XCTUnwrap(window.firstResponder as? NSTextView)
+        }
+        func type(_ query: String, in tab: BrowserPreviewSession) async throws {
+            let editor = try await findEditor(in: tab)
+            editor.insertText(query, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        }
+        func selectedElement(in tab: BrowserPreviewSession) async throws -> String? {
+            try await tab.webView.evaluateJavaScript("getSelection().anchorNode?.parentElement?.id ?? ''") as? String
+        }
+        func expectMatch(_ id: String, in tab: BrowserPreviewSession) async throws {
+            try await waitFor("match status for \(id)") { tab.find?.status == .match }
+            XCTAssertNotNil(element("browser-find-status"))
+            let selected = try await selectedElement(in: tab)
+            XCTAssertEqual(selected, id)
+        }
+
+        try await waitFor("the Browser toolbar") { element("browser-find") != nil }
+        try press("browser-find")
+        try await waitFor("unavailable-page feedback") { first.find?.status == .unavailable && element("browser-find-status") != nil }
+        try press("browser-find-close")
+        first.address = origin.appending(path: "first").absoluteString
+        try await waitFor("the Go button to enable") { element("browser-go")?.isAccessibilityEnabled?() == true }
+        try press("browser-go")
+        try await waitFor("the first page") { first.webView.title == "First" && !first.isLoading && first.webView.window === window }
+        XCTAssertTrue(window.makeFirstResponder(first.webView))
+        try key(kVK_ANSI_F, "f", .command)
+        try await type("lantern", in: first)
+        try await expectMatch("a", in: first)
+        try press("browser-find-next")
+        try await expectMatch("b", in: first)
+        _ = try await findEditor(in: first)
+        try key(kVK_Return, "\r")
+        try await expectMatch("c", in: first)
+        try key(kVK_Return, "\r", .shift)
+        try await expectMatch("b", in: first)
+        try press("browser-find-previous")
+        try await expectMatch("a", in: first)
+        try key(kVK_Return, "\r", .shift)
+        try await expectMatch("c", in: first)
+        try key(kVK_Return, "\r")
+        try await expectMatch("a", in: first)
+        XCTAssertTrue(window.makeFirstResponder(first.webView))
+        try key(kVK_ANSI_F, "f", .command)
+        let refocused = try await findEditor(in: first)
+        XCTAssertEqual(refocused.selectedRange(), NSRange(location: 0, length: 7))
+        try key(kVK_ANSI_F, "f", .command)
+        let editor = try await findEditor(in: first)
+        XCTAssertEqual(editor.selectedRange(), NSRange(location: 0, length: 7))
+        try key(kVK_Escape, "\u{1b}")
+        try await waitFor("Escape to restore page focus") { first.find == nil && first.hasPageFocus(in: window) }
+        let cleared = try await selectedElement(in: first)
+        XCTAssertEqual(cleared, "")
+
+        try press("browser-find")
+        try await type("lantern", in: first)
+        XCTAssertEqual(first.find?.status, .searching)
+        first.address = origin.appending(path: "replacement").absoluteString
+        first.openAddress()
+        XCTAssertEqual(first.find?.status, .loading)
+        try await waitFor("the replacement page to report no matches") {
+            first.webView.title == "Replacement" && first.find?.status == .noMatches
+        }
+        try await type("daisy", in: first)
+        try await expectMatch("replacement", in: first)
+
+        try press("browser-tab-\(second.id)")
+        try await waitFor("the second tab to take over the browser") {
+            second.webView.window === window && first.webView.window == nil && element("browser-find-query") == nil
+        }
+        second.address = origin.appending(path: "other").absoluteString
+        second.openAddress()
+        try await waitFor("the second tab’s different document") { second.webView.title == "Other tab" && !second.isLoading }
+        try press("browser-find")
+        let secondEditor = try await findEditor(in: second)
+        XCTAssertEqual(secondEditor.string, "")
+        try await type("daisy", in: second)
+        try await waitFor("the second document to reject the first tab’s query") { second.find?.status == .noMatches }
+        try await type("poppy", in: second)
+        try await expectMatch("other", in: second)
+        XCTAssertTrue(first.webView !== second.webView)
+        XCTAssertTrue(first.webView.configuration.websiteDataStore !== second.webView.configuration.websiteDataStore)
+        XCTAssertNil(first.find)
+    }
+
+    @MainActor
     func testMovingTheLiveWebViewPreservesPageHistoryZoomAndAddress() async throws {
         _ = NSApplication.shared
-        let fixture = try LoopbackBrowserPage()
+        let fixture = try LoopbackBrowserPage { path in
+            "<title>\(path)</title><input><p id='first'>Movable</p><p id='second'>Movable</p>"
+        }
         defer { fixture.listener.cancel() }
         let origin = try await start(fixture)
         let one = origin.appending(path: "one")
@@ -198,6 +347,9 @@ final class BrowserPreviewTests: XCTestCase {
         _ = try await tab.webView.evaluateJavaScript("document.querySelector('input').value = 'live page'")
         tab.zoomIn()
         tab.address = "unfinished address"
+        tab.openFind()
+        tab.editFindQuery("movable")
+        try await waitFor("a match in the docked view") { tab.find?.status == .match }
 
         preview.openMiniPlayer()
         let mini = try XCTUnwrap(preview.miniPlayer)
@@ -235,6 +387,11 @@ final class BrowserPreviewTests: XCTestCase {
         XCTAssertTrue(tab.webView.window === workspace)
         let dockedText = try await tab.webView.evaluateJavaScript("document.querySelector('input').value") as? String
         XCTAssertEqual(dockedText, "live page")
+        XCTAssertEqual(tab.find?.query, "movable")
+        tab.stepFind(backward: false)
+        try await waitFor("Find still steps in the retained view after redocking") { tab.find?.status == .match }
+        let selected = try await tab.webView.evaluateJavaScript("getSelection().anchorNode?.parentElement?.id") as? String
+        XCTAssertEqual(selected, "second")
         XCTAssertEqual(tab.zoom, 110)
         XCTAssertEqual(tab.address, "unfinished address")
         tab.goBack()
@@ -314,27 +471,52 @@ final class BrowserPreviewTests: XCTestCase {
 private final class LoopbackBrowserPage {
     let listener: NWListener
 
-    init() throws {
+    init(page: @escaping (String) -> String = { _ in
+        "<!doctype html><title>Fixture</title><input><script>document.title = location.pathname</script>"
+    }) throws {
         let queue = DispatchQueue(label: "BrowserPreviewTests.loopback")
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
-        let html = "<!doctype html><title>Fixture</title><input><script>document.title = location.pathname</script>"
-        let response = Data((
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-            + "Content-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n" + html
-        ).utf8)
-
         listener.newConnectionHandler = { connection in
             connection.start(queue: queue)
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { _, _, _, error in
-                guard error == nil else {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, error in
+                guard error == nil, let data else {
                     connection.cancel()
                     return
                 }
+                let path = String(decoding: data, as: UTF8.self).split(separator: " ").dropFirst().first ?? "/"
+                let html = page(String(path))
+                let response = Data((
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                    + "Content-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n" + html
+                ).utf8)
                 connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
             }
         }
         listener.start(queue: queue)
     }
+}
+
+@MainActor
+private final class BrowserFindFixture: ObservableObject {
+    @Published var preview = ThreadBrowserPreview()
+
+    init() {
+        preview.togglePanel()
+        let first = preview.selectedTabID
+        preview.addTab(profile: .alternate)
+        if let first { preview.selectTab(first) }
+    }
+}
+
+private struct BrowserFindFixtureView: View {
+    @ObservedObject var fixture: BrowserFindFixture
+    var body: some View { BrowserPreviewView(preview: $fixture.preview) }
+}
+
+private final class OffscreenBrowserFindPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

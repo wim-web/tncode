@@ -11,6 +11,7 @@ enum CommandPaletteAction: Hashable {
     case projectSettings(UUID)
     case searchThreads
     case findInCurrentThread(SidebarMessageSearch.Thread)
+    case findInBrowser(UUID)
     case searchWorkspace(WorkspaceFileSearch.Mode)
     case openWorkspaceFile(WorkspaceFileSearch.Destination)
     case openProject(UUID)
@@ -28,6 +29,7 @@ enum CommandPaletteAction: Hashable {
         case .projectSettings(let id): "project-settings-\(id)"
         case .searchThreads: "search-threads"
         case .findInCurrentThread: "find-current-thread"
+        case .findInBrowser: "find-in-browser-page"
         case .searchWorkspace(.files): "go-to-file"
         case .searchWorkspace(.contents): "search-project-contents"
         case .openWorkspaceFile(let destination):
@@ -95,6 +97,7 @@ struct CommandPaletteContents {
     let activeThread: UUID?
     let canStartScratchThread: Bool
     var findThread: SidebarMessageSearch.Thread? = nil
+    var findBrowserTab: UUID? = nil
     var settingsProject: Project? = nil
     var defaultProject: UUID? = nil
 
@@ -123,6 +126,10 @@ struct CommandPaletteContents {
         if let findThread {
             rows.append(.init(action: .findInCurrentThread(findThread), title: "Find in current thread",
                               icon: "text.magnifyingglass", searchTerms: "search messages"))
+        }
+        if let findBrowserTab {
+            rows.append(.init(action: .findInBrowser(findBrowserTab), title: "Find on page in browser",
+                              icon: "text.magnifyingglass", searchTerms: "find search browser preview page"))
         }
         rows.append(.init(action: .searchWorkspace(.files), title: "Go to file", icon: "doc.text.magnifyingglass",
                           searchTerms: "open file file picker find file quick open"))

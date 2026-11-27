@@ -3202,9 +3202,16 @@ struct WorkspaceView: View {
             projects: filteredProjects, availableProjects: orderedProjects.filter(\.folderIsAvailable),
             preferredProject: model.project?.id, threads: threads, activeThread: model.conversation?.id,
             canStartScratchThread: model.canStartScratchThread, findThread: model.threadFindScope,
+            findBrowserTab: paletteBrowserTab?.id,
             settingsProject: model.project.flatMap { $0.isScratch ? nil : $0 },
             defaultProject: model.workspace.lastUsedProject
         )
+    }
+
+    private var paletteBrowserTab: BrowserPreviewSession? {
+        guard let thread = model.conversation?.id, rightPanels[thread]?.visibleTab == .browser,
+              let tab = browserPanels[thread]?.selectedTab, tab.surface == .panel else { return nil }
+        return tab
     }
 
     private func handleNewThreadKey(_ event: NSEvent, in window: NSWindow) -> Bool {
@@ -3395,6 +3402,8 @@ struct WorkspaceView: View {
             searchFocused = true
         case .findInCurrentThread(let scope):
             openFind(in: scope)
+        case .findInBrowser(let id):
+            if let tab = paletteBrowserTab, tab.id == id { tab.openFind() }
         case .settings:
             model.openSettings()
         case .projectSettings(let id):

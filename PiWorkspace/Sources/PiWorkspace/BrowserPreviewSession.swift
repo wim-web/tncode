@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import WebKit
 
@@ -7,6 +8,16 @@ enum BrowserProfile: String, CaseIterable {
 }
 
 enum BrowserSurface { case panel, miniPlayer, window }
+
+struct BrowserPageFind {
+    enum Status: Equatable {
+        case idle, loading, searching, match, noMatches, unavailable
+    }
+
+    var focusRequest = UUID()
+    var query = ""
+    var status: Status = .idle
+}
 
 enum BrowserPreviewProblem: Hashable {
     case notice(String)
@@ -90,6 +101,7 @@ struct ThreadBrowserPreview {
 
     mutating func selectTab(_ id: UUID) {
         guard tabs.contains(where: { $0.id == id }) else { return }
+        if selectedTabID != id, selectedTab?.surface == .panel { selectedTab?.closeFind() }
         selectedTabID = id
     }
 
@@ -157,10 +169,14 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     @Published private(set) var problem: BrowserPreviewProblem?
     var message: String? { problem?.message }
     @Published private(set) var zoom = 100
+    @Published private(set) var find: BrowserPageFind?
     @Published private var retryURL: URL?
     private var pendingURL: URL?
     private var urlObservation: AnyCancellable?
     private let searchDefaults: UserDefaults
+    private var findRequest = UUID()
+    private var pageNavigation: WKNavigation?
+    private var hasSearchablePage = false
 
     init(profile: BrowserProfile, dataStore: WKWebsiteDataStore, searchDefaults: UserDefaults = .standard) {
         self.profile = profile
@@ -169,6 +185,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         configuration.websiteDataStore = dataStore
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        webView.setAccessibilityIdentifier("browser-web-content")
         webView.navigationDelegate = self
         webView.publisher(for: \.canGoBack).assign(to: &$canGoBack)
         webView.publisher(for: \.canGoForward).assign(to: &$canGoForward)
@@ -183,6 +200,76 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     var canZoomIn: Bool { zoom < 200 }
     var canZoomOut: Bool { zoom > 50 }
 
+    func hasPageFocus(in window: NSWindow) -> Bool {
+        guard webView.window === window, let responder = window.firstResponder as? NSView else { return false }
+        return responder === webView || responder.isDescendant(of: webView)
+    }
+
+    func openFind() {
+        if find == nil {
+            find = BrowserPageFind()
+            refreshFind()
+        } else {
+            find?.focusRequest = UUID()
+        }
+    }
+
+    func editFindQuery(_ input: String) {
+        guard let current = find else { return }
+        let query = String(input.prefix(200))
+        guard query != current.query else { return }
+        find?.query = query
+        refreshFind(clearSelection: !current.query.isEmpty)
+    }
+
+    func stepFind(backward: Bool) {
+        guard find?.status == .match else { return }
+        refreshFind(backward: backward)
+    }
+
+    func closeFind(returningFocus: Bool = false) {
+        guard let find else { return }
+        self.find = nil
+        findRequest = UUID()
+        if hasSearchablePage, !find.query.isEmpty { clearFindSelection() }
+        if returningFocus, hasSearchablePage { webView.window?.makeFirstResponder(webView) }
+    }
+
+    private func refreshFind(backward: Bool = false, clearSelection: Bool = false) {
+        let request = UUID()
+        findRequest = request
+        guard let query = find?.query else { return }
+        guard pageNavigation == nil else {
+            find?.status = .loading
+            return
+        }
+        guard hasSearchablePage else {
+            find?.status = .unavailable
+            return
+        }
+        find?.status = query.isEmpty ? .idle : .searching
+        let search = { [weak self] in
+            guard let self, self.findRequest == request, !query.isEmpty else { return }
+            let configuration = WKFindConfiguration()
+            configuration.backwards = backward
+            self.webView.find(query, configuration: configuration) { [weak self] result in
+                guard let self, self.findRequest == request else { return }
+                self.find?.status = result.matchFound ? .match : .noMatches
+            }
+        }
+        if clearSelection {
+            clearFindSelection(completion: search)
+        } else {
+            search()
+        }
+    }
+
+    private func clearFindSelection(completion: (() -> Void)? = nil) {
+        // WKWebView.find leaves the current selection in place when given an empty query.
+        webView.callAsyncJavaScript("window.getSelection()?.removeAllRanges()", in: nil, in: .defaultClient,
+                                    completionHandler: { _ in completion?() })
+    }
+
     func openAddress() {
         let searchSettings = BrowserSearchSettings.load(from: searchDefaults)
         guard let url = BrowserAddress.resolve(address, searchSettings: searchSettings) else {
@@ -192,19 +279,20 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         load(url)
     }
 
-    func goBack() { webView.goBack() }
-    func goForward() { webView.goForward() }
+    func goBack() { beginNavigation(webView.goBack()) }
+    func goForward() { beginNavigation(webView.goForward()) }
 
     func reloadOrStop() {
         if isLoading {
             let stoppedURL = pendingURL
             webView.stopLoading()
+            finishNavigation(pageNavigation, searchable: pageURL != nil)
             retryURL = stoppedURL
             if let stoppedURL { address = stoppedURL.absoluteString }
         } else if let retryURL {
             load(retryURL)
         } else {
-            webView.reload()
+            beginNavigation(webView.reload())
         }
     }
 
@@ -222,7 +310,20 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         problem = nil
         retryURL = nil
         pendingURL = url
-        webView.load(URLRequest(url: url))
+        beginNavigation(webView.load(URLRequest(url: url)))
+    }
+
+    private func beginNavigation(_ navigation: WKNavigation?) {
+        guard let navigation, pageNavigation !== navigation else { return }
+        pageNavigation = navigation
+        refreshFind()
+    }
+
+    private func finishNavigation(_ navigation: WKNavigation?, searchable: Bool) {
+        guard pageNavigation === navigation else { return }
+        pageNavigation = nil
+        hasSearchablePage = searchable
+        refreshFind()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
@@ -247,6 +348,7 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        beginNavigation(navigation)
         isLoading = true
         retryURL = nil
         problem = nil
@@ -256,21 +358,28 @@ final class BrowserPreviewSession: NSObject, Identifiable, ObservableObject, WKN
         pendingURL = nil
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        finishNavigation(navigation, searchable: true)
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        showFailure(error)
+        failNavigation(navigation, error: error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        showFailure(error)
+        failNavigation(navigation, error: error)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        finishNavigation(pageNavigation, searchable: false)
         problem = .notice("The page stopped responding. Reload to try again.")
     }
 
-    private func showFailure(_ error: Error) {
+    private func failNavigation(_ navigation: WKNavigation?, error: Error) {
         let failure = error as NSError
-        if failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled { return }
+        let cancelled = failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled
+        finishNavigation(navigation, searchable: cancelled && pageURL != nil)
+        if cancelled { return }
         let attemptedURL = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? pendingURL ?? pageURL
         pendingURL = nil
         if let url = attemptedURL, BrowserAddress.isWebURL(url) {
