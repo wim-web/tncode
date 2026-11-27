@@ -1,7 +1,98 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { verifyIssueLinks } from "./verify-linked-prs.mjs";
+
+export async function verifyBrowserFind(driver, { root, launch, quit, record, keyboard = false }) {
+  const { press, dismiss, visible, value, tree, until, setField, focus, keyFor } = driver;
+  const contents = new Map([
+    ["/first", "<h1>First fixture tab</h1><input id=page-input aria-label='Page input'><p id=a>Lantern</p><p id=b>lantern</p><p id=c>lantern</p>"],
+    ["/second", "<h1>Second fixture tab</h1><p id=d>Poppy</p>"],
+    ["/replacement", "<h1>Replacement document</h1><p id=e>Daisy</p>"],
+  ]);
+  const server = createServer((req, res) => {
+    if (req.method !== "GET" || !contents.has(req.url)) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(contents.get(req.url) + `<p id="proof">Selected element none</p><script>
+      document.addEventListener("selectionchange", () => {
+        const selection = getSelection();
+        const id = selection.toString() && selection.anchorNode?.parentElement?.id;
+        const text = "Selected element " + (id || "none");
+        const proof = document.getElementById("proof");
+        if (proof.textContent !== text) proof.textContent = text;
+      });
+    </script>`);
+  });
+  const projectID = randomUUID().toUpperCase(), threadID = randomUUID().toUpperCase();
+  const project = join(root, "Project"), index = join(root, "workspace.json"), draft = "Keep this unrelated chat draft.";
+  mkdirSync(project, { recursive: true });
+  writeFileSync(index, JSON.stringify({ welcomeCompleted: true, selectedProject: projectID,
+    projects: [{ id: projectID, path: project, title: "Browser Find", allowEdits: false, selectedConversation: threadID,
+      conversations: [{ id: threadID, title: "Draft", isDraft: true, archived: false, composerText: draft }] }],
+    model: { provider: "local", model: "browser-find-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 } }), { mode: 0o600 });
+  const input = "browser-find-query";
+  const selected = id => tree().includes("Selected element " + id);
+  const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), item => item[1]);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  async function navigate(path, heading) {
+    await setField("browser-address", "http://127.0.0.1:" + server.address().port + path);
+    press("browser-go");
+    await until(() => tree().includes(heading), heading);
+  }
+  async function query(term, marker) {
+    await setField(input, term);
+    await until(() => value("browser-find-status").includes("Match found") && selected(marker), "WebKit selected " + marker);
+  }
+  try {
+    await launch("composer", root);
+    press("toggle-browser");
+    await until(() => visible("browser-address") && tabIDs().length === 1, "first browser tab");
+    const first = tabIDs()[0];
+    await navigate("/first", "First fixture tab");
+    if (keyboard) {
+      focus("web-element=page-input");
+      keyFor("web-element=page-input", 3, "cmd");
+    } else press("browser-find");
+    await until(() => visible(input), "Find on page entry");
+    await query("lantern", "a");
+    if (keyboard) keyFor(input, 36);
+    else press("browser-find-next");
+    await until(() => selected("b"), "next occurrence in the first tab");
+    if (keyboard) keyFor(input, 36, "shift");
+    else press("browser-find-previous");
+    await until(() => selected("a"), "previous occurrence in the first tab");
+    press("browser-new-tab");
+    await until(() => visible("browser-new-tab-alternate"), "new tab in the alternate profile");
+    dismiss("browser-new-tab-alternate");
+    await until(() => tabIDs().length === 2 && !tree().includes('id="' + input + '"'), "second tab has its own Find state");
+    await navigate("/second", "Second fixture tab");
+    press("browser-find");
+    await until(() => visible(input), "Find in the second tab");
+    await query("poppy", "d");
+    press("browser-tab-" + first);
+    await until(() => tree().includes("First fixture tab") && !tree().includes('id="' + input + '"') && selected("none"),
+      "switching tabs closed the previous Find and cleared its selection");
+    press("browser-find");
+    await until(() => value(input).includes('value=""'), "fresh Find on the original page");
+    await query("lantern", "a");
+    await navigate("/replacement", "Replacement document");
+    await until(() => value("browser-find-status").includes("No matches") && visible("browser-find-next").includes("enabled=false"),
+      "replacement page cleared the first match");
+    await query("Daisy", "e");
+    if (keyboard) keyFor(input, 53);
+    else dismiss("browser-find-close");
+    await until(() => !tree().includes('id="' + input + '"') && selected("none"), "closing Find cleared the selected web text");
+    assert(value("composer").includes(JSON.stringify(draft)));
+    await quit();
+    assert.equal(JSON.parse(readFileSync(index, "utf8")).projects[0].conversations[0].composerText, draft);
+    record("WebKit selected a, b, then a on the first page. The other profile selected Poppy in its own document. Switching back closed Find. A fresh search on the first tab reported no matches after navigation, then selected Daisy on the new page. Closing Find cleared the selection and preserved the chat draft.");
+    if (keyboard) record("Command-F from the focused web page opened Find. Return and Shift-Return moved its selection, and Escape closed the bar.");
+  } finally { server.closeAllConnections(); server.close(); }
+}
 
 export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
@@ -244,12 +335,14 @@ export async function verifyPRFilesCheckout(driver, { directory, project, worksp
   await until(() => visible("pr-check-log-1"), "checks for the selected PR");
   await verifyCheckLog(driver, forgeState, forgeLog, checkout);
   await verifyPRCode(driver, forgeState, forgeLog, checkout);
+  await verifyIssueLinks(driver, { conversation: () => JSON.parse(readFileSync(indexPath)).projects[0].conversations[0], quit, launch });
   dismiss("pr-close");
   await until(() => value("composer").includes("Keep the PR draft."), "unchanged composer after closing the PR");
   await quit();
   assert.deepEqual(gitState(), before);
   assert.equal(JSON.parse(readFileSync(indexPath)).projects[0].selectedConversation, threadID);
   record("PR #42's denied check log recovered to job 61002 in the linked checkout. Code displayed the right file and rename patches, cleared the prior patch for binary content, loaded all 31 paths and refreshed after a changed head. Both checkouts and the draft were preserved.");
+  record("Issues linked from Details and from Linked items reopened after relaunch. Wrong-repository and duplicate input kept the existing links. Copy gave the issue URL; unlink preserved the other issue and the same-number fixture PR.");
 }
 
 export async function verifyPullRequests(driver, stateFile, logFile, checkout) {

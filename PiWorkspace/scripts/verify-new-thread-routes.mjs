@@ -134,6 +134,21 @@ export async function verifyNewThreadRoutes(driver, context) {
   dismiss("command-palette-new-thread-in-context-" + alphaID);
   await until(() => active().id === alphaID && active().selectedConversation !== header && focused("composer"), "palette opened a separate draft");
   const lastAlpha = active().selectedConversation;
+  press("new-conversation");
+  await until(() => visible("new-thread-project-" + alphaID), "sidebar New Thread sheet in the selected empty draft");
+  dismiss("new-thread-project-" + alphaID);
+  await until(() => !has("new-thread-project-" + alphaID) && active().selectedConversation === lastAlpha, "the sheet reused the same draft");
+  await until(() => focused("composer"), "chosen composer owns keyboard focus after the sheet closed");
+  keyFor("composer", 7);
+  await until(() => driver.value("composer").includes('value="x"') &&
+    active().conversations.find(t => t.id === lastAlpha)?.composerText === "x", "ordinary X reached the chosen draft without refocusing");
+  assert.deepEqual(driver.selection("composer"), [1, 0]);
+  const beforeUndo = index().projects.flatMap(p => p.conversations.map(t => t.id)).sort();
+  keyFor("composer", 6, "cmd");
+  await until(() => driver.value("composer").includes('value=""') && !active().conversations.find(t => t.id === lastAlpha)?.composerText,
+    "Undo returned this same draft to its original contents");
+  assert.deepEqual(index().projects.flatMap(p => p.conversations.map(t => t.id)).sort(), beforeUndo);
+  record("The sidebar New Thread sheet reused the current project's empty draft. The composer reported keyboard focus after the sheet closed. A key sent to the app inserted x, placed the caret at 1, and saved it to the same draft. Undo restored the empty text.");
   await openFromComposer(keyScratch);
   await until(() => active().kind === "scratch" && focused("composer"), "Command-Option-N opened a private scratch");
   const scratchID = active().id;

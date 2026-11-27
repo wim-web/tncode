@@ -17,6 +17,7 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
   };
   const alpha = register("Alpha", ""), beta = register("Café Beta", text);
   const model = { provider: "local", model: "local-draft-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 };
+  alpha.pinned = true;
   alpha.modelOverride = { ...model, model: "alpha-only-model" };
   mkdirSync(newProject);
   const alphaNote = join(alpha.path, "notes.txt"), betaNote = join(beta.path, "notes.txt");
@@ -50,6 +51,19 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
 
   await launch("model-settings", root);
   await until(() => composer(text) && visible("remove-attachment-" + attachment.id), "selected Beta draft and saved note");
+  await openChooser();
+  const search = "draft-project-search", alphaPin = "draft-project-pin-" + alpha.id;
+  const isPinned = () => index().projects.find(p => p.id === alpha.id).pinned === true;
+  const activeFrame = driver.frame("draft-project-" + beta.id);
+  const pinnedFrame = driver.frame("draft-project-" + alpha.id);
+  assert(activeFrame[1] < pinnedFrame[1], "The current project must precede other pinned projects.");
+  await setField(search, "Alpha", () => !tree().includes('id="draft-project-' + beta.id + '"'));
+  keyFor(search, 35, "cmd", "shift");
+  await until(() => !isPinned() && value(search).includes('value="Alpha"'), "pin shortcut kept the search text and picker");
+  press(alphaPin);
+  await until(() => isPinned() && visible(alphaPin).includes("Unpin Alpha"), "row button restored the project pin");
+  keyFor(search, 53);
+  await until(() => !tree().includes('id="draft-project-search"') && selected().thread.id === betaThread && composer(text), "cancel kept the originally selected draft");
   await newDraft(beta.id);
   assert.notEqual(selected().thread.id, betaThread);
   await newDraft(alpha.id);
@@ -76,9 +90,16 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
   await until(() => visible("active-model").includes(alpha.modelOverride.model), "moved draft uses the destination project model");
   await openChooser();
   press("draft-no-project");
-  const scratch = await until(() => selected().project.kind === "scratch" && sameDraft() && selected().project, "same draft with no project");
+  await until(() => selected().project.kind === "scratch" && sameDraft(), "same draft with no project");
   await until(() => visible("active-model").includes(model.model), "no-project draft uses the workspace model");
+  await openChooser();
+  press("draft-project-" + alpha.id);
+  await until(() => selected().project.id === alpha.id && sameDraft(), "draft returned to Alpha");
+  press("draft-start-without-project");
+  const scratch = await until(() => selected().project.kind === "scratch" && sameDraft() &&
+    visible("draft-project-trigger").includes("focused=true") && selected().project, "direct scratch action focuses the same draft’s project trigger");
   assert.equal(realpathSync(scratch.path), realpathSync(join(root, "scratch", scratch.id)));
+  driver.focus("composer");
 
   for (const cancel of [true, false]) {
     await openChooser();
@@ -96,8 +117,15 @@ export async function verifyDraftProjects(driver, { root, launch, quit }) {
   await quit();
   await launch("model-settings", root);
   await until(() => composer(text) && selected().project.id === scratch.id && sameDraft(), "moved draft after relaunch");
+  assert(isPinned());
   assert.equal(index().projects.flatMap(p => p.conversations).filter(t => t.id === betaThread).length, 1);
   assert.equal(readFileSync(alphaNote, "utf8"), "Alpha notes\n");
   assert.equal(readFileSync(betaNote, "utf8"), blueNote);
+  await newDraft(alpha.id);
+  press("draft-start-without-project");
+  const blankScratch = await until(() => selected().project.kind === "scratch" && composer("") &&
+    visible("draft-project-trigger").includes("focused=true") && selected().project, "empty scratch draft and focused selector");
+  assert.notEqual(blankScratch.id, scratch.id);
+  assert.equal(index().projects.find(p => p.id === scratch.id).conversations[0].id, betaThread);
   await quit();
 }

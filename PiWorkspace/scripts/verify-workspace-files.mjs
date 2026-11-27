@@ -1,7 +1,73 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { verifyMediaFiles } from "./verify-media-files.mjs";
+
+export async function verifySQLiteFiles(driver, { root, git, launch, quit, record }) {
+  const { press, dismiss, pick, visible, value, until, tree } = driver;
+  const main = join(root, "Project"), linked = join(root, "Linked"), name = "fruit.sqlite";
+  const database = folder => join(folder, name);
+  const sqlite = (folder, sql) => execFileSync("/usr/bin/sqlite3", ["-batch", database(folder), sql]);
+  mkdirSync(main, { recursive: true });
+  git(main, "init", "--template=", "-b", "main");
+  git(main, "config", "core.hooksPath", "/dev/null");
+  sqlite(main, `CREATE TABLE fruit(id INTEGER PRIMARY KEY, name TEXT);
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 51)
+    INSERT INTO fruit SELECT i, CASE i WHEN 1 THEN 'apple' ELSE 'fruit-' || i END FROM n;
+    CREATE TABLE z_empty(name TEXT);`);
+  git(main, "add", name);
+  git(main, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Fruit fixture");
+  git(main, "worktree", "add", "-b", "other-fruit", linked, "HEAD");
+  sqlite(linked, "DELETE FROM fruit; INSERT INTO fruit VALUES (1, 'pear')");
+  const projectID = randomUUID().toUpperCase(), a = randomUUID().toUpperCase(), b = randomUUID().toUpperCase();
+  const index = join(root, "workspace.json");
+  writeFileSync(index, JSON.stringify({ welcomeCompleted: true, selectedProject: projectID,
+    projects: [{ id: projectID, path: main, title: "Fruit", allowEdits: false, selectedConversation: a, conversations: [
+      { id: a, title: "Main", isDraft: true, archived: false, composerText: "Keep main" },
+      { id: b, title: "Linked", isDraft: true, archived: false, composerText: "Keep linked", location: { worktree: { path: linked, base: "main" } } },
+    ] }], model: { provider: "local", model: "sqlite-fixture", endpoint: "http://127.0.0.1:1/v1", contextWindow: 8192 } }), { mode: 0o600 });
+  const snapshots = [main, linked].map(folder => ({ folder, bytes: readFileSync(database(folder)), names: readdirSync(folder).sort() }));
+  const has = id => tree().includes('id="' + id + '"');
+  const cell = text => value("files-sqlite-cell-1-2").includes("value=" + JSON.stringify(text));
+  async function open(expected) {
+    if (!has("files-row-" + name)) press("toggle-files");
+    await until(() => visible("files-row-" + name), "fruit.sqlite in Files");
+    press("files-row-" + name);
+    await until(() => visible("files-sqlite-table") && cell(expected), "the selected checkout's " + expected + " row");
+  }
+  await launch("composer", root);
+  await open("apple");
+  assert(!has("files-editor") && !has("files-save"));
+  assert(value("files-sqlite-range").includes("1–50 of 51"));
+  press("files-sqlite-next");
+  await until(() => cell("fruit-51") && visible("files-sqlite-next").includes("enabled=false"), "the final SQLite page");
+  press("files-sqlite-previous");
+  await until(() => cell("apple"), "first SQLite page restored");
+  pick("files-sqlite-table", "z_empty (0 rows)");
+  await until(() => visible("files-sqlite-no-rows"), "selected empty table");
+  pick("files-sqlite-table", "fruit (51 rows)");
+  await until(() => cell("apple"), "selected fruit table");
+  try {
+    writeFileSync(database(main), Buffer.from("SQLite format 3\0broken"));
+    press("files-sqlite-next");
+    await until(() => visible("files-sqlite-error") && visible("files-preview-retry"), "removed stale rows on database replacement");
+  } finally { writeFileSync(database(main), snapshots[0].bytes); }
+  dismiss("files-preview-retry");
+  await until(() => cell("apple"), "repaired database after Retry");
+  press("thread-row-" + b);
+  await until(() => value("composer").includes("Keep linked"), "other draft in its linked checkout");
+  await open("pear");
+  assert(value("files-sqlite-range").includes("1–1 of 1"));
+  await quit();
+  for (const { folder, bytes, names } of snapshots) {
+    assert.deepEqual(readFileSync(database(folder)), bytes);
+    assert.deepEqual(readdirSync(folder).sort(), names);
+  }
+  assert.equal(JSON.parse(readFileSync(index)).projects[0].conversations.find(t => t.id === a).composerText, "Keep main");
+  record("Files read apple from the main SQLite database and pear from the linked checkout at the same path. The table picker showed an empty table, paging reached row 51 and Retry restored the repaired database. Both files and their directory entries were unchanged at the end.");
+}
 
 export async function verifyFiles(driver, checkout, project, git) {
   const { press, visible, value, until, setField, checkCopy } = driver;

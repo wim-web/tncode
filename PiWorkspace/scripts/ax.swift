@@ -348,6 +348,14 @@ private struct Tree: Sequence, IteratorProtocol {
 }
 
 private func element(withID identifier: String, in app: AXUIElement) throws -> AXUIElement {
+    if identifier.hasPrefix("web-element=") {
+        let id = String(identifier.dropFirst("web-element=".count))
+        let matches = Tree(root: app).map(\.element).filter { attribute("AXDOMIdentifier", on: $0) as? String == id }
+        guard !id.isEmpty, matches.count == 1, let node = matches.first else {
+            throw Failure("Expected one DOM element with this identifier.")
+        }
+        return node
+    }
     if identifier.hasPrefix("sheet-field=") || identifier.hasPrefix("sheet-button=") {
         let button = identifier.hasPrefix("sheet-button=")
         let label = String(identifier.dropFirst(button ? "sheet-button=".count : "sheet-field=".count))
@@ -1100,14 +1108,19 @@ private func run(_ arguments: [String]) throws {
         }
         for attempt in 0..<2 {
             if attempt > 0 && !noActivate { try activateForInput(app, pid: pid) }
-            try requireSuccess(AXUIElementPerformAction(popup, kAXPressAction as CFString), "Open \(id)")
+            let opened = AXUIElementPerformAction(popup, kAXPressAction as CFString)
+            if ![.success, .cannotComplete, .attributeUnsupported].contains(opened) {
+                try requireSuccess(opened, "Open \(id)")
+            }
             let deadline = ProcessInfo.processInfo.systemUptime + 0.9
             repeat {
-                let choices = Tree(root: app, skipMenuBar: true).map(\.element).filter {
+                let matches: (AXUIElement) -> Bool = {
                     attribute(kAXRoleAttribute, on: $0) as? String == kAXMenuItemRole &&
                     attribute(kAXTitleAttribute, on: $0) as? String == title &&
                     attribute(kAXEnabledAttribute, on: $0) as? Bool == true
                 }
+                var choices = Tree(root: popup).map(\.element).filter(matches)
+                if choices.isEmpty { choices = Tree(root: app, skipMenuBar: true).map(\.element).filter(matches) }
                 if choices.count == 1, let choice = choices.first {
                     try requireSuccess(AXUIElementPerformAction(choice, kAXPressAction as CFString), "Select \(title)")
                     return
@@ -1172,9 +1185,7 @@ private func run(_ arguments: [String]) throws {
                                                 123: 0xF702, 124: 0xF703, 125: 0xF701, 126: 0xF700]
         try postKey(code, to: pid, flags: flags, units: characters[code].map { [$0] } ?? [], frontmost: !noActivate)
     case .webFrame(let id):
-        let matches = Tree(root: app).map(\.element).filter { attribute("AXDOMIdentifier", on: $0) as? String == id }
-        guard matches.count == 1, let node = matches.first else { throw Failure("Expected one DOM element with this identifier.") }
-        let rect = try frame(of: node)
+        let rect = try frame(of: element(withID: "web-element=" + id, in: app))
         print("\(rect.minX) \(rect.minY) \(rect.width) \(rect.height)")
     case .sizeWindow(let id, let requested):
         let window = try element(withID: id, in: app)

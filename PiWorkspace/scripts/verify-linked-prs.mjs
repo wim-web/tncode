@@ -16,6 +16,54 @@ async function closeLinks({ dismiss, until, tree }) {
   await until(() => !tree().includes('id="pr-close"'), "return to the thread");
 }
 
+export async function verifyIssueLinks(driver, { conversation, quit, launch }) {
+  const { press, dismiss, visible, value, until, setField, checkCopy } = driver;
+  const issue = number => "https://github.com/fixture/workspace/issues/" + number;
+  const issueRow = number => "linked-issue-row-fixture/workspace-" + number;
+  const savedIssues = () => (conversation().linkedIssues ?? []).map(item => item.reference);
+  async function add(prefix, text) {
+    press(prefix + "-add");
+    await until(() => value(prefix + "-repository").includes("github.com/fixture/workspace"), "checkout repository for " + prefix);
+    await setField(prefix + "-reference", text, () => visible(prefix + "-submit").includes("enabled=true"));
+    dismiss(prefix + "-submit");
+  }
+  press("github-tab-issues");
+  await until(() => visible("issue-row-71"), "issue in selected checkout");
+  press("issue-row-71");
+  await until(() => visible("issue-link-to-thread"), "link from issue details");
+  press("issue-link-to-thread");
+  await until(() => value("linked-issue-reference").includes(issue(71)) && visible("linked-issue-submit").includes("enabled=true"), "prefilled issue URL");
+  dismiss("linked-issue-submit");
+  await until(() => visible("issue-unlink-from-thread") && savedIssues().includes(issue(71)), "linked issue 71");
+  press("github-tab-linked-items");
+  await until(() => visible(issueRow(71)), "saved issue in Linked items");
+  await add("linked-pr", "#42");
+  await until(() => visible(row), "pull request independently linked");
+  await add("linked-issue", "#42");
+  await until(() => visible(issueRow(42)), "issue independently linked");
+  await add("linked-issue", "https://github.com/fixture/other/issues/42");
+  await until(() => value("linked-issue-link-error").includes("Enter an issue from that repository"), "unrelated repository rejected");
+  await setField("linked-issue-reference", issue(42));
+  press("linked-issue-submit");
+  await until(() => value("linked-issue-link-error").includes("already linked"), "duplicate issue rejected");
+  dismiss("linked-issue-cancel");
+  assert.deepEqual(savedIssues().sort(), [issue(42), issue(71)]);
+  await closeLinks(driver);
+  await quit();
+  await launch("pull-requests");
+  await openLinks(driver);
+  press(issueRow(42));
+  await until(() => value("issue-detail-title").includes("#42 Issue sharing a pull request number"), "same issue details after relaunch");
+  press("linked-issue-copy-link");
+  await until(() => checkCopy(issue(42)), "private pasteboard contains the issue URL");
+  press("linked-issue-unlink");
+  await until(() => savedIssues().length === 1 && visible(row) && visible(issueRow(71)), "unlink kept the distinct issue and pull request");
+  press(row);
+  await until(() => value("pr-detail-title").includes("#42 Update checkout"), "the same-number fixture pull request still opens");
+  assert.deepEqual(savedIssues(), [issue(71)]);
+  assert.deepEqual(conversation().linkedPullRequests.map(item => item.reference), [reference]);
+}
+
 async function chooseAction({ press, visible, until }, item) {
   press(actions);
   await until(() => visible(item), "linked PR action " + item);

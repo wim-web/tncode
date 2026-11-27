@@ -267,6 +267,11 @@ fi
 
 fields=number,title,state,isDraft,author
 head=0123456789abcdef0123456789abcdef01234567
+if [ -n "${PI_GH_FIXTURE_PR_HEAD_FILE:-}" ]; then
+    head=$(/bin/cat "$PI_GH_FIXTURE_PR_HEAD_FILE")
+    test "${#head}" -eq 40
+    case "$head" in *[!0-9a-f]*) exit 2 ;; esac
+fi
 if [ "$mode" = files-stale ]; then
     head=ffffffffffffffffffffffffffffffffffffffff
 fi
@@ -407,6 +412,7 @@ case "$*" in
         printf '{"number":42,"title":"%s","state":"CLOSED","author":null,"labels":[],"body":"Fixture issue #42.","url":"%s"}\n' \
             "$issue_title" "$issue_url"
         ;;
+    "issue view 71 --json number,title,state,author,labels,body --repo $expected_repo" | \
     "issue view 71 --json number,title,state,author,labels,body,url --repo $expected_repo")
         if [ "$mode" = missing ]; then
             printf '%s\n' "GraphQL: Could not resolve to an Issue with the number of 71." >&2
@@ -419,8 +425,10 @@ case "$*" in
             title='Checkout socket timeout'
             description='Fixture issue description.'
         fi
-        printf '{"number":71,"title":"%s","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"%s","url":"https://%s/issues/71"}\n' \
-            "$title" "$description" "$expected_repo"
+        url_field=
+        case "$5" in *,url) url_field=",\"url\":\"https://$expected_repo/issues/71\"" ;; esac
+        printf '{"number":71,"title":"%s","state":"OPEN","author":{"login":"fixture-reporter"},"labels":[{"name":"bug"}],"body":"%s"%s}\n' \
+            "$title" "$description" "$url_field"
         ;;
     "issue view 73 --json number,title,state,author,labels,body,url --repo $expected_repo")
         printf '{"number":73,"title":"Retry slow worker","state":"OPEN","author":null,"labels":[{"name":"bug"},{"name":"needs triage"}],"body":"","url":"https://%s/issues/73"}\n' "$expected_repo"

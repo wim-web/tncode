@@ -52,6 +52,7 @@ export async function verifySidebarPersistence(driver, { root, git, launch, quit
   await setField(search, "a", () => has(choice(alpha)) && has(choice(beta)) && !has(choice(empty)));
   assert(!has("project-filter-all"));
   keyFor(search, 125);
+  await until(() => visible(choice(beta)).includes("selected=true"), "Down highlights Beta in the open project picker");
   keyFor(search, 36, "shift");
   await until(() => scopedTo(alpha.id, beta.id) && value(search).includes('value="a"'), "Down and Shift-Return added Beta without changing the query");
   keyFor(search, 36, "shift");

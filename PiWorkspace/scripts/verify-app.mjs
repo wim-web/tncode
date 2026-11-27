@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { once } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { resetProjectModel, setProjectModel, verifyPRFilesCheckout, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
-import { restoreAppearance, verifyAbout, verifyAppearance, verifySettingsSearch } from "./verify-settings-panels.mjs";
-import { verifyFiles } from "./verify-workspace-files.mjs";
+import { resetProjectModel, setProjectModel, verifyBrowserFind, verifyPRFilesCheckout, verifyPreview, verifyPullRequests } from "./verify-panels.mjs";
+import { restoreAppearance, verifyAbout, verifyAppearance, verifyChatSettings, verifySettingsLinks, verifySettingsSearch } from "./verify-settings-panels.mjs";
+import { verifyFiles, verifySQLiteFiles } from "./verify-workspace-files.mjs";
+import { verifyArchiveFiles } from "./verify-archive-files.mjs";
 import { verifyQueue } from "./verify-message-queue.mjs";
-import { verifyCommandPalette, verifyPaletteMessage } from "./verify-command-palette.mjs";
+import { verifyCommandPalette, verifyPaletteFiles, verifyPaletteMessage } from "./verify-command-palette.mjs";
 import { closeTerminalPane, verifyInteractiveShell, verifyTerminalPanes } from "./verify-terminal-panes.mjs";
 import { verifyFork, verifyInterruptedReply } from "./verify-fork-ui.mjs";
 import { verifyAttachmentUI } from "./verify-attachment-ui.mjs";
@@ -22,17 +23,21 @@ import { createWorkspaceControlsFixture, setWorktreeLocation, verifyWorkspaceCon
 import { verifyConversationControls } from "./verify-conversation-controls.mjs";
 import { verifyDraftProjects } from "./verify-draft-project-chooser.mjs";
 import { verifyWorktreeBases } from "./verify-worktree-bases.mjs";
-import { verifyThreadActions } from "./verify-thread-actions.mjs";
+import { verifyOfflineQueueEdit, verifyThreadActions } from "./verify-thread-actions.mjs";
 import { verifySidebarPersistence } from "./verify-sidebar-persistence.mjs";
 import { verifyChatImages } from "./verify-chat-images.mjs";
 import { verifyProjectSettings } from "./verify-project-settings.mjs";
-import { verifyThreadSnooze } from "./verify-thread-snooze.mjs";
+import { verifyProjectIcons } from "./verify-project-icons.mjs";
+import { verifyArchivedThreads } from "./verify-archived-threads.mjs";
+import { verifySnoozeOptions, verifyThreadSnooze } from "./verify-thread-snooze.mjs";
 import { verifyNewThreadRoutes, verifyStartupRetry } from "./verify-new-thread-routes.mjs";
 import { verifyStartupRecovery } from "./verify-startup-recovery.mjs";
 import { verifyRightTerminal } from "./verify-right-terminal.mjs";
 import { verifyInheritedAccount, verifyModelAccount } from "./verify-model-account.mjs";
 import { verifyLocalChanges } from "./verify-local-changes.mjs";
 import { verifySideChatPanel } from "./verify-side-chat-panel.mjs";
+import { verifyPRPromptLinks, verifyPromptLinks } from "./verify-prompt-links.mjs";
+import { verifyIssueEdits } from "./verify-issue-edits.mjs";
 
 const packagedApp = process.env.PI_WORKSPACE_VERIFY_APP
   ? resolve(process.env.PI_WORKSPACE_VERIFY_APP)
@@ -42,7 +47,9 @@ let testBundleDirectory;
 const ax = process.argv[2];
 assert(ax, "Pass the path to the macOS AX driver.");
 const backgroundChecks = ["--startup-draft-only", "--recovery-actions-only", "--pr-files-only", "--right-terminal-only",
-  "--model-account-only", "--local-changes-only", "--side-chat-only"];
+  "--model-account-only", "--local-changes-only", "--side-chat-only", "--settings-links-only", "--queue-edit-only", "--snooze-options-only",
+  "--prompt-links-only", "--pr-prompt-links-only", "--chat-settings-only", "--issue-edits-only", "--sqlite-files-only", "--browser-find-only",
+  "--project-icons-only", "--archived-threads-only", "--archive-files-only"];
 const backgroundScenario = process.argv.slice(3).find(flag => backgroundChecks.includes(flag));
 if (backgroundScenario) assert.equal(process.argv.length, 4, "Run a background scenario on its own.");
 assert.match(execFileSync(ax, ["trust"], { encoding: "utf8" }), backgroundScenario ? /accessibility=true/ : /accessibility=true keyboard=true/);
@@ -58,9 +65,11 @@ symlinkSync(directory, join(reportDirectory, "fixture"), "dir");
 const project = join(directory, "Sample Project");
 const worktreeTest = process.argv.includes("--worktree");
 const basesOnly = process.argv.includes("--worktree-bases-only");
+const draftPickerOnly = process.argv.includes("--draft-projects-only");
 const imagesOnly = process.argv.includes("--image-preview-only");
+const attachmentPickerOnly = process.argv.includes("--attachment-picker-only");
 const projectFlowsOnly = process.argv.includes("--project-flows-only") || basesOnly;
-const fixtureModel = process.argv.includes("--fixture-model") || projectFlowsOnly || imagesOnly;
+const fixtureModel = process.argv.includes("--fixture-model") || projectFlowsOnly || imagesOnly || attachmentPickerOnly;
 const terminalFixture = join(directory, "verification-shell");
 const workspace = join(directory, "workspace");
 const customWorktrees = join(directory, "Custom Worktrees");
@@ -69,7 +78,19 @@ const forgeLog = join(directory, "forge-calls.log");
 const pasteboard = "dev.piworkspace.verification." + randomBytes(16).toString("hex");
 const logs = join(reportDirectory, "logs");
 const report = join(logs, "report.txt");
-for (const path of [project, workspace, logs]) mkdirSync(path, { mode: 0o700 });
+const issueEdits = backgroundScenario === "--issue-edits-only";
+const fixtureBin = join(directory, issueEdits ? "github-issue" : "bin");
+const promptLinkConfig = join(directory, "prompt-link-config");
+const prPromptLinks = backgroundScenario === "--pr-prompt-links-only";
+const prHeadFile = join(directory, "pr-checkout-head");
+const issueForge = join(directory, "issue-data");
+for (const path of [project, workspace, logs, fixtureBin]) mkdirSync(path, { mode: 0o700 });
+const readFixture = resolve(import.meta.dirname, "fixtures/github-read/gh");
+copyFileSync(issueEdits ? resolve(import.meta.dirname, "fixtures/github-issue/gh") : readFixture, join(fixtureBin, "gh"));
+if (issueEdits) {
+  mkdirSync(join(directory, "github-read"), { mode: 0o700 });
+  copyFileSync(readFixture, join(directory, "github-read/gh"));
+}
 const secret = randomBytes(32).toString("hex");
 const expected = Buffer.from("Bearer " + secret);
 const firstPrompt = fixtureModel ? "fixture stream" : "What is the capital of France? Answer in one short sentence.";
@@ -85,6 +106,10 @@ let requestedWrite;
 let rejected = 0;
 let appPID;
 let backgroundInput = Boolean(backgroundScenario);
+let interruption;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => { interruption = new Error("Verification interrupted by " + signal); });
+}
 let launchNumber = 0;
 let keySaved = false;
 let keyAccount;
@@ -102,6 +127,13 @@ function recordVerifiedBundle(bundle) {
   const codeDirectoryHash = signature.stderr.match(/^CDHash=([0-9a-f]+)$/m)?.[1];
   assert(codeDirectoryHash, "The bundle has no readable code directory hash.");
   const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
+  const scriptHashes = {};
+  for (const subdirectory of ["", "fixtures"]) {
+    const folder = join(import.meta.dirname, subdirectory);
+    for (const name of readdirSync(folder).filter(name => name.endsWith(".mjs")).sort()) {
+      scriptHashes[join(subdirectory, name)] = digest(join(folder, name));
+    }
+  }
   const sidecar = join(bundle, "Contents/Resources/Sidecar");
   const sdk = JSON.parse(readFileSync(join(sidecar, "node_modules/@earendil-works/pi-coding-agent/package.json"), "utf8"));
   writeFileSync(join(logs, "artifact.json"), JSON.stringify({
@@ -109,6 +141,8 @@ function recordVerifiedBundle(bundle) {
     executableSHA256: digest(join(bundle, "Contents/MacOS/PiWorkspace")),
     workerSHA256: digest(join(sidecar, "worker.mjs")), piVersion: sdk.version,
     verifierSHA256: digest(import.meta.filename),
+    accessibilityDriverSHA256: digest(resolve(ax)), scriptHashes,
+    gitHubFixtureSHA256: digest(join(fixtureBin, "gh")),
   }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
 }
 
@@ -256,16 +290,24 @@ function removeFixtureCredential(root, account) {
   if ((remove.status !== 0 && remove.status !== 44) || check.status !== 44) failedCredentialCleanup.add(root);
 }
 
-async function until(check, label, timeout = 20_000) {
+function checkInterruption() {
+  if (interruption) throw interruption;
+}
+
+async function until(check, label, timeout = 20_000, interruptible = true) {
   const deadline = Date.now() + timeout;
+  let lastError;
   while (Date.now() < deadline) {
+    if (interruptible) checkInterruption();
     try {
       const result = check();
       if (result) return result;
-    } catch { /* wait for the UI element */ }
+      lastError = undefined;
+    } catch (error) { lastError = error; }
     await delay(120);
   }
-  throw new Error("Timed out waiting for " + label);
+  const detail = String(lastError?.stderr || lastError?.code || "").trim().slice(0, 320);
+  throw new Error("Timed out waiting for " + label + (detail ? " (" + detail + ")" : ""), { cause: lastError });
 }
 
 const visible = (id) => drive("get", [id]);
@@ -278,15 +320,13 @@ function pressDismissal(id) {
 const panelDriver = {
   press, visible, tree, setField, until, closeSettings, openModelSettings: settings,
   activate: () => drive("activate", []),
-  focus: id => {
-    if (backgroundInput) assert(visible(id).includes("focused=true"), "The background field lacks focus: " + id);
-    else drive("type", [id], "");
-  },
+  focus: id => drive("focus-field", [id]),
   selection: (id, ...range) => drive("selection", [id, ...range.map(String)]).trim().split(/\s+/).map(Number),
   selectPath: path => drive("select-path", [path]),
   dismiss: pressDismissal,
   value: id => drive("get", [id, "--values"]),
   subtree: (id, depth) => drive("get", [id, "--values", "--depth", String(depth)]),
+  help: id => drive("get", [id, "--help-text"]),
   selectedText: id => drive("selected-text", [id]),
   checkCopy: text => { execFileSync(ax, ["check-copy", pasteboard], { input: text, stdio: ["pipe", "pipe", "pipe"] }); return true; },
   checkImage: png => { execFileSync(ax, ["check-image", pasteboard], { input: Buffer.from(png, "base64"), stdio: "pipe" }); return true; },
@@ -294,10 +334,12 @@ const panelDriver = {
   sizeWindow: (width, height) => drive("size-window", ["workspace", String(width), String(height)]),
   menuItem: name => drive("menu-item", backgroundInput ? [name, "--no-activate"] : [name]),
   openThreadLink: link => drive("open-thread-link", [link]),
-  escapeMenu: () => drive("key", ["53"]),
+  openSettingsLink: link => drive("open-settings-link", [link, "--no-activate"]),
+  openPromptLink: link => drive("open-prompt-link", [link, "--no-activate"]),
+  cancelMenu: id => drive("cancel-menu", [id]),
   showMenu: id => drive("show-menu", [id]),
   click: (id, ...flags) => drive("click", [id, ...flags]),
-  pick: (id, title) => drive("pick", [id, title]),
+  pick: (id, title) => drive("pick", [id, title, ...(backgroundInput ? ["--no-activate"] : [])]),
   segment: (group, label) => drive("segment", [group, label]),
   key: code => drive("key-focused", ["browser-address", String(code)]),
   keyFor: (id, code, ...modifiers) => drive("key-focused", [id, String(code), ...modifiers, ...(backgroundInput ? ["--no-activate"] : [])]),
@@ -315,9 +357,11 @@ function replyVisible(target) {
 
 async function waitForIdle(pid) {
   while (minimumIdle > 0 && execFileSync(ax, ["desktop-ready", String(minimumIdle)], { encoding: "utf8" }).trim() !== "ready") {
+    checkInterruption();
     if (pid) process.kill(pid, 0);
     await delay(1000);
   }
+  checkInterruption();
 }
 
 async function waitForFixtureWindow(control, pid) {
@@ -330,6 +374,7 @@ async function waitForFixtureWindow(control, pid) {
     if (execFileSync(ax, ["desktop-ready", "0"], { encoding: "utf8" }).trim() !== "ready") {
       record("WindowServer has not exposed the test window while the display is locked or asleep. Waiting for the window without activating it.");
       while (execFileSync(ax, ["desktop-ready", "0"], { encoding: "utf8" }).trim() !== "ready") {
+        checkInterruption();
         process.kill(pid, 0);
         try { visible(control); return; } catch {}
         await delay(3000);
@@ -343,6 +388,7 @@ async function activateLaunchedApp() {
   let deadline = Date.now() + 20_000;
   let reportedWait = false;
   for (;;) {
+    checkInterruption();
     try {
       drive("activate", []);
       return;
@@ -371,10 +417,15 @@ async function launch(expectedControl = "model-settings", root = workspace, shel
     "-n", ...(background || minimumIdle > 0 ? ["-g"] : []), "-a", app, "--stdout", join(logs, launchNumber + ".out"),
     "--stderr", join(logs, launchNumber + ".err"),
     "--env", "SHELL=" + shell,
-    "--env", "PATH=" + resolve(import.meta.dirname, "fixtures/github-read") + ":/usr/bin:/bin",
+    "--env", "PATH=" + fixtureBin + ":/usr/bin:/bin",
     "--env", "PI_GH_FIXTURE_STATE=" + forgeState, "--env", "GH_CONFIG_DIR=" + join(directory, "gh"),
     "--env", "PI_GH_FIXTURE_LOG=" + forgeLog,
     "--env", "PI_WORKSPACE_TEST_PASTEBOARD=" + pasteboard,
+    ...(issueEdits ? ["--env", "PI_GH_ISSUE_DIR=" + issueForge, "--env", "GH_TOKEN=", "--env", "GITHUB_TOKEN=",
+      "--env", "GH_ENTERPRISE_TOKEN=", "--env", "GITHUB_ENTERPRISE_TOKEN=", "--env", "HTTPS_PROXY=http://127.0.0.1:1",
+      "--env", "https_proxy=http://127.0.0.1:1", "--env", "NO_PROXY=localhost,127.0.0.1", "--env", "no_proxy=localhost,127.0.0.1"] : []),
+    ...(backgroundScenario === "--prompt-links-only" || prPromptLinks ? ["--env", "XDG_CONFIG_HOME=" + promptLinkConfig] : []),
+    ...(prPromptLinks ? ["--env", "PI_GH_FIXTURE_PR_HEAD_FILE=" + prHeadFile] : []),
     "--args", "--workspace", root,
     "-ApplePersistenceIgnoreState", "YES",
   ]);
@@ -382,8 +433,9 @@ async function launch(expectedControl = "model-settings", root = workspace, shel
     const result = execFileSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8" });
     const process = result.split("\n").find(line => line.includes("/MacOS/PiWorkspace --workspace " + root + " "));
     return process && Number(process.trim().split(/\s+/)[0]);
-  }, "app process");
+  }, "app process", 20_000, false);
   appPID = id;
+  checkInterruption();
   if (!background) await activateLaunchedApp();
   await waitForFixtureWindow(expectedControl, id);
   return id;
@@ -422,6 +474,7 @@ async function setField(id, text, ready = () => true) {
   for (const action of backgroundInput ? ["set"] : ["type", "set", "type"]) {
     try {
       if (displayed()) return;
+      if (backgroundInput) drive("focus-field", [id]);
       drive(action, action === "type" ? [id, "--replace"] : [id], text);
       await until(displayed, id + " contents", 1500);
       return;
@@ -689,9 +742,19 @@ async function verifyDefaultWorktree(index, projectID, originalID, previousCheck
   press("new-conversation");
   await until(() => visible("new-thread-project-" + projectID), "choose the project for another worktree");
   press("new-thread-project-" + projectID);
-  await until(() => visible("composer").includes("focused=true"), "new draft after resetting storage");
-  const thread = index().projects.find(p => p.id === projectID).selectedConversation;
-  assert.notEqual(thread, originalID);
+  const thread = await until(() => {
+    const selected = index().projects.find(p => p.id === projectID).selectedConversation;
+    return selected && selected !== originalID && !tree().includes('id="new-thread-project-') &&
+      panelDriver.value("composer").includes('value=""') && selected;
+  }, "new draft after resetting storage");
+  await until(() => visible("composer").includes("focused=true"), "new composer owns keyboard focus");
+  panelDriver.keyFor("composer", 7);
+  await until(() => panelDriver.value("composer").includes('value="x"') &&
+    index().projects.find(p => p.id === projectID).conversations.find(t => t.id === thread)?.composerText === "x",
+    "ordinary window input reached the new worktree draft without focusing it");
+  assert.deepEqual(panelDriver.selection("composer"), [1, 0]);
+  panelDriver.keyFor("composer", 51);
+  await until(() => panelDriver.value("composer").includes('value=""'), "Backspace cleared the same draft");
   await chooseNewWorktree("default-after-reset", 2);
   const count = targets.length;
   await send("Verify the new thread starts in the default worktree folder.");
@@ -746,7 +809,8 @@ async function verifyCheckout(checkout) {
   press("git-file-tty-proof.txt");
   await until(() => tree().includes("+") && tree().includes(checkout), "file contents in the diff");
   const subject = "Verify the in-app commit";
-  assert(visible("git-commit").includes("enabled=false"), "A blank commit message must disable Commit.");
+  assert(visible("git-commit").includes("enabled=true"), "Selected changes can request a generated subject.");
+  const modelRequestCount = targets.length;
   drive("type", ["git-commit-message"], subject);
   await until(() => drive("get", ["git-commit-message", "--values"]).includes("value=" + JSON.stringify(subject)),
               "typed commit message");
@@ -756,6 +820,7 @@ async function verifyCheckout(checkout) {
   await until(() => visible("git-commit").includes("enabled=true"), "enabled commit button");
   press("git-commit");
   await until(() => git(checkout, "log", "-1", "--format=%s") === subject, "commit recorded in Git");
+  assert.equal(targets.length, modelRequestCount, "A typed commit subject contacted the model.");
   assert.equal(git(checkout, "show", "--format=", "--name-only", "HEAD"), "tty-proof.txt");
   assert.match(git(checkout, "status", "--porcelain"), /\?\? retained-shell\.txt/);
   assert.equal(git(checkout, "diff", "--cached", "--name-only"), "");
@@ -789,9 +854,8 @@ async function verifyApprovals(cwd) {
 async function verifySidebar(savedID) {
   async function focusSearch() {
     if (visible("thread-search").includes("focused=true")) return;
-    panelDriver.focus("composer");
-    panelDriver.keyFor("composer", 3, "cmd", "shift");
-    await until(() => visible("thread-search").includes("focused=true"), "Command-Shift-F focuses sidebar search");
+    panelDriver.menuItem("Search Threads");
+    await until(() => visible("thread-search").includes("focused=true"), "Search Threads focuses the sidebar");
   }
   const index = () => JSON.parse(readFileSync(join(workspace, "workspace.json"), "utf8"));
   const third = join(directory, "Third Project");
@@ -849,7 +913,7 @@ async function verifySidebar(savedID) {
   }, "two selected projects visible, third excluded");
   press("thread-filters");
   press("project-filter-all");
-  press("close-thread-filters");
+  await until(() => !tree().includes('id="close-thread-filters"'), "All Projects closes its picker");
   await until(() => visible("thread-row-" + last.selectedConversation), "All Projects restores third draft");
   record("The project filter showed both checked projects, excluded the third, and restored all three on reset.");
   await focusSearch();
@@ -873,7 +937,7 @@ async function verifySidebar(savedID) {
   press(match[1]);
   await until(() => visible("transcript-message-" + match[2]), "matching message in the original conversation");
   await until(() => index().selectedProject === first.id && index().projects[0].selectedConversation === savedID, "return to saved conversation");
-  record("Command-Shift-F focused sidebar search. AXConfirm reopened the matching draft with its text.");
+  record("Search Threads in the Edit menu focused the sidebar. AXConfirm reopened the matching draft with its text.");
   record("Searching an older assistant reply opened its stored message ID in the original thread.");
   press("thread-row-" + last.selectedConversation);
   await until(() => composerHas(thirdText), "third draft before Discard");
@@ -1229,9 +1293,11 @@ try {
   const projectSettingsOnly = process.argv.includes("--project-settings-only");
   const snoozeOnly = process.argv.includes("--snooze-only");
   const newThreadOnly = process.argv.includes("--new-thread-routes-only");
+  const paletteFilesOnly = process.argv.includes("--palette-files-only");
+  const browserFindKeys = process.argv.includes("--browser-find-keys-only");
   const focused = [
     usageOnly, controlsOnly, conversationOnly, projectFlowsOnly, threadActionsOnly,
-    sidebarOnly, imagesOnly, terminalOnly, projectSettingsOnly, snoozeOnly, newThreadOnly, backgroundScenario,
+    sidebarOnly, imagesOnly, attachmentPickerOnly, terminalOnly, projectSettingsOnly, snoozeOnly, newThreadOnly, draftPickerOnly, paletteFilesOnly, browserFindKeys, backgroundScenario,
   ].some(Boolean);
   testBundleDirectory = mkdtempSync("/private/tmp/pi-workspace-test-app-");
   app = join(testBundleDirectory, "Pi Workspace.app");
@@ -1266,12 +1332,24 @@ try {
   if (projectSettingsOnly) {
     await verifyProjectSettings(panelDriver, { root: join(directory, "project-settings"), git, launch, quit, record });
   }
+  if (backgroundScenario === "--project-icons-only") {
+    await verifyProjectIcons(panelDriver, { root: join(directory, "project-icons"), app, git, launch, quit, record });
+  }
+  if (backgroundScenario === "--archived-threads-only") {
+    await verifyArchivedThreads(panelDriver, { root: join(directory, "archived-threads"), app, git, launch, quit, record });
+  }
   if (snoozeOnly) {
     await verifyThreadSnooze(panelDriver, { root: join(directory, "snooze"), quit, launch, record,
       relaunch: (control, root) => launch(control, root, undefined, true) });
   }
+  if (backgroundScenario === "--snooze-options-only") {
+    await verifySnoozeOptions(panelDriver, { root: join(directory, "snooze-options"), quit, launch, record });
+  }
   if (newThreadOnly) {
     await verifyNewThreadRoutes(panelDriver, { root: join(directory, "new-thread-routes"), quit, launch, record });
+  }
+  if (paletteFilesOnly) {
+    await verifyPaletteFiles(panelDriver, { root: join(directory, "palette-file-search"), git, quit, launch, record });
   }
   if (backgroundScenario === "--startup-draft-only") {
     await verifyStartupRetry(panelDriver, { root: join(directory, "startup-draft"), quit, launch, record, background: true });
@@ -1291,13 +1369,57 @@ try {
   if (backgroundScenario === "--local-changes-only") {
     await verifyLocalChanges(panelDriver, { root: join(directory, "local-changes"), git, launch, quit, record });
   }
+  if (backgroundScenario === "--sqlite-files-only") {
+    await verifySQLiteFiles(panelDriver, { root: join(directory, "sqlite-files"), git, launch, quit, record });
+  }
+  if (backgroundScenario === "--archive-files-only") {
+    await verifyArchiveFiles(panelDriver, { root: join(directory, "archive-files"), app, git, launch, quit, record });
+  }
+  if (backgroundScenario === "--browser-find-only" || browserFindKeys) {
+    await verifyBrowserFind(panelDriver, { root: join(directory, "browser-find"), launch, quit, record, keyboard: browserFindKeys });
+  }
   if (backgroundScenario === "--side-chat-only") {
     await verifySideChatPanel(panelDriver, { root: join(directory, "side-chat"), launch, quit, record,
       credential: updateKey, removeFixtureCredential });
   }
+  if (backgroundScenario === "--settings-links-only") {
+    await verifySettingsLinks(panelDriver, { root: join(directory, "settings-links"), app, launch, quit, record });
+  }
+  if (backgroundScenario === "--chat-settings-only") {
+    await verifyChatSettings(panelDriver, { root: join(directory, "chat-settings"),
+      otherRoot: join(directory, "other-chat-settings"), launch, quit, record });
+  }
+  if (backgroundScenario === "--prompt-links-only") {
+    let requests = 0;
+    server.on("request", () => { requests++; });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    await verifyPromptLinks(panelDriver, { root: join(directory, "prompt-links"), gitConfigHome: promptLinkConfig, git,
+      endpoint: "http://127.0.0.1:" + server.address().port + "/v1", key: secret, credential: updateKey,
+      removeFixtureCredential, launch, quit, record });
+    assert.equal(requests, 0);
+    record("The model endpoint received zero requests, including after opening a link with an available fixture credential.");
+  }
+  if (backgroundScenario === "--queue-edit-only") {
+    let requests = 0;
+    server.on("request", () => { requests++; });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    await verifyOfflineQueueEdit(panelDriver, { root: join(directory, "queue-edit"), launch, quit, record,
+      endpoint: "http://127.0.0.1:" + server.address().port + "/v1" });
+    assert.equal(requests, 0);
+    record("The loopback provider received zero requests during edit, relaunch and the pending sign-in.");
+  }
+  if (prPromptLinks) {
+    await verifyPRPromptLinks(panelDriver, { root: join(directory, "pr-prompt-links"), gitConfigHome: promptLinkConfig,
+      git, headFile: prHeadFile, stateFile: forgeState, app, launch, quit, record });
+  }
   if (backgroundScenario === "--pr-files-only") {
     makeRepository();
     await verifyPRFilesCheckout(panelDriver, { directory, project, workspace, git, launch, quit, record, forgeState, forgeLog });
+  }
+  if (issueEdits) {
+    await verifyIssueEdits(panelDriver, { root: join(directory, "issue-edits"), forge: issueForge, stateFile: forgeState, git, launch, quit, record });
   }
   if (terminalOnly) {
     makeRepository();
@@ -1322,6 +1444,27 @@ try {
       removeFixtureCredential, launch, quit, targets, record, endpoint: "http://127.0.0.1:" + server.address().port + "/v1" });
     assert.equal(inspectFiles().length, 1);
   }
+  if (attachmentPickerOnly) {
+    makeRepository();
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    releaseFirst();
+    const endpoint = "http://127.0.0.1:" + server.address().port + "/v1";
+    const projectID = randomUUID().toUpperCase(), threadID = randomUUID().toUpperCase(), indexPath = join(workspace, "workspace.json");
+    writeFileSync(indexPath, JSON.stringify({ welcomeCompleted: true, selectedProject: projectID,
+      projects: [{ id: projectID, title: "Attachment picker", path: project, allowEdits: false, selectedConversation: threadID,
+        conversations: [{ id: threadID, title: "Attachment draft", isDraft: true, archived: false }] }],
+      model: { provider: "local", model: "smollm2:135m", endpoint, localImages: true, contextWindow: 8192 } }), { mode: 0o600 });
+    const conversation = () => JSON.parse(readFileSync(indexPath, "utf8")).projects[0].conversations.find(t => t.id === threadID);
+    try {
+      updateKey("--set-api-key-from-stdin", secret);
+      await launch("composer");
+      await verifyAttachmentUI(panelDriver, { workspace, checkout: project, conversation, targets, quit, launch });
+      await quit();
+      assert.equal(targets.length, 1);
+      record("The native Open panel selected both same-named PNGs and the text file. Attach Again restored the original ID. After relaunch the only provider request carried the remaining image and complete UTF-8 text.");
+    } finally { removeFixtureCredential(workspace, "local:" + endpoint); }
+  }
   if (sidebarOnly) {
     await verifySidebarPersistence(panelDriver, { root: join(directory, "grouped-sidebar"), git, launch, quit, record,
       stateFile: forgeState, logFile: forgeLog });
@@ -1337,11 +1480,11 @@ try {
     assert.equal(inspectFiles().length, 2);
     record("The two Pi histories remained separate, with no plaintext fixture key or auth.json under the verification directory.");
   }
+  if (draftPickerOnly || (projectFlowsOnly && !basesOnly)) {
+    await verifyDraftProjects(panelDriver, { root: join(directory, "draft-projects"), launch, quit });
+    record("The current project preceded the pinned candidate. The search shortcut and row button toggled only that pin. Moving and reopening a populated draft kept its ID, note bytes and text.");
+  }
   if (projectFlowsOnly) {
-    if (!basesOnly) {
-      await verifyDraftProjects(panelDriver, { root: join(directory, "draft-projects"), launch, quit });
-      record("An empty draft opened the other project's populated draft. Moving it to a project and then No project preserved its ID, text and note bytes. Adding or cancelling a project returned to the same composer, including after relaunch.");
-    }
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     releaseFirst();
@@ -1352,7 +1495,11 @@ try {
     assert.equal(inspectFiles().length, 3);
   }
 } catch (error) {
-  let message = error.message.replaceAll(secret, "[redacted]");
+  let message = (interruption ?? error).message.replaceAll(secret, "[redacted]");
+  if (interruption) {
+    backgroundInput = true;
+    interruption = undefined;
+  }
   if (appPID) {
     let summary = "";
     try { summary = tree().replaceAll(secret, "[redacted]"); } catch { /* app exited */ }
@@ -1382,6 +1529,10 @@ try {
   execFileSync(ax, ["release-test-pasteboard", pasteboard], { stdio: "ignore" });
   if (testBundleDirectory && !appPID) rmSync(testBundleDirectory, { recursive: true, force: true });
   const preferenceChecks = [[usageWorkspace, "browser", "usagePeriod"]];
+  if (backgroundScenario === "--chat-settings-only") {
+    preferenceChecks.push([join(directory, "chat-settings"), "browser", "chat.sendShortcut"],
+                          [join(directory, "chat-settings"), "browser", "chat.followUpBehavior"]);
+  }
   if (fixtureModel) preferenceChecks.push([workspace, "browser", "browserSearchSettings"], [workspace, "appearance", "appearance.colorScheme"]);
   for (const [root, feature, key] of preferenceChecks) {
     const scope = createHash("sha256").update(root).digest("hex");

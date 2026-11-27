@@ -4,6 +4,60 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync
 import { join } from "node:path";
 import { seedPaletteMessageHistory } from "./fixtures/palette-message-history.mjs";
 
+export async function verifyOfflineQueueEdit(driver, { root, launch, quit, endpoint, record }) {
+  const { press, dismiss, setField, visible, value, tree, until } = driver;
+  const id = () => randomUUID().toUpperCase();
+  const attachment = content => ({ id: id(), name: "same.txt",
+    payload: { data: Buffer.from(content).toString("base64"), mimeType: "text/plain" } });
+  const draftNote = attachment("普通の下書き"), keep = attachment("残すメモ\n"), remove = attachment("外すメモ\n");
+  const item = { id: id(), text: "Old queued prompt", attachments: [remove, keep] };
+  const projectID = id(), threadID = id(), indexPath = join(root, "workspace.json"), path = join(root, "Project");
+  const ordinary = "Unsent draft beside the queue", updated = "Updated while signed out";
+  mkdirSync(path, { recursive: true });
+  writeFileSync(indexPath, JSON.stringify({ selectedProject: projectID, welcomeCompleted: true,
+    model: { provider: "local", model: "queue-fixture", endpoint, contextWindow: 8192 },
+    projects: [{ id: projectID, title: "Queue fixture", path, allowEdits: false, selectedConversation: threadID,
+      conversations: [{ id: threadID, title: "Waiting for follow-up", isDraft: false, archived: false,
+        composerText: ordinary, composerAttachments: [draftNote], queuedMessages: [item] }] }],
+  }), { mode: 0o600 });
+  const editorShows = expected => value("composer").includes("value=" + JSON.stringify(expected));
+  const removeID = file => "remove-attachment-" + file.id;
+  const has = identifier => tree().includes('id="' + identifier + '"');
+  const checkSaved = () => {
+    const state = JSON.parse(readFileSync(indexPath, "utf8"));
+    assert.equal(state.selectedProject, projectID);
+    assert.equal(state.projects[0].selectedConversation, threadID);
+    const thread = state.projects[0].conversations.find(t => t.id === threadID);
+    assert.equal(thread.composerText, ordinary);
+    assert.deepEqual(thread.composerAttachments, [draftNote]);
+    assert.deepEqual(thread.queuedMessages, [{ ...item, text: updated, attachments: [keep] }]);
+  };
+  await launch("resume-queue", root);
+  press("queue-item-actions-" + item.id);
+  await until(() => visible("queue-edit-" + item.id), "the queued item's Edit in Composer action");
+  dismiss("queue-edit-" + item.id);
+  await until(() => editorShows(item.text) && visible(removeID(keep)) && visible(removeID(remove)), "both same-named queued files");
+  press(removeID(remove));
+  await until(() => visible(removeID(keep)) && !has(removeID(remove)), "removal of the selected file");
+  await setField("composer", updated);
+  press("queue-update");
+  await until(() => editorShows(ordinary) && visible(removeID(draftNote)) && !has("key-input"), "return to the ordinary draft after Update");
+  checkSaved();
+  await quit();
+  await launch("resume-queue", root);
+  await until(() => editorShows(ordinary) && visible(removeID(draftNote)), "saved draft and queue after relaunch");
+  checkSaved();
+  press("resume-queue");
+  await until(() => visible("key-input") && !has("stop-message"), "credential entry on delivery");
+  checkSaved();
+  press("settings-nav-general");
+  await until(() => visible("settings-close"), "Settings Done button");
+  dismiss("settings-close");
+  await until(() => editorShows(ordinary) && !has("settings-close"), "the same draft after closing Settings");
+  await quit();
+  record("Without a stored key, Update saved the new text and the remaining same.txt bytes under the original queue ID. The draft and its own same.txt survived relaunch. Resume Queue opened credential entry.");
+}
+
 export async function verifyThreadActions(driver, { root, app, git, launch, quit, record }) {
   const { until, visible, value, tree, press, dismiss, setField, keyFor, focus, showMenu, checkCopy } = driver;
   const titleField = "sheet-field=Thread title";
@@ -45,8 +99,16 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   const has = id => tree().includes('id="' + id + '"');
   const row = id => "thread-row-" + id;
   async function context(id, action) {
-    await until(() => { showMenu(row(id)); return true; }, "right-click the target thread");
-    await until(() => visible(action), "thread context menu " + action);
+    const original = selected();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await until(() => { showMenu(row(id)); return true; }, "right-click the target thread");
+      try {
+        await until(() => visible(action), "thread context menu " + action, 4000);
+        return;
+      } catch (error) {
+        if (attempt || selected() !== original || tree().includes('role="AXMenu"')) throw error;
+      }
+    }
   }
   async function copy(id, field, expected) {
     await context(id, "thread-copy");
@@ -79,6 +141,11 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
     press("show-thread-archive");
     dismiss("close-thread-filters");
   }
+  async function archiveResponse(title, buttonID) {
+    await until(() => tree().includes(JSON.stringify('Archive thread "' + title + '"?')) &&
+      visible(buttonID), "archive confirmation for " + title);
+    dismiss(buttonID);
+  }
 
   await launch("model-settings", root);
   await until(() => composer(seed) && visible("remove-attachment-" + note.id), "saved draft with its note");
@@ -99,6 +166,12 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   const second = await stash(2);
   assert.deepEqual(entries().map(e => e.id), [second.id, first.id]);
   await setField("composer", prefix);
+  driver.openSettingsLink("pi-workspace://settings/general#archive-confirmation");
+  await until(() => value("archive-confirmation").includes("value=0"), "default archive preference");
+  press("archive-confirmation");
+  await until(() => index().confirmThreadArchive === true && visible("reset-archive-confirmation"), "saved archive confirmation preference");
+  dismiss("settings-close");
+  await until(() => composer(prefix) && !has("settings-close"), "returned from General");
   await quit();
   await launch("model-settings", root);
   await until(() => selected() === draftID && composer(prefix), "draft and stash after relaunch");
@@ -219,15 +292,42 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   await setField("composer", "Updated queued follow-up");
   press("conversation-title");
   await until(() => visible("archive-thread").includes("enabled=false"), "active thread archive disabled while editing its queue");
-  driver.escapeMenu();
+  driver.cancelMenu("conversation-title");
   await until(() => !has("archive-thread") && composer("Updated queued follow-up"), "queue edit survived closing menu");
   await context(mainID, "archive-thread");
   assert(visible("archive-thread").includes("enabled=true"));
+  const beforeArchive = readFileSync(indexPath);
   dismiss("archive-thread");
+  await archiveResponse("Main conversation", "cancel-archive-thread");
+  await until(() => !tree().includes(JSON.stringify('Archive thread "Main conversation"?')) && composer("Updated queued follow-up"),
+    "cancelled archive kept the queue editor");
+  assert.deepEqual(readFileSync(indexPath), beforeArchive);
+  await context(mainID, "archive-thread");
+  dismiss("archive-thread");
+  renameSync(backup, backup + ".saved");
+  try {
+    mkdirSync(backup);
+    writeFileSync(join(backup, "fixture-blocker"), "", { flag: "wx" });
+    await archiveResponse("Main conversation", "confirm-archive-thread");
+    await until(() => visible("retry-archive-thread") && value("archive-thread-error").includes("Main conversation"), "archive failure identified the clicked thread");
+    assert.deepEqual(readFileSync(indexPath), beforeArchive);
+    assert.equal(thread(mainID).archived, false);
+  } finally {
+    unlinkSync(join(backup, "fixture-blocker"));
+    rmdirSync(backup);
+    renameSync(backup + ".saved", backup);
+  }
+  dismiss("retry-archive-thread");
   await until(() => thread(mainID).archived && selected() === linkedID && composer("Updated queued follow-up"), "archiving another thread preserved the active edit");
   press("queue-update");
   await until(() => composer(followUp) && thread(linkedID).queuedMessages[0].text === "Updated queued follow-up", "queue update preserved the ordinary draft");
   assert.deepEqual(thread(linkedID).queuedMessages[0].attachments, [queuedNote]);
+  driver.openSettingsLink("pi-workspace://settings/general#archive-confirmation");
+  await until(() => value("archive-confirmation").includes("value=1"), "archive confirmation survived relaunch");
+  press("reset-archive-confirmation");
+  await until(() => !index().confirmThreadArchive && value("archive-confirmation").includes("value=0"), "archive reset to its default");
+  dismiss("settings-close");
+  await until(() => !has("settings-close") && composer(followUp), "returned from archive settings to the same thread");
   press("conversation-title");
   await until(() => visible("archive-thread"), "archive open conversation");
   dismiss("archive-thread");
@@ -256,5 +356,6 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
   assert.deepEqual(thread(linkedID).queuedMessages, [{ id: queueID, text: "Updated queued follow-up", attachments: [queuedNote] }]);
   assert(readFileSync(mainHistory.historyPath).equals(mainHistoryBytes), "The other thread's history changed.");
   await quit();
+  record("The saved archive preference named the clicked thread after relaunch. Cancel and a refused save left the index byte-identical, with another thread’s queue edit still open. Retry archived only the clicked thread. Reset restored immediate archiving in the title menu.");
   record("Right-click Copy returned each row's own Git path and branch plus the linked thread ID while the draft stayed selected. Rename, archive, restore and relaunch preserved the original Pi record bytes, unsent follow-up, checkout and the other draft. Pi's first-open thinking-level record was the only permitted append.");
 }

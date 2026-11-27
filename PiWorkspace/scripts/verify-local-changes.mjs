@@ -18,11 +18,12 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
   }
   commit(project, "tracked.txt", "base-marker");
   git(project, "worktree", "add", "-b", "topic", checkout, "main");
+  git(project, "remote", "add", "origin", "https://github.com/fixture/workspace.git");
   git(project, "config", "branch.topic.t3-merge-base-ref", "refs/heads/main");
   const first = commit(checkout, "one.txt", "topic-first-marker");
   git(checkout, "branch", "comparison", first);
-  git(checkout, "update-ref", "refs/remotes/origin/comparison", first);
   const last = commit(checkout, "two.txt", "topic-second-marker");
+  git(checkout, "update-ref", "refs/remotes/origin/comparison", last);
   write(checkout, "tracked.txt", "staged-marker");
   git(checkout, "add", "--", "tracked.txt");
   write(checkout, "tracked.txt", "worktree-marker");
@@ -56,9 +57,15 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
   await patch("+topic-second-marker");
   await choose("git-review-base", "git-review-base-automatic");
   await until(() => visible("git-review-file-one.txt"), "Automatic restored the first file");
-  await choose("git-review-base", "git-review-base-refs/remotes/origin/comparison");
-  await until(() => !has("git-review-file-one.txt") && visible("git-review-file-two.txt"), "remote-tracking base");
-  await choose("git-review-base", "git-review-base-automatic");
+  press("git-review-base");
+  const remoteSwitch = "git-review-base-remote-refs/heads/comparison";
+  await until(() => visible(remoteSwitch), "remote version for the local comparison branch");
+  press(remoteSwitch);
+  await until(() => value("git-review-base").includes("origin/comparison") && visible("git-review-file-tracked.txt") &&
+    !has("git-review-file-two.txt") && has(remoteSwitch), "cached remote base differs from the local branch; chooser stays open");
+  press(remoteSwitch);
+  await until(() => !value("git-review-base").includes("origin/comparison") && visible("git-review-file-two.txt"), "local version restored");
+  driver.dismiss("git-review-base-automatic");
   const gitfile = join(checkout, ".git");
   const mode = statSync(gitfile).mode & 0o777;
   try {
@@ -87,9 +94,11 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
   await patch("+refreshed-marker");
   await choose("git-review-scope", "git-review-commit-" + first);
   await patch("+topic-first-marker");
+  await until(() => driver.help("git-review-open-selected-commit").includes("https://github.com/fixture/workspace/commit/" + first), "first commit link");
   assert(!patchLines().includes("topic-second-marker"));
   await choose("git-review-scope", "git-review-commit-" + last);
   await patch("+topic-second-marker");
+  await until(() => driver.help("git-review-open-selected-commit").includes("https://github.com/fixture/workspace/commit/" + last), "second commit link");
   assert(!patchLines().includes("topic-first-marker"));
   press("thread-row-" + parent);
   await until(() => value("composer").includes("Keep the parent draft."), "parent checkout selected");
@@ -104,5 +113,5 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
   const saved = JSON.parse(readFileSync(index, "utf8")).projects[0];
   assert.equal(saved.selectedConversation, parent);
   assert.equal(saved.conversations.find(t => t.id === topic).composerText, "Keep the topic draft.");
-  record("Local and remote-tracking bases excluded the earlier commit. Refresh recovered after the Git file became readable. Staged and Unstaged showed different bytes from the same file. Refresh reread the untracked file. Each SHA displayed its own patch. Switching checkouts showed the parent's edit and kept both HEADs, staged and unstaged patches, and saved drafts.");
+  record("The selected branch and its cached remote pointed at different commits. The Remote switch changed the visible files and kept the chooser open. Each selected SHA displayed its own patch and full GitHub URL. Refresh recovered after Git access returned. Staged, unstaged and refreshed untracked patches matched their files. Both checkouts and drafts were preserved.");
 }

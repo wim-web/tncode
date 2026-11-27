@@ -54,7 +54,7 @@ export async function verifyConversationControls(driver, { root, app, credential
     await until(() => visible("transcript-message-" + history.latestID) && is("composer", draft), "selected Pi history and unfinished text");
     const selected = () => driver.selectedText("thread-find-selected-text");
     focus("composer");
-    keyFor("composer", 3, "cmd", "shift");
+    driver.menuItem("Search Threads");
     await until(() => focusIs("thread-search"), "sidebar search focused");
     await setField("thread-search", "Question fixture");
     await until(() => visible("thread-row-" + questionThread) && !has("thread-row-" + findThread), "distinct title finds the draft without Pi history");

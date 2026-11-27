@@ -87,6 +87,7 @@ async function runSwiftTests(environment) {
       SWIFTPM_MODULECACHE_OVERRIDE: join(workspace, ".build/module-cache"),
       PI_WORKSPACE_QUESTION_NODE: node,
       PI_PALETTE_NODE: node,
+      ...(app ? { PI_PROMPT_LINK_TEST_APP: resolve(app, "..") } : {}),
       PI_ATTACHMENT_TEST_ENDPOINT: `http://127.0.0.1:${server.address().port}/v1`,
       PI_ATTACHMENT_TEST_NODE: node,
       PI_ATTACHMENT_TEST_WORKER: worker,
