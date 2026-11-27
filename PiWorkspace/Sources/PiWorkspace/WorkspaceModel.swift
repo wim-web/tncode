@@ -2645,9 +2645,9 @@ final class WorkspaceModel: ObservableObject {
         return try await runGitMutation(operation)
     }
 
-    func generateCommitSubject(_ patch: String, in directory: String) async throws -> String {
+    func generateCommitSubject(_ patch: String, in directory: String, settings: ModelSettings) async throws -> String {
         guard let store else { throw WorkspaceError("Open a workspace before generating a commit message.") }
-        let config = try effectiveModel.validated()
+        let config = try settings.validated()
         try Task.checkCancellation()
         let worker = try makeProcess(store.config, directory)
         defer { worker.close() }

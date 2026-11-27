@@ -628,19 +628,24 @@ struct SourceControlView: View {
 
     private func generateAndCommit(_ paths: Set<String>, checkout: GitChangesCheckout) {
         let git = GitWorkspace(path: directory)
+        let settings = model.effectiveModel
         let revision = model.repositoryRevision
+        func verifyLocation() throws {
+            try Task.checkCancellation()
+            guard let project = model.project, let thread = model.conversation,
+                  WorkspaceFilesLocation(thread: thread, project: project) == location,
+                  model.repositoryRevision == revision else {
+                throw WorkspaceError("The checkout changed. Review the changes and try again.")
+            }
+        }
         error = nil
         commitGeneration = Task {
             defer { commitGeneration = nil }
             do {
                 let context = try await git.commitContext(paths: paths, checkout: checkout)
-                let subject = try await model.generateCommitSubject(context.patch, in: checkout.root)
-                try Task.checkCancellation()
-                guard let project = model.project, let thread = model.conversation,
-                      WorkspaceFilesLocation(thread: thread, project: project) == location,
-                      model.repositoryRevision == revision else {
-                    throw WorkspaceError("The checkout changed. Review the changes and try again.")
-                }
+                try verifyLocation()
+                let subject = try await model.generateCommitSubject(context.patch, in: checkout.root, settings: settings)
+                try verifyLocation()
                 try await model.performGitMutation {
                     try await git.commit(message: subject, paths: paths, generatedFrom: context)
                 }
