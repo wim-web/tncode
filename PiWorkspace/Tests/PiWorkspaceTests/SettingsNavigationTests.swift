@@ -487,6 +487,10 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.until("Restore is absent from Model settings") { fixture.element(restore) == nil }
         let modelField = try await fixture.waitForField("Project model ID") { $0.stringValue == "local-override" }
         try fixture.edit(modelField, to: "pending-project-model")
+        try await fixture.press("settings-nav-appearance")
+        try await fixture.activate("word-wrap")
+        try await fixture.press("settings-nav-diffs")
+        try await fixture.activate("hide-whitespace-changes")
         try await fixture.press("settings-nav-worktrees")
         try await fixture.activate("start-from-origin")
         try await fixture.expectControls("reset-start-from-origin")
@@ -507,6 +511,8 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: index), dirtyIndex)
         XCTAssertEqual(folder.stringValue, "/fixture/pending-project-start")
         XCTAssertFalse(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
+        XCTAssertFalse(fixture.defaults.bool(forKey: DiffPreferences.wordWrap))
+        XCTAssertFalse(fixture.defaults.bool(forKey: DiffPreferences.ignoreWhitespace))
 
         try await fixture.press(restore)
         try await fixture.activate("confirm-restore-device-defaults")
@@ -515,6 +521,8 @@ final class SettingsNavigationTests: XCTestCase {
         }
         XCTAssertTrue(fixture.model.settingsRequest === request)
         XCTAssertTrue(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
+        XCTAssertTrue(fixture.defaults.bool(forKey: DiffPreferences.wordWrap))
+        XCTAssertTrue(fixture.defaults.bool(forKey: DiffPreferences.ignoreWhitespace))
         try await fixture.press("settings-nav-model")
         _ = try await fixture.waitForField("Pending project edit") { $0.stringValue == "pending-project-model" }
         try await fixture.press("settings-nav-general")

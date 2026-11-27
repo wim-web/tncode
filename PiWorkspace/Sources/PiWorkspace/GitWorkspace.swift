@@ -401,9 +401,11 @@ struct GitWorkspace: Sendable {
         }
     }
 
-    func patch(for file: GitFileChange?, staged: Bool, cancellable: Bool = false) async throws -> String {
+    func patch(for file: GitFileChange?, staged: Bool, ignoringWhitespace: Bool = false,
+               cancellable: Bool = false) async throws -> String {
         let root = try await repositoryRoot()
         var arguments = ["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv"]
+        if ignoringWhitespace { arguments.append("--ignore-all-space") }
         let result: WorkspaceCommand.Capture
 
         if let file, file.isUntracked && !staged {

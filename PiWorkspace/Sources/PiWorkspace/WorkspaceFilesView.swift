@@ -375,11 +375,12 @@ private struct WorkspaceFilePreviewView: View {
     @State private var session: WorkspaceFileSaveSession?
     @State private var actionError: String?
     @State private var confirmDiscard = false
-    @State private var wraps = true
+    @State private var wrapOverride: Bool?
     @State private var reload = 0
     @State private var dismissedReveal: UUID?
     @AppStorage("files-render-markdown") private var rendersMarkdown = false
     @AppStorage("files-render-table") private var rendersTable = true
+    @AppStorage(DiffPreferences.wordWrap) private var defaultWordWrap = DiffPreferences.defaultWordWrap
 
     private struct ReadRequest: Equatable {
         let session: ObjectIdentifier?
@@ -388,6 +389,7 @@ private struct WorkspaceFilePreviewView: View {
     }
 
     private var draft: WorkspaceFileDraft? { session?.draft }
+    private var wraps: Bool { wrapOverride ?? defaultWordWrap }
 
     private var pathComponents: [String] { target.path.components(separatedBy: "/") }
 
@@ -536,7 +538,7 @@ private struct WorkspaceFilePreviewView: View {
                     .accessibilityIdentifier("files-copy-contents")
             }
             if canWrap {
-                Button(wraps ? "Disable Word Wrap" : "Enable Word Wrap") { wraps.toggle() }
+                Button(wraps ? "Disable Word Wrap" : "Enable Word Wrap") { wrapOverride = !wraps }
                     .accessibilityIdentifier("files-word-wrap")
             }
             Divider()

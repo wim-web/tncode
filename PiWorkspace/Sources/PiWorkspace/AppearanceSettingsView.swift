@@ -4,6 +4,7 @@ struct AppearanceSettingsView: View {
     @ObservedObject var settings: AppearanceSettings
     var settingsFocus: FocusState<SettingsFocus?>.Binding
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(DiffPreferences.wordWrap) private var wordWrap = DiffPreferences.defaultWordWrap
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -20,12 +21,26 @@ struct AppearanceSettingsView: View {
                     }
                 }
                 .settingsTarget(.chatWidth, focus: settingsFocus)
+                HStack {
+                    Toggle("Word wrap", isOn: $wordWrap)
+                        .help("Wrap long lines in diffs and file previews by default.")
+                        .settingsTarget(.wordWrap, focus: settingsFocus)
+                    if wordWrap != DiffPreferences.defaultWordWrap {
+                        Button("Reset") { wordWrap = DiffPreferences.defaultWordWrap }
+                            .accessibilityLabel("Reset word wrapping to default")
+                            .accessibilityIdentifier("reset-word-wrap")
+                    }
+                }
             }
             .pickerStyle(.menu)
             HStack {
-                Button("Restore Defaults", action: settings.restoreDefaults)
-                    .settingsTarget(.restoreAppearance, focus: settingsFocus)
-                    .disabled(settings.colorScheme == .system && settings.chatWidth == .comfortable)
+                Button("Restore Defaults") {
+                    settings.restoreDefaults()
+                    wordWrap = DiffPreferences.defaultWordWrap
+                }
+                .settingsTarget(.restoreAppearance, focus: settingsFocus)
+                .disabled(settings.colorScheme == .system && settings.chatWidth == .comfortable
+                          && wordWrap == DiffPreferences.defaultWordWrap)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)

@@ -1,6 +1,13 @@
 import AppKit
 import Combine
 
+enum DiffPreferences {
+    static let wordWrap = "wordWrap"
+    static let ignoreWhitespace = "diffIgnoreWhitespace"
+    static let defaultWordWrap = true
+    static let defaultIgnoreWhitespace = true
+}
+
 enum AppColorScheme: String, CaseIterable {
     case system, light, dark
 

@@ -272,7 +272,7 @@ extension GitWorkspace {
         return commits
     }
 
-    func changedFiles(in target: GitChangesTarget) async throws -> [GitChangesFile] {
+    func changedFiles(in target: GitChangesTarget, ignoringWhitespace: Bool = false) async throws -> [GitChangesFile] {
         let result = try await changesDiff(in: target, format: ["--name-status", "-z"])
         var fields = result.output.bytes.split(separator: 0, omittingEmptySubsequences: false).dropLast().makeIterator()
         var files: [GitChangesFile] = []
@@ -293,6 +293,10 @@ extension GitWorkspace {
             }
         }
 
+        if ignoringWhitespace, !files.isEmpty {
+            let visible = try await changedPathsIgnoringWhitespace(in: target)
+            files.removeAll { !visible.contains(Data($0.path.utf8)) }
+        }
         if target.after == nil {
             let others = try await run(["ls-files", "--others", "--exclude-standard", "-z"],
                                        in: target.checkout.root, cancellable: true)
@@ -305,14 +309,36 @@ extension GitWorkspace {
         return files
     }
 
-    func changesPatch(in target: GitChangesTarget, file: GitChangesFile?, files: [GitChangesFile]) async throws -> String {
+    private func changedPathsIgnoringWhitespace(in target: GitChangesTarget) async throws -> Set<Data> {
+        let result = try await changesDiff(in: target, format: ["--numstat", "-z", "--ignore-all-space"])
+        var fields = result.output.bytes.split(separator: 0, omittingEmptySubsequences: false).dropLast().makeIterator()
+        var paths: Set<Data> = []
+        while let field = fields.next() {
+            let columns = field.split(separator: 9, maxSplits: 2, omittingEmptySubsequences: false)
+            guard columns.count == 3 else { throw WorkspaceError.invalidOutput(command: "diff --numstat") }
+            if columns[2].isEmpty {
+                guard fields.next() != nil, let path = fields.next(), !path.isEmpty else {
+                    throw WorkspaceError.invalidOutput(command: "diff --numstat")
+                }
+                paths.insert(Data(path))
+            } else {
+                paths.insert(Data(columns[2]))
+            }
+        }
+        return paths
+    }
+
+    func changesPatch(in target: GitChangesTarget, file: GitChangesFile?, files: [GitChangesFile],
+                      ignoringWhitespace: Bool = false) async throws -> String {
         let limit = Self.patchLimit
+        let whitespaceOptions = ignoringWhitespace ? ["--ignore-all-space"] : []
         let tracked: WorkspaceCommand.Capture?
         if file?.isUntracked == true {
             tracked = nil
         } else {
             let paths = file.map { [$0.previousPath, $0.path].compactMap { $0 } } ?? []
-            tracked = try await changesDiff(in: target, format: ["--patch"], paths: paths, limit: limit)
+            tracked = try await changesDiff(in: target, format: ["--patch"] + whitespaceOptions,
+                                            paths: paths, limit: limit)
         }
         var data = tracked?.output.bytes ?? Data()
         var truncated = tracked?.output.truncated == true
@@ -322,8 +348,8 @@ extension GitWorkspace {
                 truncated = true
                 break
             }
-            let result = try await run(["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv",
-                                        "--no-index", "--", "/dev/null", "./" + item.path],
+            let result = try await run(["diff", "--patch", "--no-color", "--no-ext-diff", "--no-textconv"]
+                                       + whitespaceOptions + ["--no-index", "--", "/dev/null", "./" + item.path],
                                        in: target.checkout.root, outputLimit: limit - data.count,
                                        acceptedStatuses: [0, 1], cancellable: true)
             guard result.status == 0 || !result.output.bytes.isEmpty else {

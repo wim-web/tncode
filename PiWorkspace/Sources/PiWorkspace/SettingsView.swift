@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
     @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
     @AppStorage(TerminalPreference.confirmClose) private var confirmTerminalClose = TerminalPreference.defaultConfirmClose
+    @AppStorage(DiffPreferences.ignoreWhitespace) private var ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace
+    @AppStorage(DiffPreferences.wordWrap) private var wordWrap = DiffPreferences.defaultWordWrap
     @FocusState private var focus: SettingsFocus?
     @State private var search = SettingsSearch()
     @State private var modelDrafts: [UUID?: ModelSettingsDraft]
@@ -99,7 +101,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("restore-device-defaults")
                         .disabled(changedDeviceSettings.isEmpty)
                     }
-                    if [.general, .threads, .chat, .project, .worktrees, .usage, .archived, .about].contains(page) ||
+                    if [.general, .threads, .chat, .project, .diffs, .worktrees, .usage, .archived, .about].contains(page) ||
                         (page == .model && projectScopeUnavailable) {
                         Button("Done", action: closeSettings)
                             .accessibilityIdentifier("settings-close")
@@ -292,6 +294,17 @@ struct SettingsView: View {
             }
         case .sourceControl:
             CommitWritingSettingsView(model: model, settingsFocus: $focus)
+        case .diffs:
+            HStack {
+                Toggle("Hide whitespace changes", isOn: $ignoreWhitespace)
+                    .help("Ignore whitespace-only edits in the Changes panel by default.")
+                    .settingsTarget(.hideWhitespaceChanges, focus: $focus)
+                if ignoreWhitespace != DiffPreferences.defaultIgnoreWhitespace {
+                    Button("Reset") { ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace }
+                        .accessibilityLabel("Reset diff whitespace changes to default")
+                        .accessibilityIdentifier("reset-hide-whitespace-changes")
+                }
+            }
         case .worktrees:
             worktreeDirectorySetting
             Divider()
@@ -316,6 +329,8 @@ struct SettingsView: View {
         return [
             ("Color scheme", appearance.colorScheme != .system),
             ("Chat width", appearance.chatWidth != .comfortable),
+            ("Word wrap", wordWrap != DiffPreferences.defaultWordWrap),
+            ("Hide whitespace changes", ignoreWhitespace != DiffPreferences.defaultIgnoreWhitespace),
             ("Snooze options", workspace.effectiveSnoozeOptions != ThreadSnoozeSchedule.defaultOptions),
             ("Send shortcut", sendShortcut != .initial),
             ("Follow-up behavior", followUpBehavior != .initial),
@@ -338,6 +353,8 @@ struct SettingsView: View {
         if appearance.colorScheme != .system || appearance.chatWidth != .comfortable {
             appearance.restoreDefaults()
         }
+        if wordWrap != DiffPreferences.defaultWordWrap { wordWrap = DiffPreferences.defaultWordWrap }
+        if ignoreWhitespace != DiffPreferences.defaultIgnoreWhitespace { ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace }
         if sendShortcut != .initial { sendShortcut = .initial }
         if followUpBehavior != .initial { followUpBehavior = .initial }
         if confirmTerminalClose != TerminalPreference.defaultConfirmClose {

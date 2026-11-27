@@ -94,6 +94,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var gitMutationInProgress = false
     @Published private(set) var preparingWorktree = false
     @Published private(set) var repositoryRevision = 0
+    @Published var changesIgnoreWhitespaceOverride: Bool?
     @Published private(set) var composerSaveError: String?
     @Published private(set) var supportsImageInput = false
     @Published var showingQuitSaveFailure = false

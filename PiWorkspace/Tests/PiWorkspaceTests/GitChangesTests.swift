@@ -198,6 +198,155 @@ final class GitChangesTests: XCTestCase {
         XCTAssertTrue(rootPatch.contains("+first-marker"))
     }
 
+    func testWhitespaceFilteringUsesGitHunksInBothLinkedWorktrees() async throws {
+        let fixture = try ChangesFixture()
+        defer { fixture.remove() }
+        let clean = "indentation\nlet spacing = \"a b\"\nlet content = \"old text\"\n"
+        for (root, marker) in [(fixture.alpha, "alpha"), (fixture.beta, "beta")] {
+            try fixture.write(clean, at: "formatting.txt", in: root)
+            _ = try fixture.git(root, "add", "formatting.txt")
+            _ = try fixture.git(root, "commit", "-qm", "Formatting baseline", "--", "formatting.txt")
+            _ = try fixture.git(root, "branch", "formatting-base-" + marker)
+            try fixture.write("  indentation\nlet spacing = \"ab\"\nlet content = \"\(marker) commit  text\"\n",
+                              at: "formatting.txt", in: root)
+            _ = try fixture.git(root, "commit", "-qm", "Mixed edit", "--", "formatting.txt")
+            try fixture.write("\tindentation\nlet spacing = \"a  b\"\nlet content = \"\(marker) index  text\"\n",
+                              at: "formatting.txt", in: root)
+            _ = try fixture.git(root, "add", "formatting.txt")
+            try fixture.write("indentation\nlet spacing = \"ab \"\nlet content = \"\(marker) disk  text\"\n",
+                              at: "formatting.txt", in: root)
+            try fixture.write(" \t\n", at: "new-blank.txt", in: root)
+        }
+        let indexes = try [fixture.alpha, fixture.beta].map(fixture.index)
+        for (root, marker) in [(fixture.alpha, "alpha"), (fixture.beta, "beta")] {
+            let git = GitWorkspace(path: root.path)
+            let checkout = try await git.changesCheckout()
+            let commit = GitChangesCommit(id: try XCTUnwrap(checkout.head), subject: "Mixed edit")
+            let file = try await git.state().files.first { $0.path == "formatting.txt" }
+            for (scope, base, expected) in [
+                (GitChangesScope.changes, "refs/heads/formatting-base-" + marker, "disk"),
+                (.uncommitted, nil, "disk"),
+                (.commit(commit), nil, "commit")
+            ] {
+                let target = try await git.changesTarget(scope, checkout: checkout, selectedBase: base)
+                let files = try await git.changedFiles(in: target)
+                let selected = try XCTUnwrap(files.first { $0.path == "formatting.txt" })
+                let visible = try await git.changesPatch(in: target, file: selected, files: files)
+                let hidden = try await git.changesPatch(in: target, file: selected, files: files, ignoringWhitespace: true)
+                XCTAssertTrue(visible.contains("-let spacing = "))
+                XCTAssertFalse(hidden.contains("-let spacing = "), hidden)
+                XCTAssertFalse(hidden.contains("+let spacing = "), hidden)
+                XCTAssertTrue(hidden.contains("+++ b/formatting.txt\n@@ -1,3 +1,3 @@\n"), hidden)
+                XCTAssertTrue(hidden.contains("+let content = \"\(marker) \(expected)  text\""), hidden)
+                if scope == .uncommitted {
+                    let untracked = try XCTUnwrap(files.first { $0.path == "new-blank.txt" })
+                    let patch = try await git.changesPatch(in: target, file: untracked, files: files, ignoringWhitespace: true)
+                    XCTAssertTrue(patch.contains("+++ b/./new-blank.txt\n@@ -0,0 +1 @@\n+ \t\n"), patch)
+                }
+            }
+            for (staged, expected) in [(true, "index"), (false, "disk")] {
+                let patch = try await git.patch(for: try XCTUnwrap(file), staged: staged, ignoringWhitespace: true)
+                XCTAssertTrue(patch.contains("+let content = \"\(marker) \(expected)  text\""), patch)
+                XCTAssertFalse(patch.contains("+let spacing = "), patch)
+                XCTAssertFalse(patch.contains("-let spacing = "), patch)
+            }
+        }
+        XCTAssertEqual(try [fixture.alpha, fixture.beta].map(fixture.index), indexes)
+    }
+
+    @MainActor
+    func testOffscreenChangesDisplayPreferencesAndOwnership() async throws {
+        let fixture = try ChangesFixture()
+        defer { fixture.remove() }
+        let longLine = "+long-line-" + String(repeating: "unbroken", count: 20) + "-end"
+        try fixture.write(String(longLine.dropFirst()) + "\n", at: "untracked.txt", in: fixture.alpha)
+        try fixture.write("disk-base  \n", at: "disk.txt", in: fixture.alpha)
+        try fixture.write("disk-base\t\n", at: "disk.txt", in: fixture.beta)
+        let indexes = try [fixture.alpha, fixture.beta].map(fixture.index)
+        let alpha = Conversation(id: UUID(), title: "Alpha", location: .worktree(path: fixture.alpha.path, base: nil), isDraft: false)
+        let beta = Conversation(id: UUID(), title: "Beta", location: .worktree(path: fixture.beta.path, base: nil), isDraft: false)
+        let project = Project(id: UUID(), path: fixture.repo.path, title: "Display Fixture",
+                              conversations: [alpha, beta], selectedConversation: alpha.id)
+        let state = fixture.root.appendingPathComponent("workspace")
+        try WorkspaceStore(root: state).save(Workspace(projects: [project], selectedProject: project.id,
+                                                      model: ModelSettings(), welcomeCompleted: true))
+        let model = WorkspaceModel(root: state, keychainService: UUID().uuidString, credentialExists: { _ in false },
+                                   readCredential: { _ in nil },
+                                   makeProcess: { _, _ in throw WorkspaceError("Display fixture has no agent.") })
+        defer { model.shutdown() }
+        let ui = try ChangesReplay(model)
+        defer { ui.close() }
+
+        try await ui.press("toggle-changes")
+        try await ui.waitForText("git-review-word-wrap", containing: "Disable diff line wrapping")
+        try await ui.waitForText("git-review-whitespace", containing: "Show whitespace changes")
+        try await ui.press("git-review-file-untracked-untracked.txt")
+        try await ui.waitForPatch(longLine)
+        let wrapped = try XCTUnwrap(ui.patchLineFrame(longLine))
+        let appearanceLink = try XCTUnwrap(SettingsDeepLink(url: URL(string: "pi-workspace://settings/appearance#word-wrap")!))
+        let settingsRequest = SettingsRequest(page: appearanceLink.page, anchor: appearanceLink.anchor, projectID: nil)
+        let settings = try ChangesReplay(model, settingsRequest: settingsRequest, sharedDefaults: ui.defaults)
+        defer { settings.close() }
+        try await settings.press("word-wrap")
+        try await ui.waitForText("git-review-word-wrap", containing: "Enable diff line wrapping")
+        try await ui.wait("unwrapped by the Appearance setting") {
+            (ui.patchLineFrame(longLine)?.height ?? .infinity) < wrapped.height
+        }
+        try await settings.press("reset-word-wrap")
+        try await ui.wait("wrapped by the restored Appearance setting") { ui.patchLineFrame(longLine)?.height == wrapped.height }
+        try await ui.press("git-review-word-wrap")
+        try await ui.wait("single rendered row") { (ui.patchLineFrame(longLine)?.height ?? .infinity) < wrapped.height }
+        let unwrapped = try XCTUnwrap(ui.patchLineFrame(longLine))
+        XCTAssertGreaterThan(wrapped.height, unwrapped.height * 2)
+        try await ui.press("git-review-word-wrap")
+        try await ui.wait("wrapped rendered row") { ui.patchLineFrame(longLine)?.height == wrapped.height }
+
+        try await ui.press("git-review-scope")
+        try await ui.press("git-review-scope-uncommitted")
+        try await ui.press("git-file-disk.txt")
+        try await ui.waitForText("git-review-empty", containing: "No changes to display")
+        let diffLink = try XCTUnwrap(SettingsDeepLink(url: URL(string: "pi-workspace://settings/diffs#hide-whitespace-changes")!))
+        settingsRequest.navigate(to: diffLink.page, anchor: diffLink.anchor, projectID: nil)
+        try await settings.press("hide-whitespace-changes")
+        try await ui.waitForPatch("+disk-base  ")
+        try await settings.press("reset-hide-whitespace-changes")
+        try await ui.waitForText("git-review-empty", containing: "No changes to display")
+        try await ui.press("git-include-disk.txt")
+        try await ui.waitForText("git-selection-count", containing: "5 of 6 selected")
+        let location = try XCTUnwrap(WorkspaceFilesLocation(thread: alpha, project: project))
+        let draft = model.fileSaves.acquire(WorkspaceFileTarget(location: location, path: "index.txt"))
+        defer { draft.discard(); model.fileSaves.release(draft) }
+        await draft.refresh()
+        draft.edit("keep this unsaved edit\n", from: try XCTUnwrap(draft.editorSource))
+        try fixture.write("index-edited\nexternal edit\n", at: "index.txt", in: fixture.alpha)
+        try await ui.press("git-review-whitespace")
+        try await ui.waitForPatch("+disk-base  ")
+        XCTAssertTrue(ui.defaults.bool(forKey: DiffPreferences.ignoreWhitespace))
+        try await ui.waitForText("git-selection-count", containing: "5 of 6 selected")
+        try await ui.press("git-review-whitespace")
+        try await ui.waitForText("git-review-empty", containing: "No changes to display")
+
+        try await ui.press("git-review-word-wrap")
+        try await ui.press("git-review-whitespace")
+        try await ui.press("git-refresh")
+        try await ui.press("thread-row-" + beta.id.uuidString)
+        try await ui.press("toggle-changes")
+        try await ui.waitForText("git-review-head", containing: "topic-beta")
+        try await ui.waitForText("git-review-word-wrap", containing: "Disable diff line wrapping")
+        try await ui.waitForText("git-review-whitespace", containing: "Hide whitespace changes")
+        try await ui.press("git-review-file-disk.txt")
+        try await ui.waitForPatch("+disk-base\t")
+        XCTAssertFalse(ui.text().contains(longLine))
+        try await ui.press("git-review-whitespace")
+        try await ui.waitForText("git-review-empty", containing: "No changes to display")
+        XCTAssertNil(ui.element("git-review-file-disk.txt"))
+        XCTAssertEqual(draft.draft?.text, "keep this unsaved edit\n")
+        XCTAssertEqual(try String(contentsOf: fixture.alpha.appendingPathComponent("index.txt"), encoding: .utf8),
+                       "index-edited\nexternal edit\n")
+        XCTAssertEqual(try [fixture.alpha, fixture.beta].map(fixture.index), indexes)
+        print("Offscreen Changes row height was \(unwrapped.height) pt unwrapped and \(wrapped.height) pt wrapped.")
+    }
+
     @MainActor
     func testNativeChangesComparisonReplay() async throws {
         let fixture = try ChangesFixture()
@@ -446,21 +595,29 @@ private final class ChangesReplay {
     private let host: NSHostingView<AnyView>
     private let pasteboard = NSPasteboard.withUniqueName()
     private let suite = "dev.piworkspace.changes.\(UUID())"
-    private let defaults: UserDefaults
+    let defaults: UserDefaults
 
-    init(_ model: WorkspaceModel, openURL: OpenURLAction) throws {
+    init(_ model: WorkspaceModel, openURL: OpenURLAction? = nil,
+         settingsRequest: SettingsRequest? = nil, sharedDefaults: UserDefaults? = nil) throws {
         policy = app.activationPolicy()
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults = try XCTUnwrap(sharedDefaults ?? UserDefaults(suiteName: suite))
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()
         let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2400, y: 0)
         window = ChangesReplayPanel(contentRect: NSRect(origin: origin, size: CGSize(width: 1200, height: 800)),
                                     styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        host = NSHostingView(rootView: AnyView(WorkspaceView(model: model, chatWidthMode: .comfortable,
-                                                             browserDefaults: defaults, workspacePasteboard: pasteboard)
-            .defaultAppStorage(defaults)
-            .environment(\.openURL, openURL)))
+        let content: AnyView
+        if let settingsRequest {
+            content = AnyView(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+                                           browserDefaults: defaults, request: settingsRequest,
+                                           pasteboard: pasteboard, openWelcome: {}))
+        } else {
+            content = AnyView(WorkspaceView(model: model, chatWidthMode: .comfortable,
+                                            browserDefaults: defaults, workspacePasteboard: pasteboard))
+        }
+        host = NSHostingView(rootView: AnyView(content.defaultAppStorage(defaults)
+            .environment(\.openURL, openURL ?? OpenURLAction { _ in .discarded })))
         host.sizingOptions = []
         window.contentView = host
         window.setFrameOrigin(origin)
@@ -538,8 +695,8 @@ private final class ChangesReplay {
         XCTAssertNil(element("git-review-scope"))
     }
 
-    func waitForText(_ id: String, containing marker: String) async throws {
-        try await wait("\(id) containing \(marker)") {
+    func waitForText(_ id: String, containing marker: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        try await wait("\(id) containing \(marker)", file: file, line: line) {
             guard let node = element(id) else { return false }
             return text(node).contains(marker)
         }
@@ -549,12 +706,19 @@ private final class ChangesReplay {
         try await wait("patch line \(marker)") { text().contains(marker) }
     }
 
-    func wait(_ label: String, condition: () -> Bool) async throws {
+    func patchLineFrame(_ line: String) -> NSRect? {
+        host.layoutSubtreeIfNeeded()
+        return descendants(host).lazy.compactMap { $0 as? NSAccessibilityProtocol }.first {
+            [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.accessibilityValue() as? String].contains(line)
+        }?.accessibilityFrame()
+    }
+
+    func wait(_ label: String, file: StaticString = #filePath, line: UInt = #line, condition: () -> Bool) async throws {
         for _ in 0..<200 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTFail("Timed out waiting for \(label). AX text:\n\(text())")
+        XCTFail("Timed out waiting for \(label). AX text:\n\(text())", file: file, line: line)
         throw WorkspaceError("Timed out waiting for \(label).")
     }
 

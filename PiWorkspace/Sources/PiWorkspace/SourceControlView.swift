@@ -7,6 +7,9 @@ struct SourceControlView: View {
     let openBranch: () -> Void
     let copyBranch: (String) -> Void
     let openFile: (String) -> Void
+    @AppStorage(DiffPreferences.wordWrap) private var defaultWordWrap = DiffPreferences.defaultWordWrap
+    @AppStorage(DiffPreferences.ignoreWhitespace) private var defaultIgnoreWhitespace = DiffPreferences.defaultIgnoreWhitespace
+    @State private var wordWrapOverride: Bool?
     @State private var state: GitRepositoryState?
     @State private var selected: GitFileChange?
     @State private var excludedPaths: Set<String> = []
@@ -18,7 +21,7 @@ struct SourceControlView: View {
     @State private var refresh = 0
     @State private var scope = GitChangesScope.changes
     @State private var baseRef: String?
-    @State private var comparisonFileID: String?
+    @State private var comparisonSelection: GitChangesFile?
     @State private var scopeRevision = 0
     @State private var fileRevision = 0
     @State private var chooser: Chooser?
@@ -58,6 +61,7 @@ struct SourceControlView: View {
         let scope: GitChangesScope
         let baseRef: String?
         let scopeRevision: Int
+        let ignoringWhitespace: Bool
     }
 
     private struct Review {
@@ -71,6 +75,7 @@ struct SourceControlView: View {
         let workingFile: GitFileChange?
         let stage: Stage
         let fileRevision: Int
+        let hasFileSelection: Bool
     }
 
     private var request: ReadRequest {
@@ -79,6 +84,8 @@ struct SourceControlView: View {
 
     private var directory: String { location.directory }
     private var busy: Bool { model.operationsInProgress || commitGeneration != nil }
+    private var wraps: Bool { wordWrapOverride ?? defaultWordWrap }
+    private var ignoringWhitespace: Bool { model.changesIgnoreWhitespaceOverride ?? defaultIgnoreWhitespace }
 
     private var checkout: GitChangesCheckout? {
         checkoutResult?.0 == request ? checkoutResult?.1 : nil
@@ -92,7 +99,7 @@ struct SourceControlView: View {
     private var reviewRequest: ReviewRequest? {
         guard checkout != nil else { return nil }
         return ReviewRequest(key: request, scope: scope, baseRef: scope == .changes ? baseRef : nil,
-                             scopeRevision: scopeRevision)
+                             scopeRevision: scopeRevision, ignoringWhitespace: ignoringWhitespace)
     }
 
     private var review: Review? {
@@ -101,13 +108,14 @@ struct SourceControlView: View {
     }
 
     private var reviewFile: GitChangesFile? {
-        review?.files.first { $0.id == (scope == .uncommitted ? selected?.id : comparisonFileID) }
+        let selectedID = scope == .uncommitted ? selected?.id : comparisonSelection?.id
+        return review?.files.first { $0.id == selectedID }
     }
 
     private var diffRequest: DiffRequest? {
         guard let reviewRequest, review != nil else { return nil }
         return DiffRequest(key: reviewRequest, reviewFile: reviewFile, workingFile: selected, stage: stage,
-                           fileRevision: fileRevision)
+                           fileRevision: fileRevision, hasFileSelection: selected != nil || comparisonSelection != nil)
     }
 
     var body: some View {
@@ -205,6 +213,16 @@ struct SourceControlView: View {
                     commitLink(commit, id: "git-review-open-selected-commit")
                 }
                 Spacer()
+                let wrapHelp = wraps ? "Disable line wrapping" : "Enable line wrapping"
+                diffToggle(wraps ? "Disable diff line wrapping" : "Enable diff line wrapping",
+                           help: wrapHelp, icon: "text.word.spacing", id: "git-review-word-wrap", active: wraps) {
+                    wordWrapOverride = !wraps
+                }
+                let whitespaceLabel = ignoringWhitespace ? "Show whitespace changes" : "Hide whitespace changes"
+                diffToggle(whitespaceLabel, help: whitespaceLabel, icon: "paragraphsign",
+                           id: "git-review-whitespace", active: ignoringWhitespace) {
+                    model.changesIgnoreWhitespaceOverride = !ignoringWhitespace
+                }
             }
             if scope == .changes {
                 let head = checkout?.headLabel ?? state?.branch ?? "HEAD"
@@ -226,6 +244,21 @@ struct SourceControlView: View {
         }
         .font(.caption)
         .padding(8)
+    }
+
+    private func diffToggle(_ label: String, help: String, icon: String, id: String, active: Bool,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .frame(width: 22, height: 20)
+                .background(active ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityValue(active ? "On" : "Off")
+        .accessibilityIdentifier(id)
     }
 
     private var baseButton: some View {
@@ -344,7 +377,7 @@ struct SourceControlView: View {
 
     private func selectScope(_ next: GitChangesScope) {
         scope = next
-        comparisonFileID = nil
+        comparisonSelection = nil
         selected = nil
         stage = .all
         scopeRevision += 1
@@ -363,11 +396,11 @@ struct SourceControlView: View {
                 ForEach(files) { file in
                     let label = file.previousPath.map { "\($0) → \(file.path)" } ?? file.path
                     choice("\(file.status)  \(label)", id: "git-review-file-" + (file.isUntracked ? "untracked-" : "") + file.path) {
-                        comparisonFileID = file.id
+                        comparisonSelection = file
                         fileRevision += 1
                     }
                     .padding(4)
-                    .background(comparisonFileID == file.id ? Color.primary.opacity(0.08) : .clear,
+                    .background(comparisonSelection?.id == file.id ? Color.primary.opacity(0.08) : .clear,
                                 in: RoundedRectangle(cornerRadius: 5))
                 }
             }
@@ -379,6 +412,7 @@ struct SourceControlView: View {
     private func files(_ state: GitRepositoryState) -> some View {
         let paths = Set(state.files.map(\.path))
         let trackedPaths = Set(state.files.filter { $0.indexStatus != "?" }.map(\.path))
+        let selectionCount = "\(paths.subtracting(excludedPaths).count) of \(paths.count) selected"
         return VStack(alignment: .leading, spacing: 0) {
             if !paths.isEmpty {
                 HStack {
@@ -387,8 +421,10 @@ struct SourceControlView: View {
                         .disabled(busy)
                         .accessibilityIdentifier("git-include-all")
                     Spacer()
-                    Text("\(paths.subtracting(excludedPaths).count) of \(paths.count) selected")
+                    Text(selectionCount)
                         .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(selectionCount)
                         .accessibilityIdentifier("git-selection-count")
                 }
                 .font(.caption)
@@ -498,7 +534,7 @@ struct SourceControlView: View {
 
     private var diffHeader: some View {
         HStack {
-            if let path = selected?.path ?? reviewFile?.path {
+            if let path = selected?.path ?? comparisonSelection?.path {
                 if managesWorkingTree, let relative = state?.workspacePath(for: path) {
                     Button { openFile(relative) } label: {
                         Text(path).lineLimit(1).truncationMode(.middle)
@@ -511,7 +547,7 @@ struct SourceControlView: View {
                 }
                 Button {
                     selected = nil
-                    comparisonFileID = nil
+                    comparisonSelection = nil
                     fileRevision += 1
                 } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
@@ -541,7 +577,7 @@ struct SourceControlView: View {
     }
 
     private var patchContent: some View {
-        ScrollView([.horizontal, .vertical]) {
+        Group {
             if checkoutError?.0 == request, let message = checkoutError?.1 {
                 reviewFailure(message)
             } else if let reviewRequest, reviewError?.0 == reviewRequest, let message = reviewError?.1 {
@@ -552,9 +588,13 @@ struct SourceControlView: View {
                 if patch.isEmpty {
                     Text("No changes to display").font(.callout).foregroundStyle(.secondary)
                         .padding(10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("No changes to display")
                         .accessibilityIdentifier("git-review-empty")
                 } else {
-                    patchLines(patch)
+                    ScrollView(wraps ? .vertical : [.horizontal, .vertical]) {
+                        patchLines(patch)
+                    }
                 }
             } else {
                 ProgressView().controlSize(.small)
@@ -573,18 +613,20 @@ struct SourceControlView: View {
     }
 
     private func patchLines(_ patch: String) -> some View {
-        let lines = patch.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = patch.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false)
         return LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(lines.indices, id: \.self) { index in
-                let line = lines[index]
+                let rawLine = lines[index]
+                let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine
                 Text(line.isEmpty ? " " : String(line))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(diffColor(line))
-                    .fixedSize()
+                    .foregroundStyle(diffColor(line.first))
+                    .fixedSize(horizontal: !wraps, vertical: true)
                     .textSelection(.enabled)
             }
         }
         .padding(9)
+        .frame(maxWidth: wraps ? .infinity : nil, alignment: .leading)
         .accessibilityIdentifier("git-patch")
         .id(diffRequest)
     }
@@ -660,8 +702,8 @@ struct SourceControlView: View {
         }
     }
 
-    private func diffColor(_ line: Substring) -> Color {
-        switch line.first {
+    private func diffColor(_ prefix: Unicode.Scalar?) -> Color {
+        switch prefix {
         case "+": .green
         case "-": .red
         case "@": .secondary
@@ -718,7 +760,7 @@ struct SourceControlView: View {
         do {
             let git = GitWorkspace(path: key.key.location)
             let target = try await git.changesTarget(key.scope, checkout: checkout, selectedBase: key.baseRef)
-            let files = try await git.changedFiles(in: target)
+            let files = try await git.changedFiles(in: target, ignoringWhitespace: key.ignoringWhitespace && key.scope != .uncommitted)
             guard !Task.isCancelled, key == reviewRequest else { return }
             reviewResult = (key, Review(target: target, files: files))
             reviewError = nil
@@ -734,12 +776,14 @@ struct SourceControlView: View {
             let git = GitWorkspace(path: key.key.key.location)
             let patch: String
             if key.key.scope == .uncommitted && key.stage != .all {
-                patch = try await git.patch(for: key.workingFile, staged: key.stage == .staged, cancellable: true)
+                patch = try await git.patch(for: key.workingFile, staged: key.stage == .staged,
+                                            ignoringWhitespace: key.key.ignoringWhitespace, cancellable: true)
                 try await git.verifyChangesCheckout(review.target.checkout)
-            } else if key.key.scope == .uncommitted && key.workingFile != nil && key.reviewFile == nil {
+            } else if key.hasFileSelection && key.reviewFile == nil {
                 patch = ""
             } else {
-                patch = try await git.changesPatch(in: review.target, file: key.reviewFile, files: review.files)
+                patch = try await git.changesPatch(in: review.target, file: key.reviewFile, files: review.files,
+                                                   ignoringWhitespace: key.key.ignoringWhitespace)
             }
             guard !Task.isCancelled, key == diffRequest else { return }
             patchResult = (key, patch)

@@ -3,7 +3,7 @@ import Foundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, threads, appearance, chat, project, model, sourceControl = "source-control"
-    case worktrees, usage, browser, archived, about
+    case diffs, worktrees, usage, browser, archived, about
 
     var id: String { rawValue }
 
@@ -16,6 +16,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .project: "Project Overview"
         case .model: "Model Settings"
         case .sourceControl: "Source Control"
+        case .diffs: "Diffs & pull requests"
         case .worktrees: "Worktrees"
         case .usage: "Usage"
         case .browser: "Browser Settings"
@@ -33,6 +34,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .project: "folder"
         case .model: "cpu"
         case .sourceControl: "arrow.triangle.branch"
+        case .diffs: "doc.text"
         case .worktrees: "arrow.triangle.branch"
         case .usage: "chart.bar"
         case .browser: "globe"
@@ -58,6 +60,8 @@ enum SettingsAnchor: String {
     case colorScheme = "appearance-color-scheme"
     case chatWidth = "appearance-chat-width"
     case restoreAppearance = "appearance-restore-defaults"
+    case wordWrap = "word-wrap"
+    case hideWhitespaceChanges = "hide-whitespace-changes"
     case sendShortcut = "send-shortcut"
     case followUpBehavior = "follow-up-behavior"
     case scope = "model-settings-scope"
@@ -84,6 +88,8 @@ enum SettingsDeepLink: Equatable {
     case page(SettingsPage)
     case archiveConfirmation
     case terminalCloseConfirmation
+    case wordWrap
+    case hideWhitespaceChanges
     case archivedThreads
     case licenses
     case version
@@ -92,7 +98,8 @@ enum SettingsDeepLink: Equatable {
     private static let pages: [String: SettingsPage] = [
         "": .general, "/": .general, "/general": .general, "/threads": .threads,
         "/appearance": .appearance, "/chat": .chat, "/model": .model, "/source-control": .sourceControl,
-        "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser, "/archived": .archived, "/about": .about
+        "/diffs": .diffs, "/worktrees": .worktrees, "/usage": .usage, "/browser": .browser,
+        "/archived": .archived, "/about": .about
     ]
 
     static func handles(_ url: URL) -> Bool {
@@ -117,6 +124,10 @@ enum SettingsDeepLink: Equatable {
             self = .archiveConfirmation
         case ("settings", "/general#terminal-close-confirmation"):
             self = .terminalCloseConfirmation
+        case ("settings", "/appearance#word-wrap"):
+            self = .wordWrap
+        case ("settings", "/diffs#hide-whitespace-changes"):
+            self = .hideWhitespaceChanges
         case ("settings", "/archived#archive"):
             self = .archivedThreads
         case ("settings", _):
@@ -140,6 +151,8 @@ enum SettingsDeepLink: Equatable {
         switch self {
         case .page(let page): page
         case .archiveConfirmation, .terminalCloseConfirmation: .general
+        case .wordWrap: .appearance
+        case .hideWhitespaceChanges: .diffs
         case .archivedThreads: .archived
         case .licenses, .version: .about
         case .project: .project
@@ -152,6 +165,8 @@ enum SettingsDeepLink: Equatable {
         case .version: .appVersion
         case .archiveConfirmation: .archiveConfirmation
         case .terminalCloseConfirmation: .terminalCloseConfirmation
+        case .wordWrap: .wordWrap
+        case .hideWhitespaceChanges: .hideWhitespaceChanges
         case .archivedThreads: .archive
         default: nil
         }
@@ -279,7 +294,8 @@ struct SettingsSearch {
         .init(page: .appearance, title: "Appearance", keywords: "visual display theme"),
         .init(page: .appearance, anchor: .colorScheme, title: "Color scheme", keywords: "theme light dark system"),
         .init(page: .appearance, anchor: .chatWidth, title: "Chat width", keywords: "conversation composer comfortable wide full"),
-        .init(page: .appearance, anchor: .restoreAppearance, title: "Restore Defaults", keywords: "reset appearance color width"),
+        .init(page: .appearance, anchor: .wordWrap, title: "Word wrap", keywords: "long lines code diffs file previews"),
+        .init(page: .appearance, anchor: .restoreAppearance, title: "Restore Defaults", keywords: "reset appearance color width wrap"),
         .init(page: .chat, title: "Chat", keywords: "conversation composer follow-ups"),
         .init(page: .chat, anchor: .sendShortcut, title: "Send shortcut", keywords: "enter return command ctrl multiline prompt new line composer"),
         .init(page: .chat, anchor: .followUpBehavior, title: "Follow-up behavior", keywords: "queue steer running turn send default behavior composer"),
@@ -299,6 +315,9 @@ struct SettingsSearch {
         .init(page: .sourceControl, title: "Source Control", keywords: "git commits"),
         .init(page: .sourceControl, anchor: .commitWritingStyle, title: "Commit writing style", keywords: "git repository conventional commits custom instructions"),
         .init(page: .sourceControl, anchor: .commitWriterModel, title: "Source control writer model", keywords: "git commit model provider inheritance override"),
+        .init(page: .diffs, title: "Diffs & pull requests", keywords: "git changes"),
+        .init(page: .diffs, anchor: .hideWhitespaceChanges, title: "Hide whitespace changes",
+              keywords: "ignore white space only edits diff compare"),
         .init(page: .worktrees, title: "Worktrees", keywords: "checkout storage"),
         .init(page: .worktrees, anchor: .worktreeLocation, title: "Worktree location", keywords: "folder directory path drive external disk"),
         .init(page: .worktrees, anchor: .startFromRemote, title: "Start from remote", keywords: "new worktrees default origin upstream branch fetch"),
