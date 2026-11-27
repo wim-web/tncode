@@ -696,6 +696,7 @@ struct WorkspaceView: View {
                     .accessibilityIdentifier("welcome-add-project")
                     .disabled(model.operationsInProgress)
             }
+            WelcomeProjectsSection(model: model)
             if !returning, let error = model.error { Text(error).foregroundStyle(.red) }
             Button(returning ? "Close" : ready ? "Start" : "Start without an agent", action: model.finishWelcome)
                 .buttonStyle(.borderedProminent)

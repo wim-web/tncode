@@ -1025,6 +1025,45 @@ final class WorkspaceModel: ObservableObject {
         try registerProject(folder, request: request)
     }
 
+    func registerDiscoveredPiProjects(_ candidates: [PiHistoryDiscovery.Candidate]) throws {
+        try checkCanOpenProject()
+        var registered = Set(workspace.projects.compactMap { PiHistoryDiscovery.FolderID($0.path) })
+        var updated = workspace
+        for candidate in candidates where registered.insert(candidate.id).inserted {
+            let folder = try candidate.checkedFolder()
+            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+        }
+        try persist(updated)
+    }
+
+    func openDiscoveredPiProject(_ candidate: PiHistoryDiscovery.Candidate) throws {
+        try checkCanOpenProject()
+        let folder = try candidate.checkedFolder()
+        var updated = workspace
+        let index: Int
+        if let existing = updated.projects.firstIndex(where: { PiHistoryDiscovery.FolderID($0.path) == candidate.id }) {
+            index = existing
+            updated.projects[index].detached = false
+        } else {
+            index = updated.projects.count
+            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+        }
+        let previous = project
+        if !updated.projects[index].conversations.contains(where: { $0.id == updated.projects[index].selectedConversation }) {
+            updated.projects[index].openSavedDraft()
+        }
+        updated.selectedProject = updated.projects[index].id
+        updated.welcomeCompleted = true
+        try persist(updated)
+        showingWelcome = false
+        if previous?.id != project?.id || previous?.selectedConversation != conversation?.id ||
+            process == nil || failedStartupDraftProject != nil {
+            failedStartupDraftProject = nil
+            showArchive = conversation?.archived == true
+            connect()
+        }
+    }
+
     func openDroppedProjects(_ urls: [URL]) throws -> Bool {
         try checkCanOpenProject()
         var opened = false
