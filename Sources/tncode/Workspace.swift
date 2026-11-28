@@ -492,11 +492,18 @@ struct Workspace: Codable {
     var threadLinkID: UUID?
     var snoozedShelfExpanded: Bool?
     var snoozeOptions: [ThreadSnoozeSchedule.Option]?
+    var favoriteModels: [FavoriteModel]?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
     var effectiveSnoozeOptions: [ThreadSnoozeSchedule.Option] {
         snoozeOptions ?? ThreadSnoozeSchedule.defaultOptions
     }
+}
+
+/// A model starred in the composer's model picker.
+struct FavoriteModel: Codable, Equatable {
+    let account: String
+    let model: String
 }
 
 struct PendingConversationHistory: Codable {

@@ -297,10 +297,19 @@
 
 /* ComposerModelPicker.swift */
 "Search models…" = "モデルを検索…";
-"No matching models." = "一致するモデルはありません。";
-"Use Default" = "デフォルトを使用";
-"Model Settings" = "モデル設定";
 "Choose model" = "モデルを選択";
+"Favorites" = "お気に入り";
+"No favorites yet" = "お気に入りはまだありません";
+"No models found" = "モデルが見つかりません";
+"Open provider setup" = "プロバイダーのセットアップを開く";
+"Add to favorites" = "お気に入りに追加";
+"Remove from favorites" = "お気に入りから削除";
+"Model picker is disabled" = "モデルの選択は無効になっています";
+"Effort" = "推論レベル";
+"No effort levels" = "推論レベルはありません";
+"Permissions: %@" = "権限: %@";
+"%@ is unavailable in this thread. Start a new thread to switch providers." = "このスレッドでは %@ を利用できません。プロバイダーを切り替えるには新しいスレッドを開始してください。";
+"%@: Not ready. %@" = "%1$@: 準備ができていません。%2$@";
 
 /* ComposerStashView.swift */
 "Stash" = "退避";

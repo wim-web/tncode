@@ -108,7 +108,7 @@ struct WorkspaceView: View {
 
     private struct ComposerModelPresentation {
         let scope: DraftProjectScope
-        let options: [ComposerModelOption]
+        var providers: [ComposerModelProvider]
     }
 
     private struct ComposerModelAnchor: PreferenceKey {
@@ -289,7 +289,8 @@ struct WorkspaceView: View {
                 }
             }
             .onChange(of: model.canChooseComposerModel) { _, canChoose in
-                if !canChoose { composerModelPicker = nil }
+                // A pick reconnects the thread; the picker stays open through it, as T3 Code's docked picker does.
+                if !canChoose && model.phase != .connecting { composerModelPicker = nil }
             }
             .onChange(of: model.showingSettings) { _, showing in
                 if showing { composerModelPicker = nil }
@@ -3281,7 +3282,6 @@ struct WorkspaceView: View {
         }
         .frame(maxWidth: .infinity)
         .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.composer: $0] }
-        .anchorPreference(key: ComposerModelAnchor.self, value: .bounds) { $0 }
     }
 
     private func composerContextStrip(_ project: Project, _ thread: Conversation, width: CGFloat,
@@ -3543,10 +3543,12 @@ struct WorkspaceView: View {
 
     private var composerModelButton: some View {
         let settings = model.effectiveModel
-        let title = settings.thinkingLevel.map { "\(settings.displayModel) \($0.label)" } ?? settings.displayModel
+        let name = model.effectiveModelName
+        let title = settings.thinkingLevel.map { "\(name) \($0.label)" } ?? name
         return Button {
+            if composerModelPicker != nil { return closeComposerModelPicker() }
             guard model.canChooseComposerModel, let scope = model.draftProjectScope else { return }
-            composerModelPicker = ComposerModelPresentation(scope: scope, options: model.composerModelOptions())
+            composerModelPicker = ComposerModelPresentation(scope: scope, providers: model.composerModelProviders())
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: settings.provider.symbolName)
@@ -3554,7 +3556,7 @@ struct WorkspaceView: View {
                     .frame(width: 16, height: 16)
                     .accessibilityHidden(true)
                 HStack(spacing: 4) {
-                    Text(settings.displayModel)
+                    Text(name)
                         .foregroundStyle(palette.foreground.opacity(0.8))
                     if let level = settings.thinkingLevel {
                         Text(level.label)
@@ -3570,34 +3572,43 @@ struct WorkspaceView: View {
         .accessibilityIdentifier("active-model")
         .buttonStyle(T3ChipButtonStyle())
         .disabled(!model.canChooseComposerModel)
+        .anchorPreference(key: ComposerModelAnchor.self, value: .bounds) { $0 }
     }
 
     private func composerModelOverlay(_ picker: ComposerModelPresentation, anchoredAt anchor: Anchor<CGRect>) -> some View {
         GeometryReader { geometry in
             let box = geometry[anchor]
-            let width = min(350, max(0, geometry.size.width - 16))
-            let above = box.minY - 10
-            let below = geometry.size.height - box.maxY - 10
-            let opensAbove = above >= 240 || above >= below
-            let height = min(300, max(120, opensAbove ? above : below))
+            let width = min(ComposerModelPicker.width, max(0, geometry.size.width - 16))
+            let height = min(ComposerModelPicker.height, max(0, geometry.size.height - 8))
+            // Above the trigger and aligned to its end; a short window slides it down over the trigger.
             let x = min(max(width / 2 + 8, box.maxX - width / 2), geometry.size.width - width / 2 - 8)
-            let y = opensAbove ? box.minY - height / 2 - 4 : box.maxY + height / 2 + 4
+            let y = max(height / 2 + 4, box.minY - 4 - height / 2)
+            let current = (try? model.effectiveModel.validated()) ?? model.effectiveModel
             Color.clear.contentShape(Rectangle())
                 .onTapGesture { closeComposerModelPicker() }
                 .accessibilityHidden(true)
-            ComposerModelPicker(options: picker.options,
-                                current: ((try? model.effectiveModel.validated()) ?? model.effectiveModel).identity,
-                                canUseDefault: model.canUseInheritedComposerModel, choose: { option in
-                if model.chooseComposerModel(option, in: picker.scope) { closeComposerModelPicker() }
-            }, useDefault: {
-                if model.chooseComposerModel(nil, in: picker.scope) { closeComposerModelPicker() }
-            }, openSettings: {
-                composerModelPicker = nil
-                model.openSettings(.model)
-            }, close: closeComposerModelPicker)
+            ComposerModelPicker(
+                providers: picker.providers, favorites: model.favoriteModels, current: current,
+                currentName: model.effectiveModelName, disabled: !model.canChooseComposerModel,
+                permission: current.supportsTools ? model.project?.toolPermission : nil,
+                permissionDisabled: model.operationsInProgress,
+                choose: { option in
+                    if model.chooseComposerModel(option, in: picker.scope) { refreshComposerModelPicker() }
+                }, chooseLevel: { level in
+                    if model.chooseComposerThinkingLevel(level, in: picker.scope) { refreshComposerModelPicker() }
+                }, toggleFavorite: { model.toggleFavoriteModel($0) },
+                setPermission: { model.setToolPermission($0) },
+                openSetup: {
+                    composerModelPicker = nil
+                    model.openSettings(.model)
+                }, close: closeComposerModelPicker)
             .frame(width: width, height: height)
-            .position(x: x, y: min(max(y, height / 2 + 4), geometry.size.height - height / 2 - 4))
+            .position(x: x, y: min(y, geometry.size.height - height / 2 - 4))
         }
+    }
+
+    private func refreshComposerModelPicker() {
+        composerModelPicker?.providers = model.composerModelProviders()
     }
 
     private func closeComposerModelPicker() {

@@ -147,7 +147,8 @@ final class SidebarThreadNavigationTests: XCTestCase {
         try await ui.jump(2)
         try await ui.previous()
         try await ui.expect(ui.draft)
-        try await ui.press("composer-model-close")
+        try await ui.key(kVK_Escape, "\u{1b}", modifiers: [])
+        try await ui.waitFor("model picker closed") { ui.element("composer-model-picker") == nil }
 
         try await ui.jump(2)
         try await ui.expect(ui.linked, directory: ui.checkout)

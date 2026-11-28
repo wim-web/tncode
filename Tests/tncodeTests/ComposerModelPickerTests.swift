@@ -130,10 +130,6 @@ final class ComposerModelPickerTests: XCTestCase {
         XCTAssertEqual(Set(presenceChecks), [alpha.account])
         XCTAssertEqual(Set(credentialReads), [alpha.account])
 
-        try await ui.press("active-model")
-        try await ui.press("composer-model-default")
-        try await ui.until("inherited model restored") { model.phase == .ready && ui.modelLabel.contains(beta.model) }
-        XCTAssertNil(model.conversation?.modelSelection)
         model.selectConversation(other.id, in: project.id)
         try await ui.until("other draft still inherits beta") {
             model.phase == .ready && model.draft == other.composerText && ui.modelLabel.contains(beta.model)
@@ -149,7 +145,8 @@ final class ComposerModelPickerTests: XCTestCase {
         try await ui.until("catalog marks configured model unavailable") {
             ui.element(unavailable)?.isAccessibilityEnabled?() == false
         }
-        try await ui.press("composer-model-settings")
+        try await ui.search("")
+        try await ui.press("composer-model-provider-setup")
         XCTAssertEqual(model.settingsRequest?.page, .model)
         XCTAssertEqual(model.settingsRequest?.projectID, invalidProject.id)
         XCTAssertEqual(Set(credentialReads), [alpha.account])
@@ -167,8 +164,10 @@ private final class OffscreenComposerModels {
     private let window: NSPanel
     private let host: NSHostingView<WorkspaceView>
     private let pasteboard = NSPasteboard.withUniqueName()
+    let model: WorkspaceModel
 
     init(_ model: WorkspaceModel) {
+        self.model = model
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()
@@ -240,6 +239,9 @@ private final class OffscreenComposerModels {
         try await press("active-model")
         try await search(query)
         try await press("composer-model-\(settings.provider.rawValue)-\(settings.model)")
+        // The picker stays open on its effort column after a pick, as T3 Code's docked picker does.
+        try await until("model chosen") { self.model.effectiveModel.identity == settings.identity }
+        try escape()
         try await until("model picker dismissed") { self.element("composer-model-picker") == nil }
     }
 

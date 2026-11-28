@@ -25,19 +25,17 @@ export async function verifyModelAccount(driver, { root, launch, quit, record, c
       writeFileSync(indexPath, JSON.stringify(state), { mode: 0o600 });
       credential("--set-api-key-from-stdin", account.key, root);
     }
-    const defaultID = "composer-model-local-" + other.settings.model;
-    const defaultAction = "composer-model-default";
+    const otherTab = "composer-model-provider-local:" + other.settings.endpoint;
+    const otherRow = "composer-model-local-" + other.settings.model;
     const openPicker = async () => {
       await until(() => visible("active-model").includes("enabled=true"), "available model picker");
       press("active-model");
-      await until(() => visible(defaultID) && visible("composer-model-close"), "both accounts in the picker");
+      await until(() => visible(otherTab), "both accounts in the picker");
     };
     const requireAccountLock = async () => {
       await openPicker();
-      assert(visible(defaultID).includes("enabled=false"), "The other account was selectable on a submitted thread.");
-      assert(!tree().includes('id="' + defaultAction + '"') || visible(defaultAction).includes("enabled=false"),
-        "Use Default was available for a different account after the thread recorded its first user message.");
-      dismiss("composer-model-close");
+      assert(visible(otherTab).includes("enabled=false"), "The other account was selectable on a submitted thread.");
+      dismiss("active-model");
     };
     async function send(turn) {
       await until(() => visible("send-message").includes("enabled=true"), "send an existing filled draft");
@@ -47,9 +45,10 @@ export async function verifyModelAccount(driver, { root, launch, quit, record, c
     }
     await launch("composer", root);
     await openPicker();
-    assert(visible(defaultID).includes("enabled=true"));
-    assert(visible(defaultAction).includes("enabled=true"));
-    dismiss("composer-model-close");
+    assert(visible(otherTab).includes("enabled=true"));
+    press(otherTab);
+    await until(() => visible(otherRow).includes("enabled=true"), "the other account's model on its tab");
+    dismiss("active-model");
     await send(1);
     await requireAccountLock();
     press("open-composer-stash");
@@ -67,7 +66,7 @@ export async function verifyModelAccount(driver, { root, launch, quit, record, c
     const saved = JSON.parse(readFileSync(indexPath, "utf8"));
     assert.equal(saved.projects[0].selectedConversation, threadID);
     assert.equal(saved.projects[0].conversations.find(t => t.id === threadID).modelSelection.endpoint, owner.settings.endpoint);
-    record("Use Default was available on the unsent draft. After its first reply, neither the other account nor Use Default could switch that history, including after relaunch. Only the owner endpoint received the two turns. The other endpoint received zero requests.");
+    record("The other account was selectable on the unsent draft. After its first reply, its provider was disabled in the picker, including after relaunch. Only the owner endpoint received the two turns. The other endpoint received zero requests.");
   } finally {
     for (const account of owners) {
       removeFixtureCredential(root, "local:" + account.settings.endpoint);
