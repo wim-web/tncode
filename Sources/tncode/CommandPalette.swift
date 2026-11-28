@@ -203,7 +203,8 @@ struct CommandPaletteContents {
             CommandPaletteRow(action: .openProject($0.id), title: $0.title, icon: "folder", detail: $0.path)
         } : []
         let settingsRows = searching ? settings.map { result in
-            CommandPaletteRow(action: .openSetting(result.page, anchor: result.anchor, projectID: settingsProject?.id),
+            CommandPaletteRow(action: .openSetting(result.page, anchor: result.anchor,
+                                                   projectID: result.page == .project ? settingsProject?.id : nil),
                               title: result.title, icon: result.page.icon,
                               detail: result.anchor == nil ? nil : result.page.title, searchTerms: result.keywords)
         } : []

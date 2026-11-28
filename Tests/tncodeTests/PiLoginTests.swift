@@ -31,10 +31,9 @@ final class PiLoginTests: XCTestCase {
                           loginDirectory: logins.directory)
         })
         defer { _ = model.terminate() }
-        var draft = ModelSettingsDraft(workspace: model.workspace.model, project: nil, signingIn: true)
-        XCTAssertEqual(draft.settings.provider, .codexAgent)
-        draft.settings = ModelSettings(provider: .piCodex, model: Provider.piCodex.defaultModel)
-        let variables = "TNCODE_LOGIN_FIXTURE_CALLBACK_FILE=\(callbackFile.path)\nTNCODE_OAUTH_FIXTURE_MODEL=\(draft.settings.model)\n"
+        XCTAssertEqual(model.workspace.model.provider, .codexAgent)
+        var settings = ModelSettings(provider: .piCodex, model: Provider.piCodex.defaultModel)
+        let variables = "TNCODE_LOGIN_FIXTURE_CALLBACK_FILE=\(callbackFile.path)\nTNCODE_OAUTH_FIXTURE_MODEL=\(settings.model)\n"
         try Data(variables.utf8).write(to: envFile)
 
         var browserURLs: [URL] = []
@@ -46,10 +45,10 @@ final class PiLoginTests: XCTestCase {
         defer { signIn.cancel() }
         var applications = 0
         func start() {
-            signIn.start(draft.settings.provider, logins: logins) { profile in
-                draft.useAccount(profile)
+            signIn.start(settings.provider, logins: logins) { profile in
+                settings = profile
                 do {
-                    try model.applySettings(draft.settings, in: draft.scope, newKey: draft.key, removeKey: draft.removeKey)
+                    try model.applySettings(settings, in: .workspace, newKey: "", removeKey: false)
                     applications += 1
                 } catch { XCTFail(error.localizedDescription) }
             }
@@ -91,8 +90,8 @@ final class PiLoginTests: XCTestCase {
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         try await wait { applications == 1 }
         XCTAssertNil(signIn.instructions)
-        XCTAssertEqual(model.effectiveModel, draft.settings)
-        XCTAssertTrue(model.hasCredential(for: draft.settings))
+        XCTAssertEqual(model.effectiveModel, settings)
+        XCTAssertTrue(model.hasCredential(for: settings))
         try model.openProject(project)
         try await wait { model.phase == .ready }
         model.draft = "First message after browser sign-in"

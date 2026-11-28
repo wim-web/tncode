@@ -65,6 +65,38 @@ function executable(candidate, project, explicit) {
   }
 }
 
+/** Splits the Codex instance's launch arguments like a shell would, honoring quotes and backslashes. */
+export function launchArguments(text) {
+  const args = [];
+  let current = "";
+  let quote = null;
+  let started = false;
+  for (let index = 0; index < (text ?? "").length; index += 1) {
+    const char = text[index];
+    if (quote) {
+      if (char === quote) quote = null;
+      else if (char === "\\" && quote === '"' && index + 1 < text.length) current += text[++index];
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+    } else if (char === "\\" && index + 1 < text.length) {
+      current += text[++index];
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) args.push(current);
+      current = "";
+      started = false;
+    } else {
+      current += char;
+      started = true;
+    }
+  }
+  if (quote) throw rpcError("codex_invalid_arguments", "The Codex launch arguments have an unclosed quote.");
+  if (started) args.push(current);
+  return args;
+}
+
 function findCodex(cwd, env) {
   const home = canonical(env.HOME) ?? canonical(homedir());
   const directory = canonical(cwd);
@@ -168,9 +200,10 @@ export class CodexRPC {
     try {
       const { path, bins } = findCodex(this.#cwd, process.env);
       const env = { ...process.env, PATH: bins.join(delimiter) };
+      const extra = launchArguments(process.env.TNCODE_CODEX_ARGS);
       let child;
       try {
-        child = spawn(path, ["app-server", "--listen", "stdio://"], {
+        child = spawn(path, ["app-server", "--listen", "stdio://", ...extra], {
           cwd: this.#cwd, env, detached: true, stdio: ["pipe", "pipe", "ignore"],
         });
       } catch {

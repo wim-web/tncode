@@ -35,6 +35,18 @@ enum ThreadSnoozeSchedule {
 
         var label: String { NSLocalizedString(rawValue, comment: "Snooze unit") }
 
+        /// Unit menu label for an amount, as T3 Code writes it: "minute" or "minutes".
+        func label(for amount: Int) -> String {
+            switch (self, amount == 1) {
+            case (.minutes, true): String(localized: "minute")
+            case (.minutes, false): String(localized: "minutes")
+            case (.hours, true): String(localized: "hour")
+            case (.hours, false): String(localized: "hours")
+            case (.days, true): String(localized: "day")
+            case (.days, false): String(localized: "days")
+            }
+        }
+
         func relativeLabel(_ amount: Int) -> String {
             switch (self, amount == 1) {
             case (.minutes, true): String(localized: "In \(amount) minute")

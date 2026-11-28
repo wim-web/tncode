@@ -82,9 +82,9 @@ struct SnoozeOptionsSettingsView: View {
         let labels = menu.map { preset in
             menu.filter { $0.label == preset.label }.count == 1 ? preset.label : preview(preset, at: now)
         }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                HStack {
+                HStack(spacing: 8) {
                     SnoozeOptionFields(option: row.option, number: index + 1, id: row.id, focus: $focus) { editing in
                         if editing { editingRow = row.id }
                         else if editingRow == row.id { editingRow = nil }
@@ -97,15 +97,15 @@ struct SnoozeOptionsSettingsView: View {
                         })
                     }
                     Spacer(minLength: 8)
-                    Text(verbatim: rowPreview(resolved, at: index, now: now))
+                    rowPreview(resolved, at: index, now: now)
                         .font(.system(size: 12))
                         .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
                     Button {
                         save(rows.filter { $0.id != row.id })
                     } label: {
-                        Image(systemName: "xmark").font(.system(size: 12))
+                        Image(systemName: "xmark").font(.system(size: 14))
                     }
-                    .buttonStyle(T3IconButtonStyle())
+                    .buttonStyle(T3IconButtonStyle(size: 28))
                     .accessibilityLabel("Remove snooze option \(index + 1)")
                     .accessibilityIdentifier("remove-snooze-option-\(index + 1)")
                     .focused($focus, equals: .remove(row.id))
@@ -119,9 +119,9 @@ struct SnoozeOptionsSettingsView: View {
                 Button {
                     save(rows + [Row(option: ThreadSnoozeSchedule.nextOption(in: options))])
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 11))
-                        Text("Add option")
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus").font(.system(size: 12, weight: .medium))
+                        Text("Add option").font(.system(size: 12, weight: .medium))
                     }
                 }
                 .buttonStyle(T3SmallButtonStyle(kind: .ghost))
@@ -137,12 +137,35 @@ struct SnoozeOptionsSettingsView: View {
         }
     }
 
-    private func rowPreview(_ resolved: [ThreadSnoozeSchedule.Preset?], at index: Int, now: Date) -> String {
-        guard let preset = resolved[index] else { return String(localized: "Passed for today") }
-        let earlier = resolved.prefix(index).compactMap { $0 }
-        if earlier.contains(where: { $0.id == preset.id }) { return String(localized: "Duplicate of an option above") }
-        if earlier.contains(where: { $0.shownDeadline == preset.shownDeadline }) { return String(localized: "Same time as an option above") }
-        return preview(preset, at: now)
+    /// The option's label in the foreground color and its wake time, or why it is not offered.
+    private func rowPreview(_ resolved: [ThreadSnoozeSchedule.Preset?], at index: Int, now: Date) -> some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        let message: String? = {
+            guard let preset = resolved[index] else { return String(localized: "Passed for today") }
+            let earlier = resolved.prefix(index).compactMap { $0 }
+            if earlier.contains(where: { $0.id == preset.id }) { return String(localized: "Duplicate of an option above") }
+            if earlier.contains(where: { $0.shownDeadline == preset.shownDeadline }) {
+                return String(localized: "Same time as an option above")
+            }
+            return nil
+        }()
+        return Group {
+            if let message {
+                Text(verbatim: message)
+            } else if let preset = resolved[index] {
+                HStack(spacing: 8) {
+                    Text(verbatim: preset.label).foregroundStyle(palette.foreground)
+                    Text(verbatim: Self.wakeTime(preset.shownDeadline, after: now)).monospacedDigit()
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    /// Time only, with the short weekday when the option wakes on another day.
+    static func wakeTime(_ deadline: Date, after now: Date) -> String {
+        let sameDay = Calendar.current.isDate(deadline, inSameDayAs: now)
+        return deadline.formatted(sameDay ? .dateTime.hour().minute() : .dateTime.weekday(.abbreviated).hour().minute())
     }
 
     private func preview(_ preset: ThreadSnoozeSchedule.Preset, at now: Date) -> String {
@@ -219,15 +242,10 @@ private struct SnoozeOptionFields: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Picker("When", selection: Binding(get: { when }, set: changeWhen)) {
-                Text("In").tag(When.after)
-                ForEach(Schedule.Day.allCases, id: \.self) { day in
-                    Text(day.label).tag(When.at(day))
-                }
-            }
-            .labelsHidden()
-            .frame(width: 113)
+        HStack(spacing: 8) {
+            T3Select("When", selection: Binding(get: { when }, set: changeWhen),
+                     options: [(When.after, String(localized: "In"))] + Schedule.Day.allCases.map { (When.at($0), $0.label) },
+                     width: 128)
             .accessibilityIdentifier("snooze-option-when-\(number)")
             .focused(focus, equals: .when(id))
 
@@ -235,44 +253,53 @@ private struct SnoozeOptionFields: View {
             case let .after(minutes):
                 let unit = resolvedUnit(minutes)
                 let amount = minutes / unit.minutesPerUnit
-                valueField("Amount", value: String(amount), identifier: "snooze-option-amount-\(number)") { input in
-                    guard let value = Double(input.trimmingCharacters(in: .whitespacesAndNewlines)),
-                          value.isFinite else { return String(amount) }
-                    let maximum = Double(Schedule.maximumMinutes / unit.minutesPerUnit)
-                    let next = Int(min(maximum, max(1, value.rounded())))
-                    return String(saveAmount(next, in: unit) ? next : amount)
+                let maximum = Schedule.maximumMinutes / unit.minutesPerUnit
+                // One bordered group: decrease, amount, increase (T3 Code's NumberField, 128pt).
+                HStack(spacing: 0) {
+                    Button { _ = saveAmount(max(1, amount - 1), in: unit) } label: {
+                        Image(systemName: "minus").font(.system(size: 11, weight: .medium)).frame(width: 34, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(amount <= 1)
+                    .accessibilityLabel("Decrease")
+                    valueField("Amount", value: String(amount), identifier: "snooze-option-amount-\(number)",
+                               bordered: false) { input in
+                        guard let value = Double(input.trimmingCharacters(in: .whitespacesAndNewlines)),
+                              value.isFinite else { return String(amount) }
+                        let next = Int(min(Double(maximum), max(1, value.rounded())))
+                        return String(saveAmount(next, in: unit) ? next : amount)
+                    }
+                    .frame(maxWidth: .infinity)
+                    Button { _ = saveAmount(min(maximum, amount + 1), in: unit) } label: {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 34, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(amount >= maximum)
+                    .accessibilityLabel("Increase")
                 }
-                    .frame(width: 54)
-                Stepper(value: Binding(get: { amount }, set: { _ = saveAmount($0, in: unit) }),
-                        in: 1...(Schedule.maximumMinutes / unit.minutesPerUnit)) {
-                    Text("Amount")
-                }
-                .labelsHidden()
+                .frame(width: 128, height: 28)
+                .modifier(SnoozeFieldChrome())
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("snooze-option-step-\(number)")
                 .focused(focus, equals: .step(id))
-                Picker("Unit", selection: Binding(get: { unit }, set: { changeUnit($0, amount: amount) })) {
-                    ForEach(Schedule.Unit.allCases) { unit in
-                        Text(unit.label).tag(unit)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 87)
+                T3Select("Unit", selection: Binding(get: { unit }, set: { changeUnit($0, amount: amount) }),
+                         options: Schedule.Unit.allCases.map { ($0, $0.label(for: amount)) }, width: 112)
                 .accessibilityIdentifier("snooze-option-unit-\(number)")
                 .focused(focus, equals: .unit(id))
             case let .at(day, time):
-                Text("at").foregroundStyle(.secondary)
+                Text("at").font(.system(size: 12)).foregroundStyle(.secondary)
                 valueField("Time", value: time, identifier: "snooze-option-time-\(number)") { input in
                     let next = Schedule.Option.at(day: day, time: input)
                     return next.isValid && (next == option || save(next)) ? input : time
                 }
-                    .frame(width: 70)
+                    .frame(width: 128)
             }
         }
     }
 
-    private func valueField(_ label: String, value: String, identifier: String,
+    private func valueField(_ label: String, value: String, identifier: String, bordered: Bool = true,
                             commit: @escaping (String) -> String) -> some View {
-        SnoozeOptionTextField(label: label, identifier: identifier, value: value,
+        SnoozeOptionTextField(label: label, identifier: identifier, value: value, bordered: bordered,
                               commit: commit, editingChanged: editingChanged)
             .accessibilityIdentifier(identifier)
     }
@@ -309,12 +336,21 @@ private struct SnoozeOptionTextField: NSViewRepresentable {
     let label: String
     let identifier: String
     let value: String
+    var bordered = true
     let commit: (String) -> String
     let editingChanged: (Bool) -> Void
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField(string: value)
         field.bezelStyle = .roundedBezel
+        if !bordered {
+            // Inside the amount group the group draws the border.
+            field.isBordered = false
+            field.isBezeled = false
+            field.drawsBackground = false
+            field.focusRingType = .none
+            field.alignment = .center
+        }
         field.setAccessibilityLabel(NSLocalizedString(label, comment: ""))
         field.delegate = context.coordinator
         field.target = context.coordinator
@@ -349,5 +385,19 @@ private struct SnoozeOptionTextField: NSViewRepresentable {
             if let field = notification.object as? NSTextField { submit(field) }
             parent.editingChanged(false)
         }
+    }
+}
+
+/// Bordered input chrome for the snooze amount group (28pt, radius 8), matching T3FieldChrome.
+private struct SnoozeFieldChrome: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    func body(content: Content) -> some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        content
+            .background(palette.fieldFill, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.input) }
+            .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
     }
 }

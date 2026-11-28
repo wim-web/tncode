@@ -4,38 +4,48 @@ import SwiftUI
 // Building blocks for T3 Code's settings pages (components/settings/*, ui/switch.tsx, ui/select.tsx, ui/input.tsx).
 
 /// Section heading (16/600) above a rounded group card. Put `SettingsDivider()` between rows.
-struct SettingsSection<Content: View, Trailing: View>: View {
+/// `titleAction` sits right after the title; `trailing` is the header action at the far end.
+struct SettingsSection<Content: View, Trailing: View, Icon: View, TitleAction: View>: View {
     var title: String?
-    var icon: String?
     var plain = false
     @ViewBuilder let content: Content
     @ViewBuilder let trailing: Trailing
+    @ViewBuilder let icon: Icon
+    @ViewBuilder let titleAction: TitleAction
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.t3Themes) private var t3Themes
+    @Environment(\.settingsFlatGroups) private var flat
 
-    init(_ title: String? = nil, icon: String? = nil, plain: Bool = false,
-         @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(_ title: String? = nil, plain: Bool = false,
+         @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing = { EmptyView() },
+         @ViewBuilder icon: () -> Icon = { EmptyView() }, @ViewBuilder titleAction: () -> TitleAction = { EmptyView() }) {
         self.title = title
-        self.icon = icon
         self.plain = plain
         self.content = content()
         self.trailing = trailing()
+        self.icon = icon()
+        self.titleAction = titleAction()
     }
 
     var body: some View {
         let palette = T3Palette(colorScheme, t3Themes)
         VStack(alignment: .leading, spacing: 10) {
             if let title {
-                HStack(spacing: 8) {
-                    if let icon {
-                        Image(systemName: icon).font(.system(size: 14)).foregroundStyle(palette.mutedForeground)
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) {
+                        HStack(spacing: 8) {
+                            icon
+                            Text(localized: title)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(palette.foreground)
+                                .lineLimit(1)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        .frame(minHeight: 28)
+                        titleAction
                     }
-                    Text(localized: title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(palette.foreground)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 8)
-                    trailing
+                    Spacer(minLength: 0)
+                    trailing.frame(minWidth: 28, minHeight: 28, alignment: .trailing)
                 }
                 .padding(.horizontal, 16)
                 .frame(minHeight: 28)
@@ -45,11 +55,26 @@ struct SettingsSection<Content: View, Trailing: View>: View {
             } else {
                 VStack(alignment: .leading, spacing: 0) { content }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(palette.border.opacity(0.6)) }
-                    .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+                    .padding(1)
+                    .background(flat ? Color.clear : palette.card.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        if !flat { RoundedRectangle(cornerRadius: 12).strokeBorder(palette.border.opacity(0.6)) }
+                    }
+                    .shadow(color: .black.opacity(flat ? 0 : 0.05), radius: 1, y: 1)
             }
         }
+    }
+}
+
+private struct SettingsFlatGroupsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Sections in the provider detail pane sit flat in its card: no border, fill or shadow, dividers kept.
+    var settingsFlatGroups: Bool {
+        get { self[SettingsFlatGroupsKey.self] }
+        set { self[SettingsFlatGroupsKey.self] = newValue }
     }
 }
 
@@ -75,6 +100,8 @@ struct SettingsRow<Control: View, Detail: View>: View {
     @ViewBuilder let detail: Detail
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.t3Themes) private var t3Themes
+    /// Below 512pt the control drops under the text, like T3 Code's `@min-[32rem]/settings-row` grid.
+    @State private var stacked = false
 
     init(_ title: String, description: String? = nil, descriptionID: String? = nil, status: String? = nil,
          statusID: String? = nil, reset: SettingsResetButton? = nil,
@@ -91,14 +118,17 @@ struct SettingsRow<Control: View, Detail: View>: View {
 
     var body: some View {
         let palette = T3Palette(colorScheme, t3Themes)
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                             : AnyLayout(HStackLayout(alignment: .center, spacing: 32))
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 32) {
+            layout {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Text(localized: title)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(palette.foreground)
-                        if let reset { reset }
+                        // The reset slot keeps its 20×20 space even when empty, as in T3 Code.
+                        ZStack { if let reset { reset } }.frame(width: 20, height: 20)
                     }
                     .frame(minHeight: 20)
                     if let description {
@@ -121,11 +151,13 @@ struct SettingsRow<Control: View, Detail: View>: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) { control }
+                    .fixedSize(horizontal: !stacked, vertical: false)
             }
             detail
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .onGeometryChange(for: Bool.self) { $0.size.width < 512 } action: { stacked = $0 }
     }
 }
 
@@ -220,24 +252,31 @@ struct T3Select<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let options: [Option]
-    var width: CGFloat = 160
+    /// Nil fits the trigger to its value, like T3 Code's `w-auto` selects.
+    var width: CGFloat? = 160
+    /// The menu marks this option "(default)", as T3 Code's popups do; the trigger keeps the plain label.
+    var defaultValue: Value?
     @State private var anchor = T3MenuAnchor()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.t3Themes) private var t3Themes
     @Environment(\.isEnabled) private var isEnabled
 
-    init(_ title: String, selection: Binding<Value>, options: [(Value, String)], width: CGFloat = 160) {
+    init(_ title: String, selection: Binding<Value>, options: [(Value, String)], width: CGFloat? = 160,
+         defaultValue: Value? = nil) {
         self.title = title
         _selection = selection
         self.options = options.map { Option(value: $0.0, label: $0.1) }
         self.width = width
+        self.defaultValue = defaultValue
     }
 
     var body: some View {
         let palette = T3Palette(colorScheme, t3Themes)
         Button {
-            anchor.popUp(options.map { NSLocalizedString($0.label, comment: "") },
-                         selected: options.firstIndex { $0.value == selection }) { index in
+            anchor.popUp(options.map { option in
+                let label = NSLocalizedString(option.label, comment: "")
+                return option.value == defaultValue ? String(localized: "\(label) (default)") : label
+            }, selected: options.firstIndex { $0.value == selection }) { index in
                 selection = options[index].value
             }
         } label: {
@@ -246,12 +285,13 @@ struct T3Select<Value: Hashable>: View {
                     .font(.system(size: 14))
                     .foregroundStyle(palette.foreground)
                     .lineLimit(1)
-                Spacer(minLength: 0)
+                if width != nil { Spacer(minLength: 0) }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(palette.mutedForeground.opacity(0.7))
             }
-            .frame(width: width - 18)
+            .frame(width: width.map { $0 - 18 })
+            .fixedSize(horizontal: width == nil, vertical: false)
             .modifier(T3FieldChrome())
             .contentShape(Rectangle())
         }
@@ -284,8 +324,10 @@ final class T3MenuAnchor {
             menu.addItem(item)
         }
         menu.minimumWidth = view.bounds.width
+        // T3 Code aligns select popups to the trigger's trailing edge.
+        let x = view.bounds.width - max(menu.size.width, view.bounds.width)
         withExtendedLifetime(target) {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.height + 4 : -4), in: view)
+            menu.popUp(positioning: nil, at: NSPoint(x: x, y: view.isFlipped ? view.bounds.height + 4 : -4), in: view)
         }
     }
 
@@ -490,5 +532,56 @@ struct SettingsSwitch: View {
             .controlSize(.small)
             .tint(T3Palette(colorScheme, t3Themes).primary)
             .accessibilityLabel(Text(localized: title))
+    }
+}
+
+/// T3 Code's AdvancedSettings: a 40pt "Advanced" row at the end of a section card that folds its rows away.
+/// It opens on its own when settings search lands on one of `targets`. Put a `SettingsDivider()` before it.
+struct SettingsAdvancedGroup<Content: View>: View {
+    var targets: [SettingsAnchor] = []
+    @ViewBuilder let content: Content
+    @State private var open = false
+    @State private var hovering = false
+    @Environment(\.settingsDestination) private var destination
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    init(targets: [SettingsAnchor] = [], @ViewBuilder content: () -> Content) {
+        self.targets = targets
+        self.content = content()
+    }
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { open.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text("Advanced")
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? palette.foreground : palette.mutedForeground)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .accessibilityAddTraits(open ? .isSelected : [])
+            .accessibilityIdentifier("settings-advanced")
+            if open {
+                SettingsDivider()
+                content
+            }
+        }
+        .onAppear { if let anchor = destination?.anchor, targets.contains(anchor) { open = true } }
+        .onChange(of: destination) { _, next in
+            if let anchor = next?.anchor, targets.contains(anchor) { open = true }
+        }
     }
 }

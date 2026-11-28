@@ -573,24 +573,22 @@ final class SidebarPersistenceTests: XCTestCase {
         do {
             let settings = try openOverview()
             defer { settings.close() }
-            try await settings.press("project-settings-copy-path")
-            XCTAssertEqual(pasteboard.string(forType: .string), first.path)
             try await settings.toggleSwitch("project-settings-pin")
             XCTAssertTrue(model.projects.first { $0.id == alpha.id }?.pinned == true)
             XCTAssertNil(model.project?.pinned)
             try await settings.replaceField("Project", with: "Renamed project")
-            try await settings.press("project-settings-save-name")
-            try await settings.press("project-settings-model")
-            try await settings.replaceField("first-model", with: "edited-first-model")
-            try await settings.press("settings-nav-project")
-            try await settings.press("project-settings-model")
-            _ = try await settings.field(withValue: "edited-first-model")
-            try await settings.press("save-settings")
+            // The name saves when the field loses focus, as T3 Code's settings inputs do.
+            XCTAssertTrue(settings.makeFirstResponder(nil))
+            for _ in 0..<40 where model.projects.first(where: { $0.id == alpha.id })?.title != "Renamed project" {
+                settings.contentView?.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            _ = try await settings.waitForElement("default-model")
         }
         XCTAssertEqual(connectionAttempts, 0)
         XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.title, "Renamed project")
         XCTAssertEqual(model.project?.title, "Project")
-        XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.modelOverride?.model, "edited-first-model")
+        XCTAssertEqual(model.projects.first { $0.id == alpha.id }?.modelOverride?.model, "first-model")
         XCTAssertEqual(model.project?.modelOverride?.model, "second-model")
         XCTAssertEqual(model.conversation?.id, linked.id)
         XCTAssertEqual(model.workingDirectory, checkout.path)
@@ -602,20 +600,12 @@ final class SidebarPersistenceTests: XCTestCase {
         do {
             let settings = try openOverview()
             defer { settings.close() }
-            let worktree = checkout.resolvingSymlinksInPath().path
-            _ = try await settings.waitForElement("project-settings-checkout-\(worktree)")
-            try await settings.press("project-settings-copy-path")
-            XCTAssertEqual(pasteboard.string(forType: .string), second.path)
+            _ = try await settings.field(withValue: "Project")
+            XCTAssertEqual(model.settingsRequest?.projectID, beta.id)
         }
 
         try files.removeItem(at: first)
-        model.settingsRequest = nil
-        try await workspace.press("project-group-settings-\(alpha.id)")
-        let unavailable = try openOverview()
-        defer { unavailable.close() }
-        _ = try await unavailable.waitForElement("project-settings-folder-unavailable")
         XCTAssertThrowsError(try model.copyProjectPath(alpha.id, to: pasteboard))
-        XCTAssertEqual(pasteboard.string(forType: .string), second.path)
         model.settingsRequest = nil
         model.openSettings(.project, projectID: UUID())
         XCTAssertNil(model.settingsRequest)

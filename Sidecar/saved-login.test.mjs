@@ -181,22 +181,22 @@ test("Saved-login routes fail closed with a missing profile, wrong account or st
   const wrong = pi.start("open", { piLoginProfile: undefined });
   pi.auth({ "openai-codex": codexCredential() });
   await wrong.receive("ready");
-  assert.match((await wrong.prompt()).error, /Sign in again in Model Settings/);
+  assert.match((await wrong.prompt()).error, /Sign in again in Settings › Providers/);
   await wrong.close();
 
   const worker = pi.start("open");
   await worker.receive("ready");
   pi.auth({ "openai-codex": codexCredential({ accountId: "different-account" }) });
   const finished = await worker.prompt();
-  assert.match(finished.error, /Sign in again in Model Settings/);
+  assert.match(finished.error, /Sign in again in Settings › Providers/);
   assert.deepEqual(finished.messages, []);
   await worker.close();
 
   const direct = pi.start("open", { provider: "pi:openai", model: "gpt-5-mini", piLoginProfile: pi.profile() });
   await direct.receive("ready");
-  assert.match((await direct.prompt()).error, /Sign in again in Model Settings/);
+  assert.match((await direct.prompt()).error, /Sign in again in Settings › Providers/);
   pi.auth({ openai: { type: "api_key", key: "!touch executed-auth-command" } });
-  assert.match((await direct.prompt()).error, /Sign in again in Model Settings/);
+  assert.match((await direct.prompt()).error, /Sign in again in Settings › Providers/);
   await direct.close();
   assert.deepEqual(pi.requestLog(), []);
   assert(!existsSync(join(pi.root, "executed-auth-command")));
@@ -220,7 +220,7 @@ test("SDK refresh persists a rotated credential and never sends with revoked or 
       assert.equal(auth["openai-codex"].access, codexCredential({ state: "rotated" }).access);
       assert.equal(auth["openai-codex"].refresh, codexCredential({ state: "rotated" }).refresh);
     } else {
-      assert.match(result.error, /Sign in again in Model Settings/);
+      assert.match(result.error, /Sign in again in Settings › Providers/);
       assert.deepEqual(auth["openai-codex"], saved);
     }
   }

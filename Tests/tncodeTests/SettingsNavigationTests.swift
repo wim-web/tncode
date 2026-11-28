@@ -7,33 +7,23 @@ import XCTest
 @MainActor
 final class SettingsNavigationTests: XCTestCase {
     func testIndexMatchesNamesAndKeywordsAndSkipsUnavailableControls() {
-        var availability = SettingsSearchAvailability(
-            canEditModels: true, hasProjectScope: true, usesLocalProvider: false,
-            hasSavedKey: false, canResetModelOverride: true, usesCustomSearch: false
-        )
+        var availability = SettingsSearchAvailability(hasProjectScope: true, usesCustomSearch: false)
         var search = SettingsSearch()
         search.query = "  CÖLOR   SCHeme  "
         XCTAssertEqual(search.results(available: availability).first?.anchor, .colorScheme)
         search.query = " keychain credentials"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .apiKey)
-        search.query = "workspace override"
-        XCTAssertEqual(search.results(available: availability).map(\.anchor), [.scope, .resetModelOverride])
+        search.query = "reasoning effort"
+        XCTAssertEqual(search.results(available: availability).first?.anchor, .defaultModel)
+        XCTAssertEqual(search.results(available: availability).first?.page, .threads)
+        search.query = "add project starts in"
+        XCTAssertEqual(search.results(available: availability).first?.page, .threads)
         search.query = "custom search url"
-        XCTAssertTrue(search.results(available: availability).isEmpty)
+        XCTAssertFalse(search.results(available: availability).contains { $0.anchor == .customSearchURL })
         availability.usesCustomSearch = true
         XCTAssertEqual(search.results(available: availability).first?.anchor, .customSearchURL)
-        search.query = "base url"
-        XCTAssertTrue(search.results(available: availability).isEmpty)
-        availability.usesLocalProvider = true
-        XCTAssertEqual(search.results(available: availability).first?.anchor, .endpoint)
-        search.query = "thinking level"
-        XCTAssertTrue(search.results(available: availability).isEmpty)
-        search.query = "remove saved key"
-        XCTAssertTrue(search.results(available: availability).isEmpty)
-        availability.hasSavedKey = true
-        XCTAssertEqual(search.results(available: availability).first?.anchor, .removeKey)
-        availability.canEditModels = false
-        XCTAssertTrue(search.results(available: availability).isEmpty)
+        search.query = "boring sidebar"
+        XCTAssertEqual(search.results(available: availability).first?.page, .labs)
         search.query = "third-party notices"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .licenses)
         search.query = "onboarding"
@@ -41,7 +31,7 @@ final class SettingsNavigationTests: XCTestCase {
         search.query = "archived threads"
         XCTAssertEqual(search.results(available: availability).first?.id, "archive")
         XCTAssertEqual(search.results(available: availability).first?.page, .archived)
-        search.query = "unarchive"
+        search.query = "restore reopen"
         XCTAssertEqual(search.results(available: availability).first?.anchor, .archive)
         search.query = "external disk"
         XCTAssertEqual(search.results(available: availability).first?.page, .worktrees)
@@ -50,17 +40,14 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(search.results(available: availability).first?.anchor, .startFromRemote)
         search.query = "project overview"
         XCTAssertEqual(search.results(available: availability).first?.page, .project)
-        availability.hasProjectScope = false
-        XCTAssertTrue(search.results(available: availability).isEmpty)
+        search.query = "usage"
+        XCTAssertFalse(search.results(available: availability).contains { $0.page == .usage })
     }
 
     func testResultSelectionWrapsAndNewQuerySelectsFirstMatch() {
-        let availability = SettingsSearchAvailability(
-            canEditModels: true, hasProjectScope: true, usesLocalProvider: true,
-            hasSavedKey: false, canResetModelOverride: true, usesCustomSearch: true
-        )
+        let availability = SettingsSearchAvailability(hasProjectScope: true, usesCustomSearch: true)
         var search = SettingsSearch()
-        search.query = "model settings"
+        search.query = "providers"
         let rows = search.results(available: availability)
         XCTAssertGreaterThan(rows.count, 1)
         XCTAssertEqual(search.selected(in: rows)?.id, "model")
@@ -143,7 +130,7 @@ final class SettingsNavigationTests: XCTestCase {
         }
     }
 
-    func testNativeSearchReachesScopedModelAndCustomBrowserURL() async throws {
+    func testNativeSearchReachesBrowserURLAPIKeyAndDefaultModel() async throws {
         try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -159,19 +146,7 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.key(kVK_Escape, "\u{1b}")
         try await fixture.until("Escape clears search") { search.stringValue.isEmpty }
 
-        try await fixture.typeQuery("model id", in: search)
-        try await fixture.key(kVK_Return, "\r")
-        let modelID = try await fixture.waitForField("project model ID") { $0.stringValue == "local-override" }
-        try await fixture.until("Return focuses the project model ID") {
-            modelID.currentEditor() != nil && modelID.currentEditor() === fixture.window.firstResponder
-        }
-        try XCTUnwrap(fixture.window.firstResponder as? NSTextView).selectAll(nil)
-        fixture.window.sendEvent(try fixture.event(kVK_ANSI_X, "x"))
-        XCTAssertEqual(modelID.stringValue, "x")
-        XCTAssertEqual(search.stringValue, "")
-
-        try await fixture.typeQuery("settings", in: search)
-        try await fixture.key(kVK_UpArrow)
+        try await fixture.typeQuery("custom search url", in: search)
         try await fixture.key(kVK_Return, "\r")
         let field = try await fixture.waitForField("custom search URL") { $0.stringValue == "https://example.test/?q=%s" }
         try await fixture.until("Return focuses the custom search URL") {
@@ -185,7 +160,12 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.until("Return focuses the secure API key") {
             apiKey.currentEditor() != nil && apiKey.currentEditor() === fixture.window.firstResponder
         }
-        _ = try await fixture.waitForField("unsaved project model ID") { $0.stringValue == "x" }
+        try await fixture.expectControls("settings-heading-model", "provider-instance-openai")
+
+        try await fixture.typeQuery("reasoning effort", in: search)
+        try await fixture.key(kVK_Return, "\r")
+        try await fixture.expectControls("settings-heading-threads", "settings-scope-project", "default-model")
+        XCTAssertNil(fixture.model.settingsRequest?.projectID)
 
         let saved = try JSONDecoder().decode(
             Workspace.self, from: Data(contentsOf: fixture.root.appendingPathComponent("workspace.json"))
@@ -215,7 +195,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: index), before)
     }
 
-    func testNativeVersionSearchAndLinksKeepTheOpenSettingsDraft() async throws {
+    func testNativeVersionSearchAndLinksKeepTheOpenSettings() async throws {
         try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -232,13 +212,6 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.key(kVK_Return, "\r")
         try await fixture.expectVersion()
 
-        try await fixture.press("settings-nav-model")
-        let modelID = try await fixture.waitForField("model ID") { $0.stringValue == "local-override" }
-        XCTAssertTrue(fixture.window.makeFirstResponder(modelID))
-        let editor = try XCTUnwrap(modelID.currentEditor() as? NSTextView)
-        editor.insertText("unsaved-model", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
-        XCTAssertEqual(modelID.stringValue, "unsaved-model")
-
         XCTAssertTrue(fixture.model.openSettingsLink(licenses))
         try await fixture.expectLicenses()
         XCTAssertTrue(fixture.model.openSettingsLink(version))
@@ -246,11 +219,10 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(fixture.model.settingsRequest === request)
 
         try await fixture.press("settings-nav-model")
-        _ = try await fixture.waitForField("unsaved model ID") { $0.stringValue == "unsaved-model" }
-        XCTAssertEqual(fixture.model.workspace.activeProject?.modelOverride?.model, "local-override")
-
+        try await fixture.expectControls("settings-heading-model", "provider-settings")
         XCTAssertTrue(fixture.model.openSettingsLink(version))
         try await fixture.expectVersion()
+        XCTAssertTrue(fixture.model.settingsRequest === request)
     }
 
     func testNativeLicenseLinkOpensDirectlyFromClosedSettings() async throws {
@@ -369,31 +341,33 @@ final class SettingsNavigationTests: XCTestCase {
         }
 
         try await fixture.expectControls("settings-heading-usage", "usage-period")
+        XCTAssertNil(fixture.element("settings-nav-general"), "Usage is a route of its own, without settings navigation")
         try open("settings")
-        try await fixture.expectControls("settings-heading-general", "settings-group-by-project", "add-project-starts-in")
+        try await fixture.expectControls("settings-heading-general", "archive-confirmation", "language")
         try open("settings/appearance")
         try await fixture.expectControls("settings-heading-appearance", "appearance-color-scheme", "appearance-chat-width")
         try open("settings/chat")
         try await fixture.expectControls("settings-heading-chat", "send-shortcut", "follow-up-behavior")
+        try open("settings/labs")
+        try await fixture.expectControls("settings-heading-labs", "boring-sidebar")
         try open("settings/archived")
-        try await fixture.expectControls("settings-heading-archived", "archive", "archive-project", "archive-empty")
+        try await fixture.expectControls("settings-heading-archived", "settings-scope-project", "archive", "archive-empty")
         try open("settings/archived#archive")
         XCTAssertEqual(request.destination.anchor, .archive)
         try await fixture.expectControls("archive", "archive-empty")
 
         try open("projects/\(first)")
-        try await fixture.expectControls("settings-heading-project", "project-settings-name", "project-settings-pin")
-        try edit(try await fixture.waitForField("Alpha name") { $0.stringValue == "Alpha" }, to: "Unsaved Alpha")
+        try await fixture.expectControls("settings-heading-project", "project-settings-name", "project-settings-pin",
+                                         "default-model")
+        XCTAssertEqual(request.projectID, first)
+        try edit(try await fixture.waitForField("Alpha name") { $0.stringValue == "Alpha" }, to: "Renamed Alpha")
         try open("projects/\(second)")
         _ = try await fixture.waitForField("Beta name") { $0.stringValue == "Beta" }
-        try open("projects/\(first)")
-        _ = try await fixture.waitForField("unsaved Alpha name") { $0.stringValue == "Unsaved Alpha" }
-        try await fixture.press("project-settings-model")
-        try edit(try await fixture.waitForField("Alpha model") { $0.stringValue == "local-override" }, to: "unsaved-alpha")
-        try open("settings/projects?project=\(second)")
-        _ = try await fixture.waitForField("Beta name") { $0.stringValue == "Beta" }
-        try await fixture.press("project-settings-model")
-        try edit(try await fixture.waitForField("Beta model") { $0.stringValue == "beta-override" }, to: "unsaved-beta")
+        try await fixture.until("Leaving the name field saves it") {
+            model.workspace.projects.first { $0.id == first }?.title == "Renamed Alpha"
+        }
+        try open("settings/projects?project=\(first)")
+        _ = try await fixture.waitForField("renamed Alpha") { $0.stringValue == "Renamed Alpha" }
 
         let current = request.destination
         try open("projects/\(UUID())")
@@ -401,29 +375,23 @@ final class SettingsNavigationTests: XCTestCase {
         try open("settings/general?machine=elsewhere")
         XCTAssertTrue(model.threadLinkError?.contains("invalid") == true)
         XCTAssertEqual(request.destination, current)
-        _ = try await fixture.waitForField("still editing Beta model") { $0.stringValue == "unsaved-beta" }
 
-        try open("projects/\(first)")
-        _ = try await fixture.waitForField("unsaved Alpha name") { $0.stringValue == "Unsaved Alpha" }
-        try open("settings/model")
-        _ = try await fixture.waitForField("unsaved Alpha model") { $0.stringValue == "unsaved-alpha" }
-        try open("projects/\(second)")
-        try await fixture.press("project-settings-model")
-        _ = try await fixture.waitForField("unsaved Beta model") { $0.stringValue == "unsaved-beta" }
-        XCTAssertEqual(try Data(contentsOf: index), stored)
+        try open("settings/threads")
+        XCTAssertEqual(request.projectID, first, "The project scope carries over to other pages")
+        try await fixture.expectControls("settings-heading-threads", "settings-scope-project", "default-model")
+        XCTAssertNil(fixture.element("add-project-starts-in"))
+        request.selectProject(nil)
+        try await fixture.expectControls("add-project-starts-in", "default-model")
 
         model.removeProject(second)
-        let afterRemoval = try Data(contentsOf: index)
         try open("projects/\(second)")
         XCTAssertTrue(model.threadLinkError?.contains("unavailable") == true)
-        try await fixture.expectControls("settings-heading-model", "settings-project-unavailable")
-        XCTAssertNil(fixture.element("save-settings"))
         try open("settings/general")
         try await fixture.press("settings-close")
         XCTAssertNil(model.settingsRequest)
         XCTAssertNil(model.threadLinkError)
         XCTAssertEqual(model.workspace.selectedProject, first)
-        XCTAssertEqual(try Data(contentsOf: index), afterRemoval)
+        XCTAssertNotEqual(try Data(contentsOf: index), stored)
     }
 
     func testNativeFolderPreferenceCommitsOnReturnAndBlur() async throws {
@@ -494,9 +462,7 @@ final class SettingsNavigationTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: index), cleanIndex)
         try await fixture.press("settings-nav-model")
-        try await fixture.until("Restore is absent from Model settings") { fixture.element(restore) == nil }
-        let modelField = try await fixture.waitForField("Project model ID") { $0.stringValue == "local-override" }
-        try fixture.edit(modelField, to: "pending-project-model")
+        try await fixture.until("Restore is absent from Providers") { fixture.element(restore) == nil }
         try await fixture.press("settings-nav-appearance")
         try await fixture.activate("word-wrap")
         try await fixture.press("settings-nav-diffs")
@@ -504,14 +470,18 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.press("settings-nav-worktrees")
         try await fixture.activate("start-from-origin")
         try await fixture.expectControls("reset-start-from-origin")
+        try await fixture.press("settings-nav-threads")
+        let folder = try await fixture.waitForField("Add project starts in") { $0.placeholderString == "~/" }
+        try fixture.edit(folder, to: "/fixture/pending-project-start")
         try await fixture.press("settings-nav-general")
+        try await fixture.until("Leaving Threads saves the folder") {
+            fixture.model.workspace.addProjectBaseDirectory == "/fixture/pending-project-start"
+        }
         try await fixture.toggleSwitch("archive-confirmation")
         try await fixture.activate("terminal-close-confirmation")
         try await fixture.expectControls("reset-terminal-close-confirmation")
         try await fixture.until("Restore is enabled") { fixture.isEnabled(restore) == true }
 
-        let folder = try await fixture.waitForField("Add project starts in") { $0.placeholderString == "~/" }
-        try fixture.edit(folder, to: "/fixture/pending-project-start")
         let dirtyIndex = try Data(contentsOf: index)
         try await fixture.press(restore)
         try await fixture.activate("cancel-restore-device-defaults")
@@ -519,23 +489,20 @@ final class SettingsNavigationTests: XCTestCase {
             fixture.element("cancel-restore-device-defaults") == nil
         }
         XCTAssertEqual(try Data(contentsOf: index), dirtyIndex)
-        XCTAssertEqual(folder.stringValue, "/fixture/pending-project-start")
         XCTAssertFalse(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
         XCTAssertFalse(fixture.defaults.bool(forKey: DiffPreferences.wordWrap))
         XCTAssertFalse(fixture.defaults.bool(forKey: DiffPreferences.ignoreWhitespace))
 
         try await fixture.press(restore)
         try await fixture.activate("confirm-restore-device-defaults")
-        try await fixture.until("Restore cleared both the saved settings and the pending folder value") {
-            fixture.isEnabled(restore) == false && folder.stringValue.isEmpty
+        try await fixture.until("Restore cleared the saved settings") {
+            fixture.isEnabled(restore) == false && fixture.model.workspace.addProjectBaseDirectory == nil
         }
         XCTAssertTrue(fixture.model.settingsRequest === request)
         XCTAssertTrue(fixture.defaults.bool(forKey: TerminalPreference.confirmClose))
         XCTAssertTrue(fixture.defaults.bool(forKey: DiffPreferences.wordWrap))
         XCTAssertTrue(fixture.defaults.bool(forKey: DiffPreferences.ignoreWhitespace))
-        try await fixture.press("settings-nav-model")
-        _ = try await fixture.waitForField("Pending project edit") { $0.stringValue == "pending-project-model" }
-        try await fixture.press("settings-nav-general")
+        XCTAssertEqual(fixture.model.workspace.activeProject?.modelOverride?.model, "local-override")
         try await fixture.press("settings-close")
         XCTAssertEqual(try Data(contentsOf: index), cleanIndex)
         XCTAssertTrue(fixture.defaults.bool(forKey: SidebarPreference.groupByProject))
@@ -667,7 +634,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         func expectLicenses() async throws {
             try await until("Open source licenses panel is visible") {
-                element("licenses-back") != nil &&
+                element("settings-heading-about") != nil &&
                     element(DependencyNotice.load() == nil ? "licenses-unavailable" : "licenses-list") != nil
             }
             XCTAssertNil(element("app-version"))

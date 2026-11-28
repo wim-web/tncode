@@ -18,35 +18,34 @@ struct AboutView: View {
     var body: some View {
         Group {
             if showingLicenses {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Button { showingLicenses = false } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left").font(.system(size: 11))
-                                Text("About")
+                // The Open source licenses detail page; the header breadcrumb names it.
+                ScrollView {
+                    Group {
+                        if let notices {
+                            LicensesView(notices: notices, settingsFocus: settingsFocus)
+                        } else {
+                            SettingsSection("Third-party notices") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Open-source notices are unavailable")
+                                            .font(.system(size: 14, weight: .medium))
+                                        Text("The license manifest could not load.")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground.opacity(0.8))
+                                    }
+                                    .accessibilityIdentifier("licenses-unavailable")
+                                    Button("Try again") { notices = DependencyNotice.load() }
+                                        .buttonStyle(T3SmallButtonStyle(height: 24))
+                                        .accessibilityIdentifier("licenses-retry")
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 20)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
-                        .accessibilityIdentifier("licenses-back")
-                        Text("Open source licenses").font(.system(size: 16, weight: .semibold))
                     }
-                    if let notices {
-                        LicensesView(notices: notices, settingsFocus: settingsFocus)
-                    } else {
-                        VStack(spacing: 12) {
-                            Text("Open-source notices are unavailable in this app bundle.")
-                                .font(.system(size: 14))
-                                .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
-                                .accessibilityIdentifier("licenses-unavailable")
-                            Button("Try Again") { notices = DependencyNotice.load() }
-                                .buttonStyle(T3SmallButtonStyle())
-                                .accessibilityIdentifier("licenses-retry")
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    .settingsPageContainer()
                 }
-                .padding(.horizontal, 30)
-                .padding(.vertical, 24)
             } else {
                 ScrollView {
                     appInformation.settingsPageContainer()
@@ -60,39 +59,18 @@ struct AboutView: View {
         VStack(alignment: .leading, spacing: 32) {
             SettingsSection("App") {
                 versionRow
-                SettingsDivider()
-                informationRow("Build", value: info.build, id: "about-build")
-                SettingsDivider()
-                informationRow("Pi coding agent", value: componentVersion(DependencyNotice.piPackage),
-                               id: "about-pi-version")
-                SettingsDivider()
-                informationRow("Node.js", value: componentVersion("node"), id: "about-node-version")
-                SettingsDivider()
-                informationRow("SwiftTerm", value: componentVersion("swiftterm"), id: "about-swiftterm-version")
-                SettingsDivider()
-                informationRow("Model providers", value: Provider.allCases.map(\.label).joined(separator: ", "),
-                               id: "about-providers")
                 if let openWelcome, let settingsFocus {
                     SettingsDivider()
                     SettingsRow("Welcome page", description: "Set up a model and add projects.") {
                         Button("Open", action: openWelcome)
                             .buttonStyle(T3SmallButtonStyle())
-                            .accessibilityLabel("Open Welcome page")
                             .settingsTarget(.welcomePage, focus: settingsFocus)
                             .disabled(!welcomeEnabled)
                     }
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                Text(info.name)
-                    .font(.system(size: 12))
-                    .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 28)
-                    .accessibilityIdentifier("about-app-name")
-            }
             SettingsSection("Legal") {
-                SettingsRow("Open-source licenses", description: "Notices for the software bundled with this app.") {
+                SettingsRow("Open source licenses", description: "Notices for dependencies, assets, and optional tools used by tncode.") {
                     Button("View licenses") {
                         notices = DependencyNotice.load()
                         showingLicenses = true
@@ -104,9 +82,25 @@ struct AboutView: View {
         }
     }
 
+    /// "Version" with the version as a muted code label that copies it, as in T3 Code's AboutVersionTitle.
     @ViewBuilder
     private var versionRow: some View {
-        let row = informationRow("Version", value: info.version, id: "about-version", chip: true)
+        let palette = T3Palette(colorScheme, t3Themes)
+        let row = VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Version")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(palette.foreground)
+                AboutVersionLabel(version: info.version ?? String(localized: "Unavailable"))
+            }
+            .frame(minHeight: 20)
+            Text("Current version of the application.")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.mutedForeground)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         if let settingsFocus {
             row
                 .accessibilityElement(children: .contain)
@@ -117,32 +111,47 @@ struct AboutView: View {
             row
         }
     }
+}
 
-    private func componentVersion(_ id: String) -> String? {
-        notices?.first { $0.id == id }?.version
+/// The version in 11pt medium monospace; muted, underlined on hover, and copied when clicked.
+private struct AboutVersionLabel: View {
+    let version: String
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        // Selectable text keeps the version readable by VoiceOver as its value; a click copies it.
+        Text(verbatim: version)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(hovering ? palette.foreground : palette.mutedForeground)
+            .underline(hovering)
+            .textSelection(.enabled)
+            .onTapGesture(perform: copy)
+            .onHover { hovering = $0 }
+            .help("Copy version")
+            .accessibilityAction(named: Text("Copy version \(version)"), copy)
+            .accessibilityIdentifier("about-version")
     }
 
-    private func informationRow(_ label: String, value: String?, id: String, chip: Bool = false) -> some View {
-        let palette = T3Palette(colorScheme, t3Themes)
-        return SettingsRow(label) {
-            Text(value ?? String(localized: "Unavailable"))
-                .font(chip ? .system(size: 11, design: .monospaced) : .system(size: 14))
-                .foregroundStyle(chip ? palette.foreground : palette.mutedForeground)
-                .padding(.horizontal, chip ? 6 : 0)
-                .padding(.vertical, chip ? 2 : 0)
-                .background(chip ? palette.kbdFill : .clear, in: RoundedRectangle(cornerRadius: 4))
-                .textSelection(.enabled)
-                .lineLimit(1)
-                .accessibilityIdentifier(id)
-        }
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(version, forType: .string)
     }
 }
 
+/// "Third-party notices": a count and search in the header, and one row per dependency that unfolds its
+/// notice text (only one open at a time), after T3 Code's OpenSourceLicenses.
 private struct LicensesView: View {
     let notices: [DependencyNotice]
     var settingsFocus: FocusState<SettingsFocus?>.Binding?
     @State private var query = ""
-    @State private var selection: DependencyNotice.ID?
+    @State private var searching = false
+    @State private var expanded: DependencyNotice.ID?
+    @FocusState private var searchFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
 
     private var filteredNotices: [DependencyNotice] {
         let terms = query.lowercased().split(whereSeparator: \.isWhitespace)
@@ -153,85 +162,144 @@ private struct LicensesView: View {
         }
     }
 
-    private var searchField: some View {
-        TextField("Search licenses", text: $query)
-            .textFieldStyle(T3TextFieldStyle())
-            .frame(maxWidth: 288)
-    }
-
     var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
         let filtered = filteredNotices
-        VStack(alignment: .leading, spacing: 8) {
-            if let settingsFocus {
-                searchField.settingsTarget(.licenses, focus: settingsFocus)
-            } else {
-                searchField.accessibilityIdentifier("licenses-search")
-            }
-            if filtered.isEmpty {
-                Text("No licenses match that search.")
-                    .accessibilityIdentifier("licenses-empty")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                HSplitView {
-                    List(filtered, selection: $selection) { notice in
-                        Button {
-                            selection = notice.id
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(notice.name)
-                                Text([notice.version, notice.license].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+        SettingsSection("Third-party notices") {
+            VStack(alignment: .leading, spacing: 0) {
+                if filtered.isEmpty {
+                    Text("No licenses match that search.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(palette.mutedForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                        .accessibilityIdentifier("licenses-empty")
+                } else {
+                    ForEach(filtered) { notice in
+                        LicenseRow(notice: notice, open: expanded == notice.id) {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                expanded = expanded == notice.id ? nil : notice.id
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("license-entry-\(notice.id)")
-                        .tag(notice.id)
                     }
-                    .accessibilityIdentifier("licenses-list")
-                    .frame(minWidth: settingsFocus == nil ? 220 : 170, idealWidth: settingsFocus == nil ? 270 : 226)
-                    if let notice = filtered.first(where: { $0.id == selection }) {
-                        noticeDetail(notice)
-                            .id(notice.id)
-                            .frame(minWidth: settingsFocus == nil ? 340 : 285, maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Text("Select a dependency to read its notices.")
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: settingsFocus == nil ? 340 : 285, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("licenses-list")
+        } trailing: {
+            HStack(spacing: 8) {
+                Text(query.isEmpty ? String(localized: "\(notices.count) notices")
+                                   : String(localized: "\(filtered.count) of \(notices.count)"))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(palette.mutedForeground)
+                if searching || !query.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(palette.mutedForeground)
+                        TextField("Search licenses", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .focused($searchFocused)
+                            .onSubmit { if query.isEmpty { searching = false } }
+                            .onChange(of: searchFocused) { _, focused in if !focused && query.isEmpty { searching = false } }
+                            .modifier(LicenseSearchTarget(focus: settingsFocus))
                     }
+                    .frame(width: 176 - 18)
+                    .modifier(T3FieldChrome())
+                } else {
+                    Button {
+                        searching = true
+                        searchFocused = true
+                    } label: {
+                        Image(systemName: "magnifyingglass").font(.system(size: 11))
+                    }
+                    .buttonStyle(T3IconButtonStyle(size: 20))
+                    .help("Search licenses")
+                    .accessibilityLabel("Search open-source licenses")
+                    .accessibilityIdentifier("licenses-search-open")
                 }
             }
         }
+        .onAppear { if settingsFocus != nil { searching = true } }
     }
+}
 
-    private func noticeDetail(_ notice: DependencyNotice) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(notice.name).font(.title3.weight(.semibold))
-                    .accessibilityIdentifier("license-notice-name")
-                if let license = notice.license {
-                    LabeledContent("Declared license", value: license)
+private struct LicenseSearchTarget: ViewModifier {
+    let focus: FocusState<SettingsFocus?>.Binding?
+
+    func body(content: Content) -> some View {
+        if let focus { content.settingsTarget(.licenses, focus: focus) } else { content.accessibilityIdentifier("licenses-search") }
+    }
+}
+
+private struct LicenseRow: View {
+    let notice: DependencyNotice
+    let open: Bool
+    let toggle: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(palette.mutedForeground)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: notice.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(palette.foreground)
+                            .lineLimit(1)
+                        if let version = notice.version {
+                            Text(verbatim: version)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(palette.mutedForeground)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if let license = notice.license {
+                        Text(verbatim: license)
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.mutedForeground)
+                            .lineLimit(1)
+                    }
                 }
-                if notice.texts.isEmpty {
-                    Text("No notice text is included for this dependency.")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("license-text-unavailable")
-                }
-                ForEach(notice.texts) { entry in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(entry.file).font(.headline)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 36)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(open ? .isSelected : [])
+            .accessibilityIdentifier("license-entry-\(notice.id)")
+            if open {
+                VStack(alignment: .leading, spacing: 12) {
+                    if notice.texts.isEmpty {
+                        Text("No notice text is included for this dependency.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.mutedForeground)
+                            .accessibilityIdentifier("license-text-unavailable")
+                    }
+                    ForEach(notice.texts) { entry in
                         Text(entry.text)
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
+                            .lineSpacing(5)
+                            .foregroundStyle(palette.foreground.opacity(0.8))
                             .textSelection(.enabled)
+                            .frame(maxWidth: 560, alignment: .leading)
                             .accessibilityIdentifier("license-notice-text-\(entry.file)")
                     }
                 }
+                .padding(.leading, 40)
+                .padding(.trailing, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(hovering ? palette.muted.opacity(0.35) : .clear)
+        .onHover { hovering = $0 }
     }
 }
 

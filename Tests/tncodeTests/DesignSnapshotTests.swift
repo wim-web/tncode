@@ -9,7 +9,12 @@ import XCTest
 /// (for example settings-general). The window is never shown.
 @MainActor
 final class DesignSnapshotTests: XCTestCase {
-    private static let size = NSSize(width: 1080, height: 720)
+    /// TNCODE_DESIGN_WIDTH and TNCODE_DESIGN_HEIGHT change the window size, for example to see a whole settings page.
+    private static var size: NSSize {
+        let environment = ProcessInfo.processInfo.environment
+        return NSSize(width: environment["TNCODE_DESIGN_WIDTH"].flatMap(Double.init) ?? 1080,
+                      height: environment["TNCODE_DESIGN_HEIGHT"].flatMap(Double.init) ?? 720)
+    }
 
     func testRenderDesignSnapshots() throws {
         guard let output = ProcessInfo.processInfo.environment["TNCODE_DESIGN_SNAPSHOTS"] else {

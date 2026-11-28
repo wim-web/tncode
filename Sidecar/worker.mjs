@@ -28,7 +28,7 @@ const savedLoginProviders = new Map([
   ["pi:anthropic", "anthropic"],
   ["pi:github-copilot", "github-copilot"],
 ]);
-const savedLoginError = "Your saved sign-in is unavailable. Sign in again in Model Settings.";
+const savedLoginError = "Your saved sign-in is unavailable. Sign in again in Settings › Providers.";
 const oauthSecrets = new Set();
 let nextRequest = 0;
 let credential;

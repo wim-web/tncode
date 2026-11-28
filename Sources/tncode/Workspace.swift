@@ -15,9 +15,9 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
         rawValue.hasPrefix("pi:") ? String(rawValue.dropFirst(3)) : nil
     }
     var missingCredentialMessage: String {
-        if self == .codexAgent { return String(localized: "Connect your Codex account in Model Settings.") }
+        if self == .codexAgent { return String(localized: "Connect your Codex account in Settings › Providers.") }
         return piProviderID == nil ? String(localized: "Save an API key for this provider in Settings.")
-            : String(localized: "Sign in to this account in Model Settings.")
+            : String(localized: "Sign in to this account in Settings › Providers.")
     }
     var signInProvider: Self? {
         switch self {
@@ -492,9 +492,17 @@ struct Workspace: Codable {
     var threadLinkID: UUID?
     var snoozedShelfExpanded: Bool?
     var snoozeOptions: [ThreadSnoozeSchedule.Option]?
+    /// Starred models, shared by the composer's model picker and Settings → Providers.
     var favoriteModels: [FavoriteModel]?
+    /// Settings → Providers, keyed by `Provider.rawValue`.
+    var providers: [String: ProviderPreferences]?
+    /// Settings → Threads → Permissions for projects added from now on. Nil reads files only.
+    var defaultToolPermission: ToolPermission?
 
     var startNewWorktreesFromRemote: Bool { newWorktreesStartFromRemote ?? true }
+    func preferences(for provider: Provider) -> ProviderPreferences {
+        providers?[provider.rawValue] ?? ProviderPreferences()
+    }
     var effectiveSnoozeOptions: [ThreadSnoozeSchedule.Option] {
         snoozeOptions ?? ThreadSnoozeSchedule.defaultOptions
     }

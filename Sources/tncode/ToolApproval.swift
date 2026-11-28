@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum ToolPermission: String, CaseIterable, Encodable {
+enum ToolPermission: String, CaseIterable, Codable {
     case readFiles, supervised, shellAndEdits
 
     var title: String {
