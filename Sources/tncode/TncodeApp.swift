@@ -83,6 +83,8 @@ struct TncodeApp: App {
                 }
             }
                 .background(WindowChrome().frame(width: 0, height: 0).accessibilityHidden(true))
+                // Keeps SwiftUI from giving the title bar a backing; WindowChrome restores it if it does anyway.
+                .toolbarBackground(.hidden, for: .windowToolbar)
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
                 .onOpenURL { url in
                     if model.openSettingsLink(url) || model.openPromptLink(url) {
