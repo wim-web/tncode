@@ -1,3 +1,0 @@
-id	status	verification	swift_source	difference	acceptance
-RT-TERMINAL-FONT-PREVIEW	未対応	ソース確認	Sources/PiWorkspace/ThreadTerminal.swift:12	ターミナルはある。設定内で端末フォントを試す入力欄の対応画面がない。	設定画面でフォント候補変更後の端末プレビューに文字を入力できること。
-RT-TERMINAL-INPUT	部分	配布版で実入力	Sources/PiWorkspace/ThreadTerminal.swift:12	SwiftTerm の端末入力。T3 の Ghostty と表示方式・右パネルでの端末管理が異なる。	同じ checkout で pwd を入力し、エコーと Return 後の出力を分けて確認する。

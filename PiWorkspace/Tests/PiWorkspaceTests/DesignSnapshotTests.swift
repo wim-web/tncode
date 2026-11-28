@@ -3,7 +3,7 @@ import SwiftUI
 import XCTest
 @testable import PiWorkspace
 
-/// Renders the workspace offscreen for design comparison with T3 Code (1080×720, as in T3Audit captures).
+/// Renders the workspace offscreen for design comparison with T3 Code (1080×720, as in reference/screens captures).
 /// Set PI_WORKSPACE_DESIGN_SNAPSHOTS to an output directory to write PNGs, and optionally
 /// PI_WORKSPACE_DESIGN_STATES to a comma-separated list of empty, draft, thread or settings-<page>
 /// (for example settings-general). The window is never shown.
