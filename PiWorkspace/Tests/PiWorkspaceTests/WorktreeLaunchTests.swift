@@ -530,6 +530,7 @@ final class WorktreeLaunchTests: XCTestCase {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
             self.root = root
             repo = try await GitWorkspace.createRepository(named: "project", in: root)
+            try WorkspaceStore(root: workspace).save(.init(model: ModelSettings(provider: .openai)))
             let hooks = root.appendingPathComponent("hooks")
             try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: false)
             let hook = hooks.appendingPathComponent("post-checkout")
@@ -557,10 +558,10 @@ final class WorktreeLaunchTests: XCTestCase {
         @MainActor
         func open() -> WorkspaceModel {
             WorkspaceModel(root: workspace, keychainService: "dev.piworkspace.launch-tests",
-                           readCredential: { _ in "fixture-key" }) { config, cwd in
+                           readCredential: { _ in "fixture-key" }, makeProcess: { config, cwd in
                 try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: "/bin/sh"),
                               arguments: ["-c", Self.piHelper, "launch-fixture", self.root.path, self.repo.path])
-            }
+            })
         }
 
         func savedThread() throws -> Conversation {

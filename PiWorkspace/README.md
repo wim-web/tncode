@@ -1,6 +1,6 @@
 # Pi Workspace
 
-Pi Workspace is a native macOS client for the local project and conversation workflow in [T3 Code](https://github.com/pingdotgg/t3code/blob/v0.1.12/docs/user/thread-sidebar.md). It uses the Pi SDK to run the agent and store conversation history.
+Pi Workspace is a native macOS client for local projects and conversations. A new workspace runs Codex through the installed `codex app-server`. You can also choose the bundled Pi agent. Each agent keeps its own conversation history. [T3 Code sidebar](https://github.com/pingdotgg/t3code/blob/v0.1.12/docs/user/thread-sidebar.md)
 
 ## Build and open
 
@@ -21,7 +21,7 @@ Open `pi-workspace://settings/open-source-licenses` to go directly to the notice
 
 ## Start a conversation
 
-1. From Welcome, open **Model Settings** to choose your provider, model ID and API key. For a local OpenAI-compatible model, enter its loopback base URL and context window. Select **Save**, then **Start**. You can also choose **Start without an agent** and configure a model later.
+1. If Codex is already signed in on this Mac, select **Start** in Welcome. Otherwise, select **Sign in…**, choose **Codex**, and finish signing in with your ChatGPT account. In an existing workspace, select **Model Settings → Agent → Codex → Use Codex** and open a new conversation. Submitted Pi conversations keep using Pi.
 2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. In the path field, use the arrow keys to highlight a folder and Tab to enter it. With several matches, Tab completes their shared prefix. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
 3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app reopens the selected conversation if it has unfinished text. Select a conversation in the sidebar to continue it.
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
@@ -41,7 +41,7 @@ By default, Return sends a message. When Pi accepts steering during a turn, Retu
 
 Use a queued row's menu to edit, reorder, or remove it. You can update a paused queue before signing in to the provider. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
 
-Use **Attach Files** to add PNG, JPEG, or UTF-8 text files to a draft. You can also paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local model that accepts images, enable image input in **Model Settings**.
+Codex conversations accept UTF-8 text attachments and queue follow-ups between turns. In a Pi conversation, **Attach Files** also accepts PNG and JPEG images. You can paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local Pi model that accepts images, enable image input in **Model Settings**.
 
 Select a text attachment to read its contents. **Remove from Draft** removes the selected attachment from the draft or queued edit. For sent files, **Save File** opens the macOS save dialog. Older Pi histories that recorded only the name show **Attachment unavailable**.
 
@@ -55,9 +55,9 @@ A shared prompt link such as `pi-workspace://new/v1?prompt=Review+the+tests&repo
 
 For a PR link such as `pi-workspace://new/v1?pr=owner%2Frepo%2F42&prompt=Review+this+change`, review the folder and commit before selecting **Check out**. If you clone the repository first, open the link again. When a linked conversation already exists, **Open Thread** keeps its draft. **Replace Draft and Open** applies the linked prompt to it.
 
-Choose **Fork from this response** on a completed reply to start a separate conversation with the messages through that reply. **Open source conversation** and **Open fork** take you between the two histories.
+In a Pi conversation, choose **Fork from this response** on a completed reply to start a separate conversation with the messages through that reply. **Open source conversation** and **Open fork** take you between the two histories.
 
-Use **Add Panel Surface → Side chat**, or send `/btw` followed by a question, to ask beside the current thread. The side chat has its own Pi history. **Add to chat** attaches a copy of its messages to the parent’s draft.
+In a Pi conversation, use **Add Panel Surface → Side chat**, or send `/btw` followed by a question, to ask beside the current thread. The side chat has its own Pi history. **Add to chat** attaches a copy of its messages to the parent’s draft.
 
 Press ⌘K outside the terminal to open the command palette. Type to filter, use the arrow keys and Return to choose an action, or press Escape to return to the workspace. **New thread in…** lets you select a project.
 
@@ -77,7 +77,9 @@ Pi can read files with models that support tools. Choose **Supervised** to appro
 
 A local model with tools enabled can ask a question during its turn. Select the options or type an answer, use **Next** and **Previous** to review the pages, then select **Submit**. **Dismiss** sends the model a declined response. **Stop** ends the turn. A supervised write requested after an answer still needs its own approval.
 
-The macOS app keeps API keys in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/Pi Workspace`. **Model Settings** removes or replaces a saved key.
+Codex uses its own login, model configuration, and MCP servers. Open a Codex conversation's details to see the Web search mode and whether this session advertises Computer Use. To approve an app access request, choose **Supervised** in the composer. The Codex conversation history lives in the Codex home.
+
+Pi uses the bundled Pi SDK and its own saved accounts. You can sign in from **Model Settings → Account**. If you choose an API-key provider, the app stores your key in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/Pi Workspace`.
 
 In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
 
@@ -156,6 +158,8 @@ Run the headless suite while using your Mac. It exercises the Pi worker, saved c
 ```sh
 node scripts/verify-headless.mjs
 ```
+
+To test the Codex agent, set `CODEX_BINARY` to the absolute path of the installed Codex executable and run `node scripts/verify-codex-agent.mjs`. It uses a disposable Codex home, a loopback model fixture, and a test MCP server. Set `PI_CODEX_XCTEST` to the built `PiWorkspacePackageTests.xctest` bundle to include Swift conversation routing.
 
 For the full native UI suite, use a separate macOS login session or virtual machine with Accessibility and keyboard input access for the test driver. Build the app and run the following commands inside that session.
 

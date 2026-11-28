@@ -66,6 +66,7 @@ enum SettingsAnchor: String {
     case followUpBehavior = "follow-up-behavior"
     case scope = "model-settings-scope"
     case provider = "provider"
+    case accountSignIn = "provider-account-sign-in"
     case modelID = "model-id"
     case endpoint = "endpoint"
     case contextWindow = "context-window"
@@ -215,6 +216,7 @@ struct SettingsSearchAvailability {
     var canEditModels: Bool
     var hasProjectScope: Bool
     var usesLocalProvider: Bool
+    var usesPiLogin = false
     var hasSavedKey: Bool
     var canResetModelOverride: Bool
     var usesCustomSearch: Bool
@@ -226,7 +228,8 @@ struct SettingsSearchAvailability {
         case .scope: hasProjectScope
         case .endpoint, .contextWindow, .localTools, .localImages: usesLocalProvider
         case .thinkingLevel: !usesLocalProvider
-        case .removeKey: hasSavedKey
+        case .apiKey: !usesPiLogin
+        case .removeKey: !usesPiLogin && hasSavedKey
         case .resetModelOverride: canResetModelOverride
         case .customSearchURL: usesCustomSearch
         default: true
@@ -240,7 +243,8 @@ extension SettingsSearchAvailability {
         let hasOverride = project.map { draft.scope == .project($0.id) && $0.modelOverride != nil } ?? false
         self.init(canEditModels: model.canOpenModelSettings, hasProjectScope: project != nil,
                   usesLocalProvider: draft.settings.provider == .local,
-                  hasSavedKey: model.canOpenModelSettings && model.hasKey(for: draft.settings),
+                  usesPiLogin: draft.settings.provider == .codexAgent || draft.settings.provider.piProviderID != nil,
+                  hasSavedKey: model.canOpenModelSettings && draft.settings.provider != .codexAgent && draft.settings.provider.piProviderID == nil && model.hasCredential(for: draft.settings),
                   canResetModelOverride: hasOverride, usesCustomSearch: browser.engine == .custom)
     }
 }

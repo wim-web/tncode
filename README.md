@@ -16,8 +16,9 @@ T3 Code (Beta) 0.1.12 を Swift／SwiftUI の macOS アプリへ移植するた�
 ## 確定している移植方針
 
 - macOS の画面、プロジェクトとスレッドの選択、独立した新規データは Swift 側で管理する。[データモデル](PiWorkspace/Sources/PiWorkspace/Workspace.swift) · [操作モデル](PiWorkspace/Sources/PiWorkspace/WorkspaceModel.swift)
-- エージェントは補助プロセス内の Pi SDK を使う。API キーは Swift 側が macOS Keychain に保存し、補助プロセスの CredentialStore がプロセス間通信で読み出す。[Keychain](PiWorkspace/Sources/PiWorkspace/KeyVault.swift) · [Pi の起動](PiWorkspace/Sources/PiWorkspace/PiProcess.swift) · [SDK への組み込み](PiWorkspace/Sidecar/worker.mjs) · [認証の先行試作](pi-keychain-probe/README.md)
-- **Swift 版のテレメトリは既定オフ。** 新規データで利用統計や診断の外部送信を自動で有効にしない。現行版は `PI_TELEMETRY=0` と `PI_OFFLINE=1` を補助プロセスに渡す。利用者が選んだモデル API に対する会話の送信は別の機能である。SDK の判定は同梱版で確認済み。起動・初回送信・再起動時の全プロセスの通信先照合は、今後の受入項目。[設定箇所](PiWorkspace/Sources/PiWorkspace/PiProcess.swift#L83) · [判定結果](T3Audit-0.1.12/results/pi-telemetry.json) · [原本の送信仕様](https://github.com/pingdotgg/t3code/blob/ca81b7b97a1c4b91e5ac25768d0f6629f37732fd/docs/user/telemetry.md)
+- 新しいワークスペースの実行役は Codex。Swift 版が Mac にインストール済みの `codex app-server` を起動する。Codex のログインをそのまま使え、初回はアプリの「ログイン…」から接続できる。既存のワークスペースでは「モデル設定 → 実行役 → Codex」で切り替える。送信済みの Pi 会話は引き続き Pi で開く。[Codex 認証](PiWorkspace/Sidecar/codex-login.mjs) · [Codex での会話](PiWorkspace/Sidecar/codex-agent.mjs) · [Pi での会話](PiWorkspace/Sidecar/worker.mjs)
+- Codex の会話詳細には Web 検索のモードと Computer Use のツールの有無が出る。Mac のアプリ操作を頼むときは、入力欄の権限を「要承認」にすると、Codex から届くアプリごとの許可要求にその場で答えられる。[実行役の検証](PiWorkspace/scripts/verify-codex-agent.mjs)
+- Pi の補助プロセスには `PI_TELEMETRY=0` と `PI_OFFLINE=1` を渡す。Codex 本体は手元の Codex 設定を使う。[起動設定](PiWorkspace/Sources/PiWorkspace/PiProcess.swift) · [Pi SDK の判定結果](T3Audit-0.1.12/results/pi-telemetry.json)
 
 ## 最初に通す3つの操作
 

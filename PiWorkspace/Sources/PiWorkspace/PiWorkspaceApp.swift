@@ -42,6 +42,9 @@ struct PiWorkspaceApp: App {
             do {
                 let store = try WorkspaceStore(root: root)
                 let settings = try store.load().effectiveModel.validated()
+                guard settings.provider != .codexAgent, settings.provider.piProviderID == nil else {
+                    throw WorkspaceError("Pi manages this login.")
+                }
                 let vault = KeyVault(service: keychainService)
                 if args.contains("--remove-api-key") {
                     try vault.remove(settings.account)

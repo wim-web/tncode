@@ -553,6 +553,7 @@ final class ComposerDraftTests: XCTestCase {
                 .appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+            try WorkspaceStore(root: workspace).save(.init(model: ModelSettings(provider: .openai)))
         }
 
         deinit { try? FileManager.default.removeItem(at: root) }
@@ -560,10 +561,10 @@ final class ComposerDraftTests: XCTestCase {
         @MainActor
         func open(key: String? = Fixture.key) -> WorkspaceModel {
             WorkspaceModel(root: workspace, keychainService: "dev.piworkspace.composer-tests",
-                           readCredential: { _ in key }) { config, cwd in
+                           readCredential: { _ in key }, makeProcess: { config, cwd in
                 try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: "/bin/sh"),
                               arguments: ["-c", Self.helper, "composer-tests", self.commands.path])
-            }
+            })
         }
 
         func saved() throws -> Workspace {

@@ -730,18 +730,21 @@ struct WorkspaceView: View {
     }
 
     private var welcome: some View {
-        let ready = model.hasKey(for: model.workspace.model)
+        let ready = model.hasCredential(for: model.workspace.model)
         let returning = model.workspace.welcomeCompleted == true || !model.workspace.projects.isEmpty
         return VStack(alignment: .leading, spacing: 18) {
             Text("Welcome to Pi Workspace")
                 .font(.title.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("welcome-title")
-            Text("Connect a model to send messages with Pi. You can open projects before setting up a model.")
+            Text(ready ? LocalizedStringKey("Open a project to start chatting.")
+                 : "Sign in with your account to start chatting. You can also open a project first.")
                 .foregroundStyle(.secondary)
-            LabeledContent("Model", value: model.workspace.model.model)
+            LabeledContent("Model", value: model.workspace.model.displayModel)
             HStack {
-                Button("Model Settings…") { model.openSettings(.model) }
+                Button(ready ? "Model Settings…" : "Sign in…") {
+                    model.openSettings(.model, anchor: ready ? nil : .accountSignIn)
+                }
                     .accessibilityIdentifier("model-settings")
                 Button("Add Project…") { model.openFolder() }
                     .focused($welcomeFocus, equals: .addProject)
@@ -757,6 +760,9 @@ struct WorkspaceView: View {
                 .accessibilityIdentifier(returning ? "welcome-close" : "start-workspace")
         }
         .defaultFocus($welcomeFocus, .finish)
+        .task(id: model.workspace.model.provider) {
+            if model.workspace.model.provider == .codexAgent { model.refreshCodexAccount() }
+        }
         .padding(32)
         .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2284,10 +2290,17 @@ struct WorkspaceView: View {
             .font(.callout)
             Divider()
             Text("Model").font(.callout.weight(.medium))
-            Text(model.effectiveModel.model)
+            Text(model.effectiveModel.displayModel)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(model.effectiveModel.model)
                 .accessibilityIdentifier("thread-model")
+            if model.effectiveModel.provider == .codexAgent, let tools = model.codexCapabilities {
+                LabeledContent("Web search", value: tools.webSearch.label)
+                    .accessibilityIdentifier("thread-codex-web-search")
+                LabeledContent("Computer Use", value: tools.computerUseLabel)
+                    .accessibilityIdentifier("thread-codex-computer-use")
+            }
             if let chats = thread.sideChats, !chats.isEmpty {
                 Divider()
                 Text("Side chats").font(.callout.weight(.medium))
@@ -3075,7 +3088,11 @@ struct WorkspaceView: View {
                 } else if model.canSkipCompaction {
                     Text("Compacting conversation…")
                 } else if model.phase == .running {
-                    Text(model.activity.isEmpty ? "Pi is responding…" : "Running \(model.activity)…")
+                    if model.activity.isEmpty {
+                        Text(model.effectiveModel.provider == .codexAgent ? "Codex is responding…" : "Pi is responding…")
+                    } else {
+                        Text("Running \(model.activity)…")
+                    }
                 }
                 if model.phase == .stopping { Text("Stopping…") }
                 if model.phase == .stopTimedOut { Text("Pi hasn’t confirmed. Try Stop again.") }
@@ -3199,7 +3216,9 @@ struct WorkspaceView: View {
             }))
         return ComposerAttachmentsView(model: model, threadID: threadID, previewFocus: $focusedAttachmentOpener,
                                        openPreview: openImagePreview, openFilePreview: openFilePreview) {
-            ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil ? "Ask Pi anything" : "Edit queued message", text: Binding(
+            ComposerTextField(target: target, placeholder: model.editingQueuedMessageID == nil
+                              ? (model.effectiveModel.provider == .codexAgent ? String(localized: "Ask Codex") : String(localized: "Ask Pi anything"))
+                              : String(localized: "Edit queued message"), text: Binding(
                 get: { ownsComposer() ? model.draft : "" },
                 set: {
                     guard ownsComposer() else { return }
@@ -3271,7 +3290,7 @@ struct WorkspaceView: View {
 
     private var composerModelButton: some View {
         let settings = model.effectiveModel
-        let title = settings.thinkingLevel.map { "\(settings.model) \($0.label)" } ?? settings.model
+        let title = settings.thinkingLevel.map { "\(settings.displayModel) \($0.label)" } ?? settings.displayModel
         return Button {
             guard model.canChooseComposerModel, let scope = model.draftProjectScope else { return }
             composerModelPicker = ComposerModelPresentation(scope: scope, options: model.composerModelOptions())

@@ -1,0 +1,8 @@
+/*
+  Localizable.strings (English)
+  Pi Workspace
+
+  Intentionally empty: the English strings in the Swift sources are the
+  development-language keys. This file only declares English as a supported
+  localization.
+*/

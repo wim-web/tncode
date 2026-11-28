@@ -15,6 +15,7 @@ struct ChatMessage: Decodable, Identifiable {
 }
 
 enum PiEvent: Decodable {
+    case codexCapabilities(CodexCapabilities)
     case credential(id: String, read: Bool)
     case modelCatalog([Provider: [String: String]])
     case ready([ChatMessage], supportsImages: Bool = false)
@@ -39,7 +40,7 @@ enum PiEvent: Decodable {
     }
     private enum Capability: String, CodingKey { case supportsImages }
     private enum Kind: String, Decodable {
-        case credential, modelCatalog, ready, history, sentImage, sentFile, partial, activity, toolApproval, finished, fatal
+        case credential, modelCatalog, codexCapabilities, ready, history, sentImage, sentFile, partial, activity, toolApproval, finished, fatal
         case agentQuestion, agentQuestionEnded, agentQuestionRejected, commitMessage
         case inputMode, queueRejected, compactionSkipped, forked
     }
@@ -49,6 +50,7 @@ enum PiEvent: Decodable {
         let fields = try decoder.container(keyedBy: Field.self)
         let kind = try fields.decode(Kind.self, forKey: .type)
         switch kind {
+        case .codexCapabilities: self = .codexCapabilities(try CodexCapabilities(from: decoder))
         case .credential:
             self = .credential(id: try fields.decode(String.self, forKey: .requestID),
                                read: try fields.decode(Operation.self, forKey: .operation) == .read)
@@ -171,25 +173,31 @@ protocol PiConnection: AnyObject {
     func close()
 }
 
+typealias PiProcess = PiJSONProcess<PiEvent>
+
+extension PiJSONProcess: PiConnection where Event == PiEvent {}
+
 @MainActor
-final class PiProcess: PiConnection {
+final class PiJSONProcess<Event: Decodable> {
     private let child = Process()
     private let input = Pipe()
     private let output = Pipe()
-    var onEvent: ((PiEvent) -> Void)?
+    var onEvent: ((Event) -> Void)?
     var onClose: (() -> Void)?
 
-    convenience init(config: URL, cwd: String) throws {
+    convenience init(config: URL, cwd: String, loginDirectory: URL? = nil, script: String = "worker.mjs") throws {
         guard let resources = Bundle.main.resourceURL else { throw WorkspaceError("App resources are missing.") }
         let sidecar = resources.appendingPathComponent("Sidecar", isDirectory: true)
         try self.init(
             config: config, cwd: cwd,
             executable: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/node"),
-            arguments: [sidecar.appendingPathComponent("worker.mjs").path]
+            arguments: [sidecar.appendingPathComponent(script).path], loginDirectory: loginDirectory,
+            codexEnvironment: script.hasPrefix("codex-") ? ProcessInfo.processInfo.environment : nil
         )
     }
 
-    init(config: URL, cwd: String, executable: URL, arguments: [String]) throws {
+    init(config: URL, cwd: String, executable: URL, arguments: [String], loginDirectory: URL? = nil,
+         codexEnvironment: [String: String]? = nil) throws {
         try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         child.executableURL = executable
@@ -201,6 +209,15 @@ final class PiProcess: PiConnection {
             "PI_OFFLINE": "1",
             "PI_TELEMETRY": "0"
         ]
+        if let codexEnvironment {
+            var environment = codexEnvironment
+            environment.removeValue(forKey: "NODE_OPTIONS")
+            environment.removeValue(forKey: "PI_CODING_AGENT_DIR")
+            environment.removeValue(forKey: "PI_WORKSPACE_LOGIN_DIR")
+            child.environment = environment
+        } else if let loginDirectory {
+            child.environment?["PI_WORKSPACE_LOGIN_DIR"] = loginDirectory.path
+        }
         child.standardInput = input
         child.standardOutput = output
         child.standardError = FileHandle.nullDevice
@@ -220,7 +237,7 @@ final class PiProcess: PiConnection {
                 buffer.append(contentsOf: bytes.prefix(size))
                 while let end = buffer.firstIndex(of: 10) {
                     let line = buffer.prefix(upTo: end)
-                    if let event = try? decoder.decode(PiEvent.self, from: line) {
+                    if let event = try? decoder.decode(Event.self, from: line) {
                         DispatchQueue.main.async { [weak self] in self?.onEvent?(event) }
                     }
                     buffer.removeSubrange(...end)

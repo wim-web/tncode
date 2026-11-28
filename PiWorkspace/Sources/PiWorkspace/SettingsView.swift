@@ -45,7 +45,8 @@ struct SettingsView: View {
         self.openWelcome = openWelcome
         let projectID = request.projectID
         let project = model.projects.first { $0.id == projectID }
-        _modelDrafts = State(initialValue: [projectID: ModelSettingsDraft(workspace: model.workspace.model, project: project)])
+        _modelDrafts = State(initialValue: [projectID: ModelSettingsDraft(workspace: model.workspace.model, project: project,
+                            signingIn: request.destination.anchor == .accountSignIn)])
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
         _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
         _worktreeDirectory = State(initialValue: model.workspace.worktreesDirectory ?? "")

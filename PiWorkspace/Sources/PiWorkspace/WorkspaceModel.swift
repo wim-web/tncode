@@ -609,31 +609,50 @@ final class WorkspaceModel: ObservableObject {
     let root: URL
     private var store: WorkspaceStore?
     private let vault: KeyVault
+    let piLogins: PiSavedLogins
     private let readCredential: (String) throws -> String?
     private let credentialExists: (String) throws -> Bool
     private let makeProcess: (URL, String) throws -> any PiConnection
+    private let makeCodexProcess: (URL, String) throws -> any PiConnection
+    private var codexAccountProbe: ProviderSignIn.Helper?
+    @Published private(set) var codexAccountStatus: CodexAccountStatus?
+    @Published private(set) var codexCapabilities: CodexCapabilities?
     private let makeGitHubReader: (String) -> GitHubReader
     private var process: (any PiConnection)?
     private var connectedModel: ModelSettings?
     private var modelCatalog: [Provider: [String: String]] = [:]
-    private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Error>)?
+    private var pendingThreadLink: (worker: any PiConnection, result: CheckedContinuation<Bool, Error>, capabilities: CodexCapabilities?)?
     private var sentAttachmentRequests: [UUID: CheckedContinuation<ComposerAttachment.Payload?, Never>] = [:]
     private var activeTurnID: UUID?
     private var stopTimeout: Task<Void, Never>?
 
     init(root: URL, keychainService: String, now: @escaping () -> Date = Date.init,
+         piAgentDirectory: URL = PiHistoryDiscovery.localAgentDirectory,
          credentialExists: ((String) throws -> Bool)? = nil,
          readCredential: ((String) throws -> String?)? = nil,
          makeProcess: ((URL, String) throws -> any PiConnection)? = nil,
+         makeCodexProcess: ((URL, String) throws -> any PiConnection)? = nil,
          makeGitHubReader: @escaping (String) -> GitHubReader = { GitHubReader(directory: $0) }) {
         self.root = root
         self.now = now
         snoozeClock = now()
         let vault = KeyVault(service: keychainService)
         self.vault = vault
-        self.readCredential = readCredential ?? vault.read
-        self.credentialExists = credentialExists ?? vault.exists
-        self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1) }
+        let logins = PiSavedLogins(directory: piAgentDirectory)
+        self.piLogins = logins
+        let readKey = readCredential ?? vault.read
+        let keyExists = credentialExists ?? vault.exists
+        self.readCredential = { account in
+            if account == Provider.codexAgent.rawValue || account.hasPrefix("pi:") { return nil }
+            return try readKey(account)
+        }
+        self.credentialExists = { account in
+            if account == Provider.codexAgent.rawValue { return false }
+            if account.hasPrefix("pi:") { return logins.profiles().contains { $0.account == account } }
+            return try keyExists(account)
+        }
+        self.makeProcess = makeProcess ?? { try PiProcess(config: $0, cwd: $1, loginDirectory: logins.directory) }
+        self.makeCodexProcess = makeCodexProcess ?? { try PiProcess(config: $0, cwd: $1, script: "codex-agent.mjs") }
         self.makeGitHubReader = makeGitHubReader
         openWorkspace()
     }
@@ -646,7 +665,7 @@ final class WorkspaceModel: ObservableObject {
         guard store == nil else { return }
         do {
             let store = try WorkspaceStore(root: root)
-            workspace = try store.load(restoringPrevious: restoringPrevious)
+            workspace = try store.load(restoringPrevious: restoringPrevious, initialModel: .codex)
             try? store.recoverHistory(in: workspace)
             self.store = store
             refreshSnoozes()
@@ -818,6 +837,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func shutdown(keepingQueue: Bool = false) {
+        codexCapabilities = nil
         stopTimeout?.cancel()
         stopTimeout = nil
         rejectPendingThreadLink()
@@ -1954,7 +1974,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func waitForOpeningThread(_ worker: any PiConnection) async throws -> Bool {
-        try await withCheckedThrowingContinuation { pendingThreadLink = (worker, $0) }
+        try await withCheckedThrowingContinuation { pendingThreadLink = (worker, $0, nil) }
     }
 
     private func stageThreadLink(store: WorkspaceStore, resolve: @escaping () throws -> (Int, Conversation),
@@ -1962,7 +1982,7 @@ final class WorkspaceModel: ObservableObject {
         let (index, thread) = try resolve()
         let project = workspace.projects[index]
         let command = try linkedOpenCommand(project: project, thread: thread, store: store)
-        if command.requireHistory {
+        if command.requireHistory && command.config?.provider != .codexAgent {
             try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: thread.id)
         }
         func selectWhenReady() throws {
@@ -1971,12 +1991,12 @@ final class WorkspaceModel: ObservableObject {
             guard current == command else { throw WorkspaceError("The linked thread changed. Open the link again.") }
             try select(index, thread)
         }
-        let worker = try makeProcess(store.config, command.config == nil ? store.root.path : command.cwd)
+        let worker = try conversationWorker(store, command: command)
         return try await withCheckedThrowingContinuation { result in
-            pendingThreadLink = (worker, result)
+            pendingThreadLink = (worker, result, nil)
             worker.onClose = { [weak self, weak worker] in
                 guard let self, let worker, self.pendingThreadLink?.worker === worker else { return }
-                self.rejectPendingThreadLink("The Pi helper exited while opening the linked thread.")
+                self.rejectPendingThreadLink(String(localized: "The Pi helper exited while opening the linked thread."))
             }
             worker.onEvent = { [weak self, weak worker] event in
                 guard let self, let worker else { return }
@@ -1992,6 +2012,8 @@ final class WorkspaceModel: ObservableObject {
         guard let pending = pendingThreadLink, pending.worker === worker else { return }
         do {
             switch event {
+            case let .codexCapabilities(capabilities):
+                pendingThreadLink?.capabilities = capabilities
             case let .credential(id, read):
                 guard let config = command.config else { throw WorkspaceError("The Pi transcript cannot access model credentials.") }
                 try replyToCredential(id, read: read, account: config.account, worker: worker)
@@ -2003,6 +2025,7 @@ final class WorkspaceModel: ObservableObject {
                 resetConnection()
                 error = nil
                 attach(worker, config: command.config)
+                codexCapabilities = pending.capabilities
                 receive(event, from: worker, account: command.config?.account)
                 finishOpeningThreadLink()
                 pending.result.resume(returning: true)
@@ -2555,9 +2578,33 @@ final class WorkspaceModel: ObservableObject {
         if save({ $0.projects[p].toolPermission = permission }) { connect() }
     }
 
-    func hasKey(for settings: ModelSettings) -> Bool {
+    func hasCredential(for settings: ModelSettings) -> Bool {
         guard let settings = try? settings.validated() else { return false }
+        if settings.provider == .codexAgent { return codexAccountStatus == .ready }
         return (try? credentialExists(settings.account)) ?? false
+    }
+
+    func refreshCodexAccount() {
+        guard let store, codexAccountProbe == nil else { return }
+        do {
+            let probe = try ProviderSignIn.Helper(config: store.config, cwd: store.root.path, script: "codex-login.mjs")
+            codexAccountProbe = probe
+            probe.onEvent = { [weak self, weak probe] event in
+                guard let self, let probe, self.codexAccountProbe === probe else { return }
+                if case let .codexStatus(status) = event { self.setCodexAccountStatus(status) }
+            }
+            probe.onClose = { [weak self, weak probe] in
+                guard let self, let probe, self.codexAccountProbe === probe else { return }
+                self.setCodexAccountStatus(.unavailable)
+            }
+            try probe.send(["type": "status"])
+        } catch { setCodexAccountStatus(.unavailable) }
+    }
+
+    func setCodexAccountStatus(_ status: CodexAccountStatus) {
+        codexAccountProbe?.close()
+        codexAccountProbe = nil
+        codexAccountStatus = status
     }
 
     var canChooseComposerModel: Bool {
@@ -2575,7 +2622,8 @@ final class WorkspaceModel: ObservableObject {
     private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
 
     func composerModelOptions() -> [ComposerModelOption] {
-        composerModelOptions(profiles: [effectiveModel, inheritedModel, workspace.model], lockedAccount: lockedModelAccount)
+        composerModelOptions(profiles: [effectiveModel, inheritedModel, workspace.model, .codex] + piLogins.profiles(),
+                             lockedAccount: lockedModelAccount)
     }
 
     private func composerModelOptions(profiles: [ModelSettings], lockedAccount: String?, includeCatalog: Bool = true) -> [ComposerModelOption] {
@@ -2591,20 +2639,22 @@ final class WorkspaceModel: ObservableObject {
             if validated == nil {
                 reason = "Check this model’s configuration in Settings."
             } else if let lockedAccount, settings.account != lockedAccount {
-                reason = "Start a new thread to switch providers."
+                reason = String(localized: "Start a new thread to switch providers.")
+            } else if settings.provider == .codexAgent {
+                reason = codexAccountStatus == .notInstalled ? CodexAccountStatus.notInstalled.label : nil
             } else if settings.provider != .local, let catalog = modelCatalog[settings.provider],
                       catalog[settings.model] == nil {
                 reason = "This model is missing from Pi’s bundled catalog."
             } else {
                 let exists = hasCredential[settings.account] ?? ((try? credentialExists(settings.account)) ?? false)
                 hasCredential[settings.account] = exists
-                reason = exists ? nil : "Save an API key for this provider in Settings."
+                reason = exists ? nil : settings.provider.missingCredentialMessage
             }
             options.append(.init(settings: settings, name: name, unavailableReason: reason))
         }
 
         for profile in profiles {
-            add(profile, name: modelCatalog[profile.provider]?[profile.model] ?? profile.model)
+            add(profile, name: modelCatalog[profile.provider]?[profile.model] ?? profile.displayModel)
         }
         guard includeCatalog else { return options }
         for profile in profiles {
@@ -2630,8 +2680,8 @@ final class WorkspaceModel: ObservableObject {
             guard option.unavailableReason == nil,
                   lockedModelAccount.map({ $0 == option.settings.account }) ?? true else { return false }
             if effectiveModel.identity == option.id { return true }
-            guard hasKey(for: option.settings) else {
-                error = "Save an API key for this provider in Settings."
+            guard option.settings.provider == .codexAgent || hasCredential(for: option.settings) else {
+                error = option.settings.provider.missingCredentialMessage
                 return false
             }
         } else {
@@ -2656,6 +2706,14 @@ final class WorkspaceModel: ObservableObject {
             throw WorkspaceError("Wait for the current operation to finish.")
         }
         let settings = try settings.validated()
+        if settings.provider == .codexAgent && (!newKey.isEmpty || removeKey) {
+            throw WorkspaceError("Codex manages its own account.")
+        }
+        if settings.provider.piProviderID != nil {
+            guard newKey.isEmpty, !removeKey, hasCredential(for: settings) else {
+                throw WorkspaceError(settings.provider.missingCredentialMessage)
+            }
+        }
         var updated = workspace
         let affectsActiveProject: Bool
         switch scope {
@@ -2888,6 +2946,9 @@ final class WorkspaceModel: ObservableObject {
                                inheritedModel: ModelSettings) async throws -> String {
         guard let store else { throw WorkspaceError("Open a workspace before generating a commit message.") }
         let config = try (writing.writerModel ?? inheritedModel).validated()
+        guard config.provider != .codexAgent else {
+            throw WorkspaceError("Enter a commit message or select a Pi writer model in Source Control.")
+        }
         try Task.checkCancellation()
         let worker = try makeProcess(store.config, context.checkout.root)
         defer { worker.close() }
@@ -3131,9 +3192,22 @@ final class WorkspaceModel: ObservableObject {
                               fromComposer: Bool = false, requiresKey: Bool = true) throws -> Bool {
         if let reason = attachmentSendError(for: attachments ?? []) { throw WorkspaceError(reason) }
         let settings = try effectiveModel.validated()
+        if settings.provider == .codexAgent {
+            if requiresKey && (codexAccountStatus == .loginRequired || codexAccountStatus == .notInstalled) {
+                openSettings(.model, anchor: .accountSignIn)
+                return false
+            }
+            return true
+        }
         guard let key = try readCredential(settings.account) else {
             if !requiresKey { return true }
-            openSettings(.model, anchor: .apiKey)
+            if settings.provider.piProviderID != nil {
+                if hasCredential(for: settings) { return true }
+                error = settings.provider.missingCredentialMessage
+                openSettings(.model, anchor: .provider)
+            } else {
+                openSettings(.model, anchor: .apiKey)
+            }
             return false
         }
         guard key.isEmpty || !text.contains(key) else {
@@ -3430,7 +3504,7 @@ final class WorkspaceModel: ObservableObject {
             if command.config == nil {
                 try WorkspaceHistory.checkThread(in: root, projectID: project.id, threadID: conversation.id)
             }
-            let worker = try makeProcess(store.config, command.config == nil ? store.root.path : directory)
+            let worker = try conversationWorker(store, command: command)
             attach(worker, config: command.config)
             try worker.send(command)
         } catch {
@@ -3440,12 +3514,22 @@ final class WorkspaceModel: ObservableObject {
 
     private func openCommand(project: Project, thread: Conversation, store: WorkspaceStore) throws -> OpenConversation {
         let imported = thread.importedPiSessionID != nil
-        return try OpenConversation(cwd: thread.workingLocation.directory(in: project),
-                                    sessionDir: store.history(project: project.id, conversation: thread.id).path,
+        let config = imported ? nil : try workspace.modelSettings(for: thread, in: project).validated()
+        let history = store.history(project: project.id, conversation: thread.id)
+        if config?.provider != .codexAgent && FileManager.default.fileExists(atPath: history.appendingPathComponent("codex-thread.json").path) {
+            throw WorkspaceError("This conversation belongs to Codex. Open it with its original agent.")
+        }
+        return OpenConversation(cwd: thread.workingLocation.directory(in: project),
+                                    sessionDir: history.path,
                                     threadID: thread.id.uuidString,
-                                    config: imported ? nil : workspace.modelSettings(for: thread, in: project).validated(),
+                                    config: config,
                                     toolPermission: project.toolPermission, forkMessageID: thread.forkOrigin?.messageID,
-                                    requireHistory: imported)
+                                    requireHistory: imported || (config?.provider == .codexAgent && thread.isDraft == false))
+    }
+
+    private func conversationWorker(_ store: WorkspaceStore, command: OpenConversation) throws -> any PiConnection {
+        if command.config?.provider == .codexAgent { return try makeCodexProcess(store.config, command.cwd) }
+        return try makeProcess(store.config, command.config == nil ? store.root.path : command.cwd)
     }
 
     private func attach(_ worker: any PiConnection, config: ModelSettings?) {
@@ -3458,7 +3542,7 @@ final class WorkspaceModel: ObservableObject {
         }
         worker.onClose = { [weak self, weak worker] in
             guard let self, let worker, self.process === worker else { return }
-            self.connectionFailed(self.error ?? "The Pi helper exited. Reconnect to this conversation.")
+            self.connectionFailed(self.error ?? String(localized: "The agent disconnected. Reconnect to this conversation."))
         }
     }
 
@@ -3477,7 +3561,7 @@ final class WorkspaceModel: ObservableObject {
               launch.stage == .openThread, launch.canInterrupt else { return }
         do {
             guard try canUsePrompt(launch.prompt, attachments: conversation.composerAttachments) else {
-                throw WorkspaceError("Save an API key for this provider in Settings.")
+                throw WorkspaceError(effectiveModel.provider.missingCredentialMessage)
             }
             try preparePrompt(in: conversation) {
                 $0.worktreeLaunch?.stage = .sendPrompt
@@ -3575,6 +3659,9 @@ final class WorkspaceModel: ObservableObject {
 
     private func receive(_ event: PiEvent, from worker: any PiConnection, account: String?) {
         switch event {
+        case let .codexCapabilities(capabilities):
+            guard connectedModel?.provider == .codexAgent else { return }
+            codexCapabilities = capabilities
         case let .sentAttachment(requestID, payload):
             sentAttachmentRequests.removeValue(forKey: requestID)?.resume(returning: payload)
         case let .credential(id, read):
@@ -3714,10 +3801,10 @@ final class WorkspaceModel: ObservableObject {
 }
 
 extension WorkspaceModel {
-    var sideChatCommand: String? { SideChat.command(in: draft) }
+    var sideChatCommand: String? { effectiveModel.provider == .codexAgent ? nil : SideChat.command(in: draft) }
 
     var canStartSideChat: Bool {
-        guard !gitMutationInProgress, !preparingWorktree, let parent = conversation, !parent.archived,
+        guard effectiveModel.provider != .codexAgent, !gitMutationInProgress, !preparingWorktree, let parent = conversation, !parent.archived,
               parent.importedPiSessionID == nil,
               parent.worktreeLaunch == nil, !parent.workingLocation.needsWorktree else { return false }
         return messages.contains { $0.role == .user }
@@ -3878,10 +3965,11 @@ extension WorkspaceModel {
             guard SideChat.command(in: child.prompt) == nil else {
                 throw WorkspaceError("Side chats cannot start side chats.")
             }
-            guard let key = try readCredential(child.model.account) else {
-                throw WorkspaceError("Save an API key for this provider in Model Settings.")
+            let key = try readCredential(child.model.account)
+            guard key != nil || (child.model.provider.piProviderID != nil && hasCredential(for: child.model)) else {
+                throw WorkspaceError(child.model.provider.missingCredentialMessage)
             }
-            guard key.isEmpty || !child.prompt.contains(key) else {
+            if let key, !key.isEmpty, child.prompt.contains(key) {
                 throw WorkspaceError("Enter your API key in Model Settings.")
             }
             for attachment in attachments {
@@ -3892,7 +3980,7 @@ extension WorkspaceModel {
                     throw WorkspaceError("This model does not support image input.")
                 }
                 try Self.validateAttachment(payload, key: key, alongside: [])
-                guard key.isEmpty || !attachment.name.contains(key) else {
+                if let key, !key.isEmpty, attachment.name.contains(key) {
                     throw WorkspaceError("Remove the attachment that contains your API key.")
                 }
             }

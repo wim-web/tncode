@@ -34,7 +34,10 @@ app="$staging/Pi Workspace.app"
 mkdir -p "$app/Contents/"{MacOS,Helpers,Resources/Sidecar}
 cp "$binary" "$app/Contents/MacOS/PiWorkspace"
 cp "$node_binary" "$app/Contents/Helpers/node"
-cp Sidecar/{worker,tool-approval,agent-questions}.mjs "$app/Contents/Resources/Sidecar/"
+cp Sidecar/{worker,login,tool-approval,agent-questions,codex-agent,codex-rpc,codex-login}.mjs "$app/Contents/Resources/Sidecar/"
+for localization in Localization/*.lproj; do
+  [[ -d "$localization" ]] && ditto "$localization" "$app/Contents/Resources/$(basename "$localization")"
+done
 ditto Sidecar/node_modules "$app/Contents/Resources/Sidecar/node_modules"
 "$app/Contents/Helpers/node" scripts/bundle-notices.mjs "$app/Contents/Resources" "$node_binary"
 cat > "$app/Contents/Info.plist" <<'PLIST'
@@ -46,6 +49,12 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>PiWorkspace</string>
   <key>CFBundleName</key><string>Pi Workspace</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>ja</string>
+  </array>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleURLTypes</key>

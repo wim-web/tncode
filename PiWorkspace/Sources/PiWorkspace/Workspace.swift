@@ -3,26 +3,64 @@ import CryptoKit
 import Darwin
 
 enum Provider: String, Codable, CaseIterable, Identifiable {
+    case codexAgent = "codex-app-server"
     case openai, anthropic, local
+    case piAnthropic = "pi:anthropic"
+    case piOpenAI = "pi:openai"
+    case piCodex = "pi:openai-codex"
+    case piCopilot = "pi:github-copilot"
 
     var id: Self { self }
+    var piProviderID: String? {
+        rawValue.hasPrefix("pi:") ? String(rawValue.dropFirst(3)) : nil
+    }
+    var missingCredentialMessage: String {
+        if self == .codexAgent { return String(localized: "Connect your Codex account in Model Settings.") }
+        return piProviderID == nil ? String(localized: "Save an API key for this provider in Settings.")
+            : String(localized: "Sign in to this account in Model Settings.")
+    }
+    var signInProvider: Self? {
+        switch self {
+        case .openai: .piCodex
+        case .anthropic: .piAnthropic
+        case .local: nil
+        default: self
+        }
+    }
+    var signInLabel: String {
+        switch self {
+        case .anthropic, .piAnthropic: String(localized: "Sign in with Claude")
+        case .piCopilot: String(localized: "Sign in with GitHub")
+        default: String(localized: "Sign in with ChatGPT")
+        }
+    }
     var label: String {
         switch self {
-        case .openai: "OpenAI"
-        case .anthropic: "Anthropic"
+        case .codexAgent: "Codex"
+        case .openai: String(localized: "OpenAI (API key)")
+        case .anthropic: String(localized: "Anthropic (API key)")
         case .local: "Local OpenAI-compatible"
+        case .piAnthropic: "Claude"
+        case .piOpenAI: String(localized: "OpenAI models (ChatGPT sign-in)")
+        case .piCodex: String(localized: "Codex models in Pi")
+        case .piCopilot: "GitHub Copilot"
         }
     }
     var defaultModel: String {
         switch self {
+        case .codexAgent: "auto"
         case .openai: "gpt-5-mini"
         case .anthropic: "claude-sonnet-4-6"
         case .local: "smollm2:135m"
+        case .piOpenAI, .piCodex: "gpt-6.2-sol"
+        case .piAnthropic: "claude-opus-5-5"
+        case .piCopilot: "gpt-6.1-sol"
         }
     }
 }
 
 struct ModelSettings: Codable, Equatable {
+    static let codex = ModelSettings(provider: .codexAgent, model: Provider.codexAgent.defaultModel)
     enum ThinkingLevel: String, Codable, CaseIterable, Identifiable {
         case off, minimal, low, medium, high, xhigh, max
 
@@ -43,11 +81,14 @@ struct ModelSettings: Codable, Equatable {
     var localTools: Bool?
     var localImages: Bool?
     var thinkingLevel: ThinkingLevel?
+    var piLoginProfile: String?
 
     var supportsTools: Bool { provider != .local || localTools == true }
 
     var account: String {
-        provider == .local ? "local:" + endpoint : provider.rawValue
+        if provider == .local { return "local:" + endpoint }
+        if provider.piProviderID != nil, let piLoginProfile { return provider.rawValue + ":" + piLoginProfile }
+        return provider.rawValue
     }
 
     struct Identity: Hashable {
@@ -56,10 +97,14 @@ struct ModelSettings: Codable, Equatable {
     }
 
     var identity: Identity { Identity(account: account, model: model) }
+    var displayModel: String {
+        provider == .codexAgent && model == Provider.codexAgent.defaultModel ? String(localized: "Codex default") : model
+    }
 
     func validated() throws -> Self {
         var settings = self
         settings.model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if provider.piProviderID == nil { settings.piLoginProfile = nil }
         if settings.thinkingLevel == .off { settings.thinkingLevel = nil }
         guard !settings.model.isEmpty else { throw WorkspaceError("Enter a model ID.") }
         guard provider == .local else { return settings }
@@ -550,7 +595,7 @@ final class WorkspaceStore {
     private var pendingHistory: URL { root.appendingPathComponent(".pending-fork.json") }
     var config: URL { root.appendingPathComponent("pi-config", isDirectory: true) }
 
-    func load(restoringPrevious: Bool = false) throws -> Workspace {
+    func load(restoringPrevious: Bool = false, initialModel: @autoclosure () -> ModelSettings = ModelSettings()) throws -> Workspace {
         let current = try read(index)
         if let current, let workspace = try? JSONDecoder().decode(Workspace.self, from: current) {
             return workspace
@@ -565,7 +610,7 @@ final class WorkspaceStore {
             previous = nil
             previousReadError = error
         }
-        if current == nil && previous == nil && !restoringPrevious { return Workspace() }
+        if current == nil && previous == nil && !restoringPrevious { return Workspace(model: initialModel()) }
         let workspace = previous.flatMap { try? JSONDecoder().decode(Workspace.self, from: $0) }
         guard restoringPrevious, let previous, let workspace else {
             throw WorkspaceStoreError.invalidIndex(missing: current == nil, canRestore: workspace != nil,
@@ -664,7 +709,9 @@ final class WorkspaceStore {
     func hasSavedHistory(project: UUID, conversation: UUID) -> Bool {
         let directory = history(project: project, conversation: conversation)
         do {
-            return try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasSuffix(".jsonl") }
+            return try FileManager.default.contentsOfDirectory(atPath: directory.path).contains {
+                $0.hasSuffix(".jsonl") || $0 == "codex-thread.json"
+            }
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             return false
         } catch {

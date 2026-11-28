@@ -9,11 +9,13 @@ final class StopAcknowledgementTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let receipts = root.appendingPathComponent("commands.jsonl")
-        let model = WorkspaceModel(root: root.appendingPathComponent("store"), keychainService: UUID().uuidString,
-                                   readCredential: { _ in "fixture-key" }) { config, cwd in
+        let store = root.appendingPathComponent("store")
+        try WorkspaceStore(root: store).save(.init(model: ModelSettings(provider: .openai)))
+        let model = WorkspaceModel(root: store, keychainService: UUID().uuidString,
+                                   readCredential: { _ in "fixture-key" }, makeProcess: { config, cwd in
             try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: "/usr/bin/python3"),
                           arguments: ["-u", "-c", Self.helper, receipts.path])
-        }
+        })
         defer { model.shutdown() }
         try model.openProject(folder)
         try await waitUntil { model.phase == .ready }

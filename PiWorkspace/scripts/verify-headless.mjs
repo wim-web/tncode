@@ -48,6 +48,8 @@ async function verify() {
   const environment = {
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
     HOME: root,
+    PI_CODING_AGENT_DIR: join(root, "pi-agent"),
+    CODEX_HOME: join(root, "codex-home"),
     TMPDIR: root,
     SHELL: "/bin/sh",
     LC_ALL: "C",
@@ -80,7 +82,7 @@ async function verify() {
   // Select only audited suites. Mixed suites contribute individual data cases.
   const suites = [
     "ComposerDraft", "ConversationFork", "GitWorktree", "ModelRoutingWire", "ModelSettings",
-    "PiHistoryDiscovery", "ProjectPathSuggestions", "ProjectSources", "PromptLink", "PromptLinkDestination",
+    "PiHistoryDiscovery", "PiLogin", "ProjectPathSuggestions", "ProjectSources", "PromptLink", "PromptLinkDestination",
     "QueuedMessage", "SidebarFilter", "StartupDraft", "StopAcknowledgement", "ThreadPullRequest",
     "WorkspaceLayout", "WorktreeDirectory", "WorktreeLaunch",
   ].map(name => name + "Tests");
@@ -92,8 +94,9 @@ async function verify() {
     for (const fixture of ["sidecar", "queued-sidecar", "conversation-fork"]) {
       await run(`Pi ${fixture} fixture`, process.execPath, [`scripts/verify-${fixture}.mjs`]);
     }
-    const tap = await run("Pi tool approvals and questions", process.execPath,
-      ["--test", "--test-reporter=tap", "Sidecar/tool-approval.test.mjs", "Sidecar/agent-questions.test.mjs"]);
+    const tap = await run("Codex sessions and sign-in, Pi logins, tool approvals and questions", process.execPath,
+      ["--test", "--test-reporter=tap", "Sidecar/codex-rpc.test.mjs", "Sidecar/codex-agent.test.mjs",
+        "Sidecar/login.test.mjs", "Sidecar/saved-login.test.mjs", "Sidecar/tool-approval.test.mjs", "Sidecar/agent-questions.test.mjs"]);
     assert.match(tap, /^# pass [1-9]\d*$/m, "The Node test runner reported no passes.");
     assert.match(tap, /^# skipped 0$/m, "The Node test runner must report zero skips.");
     assert.match(tap, /^# todo 0$/m, "The Node test runner must report zero pending tests.");
