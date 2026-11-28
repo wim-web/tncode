@@ -77,7 +77,7 @@ enum AppLanguage: String, CaseIterable {
     /// Language names stay in their own language, as in T3 Code's language picker.
     var title: String {
         switch self {
-        case .system: String(localized: "System")
+        case .system: String(localized: "System default")
         case .english: "English"
         case .japanese: "日本語"
         }

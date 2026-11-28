@@ -243,3 +243,11 @@ test("Cancel asks Codex to cancel its sign-in before shutdown", { timeout: 5_000
   await child.finish();
   assert.equal(child.methods().at(-1), "account/login/cancel");
 });
+
+test("Launch arguments split like a shell, keeping quoted spaces", async () => {
+  const { launchArguments } = await import(transport);
+  assert.deepEqual(launchArguments(undefined), []);
+  assert.deepEqual(launchArguments("  "), []);
+  assert.deepEqual(launchArguments(`-c model="gpt 5" --flag 'a b' x\\ y ""`), ["-c", "model=gpt 5", "--flag", "a b", "x y", ""]);
+  assert.throws(() => launchArguments(`-c "open`), { code: "codex_invalid_arguments" });
+});

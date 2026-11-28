@@ -21,7 +21,7 @@ Open `tncode://settings/open-source-licenses` to go directly to the notices. `tn
 
 ## Start a conversation
 
-1. If Codex is already signed in on this Mac, select **Start** in Welcome. Otherwise, select **Sign in…**, choose **Codex**, and finish signing in with your ChatGPT account. In an existing workspace, select **Model Settings → Agent → Codex → Use Codex** and open a new conversation. Submitted Pi conversations keep using Pi.
+1. If Codex is already signed in on this Mac, select **Start** in Welcome. Otherwise, select **Sign in…**, choose **Codex**, and finish signing in with your ChatGPT account. In an existing workspace, sign in under **Settings → Providers → Codex → Setup**, choose a Codex model under **Settings → Threads → New threads → Model**, and open a new conversation. Submitted Pi conversations keep using Pi.
 2. Select **Add Project → Local folder**. Enter a path or select **Browse**, then select **Add Project**. In the path field, use the arrow keys to highlight a folder and Tab to enter it. With several matches, Tab completes their shared prefix. The draft opens with its message field focused. **New project** creates a Git repository in the parent folder you choose.
 3. Enter a message and select **Send**. Select **Stop** to cancel an active turn. On relaunch, the app reopens the selected conversation if it has unfinished text. Select a conversation in the sidebar to continue it.
 4. Use **Search Threads** to find a thread by title, project name, or message text. Opening a message result takes you to that message. In **Thread filters**, check the projects to include or choose **All Projects**.
@@ -41,7 +41,7 @@ By default, Return sends a message. When Pi accepts steering during a turn, Retu
 
 Use a queued row's menu to edit, reorder, or remove it. You can update a paused queue before signing in to the provider. **Stop** and relaunch leave outstanding messages paused until you start a row or select **Resume Queue**.
 
-Codex conversations accept UTF-8 text attachments and queue follow-ups between turns. In a Pi conversation, **Attach Files** also accepts PNG and JPEG images. You can paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local Pi model that accepts images, enable image input in **Model Settings**.
+Codex conversations accept UTF-8 text attachments and queue follow-ups between turns. In a Pi conversation, **Attach Files** also accepts PNG and JPEG images. You can paste an image or drop files onto the composer or a thread in the sidebar. Select an image thumbnail to preview it. For a local Pi model that accepts images, turn on **Image input** under **Settings → Providers → Local OpenAI-compatible → Runtime**.
 
 Select a text attachment to read its contents. **Remove from Draft** removes the selected attachment from the draft or queued edit. For sent files, **Save File** opens the macOS save dialog. Older Pi histories that recorded only the name show **Attachment unavailable**.
 
@@ -79,23 +79,23 @@ A local model with tools enabled can ask a question during its turn. Select the 
 
 Codex uses its own login, model configuration, and MCP servers. Open a Codex conversation's details to see the Web search mode and whether this session advertises Computer Use. To approve an app access request, choose **Supervised** in the composer. The Codex conversation history lives in the Codex home.
 
-Pi uses the bundled Pi SDK and its own saved accounts. You can sign in from **Model Settings → Account**. If you choose an API-key provider, the app stores your key in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/tncode`.
+Pi uses the bundled Pi SDK and its own saved accounts. **Settings → Providers** lists each provider; select one to sign in under **Setup**, rename it, hide or star its models, or add custom models. Turn a provider's switch off to keep it out of the model picker. API keys are stored in Keychain. The workspace index and Pi conversation files live in `~/Library/Application Support/tncode`.
 
-In a registered project, **Model Settings → Scope** lets you change that project's model or the workspace default. **Reset to Workspace default** restores inheritance and keeps the provider credential.
+**Settings → Threads → New threads → Model** sets the model new threads start with. Choose a project in **Applying settings for** at the top of the page to give that project its own model; its reset button returns the project to the default.
 
-Open **Settings** from the sidebar or press ⌘, to search the available controls. For example, search for **Model ID** and press Return to edit the selected project's model, or search for **Open source licenses** to read the packaged notices.
+Open **Settings** from the sidebar or press ⌘, to search the available controls. For example, search for **Default model** and press Return to change the model for new threads, or search for **Open source licenses** to read the packaged notices.
 
 **Settings → Threads → Snooze options** sets the choices in the Snooze menu. Add a duration or a local day and time. You can keep up to eight choices. **Reset to defaults** restores the preset list. Existing reminders keep their scheduled times.
 
-**Settings → General → Add project starts in** sets the initial folder for adding or cloning a project. **Help → Show Welcome** or **Settings → About → Welcome page** reopens onboarding. Closing it returns to the selected draft.
+**Settings → Threads → Add project starts in** sets the initial folder for adding or cloning a project. **Help → Show Welcome** or **Settings → About → Welcome page** reopens onboarding. Closing it returns to the selected draft.
 
-**Settings → Usage** shows token counts and USD costs recorded in local Pi conversation histories. Select a period, filter by project or provider, and select a model to inspect input, output and cache tokens. **Refresh usage** includes newly recorded replies. A total marked **+ unreported** includes only messages with a recorded value.
+**Usage** (the chart button at the bottom of the sidebar) shows token counts and USD costs recorded in local Pi conversation histories. Select a period, filter by project or provider, and select a model to inspect input, output and cache tokens. **Refresh usage** includes newly recorded replies. A total marked **+ unreported** includes only messages with a recorded value.
 
 Press ⌘U to open Usage from the workspace. With focus on the report, C selects Cost, T selects Tokens, and L selects Limits. Press ⌘U again to close it.
 
 If the app cannot read its workspace index, the startup screen shows the affected folder and offers **Retry**. If a valid previous index exists, **Restore Previous Workspace** restores that project and thread list and keeps the damaged index and conversation files.
 
-**tncode → Appearance Settings…** changes the color scheme and conversation width across projects. **Restore Defaults** returns to the system appearance and Comfortable width.
+**tncode → Appearance Settings…** changes the color scheme, themes and chat width across projects. Each changed row has a reset button; **Settings → General → Restore device defaults** resets them all.
 
 **Settings → General → Restore device defaults** lists the local preferences it will change. Review the list, then choose **Confirm** to restore them.
 

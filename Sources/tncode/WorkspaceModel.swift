@@ -164,7 +164,7 @@ final class WorkspaceModel: ObservableObject {
                     composerCredential = (account, try readCredential(account))
                 }
                 if let key = composerCredential?.key, text.contains(key) {
-                    error = String(localized: "Enter your API key in Model Settings.")
+                    error = String(localized: "Enter your API key in Settings › Providers.")
                     guard !preserveDraftOnCredentialMatch else { return false }
                     text = ""
                 }
@@ -449,7 +449,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 let name = input.name(among: attachments)
                 if let key, !key.isEmpty, name.contains(key) {
-                    throw WorkspaceError("Enter your API key in Model Settings.")
+                    throw WorkspaceError("Enter your API key in Settings › Providers.")
                 }
                 let payload: ComposerAttachment.Payload?
                 do {
@@ -462,7 +462,7 @@ final class WorkspaceModel: ObservableObject {
                 try Self.validateAttachment(payload, key: key, alongside: attachments.filter { $0.id != attachmentID })
                 let storedName = input.nameForStorage(name, payload: payload)
                 if storedName != name, let key, !key.isEmpty, storedName.contains(key) {
-                    throw WorkspaceError("Enter your API key in Model Settings.")
+                    throw WorkspaceError("Enter your API key in Settings › Providers.")
                 }
                 let attachment = ComposerAttachment(id: attachmentID ?? UUID(), name: storedName, payload: payload)
                 if let replacement {
@@ -513,7 +513,7 @@ final class WorkspaceModel: ObservableObject {
         let total = attachments.reduce(payload.data.count) { $0 + ($1.payload?.data.count ?? 0) }
         guard total <= ComposerAttachment.maxBytes else { throw WorkspaceError("Attachments must total 4 MB or less.") }
         if let key, !key.isEmpty, !payload.isImage, String(decoding: payload.data, as: UTF8.self).contains(key) {
-            throw WorkspaceError("Enter your API key in Model Settings.")
+            throw WorkspaceError("Enter your API key in Settings › Providers.")
         }
     }
 
@@ -667,6 +667,7 @@ final class WorkspaceModel: ObservableObject {
             let store = try WorkspaceStore(root: root)
             workspace = try store.load(restoringPrevious: restoringPrevious, initialModel: .codex)
             try? store.recoverHistory(in: workspace)
+            CodexRuntimeEnvironment.preferences = workspace.preferences(for: .codexAgent)
             self.store = store
             refreshSnoozes()
             showingWelcome = workspace.projects.isEmpty && workspace.welcomeCompleted != true
@@ -703,12 +704,13 @@ final class WorkspaceModel: ObservableObject {
     }
     var operationsInProgress: Bool { phase.isRunning || gitMutationInProgress || preparingWorktree || forkRequest != nil }
     var showingSettings: Bool { settingsRequest != nil }
-    var canOpenModelSettings: Bool { startupFailure == nil && !phase.isRunning }
+    var canOpenModelSettings: Bool { startupFailure == nil }
 
     func openSettings(_ page: SettingsPage = .general, anchor: SettingsAnchor? = nil, projectID: UUID? = nil,
                       focusDestination: Bool = false) {
         guard settingsRequest == nil else { return }
-        let project = projects.first { $0.id == (projectID ?? self.project?.id) }
+        // Settings opens for all projects, like T3 Code; only the Projects page starts on the current one.
+        let project = projects.first { $0.id == (projectID ?? (page == .project ? self.project?.id : nil)) }
         guard page != .project || project != nil else { return }
         settingsRequest = SettingsRequest(page: page, anchor: anchor, projectID: project?.id,
                                           focusDestination: focusDestination)
@@ -724,9 +726,6 @@ final class WorkspaceModel: ObservableObject {
                     throw WorkspaceError("The linked project is unavailable in this workspace.")
                 }
                 projectID = id
-            }
-            if link.page == .model && !canOpenModelSettings {
-                throw WorkspaceError("Finish the current operation and open Model Settings again.")
             }
             if link.page == .usage && startupFailure != nil {
                 throw WorkspaceError("Finish opening the workspace and try the Usage link again.")
@@ -1082,7 +1081,7 @@ final class WorkspaceModel: ObservableObject {
             if let index = detached[candidate.id] {
                 updated.projects[index].detached = false
             } else {
-                updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+                updated.projects.append(newProject(path: folder.path, title: candidate.title, createdAt: now()))
             }
         }
         try persist(updated)
@@ -1098,7 +1097,7 @@ final class WorkspaceModel: ObservableObject {
             updated.projects[index].detached = false
         } else {
             index = updated.projects.count
-            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+            updated.projects.append(newProject(path: folder.path, title: candidate.title, createdAt: now()))
         }
         let previous = project
         if !updated.projects[index].conversations.contains(where: { $0.id == updated.projects[index].selectedConversation }) {
@@ -1145,7 +1144,7 @@ final class WorkspaceModel: ObservableObject {
         let index = updated.projects.firstIndex { PiHistoryDiscovery.FolderID($0.path) == candidate.id }
             ?? updated.projects.count
         if index == updated.projects.count {
-            updated.projects.append(Project(id: UUID(), path: folder.path, title: candidate.title, createdAt: now()))
+            updated.projects.append(newProject(path: folder.path, title: candidate.title, createdAt: now()))
         }
         let existing = updated.projects[index].conversations.first { $0.importedPiSessionID == session.id }
         let projectID = updated.projects[index].id
@@ -1202,7 +1201,7 @@ final class WorkspaceModel: ObservableObject {
                 throw WorkspaceError("That folder already belongs to a project.")
             }
             var updated = workspace
-            updated.projects.append(Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date()))
+            updated.projects.append(newProject(path: folder.path, title: folder.lastPathComponent, createdAt: Date()))
             try persist(updated)
             return
         }
@@ -1239,7 +1238,7 @@ final class WorkspaceModel: ObservableObject {
                     $0.projects[index].selectDraft()
                 }
             } else {
-                var project = Project(id: UUID(), path: folder.path, title: folder.lastPathComponent, createdAt: Date())
+                var project = newProject(path: folder.path, title: folder.lastPathComponent, createdAt: Date())
                 let draft = promptLink.map { linkedPromptDraft($0.link, in: project) }
                 project.selectDraft(seed: draft)
                 $0.projects.append(project)
@@ -2578,6 +2577,180 @@ final class WorkspaceModel: ObservableObject {
         if save({ $0.projects[p].toolPermission = permission }) { connect() }
     }
 
+    /// A project added to the workspace, with the default permissions from Settings → Threads.
+    private func newProject(path: String, title: String, createdAt: Date) -> Project {
+        var project = Project(id: UUID(), path: path, title: title, createdAt: createdAt)
+        if let permission = workspace.defaultToolPermission { project.toolPermission = permission }
+        return project
+    }
+
+    func updateDefaultToolPermission(_ permission: ToolPermission) throws {
+        let stored: ToolPermission? = permission == .readFiles ? nil : permission
+        guard workspace.defaultToolPermission != stored else { return }
+        var updated = workspace
+        updated.defaultToolPermission = stored
+        try persist(updated)
+    }
+
+    func updateToolPermission(_ permission: ToolPermission, forProject id: UUID) throws {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == id && $0.detached != true }) else {
+            throw WorkspaceError("That project is no longer open.")
+        }
+        guard workspace.projects[index].toolPermission != permission else { return }
+        guard !(operationsInProgress && project?.id == id) else {
+            throw WorkspaceError("Wait for the current operation to finish.")
+        }
+        var updated = workspace
+        updated.projects[index].toolPermission = permission
+        try persist(updated)
+        if project?.id == id { connect() }
+    }
+
+    /// The Default model picker's provider rail, grouped by account like the composer's, with no thread lock.
+    func defaultModelProviders(current: ModelSettings, excluding excluded: Set<Provider> = []) -> [ComposerModelProvider] {
+        var providers: [ComposerModelProvider] = []
+        for option in defaultModelOptions(current: current) where !excluded.contains(option.settings.provider) {
+            if let index = providers.firstIndex(where: { $0.account == option.settings.account }) {
+                providers[index].options.append(option)
+            } else {
+                providers.append(.init(account: option.settings.account, provider: option.settings.provider,
+                                       endpoint: option.settings.endpoint, options: [option], locked: false))
+            }
+        }
+        let order = Provider.allCases
+        return providers.enumerated().sorted {
+            let lhs = order.firstIndex(of: $0.element.provider) ?? 0, rhs = order.firstIndex(of: $1.element.provider) ?? 0
+            return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+        }.map(\.element)
+    }
+
+    /// The catalog name of a model setting, as the pickers list it.
+    func modelName(_ settings: ModelSettings) -> String {
+        modelCatalog[settings.provider]?[settings.model] ?? settings.displayModel
+    }
+
+    /// Models the Default model picker offers: every signed-in account, saved key and custom model.
+    func defaultModelOptions(current: ModelSettings) -> [ComposerModelOption] {
+        var profiles = [current, .codex] + piLogins.profiles()
+        for provider in [Provider.openai, .anthropic] where hasProviderKey(provider) {
+            profiles.append(ModelSettings(provider: provider, model: provider.defaultModel))
+        }
+        profiles += Provider.instanceOrder.flatMap { provider in
+            (workspace.preferences(for: provider).customModels ?? []).compactMap { instanceModel(provider, id: $0) }
+        }
+        return composerModelOptions(profiles: profiles, lockedAccount: nil)
+    }
+
+    // MARK: Providers
+
+    /// When Settings → Providers last refreshed provider status.
+    @Published private(set) var providersCheckedAt: Date?
+
+    func updateProviderPreferences(_ provider: Provider, _ change: (inout ProviderPreferences) -> Void) throws {
+        let previous = workspace.preferences(for: provider)
+        var next = previous
+        change(&next)
+        next = next.normalized
+        guard next != previous else { return }
+        var updated = workspace
+        var all = updated.providers ?? [:]
+        all[provider.rawValue] = next == ProviderPreferences() ? nil : next
+        updated.providers = all.isEmpty ? nil : all
+        try persist(updated)
+        if provider == .codexAgent { CodexRuntimeEnvironment.preferences = next }
+    }
+
+    /// Models the running agent reported for this instance, by ID.
+    func reportedModels(for provider: Provider) -> [(id: String, name: String)] {
+        (modelCatalog[provider] ?? [:]).map { (id: $0.key, name: $0.value) }
+            .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+    }
+
+    func refreshProviders() {
+        codexAccountProbe?.close()
+        codexAccountProbe = nil
+        refreshCodexAccount()
+        providersCheckedAt = now()
+        objectWillChange.send()
+    }
+
+    func providerStatus(_ provider: Provider) -> ProviderInstanceStatus {
+        guard workspace.preferences(for: provider).isEnabled else {
+            return .init(key: .disabled, headline: String(localized: "Disabled"),
+                         detail: String(localized: "This provider is installed but disabled for new sessions in tncode."))
+        }
+        switch provider.authKind {
+        case .codexAccount:
+            switch codexAccountStatus {
+            case nil:
+                return .init(key: .warning, headline: String(localized: "Checking provider status"),
+                             detail: String(localized: "Waiting for the server to report installation and authentication details."))
+            case .ready:
+                return .init(key: .ready, headline: String(localized: "Authenticated"), detail: nil)
+            case .loginRequired:
+                return .init(key: .warning, headline: String(localized: "Not authenticated"),
+                             detail: String(localized: "Sign in to Codex to start conversations."))
+            case .notInstalled:
+                return .init(key: .error, headline: String(localized: "Not found"),
+                             detail: String(localized: "CLI not detected on PATH."))
+            case .unavailable:
+                return .init(key: .error, headline: String(localized: "Unavailable"),
+                             detail: String(localized: "The provider failed its startup checks."))
+            }
+        case .piSignIn:
+            let method = provider.signInMethodLabel
+            return piLogins.profiles().contains(where: { $0.provider == provider })
+                ? .init(key: .ready, headline: String(localized: "Authenticated · \(method)"), detail: nil)
+                : .init(key: .warning, headline: String(localized: "Not authenticated · \(method)"), detail: nil)
+        case .apiKey:
+            return ((try? credentialExists(provider.rawValue)) ?? false)
+                ? .init(key: .ready, headline: String(localized: "Authenticated · API key"), detail: nil)
+                : .init(key: .warning, headline: String(localized: "Not authenticated · API key"),
+                        detail: String(localized: "Add an API key in Setup."))
+        case .customEndpoint:
+            return .init(key: .ready, headline: String(localized: "Available · Custom API endpoint"), detail: nil)
+        }
+    }
+
+    func hasProviderKey(_ provider: Provider) -> Bool { (try? credentialExists(provider.rawValue)) ?? false }
+
+    func saveProviderKey(_ provider: Provider, key: String) throws {
+        guard provider.authKind == .apiKey else { return }
+        try vault.save(KeyVault.validatedKey(key), account: provider.rawValue)
+        objectWillChange.send()
+        if (try? effectiveModel.validated())?.account == provider.rawValue { connect(keepingThread: true) }
+    }
+
+    func removeProviderKey(_ provider: Provider) throws {
+        guard provider.authKind == .apiKey else { return }
+        try vault.remove(provider.rawValue)
+        objectWillChange.send()
+        if (try? effectiveModel.validated())?.account == provider.rawValue { connect(keepingThread: true) }
+    }
+
+    /// A model of this instance as a selectable model setting, or nil when its account is not signed in.
+    func instanceModel(_ provider: Provider, id: String) -> ModelSettings? {
+        switch provider.authKind {
+        case .codexAccount:
+            return ModelSettings(provider: .codexAgent, model: id)
+        case .piSignIn:
+            guard var profile = piLogins.profiles().first(where: { $0.provider == provider }) else { return nil }
+            profile.model = id
+            return profile
+        case .apiKey:
+            return ModelSettings(provider: provider, model: id)
+        case .customEndpoint:
+            let preferences = workspace.preferences(for: .local)
+            var settings = ModelSettings(provider: .local, model: id)
+            let fallback = [workspace.model, project?.modelOverride].compactMap { $0 }.first { $0.provider == .local }
+            settings.endpoint = preferences.endpoint ?? fallback?.endpoint ?? settings.endpoint
+            settings.contextWindow = preferences.contextWindow ?? fallback?.contextWindow ?? settings.contextWindow
+            settings.localTools = preferences.localTools ?? fallback?.localTools
+            settings.localImages = preferences.localImages ?? fallback?.localImages
+            return settings
+        }
+    }
+
     func hasCredential(for settings: ModelSettings) -> Bool {
         guard let settings = try? settings.validated() else { return false }
         if settings.provider == .codexAgent { return codexAccountStatus == .ready }
@@ -2622,8 +2795,13 @@ final class WorkspaceModel: ObservableObject {
     private var inheritedModel: ModelSettings { project?.modelOverride ?? workspace.model }
 
     func composerModelOptions() -> [ComposerModelOption] {
-        composerModelOptions(profiles: [effectiveModel, inheritedModel, workspace.model, .codex] + piLogins.profiles(),
-                             lockedAccount: lockedModelAccount)
+        // Custom models from Settings → Providers join the picker like reported ones.
+        let custom = Provider.instanceOrder.flatMap { provider in
+            (workspace.preferences(for: provider).customModels ?? []).compactMap { instanceModel(provider, id: $0) }
+        }
+        return composerModelOptions(profiles: [effectiveModel, inheritedModel, workspace.model, .codex] + piLogins.profiles()
+                                        + custom,
+                                    lockedAccount: lockedModelAccount)
     }
 
     private func composerModelOptions(profiles: [ModelSettings], lockedAccount: String?, includeCatalog: Bool = true) -> [ComposerModelOption] {
@@ -2631,9 +2809,14 @@ final class WorkspaceModel: ObservableObject {
         var hasCredential: [String: Bool] = [:]
         var options: [ComposerModelOption] = []
 
+        let current = profiles.first.map { ((try? $0.validated()) ?? $0).identity }
         func add(_ profile: ModelSettings, name: String) {
             let validated = try? profile.validated()
             let settings = validated ?? profile
+            let preferences = workspace.preferences(for: settings.provider)
+            // Disabled instances and models hidden in Settings stay out of the picker, except the one in use.
+            if settings.identity != current,
+               !preferences.isEnabled || preferences.hidden.contains(settings.model) { return }
             guard seen.insert(settings.identity).inserted else { return }
             let reason: String?
             if validated == nil {
@@ -2650,7 +2833,8 @@ final class WorkspaceModel: ObservableObject {
                 hasCredential[settings.account] = exists
                 reason = exists ? nil : settings.provider.missingCredentialMessage
             }
-            options.append(.init(settings: settings, name: name, unavailableReason: reason))
+            options.append(.init(settings: settings, name: name, unavailableReason: reason,
+                                 providerName: preferences.displayName))
         }
 
         for profile in profiles {
@@ -2659,7 +2843,16 @@ final class WorkspaceModel: ObservableObject {
         guard includeCatalog else { return options }
         for profile in profiles {
             guard let models = modelCatalog[profile.provider] else { continue }
-            for (id, name) in models.sorted(by: { $0.key.localizedStandardCompare($1.key) == .orderedAscending }) {
+            // Favorites first, in the order they were starred, then the order set in Settings → Providers.
+            let favorites = favoriteModelIDs(account: ((try? profile.validated()) ?? profile).account)
+            let order = workspace.preferences(for: profile.provider).modelOrder ?? []
+            let sorted = models.sorted { left, right in
+                let leftRank = (favorites.firstIndex(of: left.key) ?? Int.max, order.firstIndex(of: left.key) ?? Int.max)
+                let rightRank = (favorites.firstIndex(of: right.key) ?? Int.max, order.firstIndex(of: right.key) ?? Int.max)
+                if leftRank != rightRank { return leftRank < rightRank }
+                return left.key.localizedStandardCompare(right.key) == .orderedAscending
+            }
+            for (id, name) in sorted {
                 var settings = profile
                 settings.model = id
                 add(settings, name: name)
@@ -2700,6 +2893,34 @@ final class WorkspaceModel: ObservableObject {
     var effectiveModelName: String {
         let settings = effectiveModel
         return modelCatalog[settings.provider]?[settings.model] ?? settings.displayModel
+    }
+
+    /// Starred model IDs of one account, in the order they were starred.
+    func favoriteModelIDs(account: String) -> [String] {
+        (workspace.favoriteModels ?? []).filter { $0.account == account }.map(\.model)
+    }
+
+    /// The account a Settings → Providers instance stars its models under.
+    func favoriteAccount(for provider: Provider) -> String {
+        instanceModel(provider, id: "model").flatMap { (try? $0.validated())?.account } ?? provider.rawValue
+    }
+
+    /// Moves a starred model up or down among its account's favorites.
+    func moveFavoriteModel(_ identity: ModelSettings.Identity, by offset: Int) {
+        save(navigation: .replace) { workspace in
+            var favorites = workspace.favoriteModels ?? []
+            let mine = favorites.indices.filter { favorites[$0].account == identity.account }
+            guard let position = mine.firstIndex(where: { favorites[$0].model == identity.model }),
+                  mine.indices.contains(position + offset) else { return }
+            favorites.swapAt(mine[position], mine[position + offset])
+            workspace.favoriteModels = favorites
+        }
+    }
+
+    /// Removes a model from the favorites, as when its custom model is deleted.
+    func unfavoriteModel(_ identity: ModelSettings.Identity) {
+        guard favoriteModels.contains(identity) else { return }
+        toggleFavoriteModel(identity)
     }
 
     var favoriteModels: Set<ModelSettings.Identity> {
@@ -3261,7 +3482,7 @@ final class WorkspaceModel: ObservableObject {
             if settings.provider.piProviderID != nil {
                 if hasCredential(for: settings) { return true }
                 error = settings.provider.missingCredentialMessage
-                openSettings(.model, anchor: .provider)
+                openSettings(.model, anchor: .accountSignIn)
             } else {
                 openSettings(.model, anchor: .apiKey)
             }
@@ -3269,7 +3490,7 @@ final class WorkspaceModel: ObservableObject {
         }
         guard key.isEmpty || !text.contains(key) else {
             if fromComposer { draft = "" }
-            error = String(localized: "Enter your API key in Model Settings.")
+            error = String(localized: "Enter your API key in Settings › Providers.")
             return false
         }
         if !key.isEmpty, (attachments ?? []).contains(where: {
@@ -3989,7 +4210,7 @@ extension WorkspaceModel {
               child.submissionID == nil, child.draft != text, let session = sideChatSessions[scope] else { return }
         do {
             if let key = try readCredential(child.model.account), !key.isEmpty, text.contains(key) {
-                throw WorkspaceError("Enter your API key in Model Settings.")
+                throw WorkspaceError("Enter your API key in Settings › Providers.")
             }
             if let (project, thread, index) = sideChatIndices(scope, in: workspace) {
                 workspace.projects[project].conversations[thread].sideChats?[index].draft = text
@@ -4027,7 +4248,7 @@ extension WorkspaceModel {
                 throw WorkspaceError(child.model.provider.missingCredentialMessage)
             }
             if let key, !key.isEmpty, child.prompt.contains(key) {
-                throw WorkspaceError("Enter your API key in Model Settings.")
+                throw WorkspaceError("Enter your API key in Settings › Providers.")
             }
             for attachment in attachments {
                 guard let payload = attachment.payload else {

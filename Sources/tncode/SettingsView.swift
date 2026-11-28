@@ -17,15 +17,12 @@ struct SettingsView: View {
     @AppStorage(DiffPreferences.wordWrap) private var wordWrap = DiffPreferences.defaultWordWrap
     @FocusState private var focus: SettingsFocus?
     @State private var search = SettingsSearch()
-    @State private var modelDrafts: [UUID?: ModelSettingsDraft]
     @State private var projectTitles: [UUID: String] = [:]
     @State private var browserDraft: BrowserSearchSettings
-    @State private var projectBaseDirectory: String
-    @State private var projectBaseDirectoryError: String?
     @State private var archiveConfirmationError: String?
     @State private var confirmingDeviceRestore = false
     @State private var deviceRestoreError: String?
-    @State private var archiveScope = ArchiveScope.all
+    @State private var archiveCheckout: String?
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
@@ -44,25 +41,12 @@ struct SettingsView: View {
         self.browserDefaults = browserDefaults
         self.pasteboard = pasteboard
         self.openWelcome = openWelcome
-        let projectID = request.projectID
-        let project = model.projects.first { $0.id == projectID }
-        _modelDrafts = State(initialValue: [projectID: ModelSettingsDraft(workspace: model.workspace.model, project: project,
-                            signingIn: request.destination.anchor == .accountSignIn)])
         _browserDraft = State(initialValue: BrowserSearchSettings.load(from: browserDefaults))
-        _projectBaseDirectory = State(initialValue: model.workspace.addProjectBaseDirectory ?? "")
         _worktreeDirectory = State(initialValue: model.workspace.worktreesDirectory ?? "")
     }
 
     private var scopedProject: Project? { model.projects.first { $0.id == request.projectID } }
     private var projectScopeUnavailable: Bool { request.projectID != nil && scopedProject == nil }
-
-    private var modelDraft: Binding<ModelSettingsDraft> {
-        let project = scopedProject
-        let projectID = request.projectID
-        return Binding(get: {
-            modelDrafts[projectID] ?? ModelSettingsDraft(workspace: model.workspace.model, project: project)
-        }, set: { modelDrafts[projectID] = $0 })
-    }
 
     private func projectTitle(_ project: Project) -> Binding<String> {
         Binding(get: { projectTitles[project.id] ?? project.title },
@@ -72,7 +56,7 @@ struct SettingsView: View {
     private var results: [SettingsSearchResult] {
         guard search.isSearching else { return [] }
         return search.results(available: SettingsSearchAvailability(
-            model: model, project: scopedProject, draft: modelDraft.wrappedValue, browser: browserDraft
+            model: model, project: scopedProject, browser: browserDraft
         ))
     }
 
@@ -83,11 +67,14 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            navigation
-                .frame(width: 240)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .background(palette.navFill)
-                .overlay(alignment: .trailing) { Rectangle().fill(palette.border).frame(width: 1) }
+            // Usage is its own route modal in T3 Code, without the settings navigation.
+            if page != .usage {
+                navigation
+                    .frame(width: 240)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .background(palette.navFill)
+                    .overlay(alignment: .trailing) { Rectangle().fill(palette.border).frame(width: 1) }
+            }
             VStack(spacing: 0) {
                 header
                 ScrollViewReader { reader in
@@ -97,14 +84,19 @@ struct SettingsView: View {
                                       openWelcome: openWelcome, welcomeEnabled: model.canOpenWelcome)
                         } else if page == .usage {
                             UsageSettingsView(root: model.root, projects: model.workspace.projects)
-                                .frame(maxWidth: 1024, maxHeight: .infinity, alignment: .top)
-                                .padding(.horizontal, 30)
+                                .padding(.horizontal, 24)
                                 .padding(.top, 24)
+                                .frame(maxWidth: 1024, maxHeight: .infinity, alignment: .top)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         } else {
                             ScrollView {
-                                VStack(alignment: .leading, spacing: 32) { detail }
-                                    .settingsPageContainer()
+                                VStack(alignment: .leading, spacing: 32) {
+                                    if page.showsScopeSentence {
+                                        SettingsScopeSentence(model: model, request: request)
+                                    }
+                                    detail
+                                }
+                                .settingsPageContainer()
                             }
                             .id(page)
                         }
@@ -150,9 +142,6 @@ struct SettingsView: View {
             search.query = ""
         }
         .onChange(of: focus) { previous, _ in
-            if previous == .anchor(.addProjectStartsIn), !confirmingDeviceRestore {
-                commitProjectBaseDirectory()
-            }
             if previous == .anchor(.worktreeLocation) { commitWorktreeDirectory(worktreeDirectory) }
         }
     }
@@ -161,9 +150,12 @@ struct SettingsView: View {
     private var header: some View {
         HStack(spacing: 12) {
             HStack(spacing: 12) {
-                Text("Settings").foregroundStyle(palette.mutedForeground)
-                Text("/").foregroundStyle(palette.mutedForeground).accessibilityHidden(true)
-                Text(page.title)
+                if page != .usage {
+                    Text("Settings").foregroundStyle(palette.mutedForeground)
+                    Text("/").foregroundStyle(palette.mutedForeground).accessibilityHidden(true)
+                }
+                Text(page == .about && request.destination.anchor == .licenses
+                     ? String(localized: "Open source licenses") : page.title)
                     .foregroundStyle(palette.foreground)
                     .accessibilityAddTraits(.isHeader)
                     .focusable()
@@ -174,18 +166,13 @@ struct SettingsView: View {
             .font(.system(size: 14, weight: .medium))
             .lineLimit(1)
             Spacer(minLength: 0)
-            if page == .model {
-                Button("About") { openWindow(id: AboutView.windowID) }
-                    .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
-                    .accessibilityIdentifier("settings-about")
-            }
             if page == .general {
                 Button {
                     confirmingDeviceRestore = true
                     focus = .heading
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .medium))
                         Text("Restore device defaults")
                     }
                 }
@@ -198,7 +185,7 @@ struct SettingsView: View {
             }
             .buttonStyle(T3IconButtonStyle())
             .help("Close (Esc)")
-            .accessibilityLabel("Close settings")
+            .accessibilityLabel("Close")
             .accessibilityIdentifier("settings-close")
         }
         .padding(.leading, 20)
@@ -242,7 +229,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         if !search.isSearching {
                             ForEach(Array(SettingsPage.navigationGroups.enumerated()), id: \.offset) { _, group in
-                                let pages = group.pages.filter { $0 != .project || scopedProject != nil }
+                                let pages = group.pages
                                 VStack(alignment: .leading, spacing: 4) {
                                     if let title = group.title {
                                         Text(localized: title)
@@ -256,7 +243,6 @@ struct SettingsView: View {
                                             navigate(to: item)
                                         }
                                         .accessibilityIdentifier("settings-nav-\(item.rawValue)")
-                                        .disabled(item == .model && !model.canOpenModelSettings)
                                     }
                                 }
                             }
@@ -307,56 +293,44 @@ struct SettingsView: View {
         switch page {
         case .general:
             if let deviceRestoreError { SettingsMessage(deviceRestoreError).accessibilityIdentifier("restore-device-defaults-error") }
-            SettingsSection("Sidebar") {
-                SettingsRow("Project grouping", description: "Group threads under their project in the sidebar.") {
-                    SettingsSwitch("Group by Project", isOn: $groupByProject)
-                        .settingsTarget(.groupByProject, focus: $focus)
-                }
-            }
             SettingsSection("Confirmations") {
                 archiveConfirmationSetting
                 SettingsDivider()
                 terminalCloseConfirmationSetting
             }
-            SettingsSection("New projects") {
-                projectBaseDirectorySetting
-            }
             SettingsSection("Display") {
                 languageSetting
             }
         case .threads:
-            SnoozeOptionsSettingsView(model: model, settingsFocus: $focus)
+            ThreadsSettingsView(model: model, request: request, settingsFocus: $focus)
+                .id(request.projectID)
         case .appearance:
             AppearanceSettingsView(settings: appearance, settingsFocus: $focus)
         case .chat:
             chatSettings
         case .project:
             if let scopedProject {
-                ProjectOverviewSettingsView(model: model, project: scopedProject, title: projectTitle(scopedProject),
-                                            pasteboard: pasteboard) { navigate(to: .model) }
+                ProjectOverviewSettingsView(model: model, project: scopedProject, title: projectTitle(scopedProject))
                     .id(scopedProject.id)
-            } else {
+            } else if projectScopeUnavailable {
                 projectUnavailable
+            } else {
+                ProjectChooserView(model: model) { request.selectProject($0) }
             }
         case .model:
-            if projectScopeUnavailable {
-                projectUnavailable
-            } else {
-                ModelSettingsView(model: model, draft: modelDraft, settingsFocus: $focus)
-                    .id(request.projectID)
-            }
+            ProviderSettingsView(model: model, settingsFocus: $focus, initial: initialProvider)
         case .sourceControl:
             CommitWritingSettingsView(model: model, settingsFocus: $focus)
         case .diffs:
             SettingsSection("Diffs") {
                 SettingsRow("Hide whitespace changes",
-                            description: "Ignore whitespace-only edits in the Changes panel by default.",
+                            description: "Set whether the diff panel ignores whitespace-only edits by default.",
                             reset: ignoreWhitespace == DiffPreferences.defaultIgnoreWhitespace ? nil :
                                 SettingsResetButton("Reset diff whitespace changes to default",
                                                     id: "reset-hide-whitespace-changes") {
                                     ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace
                                 }) {
-                    SettingsSwitch("Hide whitespace changes", isOn: $ignoreWhitespace)
+                    SettingsSwitch("Hide whitespace changes by default", isOn: $ignoreWhitespace)
                         .settingsTarget(.hideWhitespaceChanges, focus: $focus)
                 }
             }
@@ -368,15 +342,35 @@ struct SettingsView: View {
             }
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
+        case .labs:
+            SettingsSection("Beta") {
+                SettingsRow("Boring sidebar (group by project)",
+                            description: "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.") {
+                    SettingsSwitch("Boring sidebar (group by project)", isOn: $groupByProject)
+                        .settingsTarget(.groupByProject, focus: $focus)
+                }
+            }
         case .archived:
-            ArchivedThreadsSettingsView(model: model, scope: $archiveScope, settingsFocus: $focus)
+            ArchivedThreadsSettingsView(model: model, projectID: request.projectID, checkout: $archiveCheckout,
+                                        settingsFocus: $focus)
         case .about, .usage:
             EmptyView()
         }
     }
 
+    /// The instance Providers opens on: the one search or a sign-in prompt points at.
+    private var initialProvider: Provider? {
+        let current = model.effectiveModel.provider
+        switch request.destination.anchor {
+        case .apiKey: return current.authKind == .apiKey ? current : .openai
+        case .accountSignIn: return [.codexAccount, .piSignIn].contains(current.authKind) ? current : current.signInProvider
+        case .endpoint, .contextWindow, .localTools, .localImages: return .local
+        default: return nil
+        }
+    }
+
     private var projectUnavailable: some View {
-        Text("This project is no longer open.")
+        Text("This project is no longer available.")
             .font(.system(size: 14))
             .foregroundStyle(palette.mutedForeground)
             .accessibilityIdentifier("settings-project-unavailable")
@@ -394,8 +388,7 @@ struct SettingsView: View {
             ("Send shortcut", sendShortcut != .initial),
             ("Follow-up behavior", followUpBehavior != .initial),
             ("Start from remote", !workspace.startNewWorktreesFromRemote),
-            ("Add project starts in", workspace.addProjectBaseDirectory?.isEmpty == false ||
-             !projectBaseDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+            ("Add project base directory", workspace.addProjectBaseDirectory?.isEmpty == false),
             ("Archive confirmation", model.confirmsThreadArchive),
             ("Terminal close confirmation", confirmTerminalClose != TerminalPreference.defaultConfirmClose),
             ("Search engine", BrowserSearchSettings.load(from: browserDefaults) != BrowserSearchSettings())
@@ -425,8 +418,6 @@ struct SettingsView: View {
             browserDefaultsValue.save(to: browserDefaults)
         }
         browserDraft = browserDefaultsValue
-        projectBaseDirectory = ""
-        projectBaseDirectoryError = nil
         archiveConfirmationError = nil
         startFromRemoteError = nil
         deviceRestoreError = nil
@@ -436,25 +427,25 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 32) {
             SettingsSection("Composer") {
                 SettingsRow("Send shortcut",
-                            description: "Choose when Enter sends a prompt or inserts a new line. Shift + Enter inserts a new line.",
+                            description: "Choose when Enter sends a prompt or inserts a new line",
                             reset: sendShortcut == .initial ? nil :
                                 SettingsResetButton("Reset send shortcut to default", id: "reset-send-shortcut") {
                                     sendShortcut = .initial
                                 }) {
-                    T3SegmentedControl("Send shortcut", selection: $sendShortcut,
-                                       options: ComposerSendShortcut.allCases.map { ($0, $0.title, "send-shortcut-\($0.rawValue)") })
+                    T3Select("Send shortcut", selection: $sendShortcut,
+                             options: ComposerSendShortcut.allCases.map { ($0, $0.title) }, width: nil)
                         .settingsTarget(.sendShortcut, focus: $focus)
                 }
             }
             SettingsSection("Follow-ups") {
                 SettingsRow("Follow-up behavior",
-                            description: "Queue follow-ups or steer the current turn. Press \(sendShortcut.alternateShortcutDescription) to use the other action for one message.",
+                            description: sendShortcut.followUpDescription,
                             reset: followUpBehavior == .initial ? nil :
                                 SettingsResetButton("Reset follow-up behavior to default", id: "reset-follow-up-behavior") {
                                     followUpBehavior = .initial
                                 }) {
-                    T3SegmentedControl("Follow-up behavior", selection: $followUpBehavior,
-                                       options: ComposerFollowUp.allCases.map { ($0, $0.title, "follow-up-behavior-\($0.rawValue)") })
+                    T3Select("Follow-up behavior", selection: $followUpBehavior,
+                             options: ComposerFollowUp.allCases.map { ($0, $0.title) }, width: nil)
                         .settingsTarget(.followUpBehavior, focus: $focus)
                 }
             }
@@ -468,8 +459,8 @@ struct SettingsView: View {
                         SettingsResetButton("Reset archive confirmation to default", id: "reset-archive-confirmation") {
                             setArchiveConfirmation(false)
                         } : nil) {
-            SettingsSwitch("Archive confirmation", isOn: Binding(get: { model.confirmsThreadArchive },
-                                                          set: setArchiveConfirmation))
+            SettingsSwitch("Confirm thread archiving", isOn: Binding(get: { model.confirmsThreadArchive },
+                                                              set: setArchiveConfirmation))
                 .settingsTarget(.archiveConfirmation, focus: $focus)
         } detail: {
             if let archiveConfirmationError {
@@ -488,8 +479,13 @@ struct SettingsView: View {
     }
 
     private var languageSetting: some View {
-        SettingsRow("Language", description: "The language tncode uses for menus and settings.",
-                    status: language.isRunning ? nil : String(localized: "Restart tncode to use this language.")) {
+        SettingsRow("Language", description: "System default follows your OS language.",
+                    status: language.isRunning ? nil : String(localized: "Restart tncode to use this language."),
+                    reset: language == .system ? nil :
+                        SettingsResetButton("Reset language to default", id: "reset-language") {
+                            AppLanguage.system.select()
+                            language = .system
+                        }) {
             if !language.isRunning {
                 Button("Restart now") { AppLanguage.relaunch() }
                     .accessibilityIdentifier("language-restart")
@@ -498,7 +494,7 @@ struct SettingsView: View {
                 choice.select()
                 language = choice
             }), options: AppLanguage.allCases.map { ($0, $0.title) })
-            .accessibilityIdentifier("settings-language")
+            .settingsTarget(.language, focus: $focus)
         }
     }
 
@@ -516,41 +512,9 @@ struct SettingsView: View {
         }
     }
 
-    private var projectBaseDirectorySetting: some View {
-        SettingsRow("Add project starts in", description: "Leave empty to start in your home folder.",
-                    reset: model.workspace.addProjectBaseDirectory == nil ? nil :
-                        SettingsResetButton("Reset add project starts in to default", id: "reset-add-project-starts-in") {
-                            projectBaseDirectory = ""
-                            commitProjectBaseDirectory()
-                        }) {
-            TextField("Add project starts in", text: $projectBaseDirectory, prompt: Text("~/"))
-                .labelsHidden()
-                .frame(width: 288)
-                .accessibilityLabel("Add project starts in")
-                .settingsTarget(.addProjectStartsIn, focus: $focus)
-        } detail: {
-            if let projectBaseDirectoryError {
-                SettingsMessage(projectBaseDirectoryError).accessibilityIdentifier("add-project-starts-in-error")
-            }
-        }
-    }
-
-    @discardableResult
-    private func commitProjectBaseDirectory() -> Bool {
-        do {
-            try model.updateAddProjectBaseDirectory(projectBaseDirectory)
-            projectBaseDirectory = model.workspace.addProjectBaseDirectory ?? ""
-            projectBaseDirectoryError = nil
-            return true
-        } catch {
-            projectBaseDirectoryError = error.localizedDescription
-            return false
-        }
-    }
-
     private var worktreeDirectorySetting: some View {
         SettingsRow("Worktree location",
-                    description: "Folder where new worktrees are created on this Mac. Leave empty to use the workspace’s worktrees folder.",
+                    description: "Folder where new worktrees are created, on any drive, such as ~/worktrees. Existing worktrees stay where they are. Leave empty to use the workspace’s worktrees folder.",
                     reset: model.workspace.worktreesDirectory?.isEmpty == false ?
                         SettingsResetButton("Reset worktree location to default", id: "reset-worktree-location") {
                             commitWorktreeDirectory("")
@@ -612,7 +576,6 @@ struct SettingsView: View {
     }
 
     private func closeSettings() {
-        if page == .general, !commitProjectBaseDirectory() { return }
         if page == .worktrees, !commitWorktreeDirectory(worktreeDirectory) { return }
         if model.settingsRequest === request { model.settingsRequest = nil }
     }
@@ -649,14 +612,15 @@ struct SettingsView: View {
             }
             return true
         }
-        if focus == .anchor(.addProjectStartsIn), editor?.isFieldEditor == true,
-           key == kVK_Return || key == kVK_ANSI_KeypadEnter {
-            if !event.isARepeat, commitProjectBaseDirectory() { focus = .heading }
-            return true
-        }
         if focus == .anchor(.worktreeLocation), editor?.isFieldEditor == true,
            key == kVK_Return || key == kVK_ANSI_KeypadEnter {
             if !event.isARepeat, commitWorktreeDirectory(worktreeDirectory) { focus = .heading }
+            return true
+        }
+        // Fields that save when they lose focus, like T3 Code's draft inputs, save on Return too.
+        if case .anchor(let anchor) = focus, [.addProjectStartsIn, .customSearchURL, .endpoint, .contextWindow].contains(anchor),
+           editor?.isFieldEditor == true, key == kVK_Return || key == kVK_ANSI_KeypadEnter {
+            if !event.isARepeat { focus = .heading }
             return true
         }
         guard focus == .search, editor?.isFieldEditor == true else { return false }
@@ -680,7 +644,7 @@ private struct SettingsDestinationKey: EnvironmentKey {
     static let defaultValue: SettingsRequest.Destination? = nil
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var settingsDestination: SettingsRequest.Destination? {
         get { self[SettingsDestinationKey.self] }
         set { self[SettingsDestinationKey.self] = newValue }
@@ -797,12 +761,14 @@ struct SettingsHitRing: View {
 }
 
 extension View {
-    /// Centered settings page column: max 896 wide, 30 side padding, 24 top, 48 bottom.
+    /// Centered settings page column (WorkspacePageContainer, readable): 896 wide including its 24 side
+    /// padding, 24 top, 48 bottom.
     func settingsPageContainer(maxWidth: CGFloat = 896) -> some View {
-        frame(maxWidth: maxWidth, alignment: .leading)
-            .padding(.horizontal, 30)
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
             .padding(.top, 24)
             .padding(.bottom, 48)
+            .frame(maxWidth: maxWidth)
             .frame(maxWidth: .infinity)
     }
 }

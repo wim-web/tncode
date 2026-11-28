@@ -295,18 +295,19 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         let app = try OffscreenWorkspace(fixture: fixture)
         defer { app.close() }
         let width = "command-palette-setting-appearance-chat-width"
-        let defaults = "command-palette-setting-appearance-restore-defaults"
+        let page = "command-palette-setting-appearance"
+        let scheme = "command-palette-setting-appearance-color-scheme"
         _ = try await app.focusComposer()
 
-        try await app.openPalette("width")
-        try await app.waitFor("Chat width and Restore Defaults results") {
-            app.element(width) != nil && app.element(defaults) != nil
+        try await app.openPalette("appearance")
+        try await app.waitFor("Appearance and Color scheme results") {
+            app.element(page) != nil && app.element(scheme) != nil
         }
         try app.key(kVK_DownArrow, "\u{f701}")
         try app.key(kVK_Return, "\r")
         try await app.waitFor("Return opens the second result in Appearance") {
-            app.element("settings-heading-appearance") != nil && app.element("appearance-restore-defaults") != nil
-                && app.model.settingsRequest?.destination.anchor == .restoreAppearance
+            app.element("settings-heading-appearance") != nil && app.element("appearance-color-scheme") != nil
+                && app.model.settingsRequest?.destination.anchor == .colorScheme
         }
         try app.key(kVK_Escape, "\u{1b}")
 
@@ -329,23 +330,17 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         }
         try app.key(kVK_Escape, "\u{1b}")
 
-        try await app.openPalette("Model ID")
-        try await app.waitFor("Model ID is visible") { app.element("command-palette-setting-model-id") != nil }
+        try await app.openPalette("Default model")
+        try await app.waitFor("Default model is visible") { app.element("command-palette-setting-default-model") != nil }
         try app.key(kVK_Return, "\r")
-        try await app.waitFor("Model ID opens with the project scope and field focus") {
-            app.element("settings-heading-model") != nil && app.element("model-settings-source") != nil &&
-                app.input?.string == app.model.workspace.model.model
+        try await app.waitFor("Default model opens in Threads for all projects") {
+            app.element("settings-heading-threads") != nil && app.element("default-model") != nil
+                && app.element("settings-scope-project") != nil
         }
-        XCTAssertEqual(app.model.settingsRequest?.projectID, fixture.project.id)
-        try app.type("unsaved alpha model")
+        XCTAssertNil(app.model.settingsRequest?.projectID)
         let appearance = try XCTUnwrap(app.element("settings-nav-appearance"))
         XCTAssertTrue(appearance.accessibilityPerformPress?() == true)
         try await app.waitFor("Settings shows Appearance") { app.element("settings-heading-appearance") != nil }
-        let modelPage = try XCTUnwrap(app.element("settings-nav-model"))
-        XCTAssertTrue(modelPage.accessibilityPerformPress?() == true)
-        try await app.waitFor("the project edit survives visiting another settings page") {
-            (app.element("model-id") as? NSAccessibilityProtocol)?.accessibilityValue() as? String == "unsaved alpha model"
-        }
         XCTAssertNil(app.model.project?.modelOverride)
         XCTAssertEqual(app.model.conversation?.id, fixture.alpha.id)
         XCTAssertEqual(app.model.draft, "Keep Alpha composer")

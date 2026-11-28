@@ -28,7 +28,7 @@ struct BrowserSearchSettings: Equatable {
     static let maximumTemplateLength = 2048
 
     enum TemplateIssue: String {
-        case incomplete = "Enter an HTTP or HTTPS URL containing %s. Searches use DuckDuckGo until then."
+        case incomplete = "Enter an http or https URL containing %s. Searches use DuckDuckGo until then."
         case tooLong = "Use up to 2,048 characters for the search URL."
         case credentials = "Remove the username and password from the search URL."
     }

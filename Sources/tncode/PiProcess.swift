@@ -214,6 +214,7 @@ final class PiJSONProcess<Event: Decodable> {
             environment.removeValue(forKey: "NODE_OPTIONS")
             environment.removeValue(forKey: "PI_CODING_AGENT_DIR")
             environment.removeValue(forKey: "TNCODE_LOGIN_DIR")
+            CodexRuntimeEnvironment.apply(to: &environment)
             child.environment = environment
         } else if let loginDirectory {
             child.environment?["TNCODE_LOGIN_DIR"] = loginDirectory.path

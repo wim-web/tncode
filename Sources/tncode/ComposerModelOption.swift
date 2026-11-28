@@ -4,11 +4,14 @@ struct ComposerModelOption: Identifiable {
     let settings: ModelSettings
     let name: String
     let unavailableReason: String?
+    /// The instance's display name from Settings → Providers.
+    var providerName: String?
 
     var id: ModelSettings.Identity { settings.identity }
     var accessibilityID: String { "composer-model-\(settings.provider.rawValue)-\(settings.model)" }
     var detail: String {
-        settings.provider == .local ? "\(settings.provider.label) · \(settings.endpoint)" : settings.provider.label
+        let label = providerName ?? settings.provider.label
+        return settings.provider == .local ? "\(label) · \(settings.endpoint)" : label
     }
 
     func matches(_ query: String) -> Bool {
@@ -30,5 +33,9 @@ struct ComposerModelProvider: Identifiable {
     var setupReason: String?
 
     var id: String { account }
-    var title: String { provider == .local ? "\(provider.label) · \(endpoint)" : provider.label }
+    /// The instance's display name from Settings → Providers, else the provider's own name.
+    var title: String {
+        let label = options.first?.providerName ?? provider.label
+        return provider == .local ? "\(label) · \(endpoint)" : label
+    }
 }

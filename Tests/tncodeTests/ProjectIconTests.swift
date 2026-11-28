@@ -273,8 +273,8 @@ final class ProjectIconTests: XCTestCase {
 
         func openOverview(for project: Project) async throws {
             try await press("project-group-settings-\(project.id)")
-            let path = try await find("project-settings-path")
-            XCTAssertEqual((path as? NSAccessibilityProtocol)?.accessibilityValue() as? String, project.path)
+            let name = try await find("project-settings-name")
+            XCTAssertEqual((name as? NSAccessibilityProtocol)?.accessibilityValue() as? String, project.title)
             XCTAssertEqual(model.settingsRequest?.projectID, project.id)
         }
 

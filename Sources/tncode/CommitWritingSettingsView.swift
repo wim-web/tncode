@@ -1,90 +1,128 @@
 import SwiftUI
 
+/// Settings → Source control & issues → Commits & pull requests (T3 Code's SourceControlWritingSettings).
+/// Changes save as they are made; the custom instructions save when the editor loses focus.
 struct CommitWritingSettingsView: View {
     @ObservedObject var model: WorkspaceModel
     let settingsFocus: FocusState<SettingsFocus?>.Binding
-    @State private var draft: CommitWritingSettings
+    @State private var instructions: String
     @State private var error: String?
+    @FocusState private var editingInstructions: Bool
 
     init(model: WorkspaceModel, settingsFocus: FocusState<SettingsFocus?>.Binding) {
         self.model = model
         self.settingsFocus = settingsFocus
-        _draft = State(initialValue: model.commitWritingSettings)
+        _instructions = State(initialValue: model.commitWritingSettings.customInstructions)
     }
 
-    private var profiles: [ModelSettings] {
-        var accounts = Set<String>()
-        let settings = [model.effectiveModel, model.project?.modelOverride, model.workspace.model,
-                        model.commitWritingSettings.writerModel, draft.writerModel]
-        return settings.compactMap { $0 }.compactMap { try? $0.validated() }
-            .filter { accounts.insert($0.account).inserted }
-    }
-
-    private var writerAccount: Binding<String?> {
-        Binding(get: { draft.writerModel?.account }, set: { account in
-            draft.writerModel = profiles.first { $0.account == account }
-        })
-    }
+    private var settings: CommitWritingSettings { model.commitWritingSettings }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSection("Commits & pull requests") {
-                SettingsRow("Commit and pull request writing",
-                            description: "How Pi writes generated commit subjects and bodies.",
-                            reset: draft.style == .repository && draft.customInstructions.isEmpty ? nil :
-                                SettingsResetButton("Reset Writing Style", id: "reset-commit-writing-style") {
-                                    draft.style = .repository
-                                    draft.customInstructions = ""
-                                }) {
-                    T3Select("Commit writing style", selection: $draft.style,
-                             options: CommitWritingSettings.Style.allCases.map { ($0, $0.title) }, width: 224)
-                        .settingsTarget(.commitWritingStyle, focus: settingsFocus)
-                } detail: {
-                    if draft.style == .custom {
-                        TextEditor(text: $draft.customInstructions)
+        SettingsSection("Commits & pull requests") {
+            SettingsRow("Commit and pull request writing", description: settings.style.summary,
+                        reset: settings.style == .repository && settings.customInstructions.isEmpty ? nil :
+                            SettingsResetButton("Reset commit and pull request writing to default",
+                                                id: "reset-commit-writing-style") {
+                                instructions = ""
+                                save { $0.style = .repository; $0.customInstructions = "" }
+                            }) {
+                T3Select("Commit and pull request writing", selection: Binding(get: { settings.style }, set: { style in
+                    save { $0.style = style }
+                }), options: CommitWritingSettings.Style.allCases.map { ($0, $0.title) }, width: 224)
+                    .settingsTarget(.commitWritingStyle, focus: settingsFocus)
+            } detail: {
+                if settings.style == .custom {
+                    ZStack(alignment: .topLeading) {
+                        if instructions.isEmpty {
+                            Text("Keep commit subjects under 60 characters. Keep pull request descriptions short and plain.")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .allowsHitTesting(false)
+                        }
+                        TextEditor(text: $instructions)
                             .font(.system(size: 14))
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 5)
-                            .frame(minHeight: 92, maxHeight: 256)
-                            .modifier(T3FieldChrome(height: 92))
-                            .frame(maxWidth: 672, alignment: .leading)
-                            .accessibilityLabel("Custom commit writing instructions")
-                            .accessibilityIdentifier("commit-writing-instructions")
+                            .focused($editingInstructions)
                     }
-                }
-                SettingsDivider()
-                SettingsRow("Source control writer model",
-                            description: draft.writerModel == nil ? "Inherits the active thread’s model." : nil) {
-                    T3Select("Source control writer model", selection: writerAccount,
-                             options: [(nil as String?, "Use active model")] + profiles.map {
-                                 (Optional($0.account), $0.provider == .local ? $0.endpoint : $0.provider.label)
-                             }, width: 224)
-                        .settingsTarget(.commitWriterModel, focus: settingsFocus)
-                } detail: {
-                    if let writer = Binding($draft.writerModel) {
-                        TextField("Writer model ID", text: writer.model)
-                            .frame(width: 256)
-                            .accessibilityIdentifier("commit-writer-model-id")
+                    .frame(minHeight: 92, maxHeight: 256)
+                    .modifier(T3FieldChrome(height: 92))
+                    .frame(maxWidth: 672, alignment: .leading)
+                    .padding(.bottom, 2)
+                    .onChange(of: editingInstructions) { _, editing in
+                        if !editing { save { $0.customInstructions = instructions } }
                     }
+                    .onDisappear { save { $0.customInstructions = instructions } }
+                    .accessibilityLabel("Custom commit and pull request instructions")
+                    .accessibilityIdentifier("commit-writing-instructions")
                 }
-            }
-            HStack(spacing: 8) {
                 if let error { SettingsMessage(error) }
-                Spacer()
-                Button("Save Changes") {
-                    do {
-                        try model.saveCommitWritingSettings(draft)
-                        draft = model.commitWritingSettings
-                        error = nil
-                    } catch let failure {
-                        error = failure.localizedDescription
+            }
+            SettingsDivider()
+            SettingsAdvancedGroup(targets: [.commitWriterModel]) {
+                writerModelRow
+            }
+        }
+    }
+
+    private var writerModelRow: some View {
+        // Commit messages are written through Pi, so Codex models are not offered.
+        let current = settings.writerModel ?? model.workspace.model
+        let options = model.defaultModelOptions(current: current).filter { $0.settings.provider != .codexAgent }
+        return SettingsRow("Source control writer model",
+                           description: "Model for commit messages. When disabled, use the model of the thread you commit from.") {
+            if let writer = settings.writerModel {
+                SettingsModelPickerButton(model: model, title: "Source control writer model", current: writer,
+                                          excluded: [.codexAgent], choose: { option in
+                    var next = option.settings
+                    next.thinkingLevel = writer.thinkingLevel
+                    save { $0.writerModel = next }
+                }, chooseLevel: { level in
+                    var next = writer
+                    next.thinkingLevel = level == .off ? nil : level
+                    save { $0.writerModel = next }
+                })
+                .accessibilityIdentifier("commit-writer-model")
+                if writer.provider != .local {
+                    ThinkingLevelPicker(level: writer.thinkingLevel ?? .off) { level in
+                        var next = writer
+                        next.thinkingLevel = level
+                        save { $0.writerModel = next }
                     }
                 }
-                .buttonStyle(T3SmallButtonStyle(kind: .primary))
-                .disabled(draft == model.commitWritingSettings)
-                .accessibilityIdentifier("save-commit-writing")
             }
+            SettingsSwitch("Use a separate source control writer model", isOn: Binding(
+                get: { settings.writerModel != nil },
+                set: { separate in
+                    save { $0.writerModel = separate ? (options.first { $0.unavailableReason == nil }?.settings ?? current) : nil }
+                }
+            ))
+            .settingsTarget(.commitWriterModel, focus: settingsFocus)
+        }
+    }
+
+    private func save(_ change: (inout CommitWritingSettings) -> Void) {
+        var next = settings
+        change(&next)
+        do {
+            try model.saveCommitWritingSettings(next)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+extension CommitWritingSettings.Style {
+    /// Row description for the chosen style. tncode writes commit messages only.
+    var summary: String {
+        switch self {
+        case .repository: String(localized: "Commit messages match each project's history.")
+        case .conventional: String(localized: "Conventional Commit prefixes, with short subjects and bodies.")
+        case .custom: String(localized: "Your instructions shape commit messages.")
         }
     }
 }

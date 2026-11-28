@@ -55,6 +55,7 @@ struct SettingsPresentation: ViewModifier {
                             SettingsView(model: model, appearance: appearance, browserDefaults: browserDefaults,
                                          request: request, pasteboard: pasteboard, openWelcome: openWelcome)
                                 .defaultAppStorage(browserDefaults)
+                                .environment(\.settingsViewportHeight, window.size.height)
                                 .frame(width: frame.width, height: frame.height)
                                 .modifier(T3ModalCard(radius: frame.radius))
                                 .offset(x: frame.minX, y: frame.minY)

@@ -1,88 +1,74 @@
 import SwiftUI
 
+/// Settings → Projects (T3 Code's ProjectsSettings and ProjectSettingsPanel). The scope sentence picks the
+/// project; without one, the page lists projects to choose from.
 struct ProjectOverviewSettingsView: View {
     @ObservedObject var model: WorkspaceModel
     let project: Project
     @Binding var title: String
-    let pasteboard: NSPasteboard
-    let openModelSettings: () -> Void
-    @State private var checkouts: [GitCheckout] = []
     @State private var error: String?
     @State private var choosingIcon = false
     @State private var choosingIconFile = false
     @State private var iconError: String?
-
-    private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+    @State private var removing = false
+    @FocusState private var editingName: Bool
 
     var body: some View {
-        let folderIsAvailable = project.folderIsAvailable
-        VStack(alignment: .leading, spacing: 32) {
-            SettingsSection("Project") {
-                SettingsRow("Name") {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsInfoAlert("Can't find a setting? Keep this project picked above and hop to any other settings page.")
+            // "Project": its title is for screen readers only.
+            SettingsSection {
+                SettingsRow("Name", description: "The shared name for this project group in the sidebar and thread lists.") {
                     TextField("Project name", text: $title)
                         .frame(width: 256)
+                        .focused($editingName)
+                        .onSubmit { editingName = false }
+                        .onChange(of: editingName) { _, editing in if !editing { rename() } }
+                        .onDisappear { rename() }
                         .accessibilityIdentifier("project-settings-name")
-                        .onSubmit(rename)
-                    Button("Save", action: rename)
-                        .disabled(trimmedTitle.isEmpty || trimmedTitle == project.title)
-                        .accessibilityIdentifier("project-settings-save-name")
                 }
                 SettingsDivider()
                 projectIconSetting
                 SettingsDivider()
-                SettingsRow("Project folder", description: project.path, descriptionID: "project-settings-path",
-                            status: folderIsAvailable ? nil : "The project folder is no longer available.",
-                            statusID: "project-settings-folder-unavailable") {
-                    Button("Copy path") {
-                        do {
-                            try model.copyProjectPath(project.id, to: pasteboard)
-                            error = nil
-                        } catch let failure {
-                            error = failure.localizedDescription
-                        }
-                    }
-                    .disabled(!folderIsAvailable)
-                    .accessibilityIdentifier("project-settings-copy-path")
-                }
-                SettingsDivider()
-                SettingsRow("Pin", description: "Keep this project at the top of the sidebar.") {
+                SettingsRow("Pin", description: "Pinned projects come first in project pickers.") {
                     SettingsSwitch("Pin project", isOn: Binding(get: { project.pinned == true }, set: {
                         model.setProjectPinned(project.id, pinned: $0)
                     }))
                     .accessibilityIdentifier("project-settings-pin")
                 }
-                SettingsDivider()
-                SettingsRow("Model", description: "Choose a model for this project or inherit the workspace default.") {
-                    Button("Model settings", action: openModelSettings)
-                        .disabled(!model.canOpenModelSettings)
-                        .accessibilityIdentifier("project-settings-model")
-                }
             }
-            if folderIsAvailable && !checkouts.isEmpty {
-                SettingsSection("Checkouts") {
-                    ForEach(Array(checkouts.enumerated()), id: \.element.path) { index, checkout in
-                        if index > 0 { SettingsDivider() }
-                        SettingsRow(checkout.branch ?? "Detached", description: checkout.path,
-                                    descriptionID: "project-settings-checkout-\(checkout.path)") {
-                            EmptyView()
-                        }
-                    }
-                }
-            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Project")
             if let error {
                 SettingsMessage(error).accessibilityIdentifier("project-settings-error")
             }
+            SettingsSection("New threads") {
+                DefaultModelRow(model: model, project: project)
+            }
+            SettingsSection("Danger") {
+                SettingsRow("Remove project", description: "Removes the project from the sidebar. The folder and its threads stay on disk.") {
+                    Button {
+                        removing = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash").font(.system(size: 13))
+                            Text("Remove project")
+                        }
+                    }
+                    .buttonStyle(T3SmallButtonStyle(kind: .destructiveOutline))
+                    .accessibilityIdentifier("project-settings-remove")
+                }
+            }
         }
-        .task(id: project.path) {
-            checkouts = []
-            guard folderIsAvailable else { return }
-            let listed = try? await GitWorkspace(path: project.path).worktrees()
-            if !Task.isCancelled { checkouts = listed ?? [] }
+        .confirmationDialog("Remove project \"\(project.title)\"?", isPresented: $removing) {
+            Button("Remove project", role: .destructive) { model.removeProject(project.id) }
+        } message: {
+            Text("Path: \(project.path)\nThe folder and its threads stay on disk.")
         }
     }
 
     private var projectIconSetting: some View {
-        SettingsRow("Project icon", description: "Shown in the sidebar and breadcrumbs.",
+        SettingsRow("Project icon", description: project.icon?.summary ?? String(localized: "Automatic"),
                     reset: project.icon == nil ? nil :
                         SettingsResetButton("Reset project icon to default", id: "project-settings-reset-icon") {
                             updateIcon { nil }
@@ -90,6 +76,7 @@ struct ProjectOverviewSettingsView: View {
             ProjectIconView(icon: project.icon, size: 24, projectName: project.title)
                 .accessibilityIdentifier("project-settings-icon-preview")
             Button("Choose icon") { choosingIcon = true }
+                .accessibilityLabel("Choose a project icon")
                 .accessibilityIdentifier("project-settings-choose-icon")
             Button("Choose file") { choosingIconFile = true }
                 .accessibilityLabel("Choose a project icon file")
@@ -120,14 +107,121 @@ struct ProjectOverviewSettingsView: View {
         }
     }
 
+    /// Saves on Return or when the field loses focus; an empty name goes back to the saved one.
     private func rename() {
-        let name = trimmedTitle
-        guard !name.isEmpty, name != project.title else { return }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            title = project.title
+            error = String(localized: "Project title cannot be empty")
+            return
+        }
+        guard name != project.title else { return }
         if model.renameProject(project.id, title: name) {
             title = name
             error = nil
         } else {
-            error = model.error ?? "Couldn’t save the project name."
+            error = model.error ?? String(localized: "Failed to rename project")
         }
+    }
+}
+
+/// Projects page before a project is picked: a prompt and the projects to choose from.
+struct ProjectChooserView: View {
+    @ObservedObject var model: WorkspaceModel
+    let choose: (UUID) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        if model.projects.isEmpty {
+            Text("Add a project from the sidebar to configure it here.")
+                .font(.system(size: 14))
+                .foregroundStyle(palette.mutedForeground)
+                .frame(maxWidth: .infinity)
+                .padding(32)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Choose a project to manage its name, icon, checkouts and actions.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.mutedForeground)
+                    .padding(.horizontal, 16)
+                SettingsSection {
+                    ForEach(Array(model.projects.enumerated()), id: \.element.id) { index, project in
+                        if index > 0 { SettingsDivider() }
+                        ProjectChooserRow(project: project) { choose(project.id) }
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings-project-chooser")
+        }
+    }
+}
+
+private struct ProjectChooserRow: View {
+    let project: Project
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ProjectIconView(icon: project.icon, size: 16, projectName: project.title)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: project.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(palette.foreground)
+                        .lineLimit(1)
+                    Text(verbatim: project.path)
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.mutedForeground)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(palette.mutedForeground)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(hovering ? palette.accentFill.opacity(0.5) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(project.path)
+        .accessibilityIdentifier("settings-project-choose-\(project.id.uuidString)")
+    }
+}
+
+/// Info alert: 12pt-radius box with an info icon, T3 Code's `Alert variant="info"`.
+struct SettingsInfoAlert: View {
+    let text: String
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(palette.info)
+            Text(localized: text)
+                .font(.system(size: 14))
+                .foregroundStyle(palette.mutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(palette.info.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(palette.info.opacity(0.32)) }
     }
 }

@@ -153,7 +153,7 @@ struct TncodeApp: App {
                     .keyboardShortcut(",")
                     .accessibilityIdentifier("settings-menu")
                     .disabled(model.showingSettings || model.showingCommandPalette)
-                Button("Model Settings…") { model.openSettings(.model) }
+                Button("Provider Settings…") { model.openSettings(.model) }
                     .accessibilityIdentifier("model-settings-menu")
                     .disabled(!model.canOpenModelSettings || model.showingSettings || model.showingCommandPalette)
                 Button("Appearance Settings…") { model.openSettings(.appearance) }

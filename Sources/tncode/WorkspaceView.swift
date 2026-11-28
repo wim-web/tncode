@@ -752,7 +752,7 @@ struct WorkspaceView: View {
             LabeledContent("Model", value: model.workspace.model.displayModel)
                 .font(.system(size: 14))
             HStack(spacing: 8) {
-                Button(ready ? "Model Settings…" : "Sign in…") {
+                Button(ready ? "Provider Settings…" : "Sign in…") {
                     model.openSettings(.model, anchor: ready ? nil : .accountSignIn)
                 }
                     .buttonStyle(T3ButtonStyle(kind: .outline))
@@ -808,9 +808,10 @@ struct WorkspaceView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Button(action: model.showHome) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("Pi").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.sidebarForeground)
-                        Text(verbatim: "Workspace").font(.system(size: 14, weight: .medium)).tracking(-0.35)
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        // "tncode" set like T3 Code's wordmark: a bold mark followed by a muted word.
+                        Text(verbatim: "tn").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.sidebarForeground)
+                        Text(verbatim: "code").font(.system(size: 14, weight: .medium)).tracking(-0.35)
                             .foregroundStyle(palette.mutedForeground)
                     }
                     .padding(.horizontal, 4)
@@ -3720,7 +3721,6 @@ struct WorkspaceView: View {
         if includeSettings {
             contents.settings = SettingsSearch.availableResults(SettingsSearchAvailability(
                 model: model, project: settingsProject,
-                draft: ModelSettingsDraft(workspace: model.workspace.model, project: settingsProject),
                 browser: BrowserSearchSettings.load(from: browserDefaults)
             ))
         }
