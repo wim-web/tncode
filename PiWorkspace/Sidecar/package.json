@@ -1,7 +1,0 @@
-{
-  "name": "pi-workspace-sidecar",
-  "private": true,
-  "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.6.1"
-  }
-}
