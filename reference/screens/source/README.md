@@ -1,6 +1,12 @@
 # T3 Code v0.1.12 画面リファレンス
 
-対象は [`reference/t3code`](../../t3code) のタグ `v0.1.12`、コミット `ca81b7b97a1c4b91e5ac25768d0f6629f37732fd`。Electron と Web が使う `apps/web/src` と、その表示条件を決める公開ソースを参照した。寸法は CSS 宣言、レイアウト計算、Electron のウィンドウ設定に基づく。OS の外枠やフォントによる差は実機の計測欄に記録できる。
+対象は [T3 Code](https://github.com/pingdotgg/t3code/tree/v0.1.12) のタグ `v0.1.12`、コミット `ca81b7b97a1c4b91e5ac25768d0f6629f37732fd`。Electron と Web が使う `apps/web/src` と、その表示条件を決める公開ソースを参照した。寸法は CSS 宣言、レイアウト計算、Electron のウィンドウ設定に基づく。OS の外枠やフォントによる差は実機の計測欄に記録できる。
+
+ソースを手元で検索するときは、このリポジトリの外に取得する。
+
+```sh
+git clone --depth 1 --branch v0.1.12 https://github.com/pingdotgg/t3code.git
+```
 
 | リファレンス | 範囲 |
 | --- | --- |
