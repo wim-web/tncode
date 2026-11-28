@@ -109,6 +109,16 @@ const get = id => drive("get", id, "--values");
 const enabled = (id, value = true) => get(id).includes("enabled=" + value);
 const ready = () => until(() => enabled("git-commit"), "enabled commit");
 const found = (id, text) => until(() => get(id).includes(text), id + " " + text);
+const has = id => { try { return Boolean(get(id)); } catch { return false; } };
+async function openChanges() {
+  if (!has("hide-right-panel")) press("toggle-right-panel");
+  await found("add-panel-surface", "enabled=true");
+  press("add-panel-surface");
+  await found("add-panel-changes", "enabled=true");
+  // The menu closes as Changes opens, which can end the press with an AX error.
+  try { press("add-panel-changes"); }
+  catch (error) { if (!/AX error -2520[045]/.test(String(error.stderr))) throw error; }
+}
 const observedRequest = count => until(() => requests[count - 1], "provider request " + count);
 function verifyRequests(count) {
   assert.equal(requests.length, count);
@@ -126,11 +136,11 @@ try {
   installedKey = true;
   execFileSync("/usr/bin/open", ["-g", "-n", "-a", bundle, "--stdout", join(root, "app.out"), "--stderr", join(root, "app.err"),
     "--env", "GIT_CONFIG_NOSYSTEM=1", "--env", "GIT_CONFIG_GLOBAL=/dev/null",
-    "--args", "--workspace", workspace, "-ApplePersistenceIgnoreState", "YES"]);
+    "--args", "-AppleLanguages", "(en)", "--workspace", workspace, "-ApplePersistenceIgnoreState", "YES"]);
   pid = await until(() => execFileSync("/bin/ps", ["-axo", "pid=,args="], { encoding: "utf8" }).split("\n")
     .find(line => line.includes("/MacOS/PiWorkspace --workspace " + workspace + " "))?.trim().split(/\s+/)[0], "app PID");
-  await found("toggle-changes", "enabled=true");
-  press("toggle-changes");
+  await found("toggle-right-panel", "enabled=true");
+  await openChanges();
   await found("git-include-selected.txt", "enabled=true");
   press("git-include-all");
   await until(() => enabled("git-commit", false), "disabled commit with no selection");
@@ -196,7 +206,7 @@ try {
   press("thread-row-" + topicID);
   await found("composer", "Topic draft");
   await found("git-include-selected.txt", "enabled=true").catch(async () => {
-    press("toggle-changes");
+    await openChanges();
     await found("git-include-selected.txt", "enabled=true");
   });
   const inclusion = get("git-include-selected.txt");

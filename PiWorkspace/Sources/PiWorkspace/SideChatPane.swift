@@ -20,7 +20,7 @@ struct SideChatPane: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Text(child.title).font(.callout.weight(.medium)).lineLimit(1)
+                Text(child.displayTitle).font(.callout.weight(.medium)).lineLimit(1)
                 Spacer()
                 Button("Add to chat") { model.addSideChatToParent(scope) }
                     .buttonStyle(.borderless)
@@ -117,14 +117,15 @@ struct SideChatPane: View {
                     HStack {
                         Label(attachment.name, systemImage: "paperclip").lineLimit(1)
                         Spacer()
-                        panelIcon("Remove \(attachment.name)", icon: "xmark", id: "remove-side-file-\(attachment.id)") {
+                        panelIcon(String(localized: "Remove \(attachment.name)"), icon: "xmark",
+                                  id: "remove-side-file-\(attachment.id)") {
                             model.removeSideChatFile(attachment.id, in: scope)
                         }
                         .disabled(child.submissionID != nil)
                     }
                     .font(.caption)
                 }
-                ComposerTextField(target: .init(threadID: child.id), placeholder: "Ask a side question",
+                ComposerTextField(target: .init(threadID: child.id), placeholder: String(localized: "Ask a side question"),
                                   text: Binding(get: { model.sideChat(scope)?.draft ?? "" },
                                                 set: { model.editSideChat($0, in: scope) }),
                                   pasteboard: pasteboard,

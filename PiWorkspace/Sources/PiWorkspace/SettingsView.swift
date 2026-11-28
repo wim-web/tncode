@@ -29,6 +29,7 @@ struct SettingsView: View {
     @State private var worktreeDirectory: String
     @State private var worktreeDirectoryError: String?
     @State private var startFromRemoteError: String?
+    @State private var language = AppLanguage.selected
     private var page: SettingsPage { request.page }
     private var showingLicenses: Binding<Bool> {
         Binding(get: { request.destination.anchor == .licenses },
@@ -75,42 +76,20 @@ struct SettingsView: View {
         ))
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    @Environment(\.t3Themes) private var t3Themes
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
+
     var body: some View {
         HStack(spacing: 0) {
             navigation
-                .frame(width: 214)
-                .background(.quaternary.opacity(0.25))
-            Divider()
+                .frame(width: 240)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(palette.navFill)
+                .overlay(alignment: .trailing) { Rectangle().fill(palette.border).frame(width: 1) }
             VStack(spacing: 0) {
-                HStack {
-                    Text(page.title)
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                        .focusable()
-                        .focused($focus, equals: .heading)
-                        .accessibilityIdentifier("settings-heading-\(page.rawValue)")
-                    Spacer()
-                    if page == .model {
-                        Button("About") { openWindow(id: AboutView.windowID) }
-                            .accessibilityIdentifier("settings-about")
-                    }
-                    if page == .general {
-                        Button("Restore device defaults") {
-                            confirmingDeviceRestore = true
-                            focus = .heading
-                        }
-                        .accessibilityIdentifier("restore-device-defaults")
-                        .disabled(changedDeviceSettings.isEmpty)
-                    }
-                    if [.general, .threads, .chat, .project, .diffs, .worktrees, .usage, .archived, .about].contains(page) ||
-                        (page == .model && projectScopeUnavailable) {
-                        Button("Done", action: closeSettings)
-                            .accessibilityIdentifier("settings-close")
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-                Divider()
+                header
                 ScrollViewReader { reader in
                     Group {
                         if page == .about {
@@ -118,12 +97,14 @@ struct SettingsView: View {
                                       openWelcome: openWelcome, welcomeEnabled: model.canOpenWelcome)
                         } else if page == .usage {
                             UsageSettingsView(root: model.root, projects: model.workspace.projects)
-                                .padding(24)
+                                .frame(maxWidth: 1024, maxHeight: .infinity, alignment: .top)
+                                .padding(.horizontal, 30)
+                                .padding(.top, 24)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         } else {
                             ScrollView {
-                                detail
-                                    .padding(24)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 32) { detail }
+                                    .settingsPageContainer()
                             }
                             .id(page)
                         }
@@ -141,7 +122,14 @@ struct SettingsView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             }
         }
-        .frame(width: 784, height: 474)
+        .foregroundStyle(palette.foreground)
+        // T3 Code's 30×18 switch is closest to the native small switch, tinted with the primary blue.
+        .tint(palette.primary)
+        .textFieldStyle(T3TextFieldStyle())
+        .buttonStyle(T3SmallButtonStyle())
+        .frame(minWidth: 784, idealWidth: 1000, maxWidth: .infinity, minHeight: 474, idealHeight: 640, maxHeight: .infinity)
+        .background(palette.canvas)
+        .environment(\.closeSettings, CloseSettingsAction(closeSettings))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings")
         .environment(\.settingsDestination, request.destination)
@@ -156,6 +144,7 @@ struct SettingsView: View {
         } message: { changes in
             Text("This will reset: \(changes.joined(separator: ", ")).")
         }
+        .onChange(of: request.closeRequests) { _, _ in closeSettings() }
         .onChange(of: request.destination) {
             focus = nil
             search.query = ""
@@ -168,86 +157,147 @@ struct SettingsView: View {
         }
     }
 
+    /// 48pt bar: "Settings / Page" breadcrumb, page actions and the close button.
+    private var header: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Text("Settings").foregroundStyle(palette.mutedForeground)
+                Text("/").foregroundStyle(palette.mutedForeground).accessibilityHidden(true)
+                Text(page.title)
+                    .foregroundStyle(palette.foreground)
+                    .accessibilityAddTraits(.isHeader)
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($focus, equals: .heading)
+                    .accessibilityIdentifier("settings-heading-\(page.rawValue)")
+            }
+            .font(.system(size: 14, weight: .medium))
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            if page == .model {
+                Button("About") { openWindow(id: AboutView.windowID) }
+                    .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+                    .accessibilityIdentifier("settings-about")
+            }
+            if page == .general {
+                Button {
+                    confirmingDeviceRestore = true
+                    focus = .heading
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
+                        Text("Restore device defaults")
+                    }
+                }
+                .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+                .accessibilityIdentifier("restore-device-defaults")
+                .disabled(changedDeviceSettings.isEmpty)
+            }
+            Button(action: closeSettings) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(T3IconButtonStyle())
+            .help("Close (Esc)")
+            .accessibilityLabel("Close settings")
+            .accessibilityIdentifier("settings-close")
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 8)
+        .frame(height: 48)
+        .overlay(alignment: .bottom) { Rectangle().fill(palette.border).frame(height: 1) }
+    }
+
     private var navigation: some View {
         let rows = results
         let selected = search.selected(in: rows)?.id
-        return VStack(spacing: 10) {
-            HStack(spacing: 6) {
-                TextField("Search settings", text: $search.query)
-                    .textFieldStyle(.roundedBorder)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.mutedForeground.opacity(0.8))
+                    .accessibilityHidden(true)
+                TextField("Search settings", text: $search.query, prompt: Text("Search"))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium))
                     .focused($focus, equals: .search)
                     .accessibilityIdentifier("settings-search")
-                if !search.query.isEmpty {
+                if search.query.isEmpty {
+                    T3Kbd("/").accessibilityHidden(true)
+                } else {
                     Button {
                         clearSearch()
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(T3IconButtonStyle(size: 16))
                     .accessibilityLabel("Clear settings search")
                     .accessibilityIdentifier("settings-search-clear")
                 }
             }
+            .padding(.horizontal, 8)
+            .frame(height: 32)
+            .modifier(T3SidebarRowBackground(selected: false, targeted: false, draft: false))
             ScrollViewReader { reader in
                 ScrollView {
-                    VStack(spacing: 3) {
+                    VStack(alignment: .leading, spacing: 16) {
                         if !search.isSearching {
-                            ForEach(SettingsPage.allCases.filter { $0 != .project || scopedProject != nil }) { item in
-                                navigationRow(title: item.title, page: item, selected: item == page) {
-                                    navigate(to: item)
+                            ForEach(Array(SettingsPage.navigationGroups.enumerated()), id: \.offset) { _, group in
+                                let pages = group.pages.filter { $0 != .project || scopedProject != nil }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if let title = group.title {
+                                        Text(localized: title)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(palette.mutedForeground.opacity(0.8))
+                                            .padding(.horizontal, 8)
+                                            .padding(.bottom, 0)
+                                    }
+                                    ForEach(pages) { item in
+                                        navigationRow(title: item.title, page: item, selected: item == page) {
+                                            navigate(to: item)
+                                        }
+                                        .accessibilityIdentifier("settings-nav-\(item.rawValue)")
+                                        .disabled(item == .model && !model.canOpenModelSettings)
+                                    }
                                 }
-                                .accessibilityIdentifier("settings-nav-\(item.rawValue)")
-                                .disabled(item == .model && !model.canOpenModelSettings)
                             }
                         } else if rows.isEmpty {
                             Text("No settings found")
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 16)
+                                .font(.system(size: 12))
+                                .foregroundStyle(palette.mutedForeground)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
                                 .accessibilityIdentifier("settings-search-empty")
                         } else {
-                            ForEach(rows) { result in
-                                navigationRow(title: result.title, page: result.page, selected: result.id == selected,
-                                              subtitle: result.anchor == nil ? nil : result.page.title) {
-                                    navigate(to: result.page, anchor: result.anchor)
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(rows) { result in
+                                    navigationRow(title: result.title, page: result.page, selected: result.id == selected,
+                                                  subtitle: result.anchor == nil ? nil : result.page.title) {
+                                        navigate(to: result.page, anchor: result.anchor)
+                                    }
+                                    .accessibilityIdentifier("settings-result-\(result.id)")
+                                    .id(result.id)
                                 }
-                                .accessibilityIdentifier("settings-result-\(result.id)")
-                                .id(result.id)
                             }
                         }
                     }
+                    .padding(.top, 0)
                 }
+                .scrollIndicators(.never)
                 .onChange(of: selected) { _, id in
                     if let id { reader.scrollTo(id) }
                 }
             }
         }
-        .padding(12)
+        .padding(8)
     }
 
     private func navigationRow(title: String, page: SettingsPage, selected: Bool,
                                subtitle: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: page.icon)
-                    .frame(width: 16)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                    if let subtitle {
-                        Text(subtitle)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(7)
-            .background(selected ? Color.accentColor.opacity(0.17) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
+            SettingsNavigationRow(title: title, icon: page.icon, subtitle: subtitle, selected: selected)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .accessibilityLabel(Text(localized: title))
         .accessibilityHint(subtitle ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -256,21 +306,23 @@ struct SettingsView: View {
     private var detail: some View {
         switch page {
         case .general:
-            VStack(alignment: .leading, spacing: 18) {
-                if let deviceRestoreError {
-                    Text(deviceRestoreError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("restore-device-defaults-error")
+            if let deviceRestoreError { SettingsMessage(deviceRestoreError).accessibilityIdentifier("restore-device-defaults-error") }
+            SettingsSection("Sidebar") {
+                SettingsRow("Project grouping", description: "Group threads under their project in the sidebar.") {
+                    SettingsSwitch("Group by Project", isOn: $groupByProject)
+                        .settingsTarget(.groupByProject, focus: $focus)
                 }
-                Toggle("Group by Project", isOn: $groupByProject)
-                    .settingsTarget(.groupByProject, focus: $focus)
-                Divider()
+            }
+            SettingsSection("Confirmations") {
                 archiveConfirmationSetting
-                Divider()
+                SettingsDivider()
                 terminalCloseConfirmationSetting
-                Divider()
+            }
+            SettingsSection("New projects") {
                 projectBaseDirectorySetting
+            }
+            SettingsSection("Display") {
+                languageSetting
             }
         case .threads:
             SnoozeOptionsSettingsView(model: model, settingsFocus: $focus)
@@ -296,20 +348,24 @@ struct SettingsView: View {
         case .sourceControl:
             CommitWritingSettingsView(model: model, settingsFocus: $focus)
         case .diffs:
-            HStack {
-                Toggle("Hide whitespace changes", isOn: $ignoreWhitespace)
-                    .help("Ignore whitespace-only edits in the Changes panel by default.")
-                    .settingsTarget(.hideWhitespaceChanges, focus: $focus)
-                if ignoreWhitespace != DiffPreferences.defaultIgnoreWhitespace {
-                    Button("Reset") { ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace }
-                        .accessibilityLabel("Reset diff whitespace changes to default")
-                        .accessibilityIdentifier("reset-hide-whitespace-changes")
+            SettingsSection("Diffs") {
+                SettingsRow("Hide whitespace changes",
+                            description: "Ignore whitespace-only edits in the Changes panel by default.",
+                            reset: ignoreWhitespace == DiffPreferences.defaultIgnoreWhitespace ? nil :
+                                SettingsResetButton("Reset diff whitespace changes to default",
+                                                    id: "reset-hide-whitespace-changes") {
+                                    ignoreWhitespace = DiffPreferences.defaultIgnoreWhitespace
+                                }) {
+                    SettingsSwitch("Hide whitespace changes", isOn: $ignoreWhitespace)
+                        .settingsTarget(.hideWhitespaceChanges, focus: $focus)
                 }
             }
         case .worktrees:
-            worktreeDirectorySetting
-            Divider()
-            startFromRemoteSetting
+            SettingsSection("Creation") {
+                worktreeDirectorySetting
+                SettingsDivider()
+                startFromRemoteSetting
+            }
         case .browser:
             BrowserSettingsView(defaults: browserDefaults, draft: $browserDraft, settingsFocus: $focus)
         case .archived:
@@ -321,7 +377,8 @@ struct SettingsView: View {
 
     private var projectUnavailable: some View {
         Text("This project is no longer open.")
-            .foregroundStyle(.secondary)
+            .font(.system(size: 14))
+            .foregroundStyle(palette.mutedForeground)
             .accessibilityIdentifier("settings-project-unavailable")
     }
 
@@ -330,6 +387,7 @@ struct SettingsView: View {
         return [
             ("Color scheme", appearance.colorScheme != .system),
             ("Chat width", appearance.chatWidth != .comfortable),
+            ("Theme", appearance.themes != T3ThemeChoice()),
             ("Word wrap", wordWrap != DiffPreferences.defaultWordWrap),
             ("Hide whitespace changes", ignoreWhitespace != DiffPreferences.defaultIgnoreWhitespace),
             ("Snooze options", workspace.effectiveSnoozeOptions != ThreadSnoozeSchedule.defaultOptions),
@@ -341,7 +399,7 @@ struct SettingsView: View {
             ("Archive confirmation", model.confirmsThreadArchive),
             ("Terminal close confirmation", confirmTerminalClose != TerminalPreference.defaultConfirmClose),
             ("Search engine", BrowserSearchSettings.load(from: browserDefaults) != BrowserSearchSettings())
-        ].compactMap { label, changed in changed ? label : nil }
+        ].compactMap { label, changed in changed ? NSLocalizedString(label, comment: "Setting name") : nil }
     }
 
     private func restoreDeviceDefaults() {
@@ -351,7 +409,8 @@ struct SettingsView: View {
             deviceRestoreError = error.localizedDescription
             return
         }
-        if appearance.colorScheme != .system || appearance.chatWidth != .comfortable {
+        if appearance.colorScheme != .system || appearance.chatWidth != .comfortable ||
+            appearance.themes != T3ThemeChoice() {
             appearance.restoreDefaults()
         }
         if wordWrap != DiffPreferences.defaultWordWrap { wordWrap = DiffPreferences.defaultWordWrap }
@@ -374,73 +433,47 @@ struct SettingsView: View {
     }
 
     private var chatSettings: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Picker("Send shortcut", selection: $sendShortcut) {
-                        ForEach(ComposerSendShortcut.allCases, id: \.self) { option in
-                            Text(option.title)
-                                .accessibilityIdentifier("send-shortcut-\(option.rawValue)")
-                                .tag(option)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .settingsTarget(.sendShortcut, focus: $focus)
-                    if sendShortcut != .initial {
-                        Button("Reset") { sendShortcut = .initial }
-                            .accessibilityLabel("Reset send shortcut to default")
-                            .accessibilityIdentifier("reset-send-shortcut")
-                    }
+        VStack(alignment: .leading, spacing: 32) {
+            SettingsSection("Composer") {
+                SettingsRow("Send shortcut",
+                            description: "Choose when Enter sends a prompt or inserts a new line. Shift + Enter inserts a new line.",
+                            reset: sendShortcut == .initial ? nil :
+                                SettingsResetButton("Reset send shortcut to default", id: "reset-send-shortcut") {
+                                    sendShortcut = .initial
+                                }) {
+                    T3SegmentedControl("Send shortcut", selection: $sendShortcut,
+                                       options: ComposerSendShortcut.allCases.map { ($0, $0.title, "send-shortcut-\($0.rawValue)") })
+                        .settingsTarget(.sendShortcut, focus: $focus)
                 }
-                Text("Choose when Enter sends a prompt or inserts a new line. Shift + Enter inserts a new line.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Picker("Follow-up behavior", selection: $followUpBehavior) {
-                        ForEach(ComposerFollowUp.allCases, id: \.self) { option in
-                            Text(option.title)
-                                .accessibilityIdentifier("follow-up-behavior-\(option.rawValue)")
-                                .tag(option)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .settingsTarget(.followUpBehavior, focus: $focus)
-                    if followUpBehavior != .initial {
-                        Button("Reset") { followUpBehavior = .initial }
-                            .accessibilityLabel("Reset follow-up behavior to default")
-                            .accessibilityIdentifier("reset-follow-up-behavior")
-                    }
+            SettingsSection("Follow-ups") {
+                SettingsRow("Follow-up behavior",
+                            description: "Queue follow-ups or steer the current turn. Press \(sendShortcut.alternateShortcutDescription) to use the other action for one message.",
+                            reset: followUpBehavior == .initial ? nil :
+                                SettingsResetButton("Reset follow-up behavior to default", id: "reset-follow-up-behavior") {
+                                    followUpBehavior = .initial
+                                }) {
+                    T3SegmentedControl("Follow-up behavior", selection: $followUpBehavior,
+                                       options: ComposerFollowUp.allCases.map { ($0, $0.title, "follow-up-behavior-\($0.rawValue)") })
+                        .settingsTarget(.followUpBehavior, focus: $focus)
                 }
-                Text("Queue follow-ups or steer the current turn. Press \(sendShortcut.alternateShortcutDescription) to use the other action for one message.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var archiveConfirmationSetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Toggle("Archive confirmation", isOn: Binding(get: { model.confirmsThreadArchive },
-                                                              set: setArchiveConfirmation))
-                    .settingsTarget(.archiveConfirmation, focus: $focus)
-                if model.confirmsThreadArchive {
-                    Button("Reset") { setArchiveConfirmation(false) }
-                        .accessibilityLabel("Reset archive confirmation to default")
-                        .accessibilityIdentifier("reset-archive-confirmation")
-                }
-            }
-            Text("Ask before archiving a thread.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        SettingsRow("Archive confirmation", description: "Ask before archiving a thread.",
+                    status: nil,
+                    reset: model.confirmsThreadArchive ?
+                        SettingsResetButton("Reset archive confirmation to default", id: "reset-archive-confirmation") {
+                            setArchiveConfirmation(false)
+                        } : nil) {
+            SettingsSwitch("Archive confirmation", isOn: Binding(get: { model.confirmsThreadArchive },
+                                                          set: setArchiveConfirmation))
+                .settingsTarget(.archiveConfirmation, focus: $focus)
+        } detail: {
             if let archiveConfirmationError {
-                Text(archiveConfirmationError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("archive-confirmation-error")
+                SettingsMessage(archiveConfirmationError).accessibilityIdentifier("archive-confirmation-error")
             }
         }
     }
@@ -454,51 +487,50 @@ struct SettingsView: View {
         }
     }
 
-    private var terminalCloseConfirmationSetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Toggle("Terminal close confirmation", isOn: $confirmTerminalClose)
-                    .toggleStyle(.switch)
-                    .accessibilityLabel("Confirm terminal closing")
-                    .settingsTarget(.terminalCloseConfirmation, focus: $focus)
-                if confirmTerminalClose != TerminalPreference.defaultConfirmClose {
-                    Button("Reset") { confirmTerminalClose = TerminalPreference.defaultConfirmClose }
-                        .accessibilityLabel("Reset terminal close confirmation to default")
-                        .accessibilityIdentifier("reset-terminal-close-confirmation")
-                }
+    private var languageSetting: some View {
+        SettingsRow("Language", description: "The language Pi Workspace uses for menus and settings.",
+                    status: language.isRunning ? nil : String(localized: "Restart Pi Workspace to use this language.")) {
+            if !language.isRunning {
+                Button("Restart now") { AppLanguage.relaunch() }
+                    .accessibilityIdentifier("language-restart")
             }
-            Text("Ask before closing terminals and stopping their running processes.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            T3Select("Language", selection: Binding(get: { language }, set: { choice in
+                choice.select()
+                language = choice
+            }), options: AppLanguage.allCases.map { ($0, $0.title) })
+            .accessibilityIdentifier("settings-language")
+        }
+    }
+
+    private var terminalCloseConfirmationSetting: some View {
+        SettingsRow("Terminal close confirmation",
+                    description: "Ask before closing terminals and stopping their running processes.",
+                    reset: confirmTerminalClose == TerminalPreference.defaultConfirmClose ? nil :
+                        SettingsResetButton("Reset terminal close confirmation to default",
+                                            id: "reset-terminal-close-confirmation") {
+                            confirmTerminalClose = TerminalPreference.defaultConfirmClose
+                        }) {
+            SettingsSwitch("Terminal close confirmation", isOn: $confirmTerminalClose)
+                .accessibilityLabel("Confirm terminal closing")
+                .settingsTarget(.terminalCloseConfirmation, focus: $focus)
         }
     }
 
     private var projectBaseDirectorySetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Add project starts in")
-                .font(.callout.weight(.medium))
-            Text("Leave empty to start in your home folder.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                TextField("Add project starts in", text: $projectBaseDirectory, prompt: Text("~/"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Add project starts in")
-                    .settingsTarget(.addProjectStartsIn, focus: $focus)
-                if model.workspace.addProjectBaseDirectory != nil {
-                    Button("Reset") {
-                        projectBaseDirectory = ""
-                        commitProjectBaseDirectory()
-                    }
-                    .accessibilityIdentifier("reset-add-project-starts-in")
-                }
-            }
+        SettingsRow("Add project starts in", description: "Leave empty to start in your home folder.",
+                    reset: model.workspace.addProjectBaseDirectory == nil ? nil :
+                        SettingsResetButton("Reset add project starts in to default", id: "reset-add-project-starts-in") {
+                            projectBaseDirectory = ""
+                            commitProjectBaseDirectory()
+                        }) {
+            TextField("Add project starts in", text: $projectBaseDirectory, prompt: Text("~/"))
+                .labelsHidden()
+                .frame(width: 288)
+                .accessibilityLabel("Add project starts in")
+                .settingsTarget(.addProjectStartsIn, focus: $focus)
+        } detail: {
             if let projectBaseDirectoryError {
-                Text(projectBaseDirectoryError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("add-project-starts-in-error")
+                SettingsMessage(projectBaseDirectoryError).accessibilityIdentifier("add-project-starts-in-error")
             }
         }
     }
@@ -517,31 +549,22 @@ struct SettingsView: View {
     }
 
     private var worktreeDirectorySetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Worktree location")
-                .font(.callout.weight(.medium))
-            Text("Folder where new worktrees are created on this Mac. Leave empty to use the workspace’s worktrees folder.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                TextField("Worktree location", text: Binding(get: { worktreeDirectory }, set: { value in
-                    worktreeDirectory = WorktreeDirectory.replacingPastedPath(previous: worktreeDirectory, next: value)
-                }), prompt: Text("Default"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Worktree location")
-                    .settingsTarget(.worktreeLocation, focus: $focus)
-                if model.workspace.worktreesDirectory?.isEmpty == false {
-                    Button("Reset") { commitWorktreeDirectory("") }
-                        .accessibilityLabel("Reset worktree location to default")
-                        .accessibilityIdentifier("reset-worktree-location")
-                }
-            }
+        SettingsRow("Worktree location",
+                    description: "Folder where new worktrees are created on this Mac. Leave empty to use the workspace’s worktrees folder.",
+                    reset: model.workspace.worktreesDirectory?.isEmpty == false ?
+                        SettingsResetButton("Reset worktree location to default", id: "reset-worktree-location") {
+                            commitWorktreeDirectory("")
+                        } : nil) {
+            TextField("Worktree location", text: Binding(get: { worktreeDirectory }, set: { value in
+                worktreeDirectory = WorktreeDirectory.replacingPastedPath(previous: worktreeDirectory, next: value)
+            }), prompt: Text("Default"))
+                .labelsHidden()
+                .frame(width: 256)
+                .accessibilityLabel("Worktree location")
+                .settingsTarget(.worktreeLocation, focus: $focus)
+        } detail: {
             if let worktreeDirectoryError {
-                Text(worktreeDirectoryError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("worktree-location-error")
+                SettingsMessage(worktreeDirectoryError).accessibilityIdentifier("worktree-location-error")
             }
         }
     }
@@ -560,30 +583,21 @@ struct SettingsView: View {
     }
 
     private var startFromRemoteSetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Toggle("Start from remote", isOn: Binding(
-                    get: { model.workspace.startNewWorktreesFromRemote },
-                    set: updateStartFromRemote
-                ))
-                .toggleStyle(.switch)
-                .accessibilityLabel("Start new worktrees from remote by default")
-                .settingsTarget(.startFromRemote, focus: $focus)
-                if !model.workspace.startNewWorktreesFromRemote {
-                    Spacer()
-                    Button("Reset") { updateStartFromRemote(true) }
-                        .accessibilityLabel("Reset new worktrees start from remote to default")
-                        .accessibilityIdentifier("reset-start-from-origin")
-                }
-            }
-            Text("Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        SettingsRow("Start from remote",
+                    description: "Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing.",
+                    reset: model.workspace.startNewWorktreesFromRemote ? nil :
+                        SettingsResetButton("Reset new worktrees start from remote to default", id: "reset-start-from-origin") {
+                            updateStartFromRemote(true)
+                        }) {
+            SettingsSwitch("Start from remote", isOn: Binding(
+                get: { model.workspace.startNewWorktreesFromRemote },
+                set: updateStartFromRemote
+            ))
+            .accessibilityLabel("Start new worktrees from remote by default")
+            .settingsTarget(.startFromRemote, focus: $focus)
+        } detail: {
             if let startFromRemoteError {
-                Text(startFromRemoteError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("start-from-origin-error")
+                SettingsMessage(startFromRemoteError).accessibilityIdentifier("start-from-origin-error")
             }
         }
     }
@@ -682,11 +696,7 @@ private struct SettingsTarget: ViewModifier {
         content
             .focused(focus, equals: .anchor(anchor))
             .background {
-                if destination?.anchor == anchor {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.accentColor.opacity(0.12))
-                        .padding(-4)
-                }
+                if destination?.anchor == anchor { SettingsHitRing().accessibilityHidden(true) }
             }
             .accessibilityIdentifier(anchor.rawValue)
             .id(anchor)
@@ -702,5 +712,97 @@ private struct SettingsTarget: ViewModifier {
 extension View {
     func settingsTarget(_ anchor: SettingsAnchor, focus: FocusState<SettingsFocus?>.Binding) -> some View {
         modifier(SettingsTarget(anchor: anchor, focus: focus))
+    }
+}
+
+/// Closes Settings from a page. Settings is an in-window modal, so `\.dismiss` has nothing to dismiss.
+struct CloseSettingsAction {
+    private let action: () -> Void
+
+    init(_ action: @escaping () -> Void = {}) { self.action = action }
+
+    func callAsFunction() { action() }
+}
+
+private struct CloseSettingsKey: EnvironmentKey {
+    static let defaultValue = CloseSettingsAction()
+}
+
+extension EnvironmentValues {
+    var closeSettings: CloseSettingsAction {
+        get { self[CloseSettingsKey.self] }
+        set { self[CloseSettingsKey.self] = newValue }
+    }
+}
+
+/// Settings navigation item: h32, radius 8, neutral hover and selected fills.
+struct SettingsNavigationRow: View {
+    let title: String
+    let icon: String
+    var subtitle: String?
+    let selected: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+    @State private var hovering = false
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        let emphasized = selected || hovering
+        HStack(alignment: subtitle == nil ? .center : .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(emphasized ? palette.foreground : palette.sidebarIcon)
+                .frame(width: 16)
+                .padding(.top, subtitle == nil ? 0 : 2)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(localized: title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(emphasized || subtitle != nil ? palette.foreground : palette.mutedForeground.opacity(0.8))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(localized: subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.mutedForeground.opacity(0.75))
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, subtitle == nil ? 0 : 6)
+        .frame(minHeight: subtitle == nil ? 32 : 40)
+        .background(selected ? palette.navSelected : hovering ? palette.navHover : .clear,
+                    in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering = $0 }
+    }
+}
+
+/// 2pt primary ring that pulses twice around a control reached from settings search.
+struct SettingsHitRing: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+    @State private var visible = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(T3Palette(colorScheme, t3Themes).primary.opacity(visible ? 0.7 : 0.2), lineWidth: 2)
+            .padding(-6)
+            .allowsHitTesting(false)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.65).repeatCount(4, autoreverses: true)) { visible = true }
+            }
+    }
+}
+
+extension View {
+    /// Centered settings page column: max 896 wide, 30 side padding, 24 top, 48 bottom.
+    func settingsPageContainer(maxWidth: CGFloat = 896) -> some View {
+        frame(maxWidth: maxWidth, alignment: .leading)
+            .padding(.horizontal, 30)
+            .padding(.top, 24)
+            .padding(.bottom, 48)
+            .frame(maxWidth: .infinity)
     }
 }

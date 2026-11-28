@@ -1,19 +1,1647 @@
+/*
+  Localizable.strings (Japanese)
+  Pi Workspace
+
+  Keys are the English strings used in the Swift sources. Interpolated
+  strings use SwiftUI LocalizedStringKey specifiers (String -> %@, Int -> %lld,
+  Int32 -> %d). Wording follows T3 Code's ja.json where the English matches.
+*/
+
+/* AboutView.swift */
+"About" = "情報";
+"Open source licenses" = "オープンソースライセンス";
+"Open-source notices are unavailable in this app bundle." = "このアプリバンドルではオープンソースの通知を利用できません。";
+"Try Again" = "再試行";
+"App" = "アプリ";
+"Build" = "ビルド";
+"Pi coding agent" = "Pi コーディングエージェント";
+"Model providers" = "モデルプロバイダー";
+"Welcome page" = "ようこそページ";
+"Set up a model and add projects." = "モデルを設定し、プロジェクトを追加します。";
+"Open" = "開く";
+"Open Welcome page" = "ようこそページを開く";
+"Legal" = "法的情報";
+"Open-source licenses" = "オープンソースライセンス";
+"Notices for the software bundled with this app." = "このアプリに同梱されているソフトウェアに関する通知。";
+"View licenses" = "ライセンスを表示";
+"Version" = "バージョン";
+"Unavailable" = "利用不可";
+"Search licenses" = "ライセンスを検索";
+"No licenses match that search." = "その検索に一致するライセンスはありません。";
+"Select a dependency to read its notices." = "依存関係を選択すると、その通知が表示されます。";
+"Declared license" = "宣言されたライセンス";
+"No notice text is included for this dependency." = "この依存関係には通知テキストが含まれていません。";
+
+/* AgentQuestion.swift */
+"Hide the question and its options" = "質問とオプションを非表示";
+"Show the question and its options" = "質問とオプションを表示";
+"%lld of %lld" = "%lld / %lld";
+"Dismiss question without answering" = "回答せずに質問を閉じる";
+"Type an answer" = "回答を入力";
+"Or type an answer" = "または回答を入力";
+"Shorten your answer to 4,000 characters or fewer." = "回答を 4,000 文字以内に短くしてください。";
+"Previous" = "前へ";
+"Previous question" = "前の質問";
+"Submit Answer" = "回答を送信";
+"Submit Answers" = "回答を送信";
+"Next" = "次へ";
+"Next question" = "次の質問";
+"Stop" = "停止";
+
+/* AppearanceSettings.swift */
+"System" = "システム";
+
+/* AppearanceSettingsView.swift */
+"Color scheme" = "配色";
+"Restore defaults" = "デフォルトに戻す";
+"Interface" = "インターフェイス";
+"Chat width" = "チャットの幅";
+"How wide conversations and the composer can grow." = "会話と入力欄を広げられる最大幅です。";
+"Theme" = "テーマ";
+"Typography" = "タイポグラフィ";
+"Word wrap" = "折り返し";
+"Wrap long lines in diffs and file previews by default." = "差分とファイルのプレビューで、長い行をデフォルトで折り返します。";
+"Reset word wrapping to default" = "折り返しをデフォルトにリセット";
+"Light & Dark" = "ライトとダーク";
+"Light" = "ライト";
+"Dark" = "ダーク";
+"Use %@ theme, currently active" = "%@ テーマを使用、現在有効";
+"Use %@ theme" = "%@ テーマを使用";
+"Light: %@" = "ライト: %@";
+"Dark: %@" = "ダーク: %@";
+"Use %@ in light mode" = "ライトモードで %@ を使用";
+"Use %@ in dark mode" = "ダークモードで %@ を使用";
+
+/* ArchivedThreadsSettingsView.swift */
+"Archived threads" = "アーカイブ済みのスレッド";
+"Showing" = "表示:";
+"Could not load archived threads. %@" = "アーカイブ済みのスレッドを読み込めませんでした。%@";
+"This project is no longer open. Choose another project." = "このプロジェクトはもう開かれていません。別のプロジェクトを選択してください。";
+"This checkout is no longer available. Choose another checkout." = "このチェックアウトは利用できなくなりました。別のチェックアウトを選択してください。";
+"All projects" = "すべてのプロジェクト";
+"Unavailable project" = "利用できないプロジェクト";
+"Project" = "プロジェクト";
+"All checkouts" = "すべてのチェックアウト";
+"Unavailable checkout" = "利用できないチェックアウト";
+"Checkout" = "チェックアウト";
+"No archived threads" = "アーカイブ済みのスレッドはありません";
+"Archived threads will appear here." = "アーカイブしたスレッドはここに表示されます。";
+"Retry Unarchive" = "アーカイブ解除を再試行";
+"Unarchive" = "アーカイブを解除";
+"Unarchive %@" = "%@ のアーカイブを解除";
+"Failed to unarchive thread. %@" = "スレッドのアーカイブを解除できませんでした。%@";
+
+/* BranchPickerView.swift */
+"Choose branch" = "ブランチを選択";
+"Copy branch name" = "ブランチ名をコピー";
+"Create branch" = "ブランチを作成";
+"Choose base branch" = "ベースブランチを選択";
+"Search refs…" = "ref を検索…";
+"Start from remote" = "リモートから開始";
+"Fetches the tracked remote branch or the same branch on origin when the worktree is created." = "ワークツリーの作成時に、追跡しているリモートブランチ、または origin 上の同名ブランチをフェッチします。";
+"Start worktree from remote" = "リモートからワークツリーを開始";
+"Branch picker" = "ブランチの選択";
+"No matching branches" = "一致するブランチはありません";
+"Current" = "現在";
+"Worktree" = "ワークツリー";
+"New branch name" = "新しいブランチ名";
+"Base branch" = "ベースブランチ";
+"Current HEAD" = "現在の HEAD";
+"Back" = "戻る";
+"Copy branch name (⇧⌘C)" = "ブランチ名をコピー (⇧⌘C)";
 "Cancel" = "キャンセル";
+"Create and Switch" = "作成して切り替え";
+"New Branch" = "新しいブランチ";
+"Could not copy the branch name." = "ブランチ名をコピーできませんでした。";
+"Failed to switch ref." = "ref を切り替えられませんでした。";
+"Failed to create and switch ref." = "ref を作成して切り替えられませんでした。";
+
+/* BrowserAddress.swift */
+"Custom" = "カスタム";
+"Enter an HTTP or HTTPS URL containing %s. Searches use DuckDuckGo until then." = "%s を含む HTTP または HTTPS の URL を入力してください。それまでは DuckDuckGo で検索します。";
+"Use up to 2,048 characters for the search URL." = "検索 URL は 2,048 文字以内で入力してください。";
+"Remove the username and password from the search URL." = "検索 URL からユーザー名とパスワードを削除してください。";
+
+/* BrowserFloatingWindow.swift */
+"Floating Browser Preview" = "フローティングのブラウザープレビュー";
+
+/* BrowserMiniPlayer.swift */
+"Open a URL in the Browser panel." = "ブラウザーパネルで URL を開きます。";
+"Move Mini Player" = "ミニプレーヤーを移動";
+"Open in Browser Panel" = "ブラウザーパネルで開く";
+"Close Mini Player" = "ミニプレーヤーを閉じる";
+"Floating browser preview" = "フローティングのブラウザープレビュー";
+
+/* BrowserPreviewSession.swift */
+"Alternate" = "代替";
+"Could not open this address. Enter a valid HTTP or HTTPS URL." = "このアドレスを開けませんでした。有効な HTTP または HTTPS の URL を入力してください。";
+"Browser preview can open HTTP and HTTPS pages." = "ブラウザープレビューで開けるのは HTTP と HTTPS のページです。";
+"Browser preview can’t display this file type." = "ブラウザープレビューではこの種類のファイルを表示できません。";
+"The page stopped responding. Reload to try again." = "ページが応答しなくなりました。再読み込みしてもう一度お試しください。";
+
+/* BrowserPreviewView.swift */
+"New Browser Tab" = "新しいブラウザータブ";
+"This tab is in the Mini Player." = "このタブはミニプレーヤーで表示されています。";
+"This tab is in a floating window." = "このタブはフローティングウィンドウで表示されています。";
+"Dock Browser Tab" = "ブラウザータブをドック";
+"Close Tab" = "タブを閉じる";
+"Close %@ Tab" = "%@ タブを閉じる";
+"Forward" = "進む";
+"Stop Loading" = "読み込みを停止";
+"Reload" = "再読み込み";
+"Search or enter URL" = "検索または URL を入力";
+"Go" = "移動";
+"Open Mini Player" = "ミニプレーヤーを開く";
+"Open in Floating Window" = "フローティングウィンドウで開く";
+"Each profile keeps separate website data for this thread until the app quits." = "各プロファイルは、アプリを終了するまで、このスレッド用に個別のウェブサイトデータを保持します。";
+"Browser Profile: %@" = "ブラウザープロファイル: %@";
+"Find on page" = "ページ内を検索";
+"Zoom Out" = "縮小";
+"Reset Zoom" = "ズームをリセット";
+"Zoom In" = "拡大";
+"Search or enter a URL to open a page." = "検索するか URL を入力してページを開きます。";
+"Find in page" = "ページ内を検索";
+"Previous match" = "前の一致";
+"Next match" = "次の一致";
+"Close find" = "検索を閉じる";
+"Waiting for the page to load…" = "ページの読み込みを待っています…";
+"Match found" = "一致が見つかりました";
+"No matches" = "一致するものはありません";
+"Find on page isn’t available for this page." = "このページではページ内検索を利用できません。";
+"This site can’t be reached" = "このサイトにアクセスできません";
+"Check the connection and make sure the server is running at this address." = "接続を確認し、このアドレスでサーバーが実行中であることを確認してください。";
+"Hide Details" = "詳細を非表示";
+"Details" = "詳細";
+
+/* BrowserSettingsView.swift */
+"Browsing" = "ブラウジング";
+"Search engine" = "検索エンジン";
+"Used when you type words instead of an address." = "アドレスの代わりに単語を入力したときに使用されます。";
+"Reset search engine to default" = "検索エンジンをデフォルトにリセット";
+"Custom search URL" = "カスタム検索 URL";
+"Use %s where the search terms go." = "検索語句が入る位置に %s を使用します。";
 "Save" = "保存";
+
+/* ChatFilePreview.swift */
+"Save File" = "ファイルを保存";
+"Remove from Draft" = "下書きから削除";
+"Close" = "閉じる";
+"Loading attachment…" = "添付ファイルを読み込んでいます…";
+"Attachment unavailable." = "添付ファイルを利用できません。";
+"File preview" = "ファイルのプレビュー";
+"Could not open the save dialog." = "保存ダイアログを開けませんでした。";
+
+/* ChatImagePreview.swift */
+"Preview %@" = "%@ をプレビュー";
+"Previous media" = "前のメディア";
+"Next media" = "次のメディア";
+"Close Image Preview" = "画像のプレビューを閉じる";
+"Expanded image preview" = "拡大した画像のプレビュー";
+"Toggle Zoom" = "ズームの切り替え";
+"Loading image…" = "画像を読み込んでいます…";
+"Image unavailable. The file may have been moved or deleted." = "画像を利用できません。ファイルが移動または削除された可能性があります。";
+"Save Image…" = "画像を保存…";
+"Copy Image" = "画像をコピー";
+"Could not copy image." = "画像をコピーできませんでした。";
+
+/* ChatMarkdown.swift */
+"Disable word wrap" = "折り返しを無効にする";
+"Enable word wrap" = "折り返しを有効にする";
+"Toggle word wrap" = "折り返しの切り替え";
+"Copy code" = "コードをコピー";
+
+/* ChatSettings.swift */
+"Enter" = "Enter";
+"⌘ + Enter for multiline prompts" = "複数行のプロンプトでは ⌘ + Enter";
+"⌘ + Enter always" = "常に ⌘ + Enter";
+"⌘ + Enter" = "⌘ + Enter";
+"⌘ + Enter for one line or ⌘ + Shift + Enter for multiple lines" = "1 行なら ⌘ + Enter、複数行なら ⌘ + Shift + Enter";
+"⌘ + Shift + Enter" = "⌘ + Shift + Enter";
+"Steer" = "軌道修正";
+
+/* CommandPalette.swift */
+"Actions" = "アクション";
+"Recent Threads" = "最近のスレッド";
+"Threads" = "スレッド";
+"In messages" = "メッセージ内";
+"Matches" = "一致";
+"New thread in..." = "新しいスレッドの作成先...";
+"New thread without a project" = "プロジェクトなしで新しいスレッド";
+"Find in current thread" = "現在のスレッド内を検索";
+"Find on page in browser" = "ブラウザーでページ内を検索";
+"Go to file" = "ファイルに移動";
+"Go to home" = "ホームに移動";
+
+/* CommandPaletteView.swift */
+"Search files…" = "ファイルを検索…";
+"Search file contents…" = "ファイルの内容を検索…";
+"Search commands, projects, threads, and messages..." = "コマンド、プロジェクト、スレッド、メッセージを検索...";
+"Open a thread with an available checkout to search its files." = "ファイルを検索するには、利用可能なチェックアウトのあるスレッドを開いてください。";
+"Search is limited to %lld characters." = "検索は %lld 文字までです。";
+"Type to search file contents." = "入力してファイルの内容を検索します。";
+"Indexing workspace files…" = "ワークスペースのファイルのインデックスを作成しています…";
+"Invalid regular expression. Showing literal matches." = "無効な正規表現です。文字どおりに一致する結果を表示しています。";
+"Search limit reached. Refine your query for more matches." = "検索の上限に達しました。さらに一致を表示するには検索を絞り込んでください。";
+"No matching files" = "一致するファイルはありません";
+"No matching lines" = "一致する行はありません";
+"Match case" = "大文字と小文字を区別する";
+"Match whole word" = "単語単位で検索する";
+"Use regular expression" = "正規表現を使用する";
+"No results" = "結果はありません";
+"Navigate" = "移動";
+"Select" = "選択";
+"Open File" = "ファイルを開く";
+"Searching messages…" = "メッセージを検索しています…";
+"File picker" = "ファイル選択";
+"Search project contents" = "プロジェクトの内容を検索";
+"Command palette" = "コマンドパレット";
+
+/* CommitWritingSettings.swift */
+"Repository conventions" = "リポジトリの規約";
+"Conventional Commits" = "Conventional Commits";
+"Custom instructions" = "カスタム指示";
+
+/* CommitWritingSettingsView.swift */
+"Commits & pull requests" = "コミットとプルリクエスト";
+"Commit and pull request writing" = "コミットとプルリクエストの文章作成";
+"How Pi writes generated commit subjects and bodies." = "Pi が生成するコミットの件名と本文の書き方です。";
+"Reset Writing Style" = "文章スタイルをリセット";
+"Commit writing style" = "コミットの文章スタイル";
+"Custom commit writing instructions" = "コミットの文章作成に関するカスタム指示";
+"Source control writer model" = "ソース管理の文章作成モデル";
+"Inherits the active thread’s model." = "アクティブなスレッドのモデルを継承します。";
+"Use active model" = "アクティブなモデルを使用";
+"Writer model ID" = "文章作成モデルの ID";
+"Save Changes" = "変更を保存";
+
+/* ComposerAttachment.swift */
+"Choose a local file." = "ローカルファイルを選択してください。";
+"Pasted text must be 64 KB or smaller to attach. Paste a smaller excerpt or use Paste and Match Style." = "添付できる貼り付けテキストは 64 KB までです。短い抜粋を貼り付けるか、「ペーストしてスタイルを合わせる」を使用してください。";
+"Image sources must be 50 MB or smaller." = "画像のソースは 50 MB 以下にしてください。";
+"The image is damaged or too large to decode." = "画像が破損しているか、大きすぎてデコードできません。";
+"This image has multiple frames. Attach a single-frame PNG or JPEG." = "この画像には複数のフレームがあります。単一フレームの PNG または JPEG を添付してください。";
+"The image is too large to attach, even after compression." = "画像は圧縮しても大きすぎるため、添付できません。";
+"Files must be 4 MB or smaller." = "ファイルは 4 MB 以下にしてください。";
+"The file is empty." = "ファイルが空です。";
+"Choose a PNG or JPEG image." = "PNG または JPEG の画像を選択してください。";
+"The image is damaged or too large to preview." = "画像が破損しているか、大きすぎてプレビューできません。";
+"Choose a PNG, JPEG, or UTF-8 text file." = "PNG、JPEG、または UTF-8 のテキストファイルを選択してください。";
+"Text files must be 64 KB or smaller." = "テキストファイルは 64 KB 以下にしてください。";
+
+/* ComposerAttachmentsView.swift */
+"Attach Files" = "ファイルを添付";
+"Attach files" = "ファイルを添付";
+"Attach Again" = "もう一度添付";
+"Attach %@ again" = "%@ をもう一度添付";
+"Remove %@" = "%@ を削除";
+
+/* ComposerModelPicker.swift */
+"Search models…" = "モデルを検索…";
+"No matching models." = "一致するモデルはありません。";
+"Use Default" = "デフォルトを使用";
 "Model Settings" = "モデル設定";
+"Choose model" = "モデルを選択";
+
+/* ComposerStashView.swift */
+"Stash" = "退避";
+"Close stash" = "退避一覧を閉じる";
+"Nothing stashed yet. Press ⌘S with a draft to stash it." = "まだ何も退避されていません。下書きがある状態で ⌘S を押すと退避できます。";
+"Restore stashed prompt" = "退避したプロンプトを復元";
+"Restore stashed prompt: %@" = "退避したプロンプトを復元: %@";
+"Attachments: %lld" = "添付ファイル: %lld";
+"Delete stashed prompt" = "退避したプロンプトを削除";
+
+/* CustomSnoozeView.swift */
+"Date and time" = "日時";
+"Duration" = "所要時間";
+"Custom snooze" = "カスタムスヌーズ";
+"Schedule type" = "スケジュールの種類";
+"Date" = "日付";
+"Time" = "時刻";
+"Snooze for" = "スヌーズする期間";
+"Unit" = "単位";
+"Edit snooze options" = "スヌーズのオプションを編集";
+"Snooze" = "スヌーズ";
+
+/* DraftProjectPicker.swift */
+"Search projects" = "プロジェクトを検索";
+"No matching projects." = "一致するプロジェクトはありません。";
+"Draft project chooser" = "下書きのプロジェクト選択";
+"Unpin %@" = "%@ のピン留めを解除";
+"Pin %@" = "%@ をピン留め";
+"%@ (⌘⇧P)" = "%@ (⌘⇧P)";
+
+/* GitChanges.swift */
+" (Remote)" = " (リモート)";
+"Commit %@" = "コミット %@";
+"The comparison branch %@ is unavailable locally." = "比較ブランチ %@ はローカルで利用できません。";
+"No common commit with %@." = "%@ との共通のコミットがありません。";
+" This checkout has shallow history." = "このチェックアウトの履歴は shallow (浅い履歴) です。";
+"The selected commit is unavailable locally." = "選択したコミットはローカルで利用できません。";
+"Commit %@’s first parent is unavailable locally." = "コミット %@ の最初の親はローカルで利用できません。";
+"Diff preview limited. Select a file to view its patch." = "差分のプレビューは制限されています。パッチを表示するにはファイルを選択してください。";
+"Diff truncated after 256 KiB." = "差分は 256 KiB で切り詰められました。";
+
+/* GitHubBrowse.swift */
+"pull request" = "プルリクエスト";
+"Draft" = "下書き";
+
+/* GitHubIssueWrites.swift */
+"Enter an issue title of 1 to 1,024 characters." = "Issue のタイトルは 1〜1,024 文字で入力してください。";
+"Enter an issue description of at most 65,536 characters." = "Issue の説明は 65,536 文字以内で入力してください。";
+"Enter a comment of 1 to 65,536 characters." = "コメントは 1〜65,536 文字で入力してください。";
+"The selected issue, thread, or checkout changed. Reopen the issue and try again." = "選択した Issue、スレッド、またはチェックアウトが変更されました。Issue を開き直して、もう一度お試しください。";
+"Your GitHub CLI account can’t edit this issue." = "GitHub CLI のアカウントではこの Issue を編集できません。";
+"GitHub did not confirm the change. Check the result." = "GitHub が変更を確認しませんでした。結果を確認してください。";
+"GitHub does not show the saved edit. Review the issue and try saving again." = "GitHub に保存した編集が表示されません。Issue を確認して、もう一度保存してください。";
+"GitHub has not confirmed this comment. Check again before posting." = "GitHub がこのコメントをまだ確認していません。投稿する前にもう一度確認してください。";
+
+/* GitHubPullRequestFiles.swift */
+"Deleted" = "削除済み";
+"The pull request changed while reading its files." = "ファイルの読み取り中にプルリクエストが変更されました。";
+"The checkout changed while reading the pull request’s files." = "プルリクエストのファイルの読み取り中にチェックアウトが変更されました。";
+
+/* GitHubPullRequests.swift */
+"There is no GitHub Actions job log for this check in the pull request’s repository." = "プルリクエストのリポジトリには、このチェックの GitHub Actions ジョブのログがありません。";
+"This Actions job is still running or waiting to start." = "この Actions ジョブはまだ実行中か、開始を待っています。";
+"GitHub couldn’t provide this job’s log. It may have expired, the job may never have started, or your account may lack access." = "GitHub はこのジョブのログを提供できませんでした。期限切れになったか、ジョブが開始されなかったか、アカウントにアクセス権がない可能性があります。";
+"The checkout changed while reading the log. Refresh the pull request and try again." = "ログの読み取り中にチェックアウトが変更されました。プルリクエストを更新して、もう一度お試しください。";
+"This check no longer matches the pull request’s current head. Refresh the pull request and try again." = "このチェックはプルリクエストの現在の head と一致しなくなりました。プルリクエストを更新して、もう一度お試しください。";
+"Couldn’t read Git remotes from this checkout." = "このチェックアウトから Git のリモートを読み取れませんでした。";
+"This checkout has no github.com fetch remote." = "このチェックアウトには github.com のフェッチ用リモートがありません。";
+"This checkout has multiple GitHub remotes and no GitHub origin." = "このチェックアウトには複数の GitHub リモートがあり、GitHub の origin がありません。";
+"The checkout’s GitHub repository changed. Refresh the list." = "チェックアウトの GitHub リポジトリが変更されました。リストを更新してください。";
+"GitHub CLI (gh) is unavailable. Install it and make it available on the app’s PATH." = "GitHub CLI (gh) を利用できません。インストールして、アプリの PATH から使えるようにしてください。";
+"Couldn’t start GitHub CLI (gh) in this checkout." = "このチェックアウトで GitHub CLI (gh) を起動できませんでした。";
+"Sign in with `gh auth login` in Terminal, then refresh." = "ターミナルで `gh auth login` を実行してサインインしてから、更新してください。";
+"GitHub denied access. Check your GitHub CLI account’s repository permissions." = "GitHub がアクセスを拒否しました。GitHub CLI アカウントのリポジトリ権限を確認してください。";
+"GitHub couldn’t find the %@ or repository. Check access and refresh." = "GitHub で %@ またはリポジトリが見つかりませんでした。アクセス権を確認して更新してください。";
+"Couldn’t reach GitHub. Check your connection and refresh." = "GitHub に接続できませんでした。接続を確認して更新してください。";
+"The GitHub request timed out. Check your connection and refresh." = "GitHub へのリクエストがタイムアウトしました。接続を確認して更新してください。";
+"Couldn’t read %@s from GitHub. Check your GitHub CLI setup and refresh." = "GitHub から %@ を読み取れませんでした。GitHub CLI の設定を確認して更新してください。";
+"The GitHub response was too large to display." = "GitHub の応答が大きすぎるため表示できません。";
+"GitHub CLI returned an unreadable %@ response." = "GitHub CLI が読み取れない %@ の応答を返しました。";
+"Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces." = "検索語句、または label:bug のようなラベルを入力してください。フレーズやスペースを含むラベルは引用符で囲んでください。";
+"GitHub no longer has this resource." = "このリソースは GitHub に存在しなくなりました。";
+"GitHub rejected the issue change. Review the text and try again." = "GitHub が Issue の変更を拒否しました。テキストを確認して、もう一度お試しください。";
+
+/* GitWorkspace.swift */
+"Enter a local branch name." = "ローカルブランチの名前を入力してください。";
+"A branch named '%@' already exists." = "'%@' という名前のブランチはすでに存在します。";
+"The prepared worktree no longer matches the selected base. Choose an existing worktree to use it." = "準備したワークツリーが、選択したベースと一致しなくなりました。使用するには既存のワークツリーを選択してください。";
+"The prepared worktree contains changes. Save them elsewhere and clean the worktree before retrying." = "準備したワークツリーに変更が含まれています。再試行する前に、変更を別の場所に保存してワークツリーをクリーンにしてください。";
+"Git could not confirm a single checkout for this branch. Refresh the picker and try again." = "Git でこのブランチの単一のチェックアウトを確認できませんでした。ブランチの選択を更新して、もう一度お試しください。";
+"The branch '%@' is no longer available." = "ブランチ '%@' は利用できなくなりました。";
+"Multiple local branches track '%@'. Choose the local branch you want to use." = "複数のローカルブランチが '%@' を追跡しています。使用するローカルブランチを選択してください。";
+"Finish or cancel the other thread’s worktree launch first." = "先に、もう一方のスレッドのワークツリーの起動を完了するかキャンセルしてください。";
+"The Git repository path is empty." = "Git リポジトリのパスが空です。";
+"Select at least one file to commit." = "コミットするファイルを 1 つ以上選択してください。";
+"The selected changes have changed. Review the refreshed file list and try again." = "選択した変更の内容が変わりました。更新されたファイルリストを確認して、もう一度お試しください。";
+"The checkout or comparison branch changed. Refresh Git changes to continue." = "チェックアウトまたは比較ブランチが変更されました。続行するには Git の変更を更新してください。";
+"The selected changes overlap %@. Include all related paths to commit them together." = "選択した変更は %@ と重複しています。まとめてコミットするには、関連するすべてのパスを含めてください。";
+"The Git index is locked. Finish the other Git operation and try again." = "Git のインデックスがロックされています。ほかの Git 操作を完了してから、もう一度お試しください。";
+"Git created the commit, but could not save the updated index. %@" = "Git はコミットを作成しましたが、更新されたインデックスを保存できませんでした。%@";
+"A Git argument contains a NUL character." = "Git の引数に NUL 文字が含まれています。";
+"Enter a name that can be used for a new folder." = "新しいフォルダーに使用できる名前を入力してください。";
+"That name is already in use in the chosen folder." = "その名前は選択したフォルダー内ですでに使用されています。";
+"Choose a local destination folder for the cloned repository." = "クローンしたリポジトリのローカルの保存先フォルダーを選択してください。";
+"The clone destination must be an empty folder." = "クローン先は空のフォルダーである必要があります。";
+"The clone destination changed before the repository could be added." = "リポジトリを追加する前にクローン先が変更されました。";
+"Could not finish installing the clone at %@. Files already placed there were kept. %@" = "%@ へのクローンのインストールを完了できませんでした。すでに配置されたファイルは保持されています。%@";
+"The operation was cancelled." = "操作はキャンセルされました。";
+"%@ Could not remove the temporary repository at %@. %@" = "%@ %@ にある一時リポジトリを削除できませんでした。%@";
+"Git returned unreadable output for %@." = "Git が %@ に対して読み取れない出力を返しました。";
+"Git %@ exited with status %d." = "Git %@ がステータス %d で終了しました。";
+
+/* IssueDetailsView.swift */
+"Couldn’t read the saved comment receipt. %@" = "保存されたコメントの送信記録を読み取れませんでした。%@";
+"Couldn’t save the comment receipt before posting. %@" = "投稿前にコメントの送信記録を保存できませんでした。%@";
+"Couldn’t clear the saved comment receipt. %@" = "保存されたコメントの送信記録を消去できませんでした。%@";
+"Loading #%lld…" = "#%lld を読み込んでいます…";
+"Issue title" = "Issue のタイトル";
+"Edit title" = "タイトルを編集";
+"Contacting GitHub…" = "GitHub に接続しています…";
+"Check result" = "結果を確認";
+"Description" = "説明";
+"Edit description" = "説明を編集";
+"No description" = "説明はありません";
+"Markdown editor mode" = "Markdown エディターのモード";
+"Write" = "書く";
+"Preview" = "プレビュー";
+"Unlink from thread" = "スレッドからリンクを解除";
+"Link to thread" = "スレッドにリンク";
+"Open on GitHub" = "GitHub で開く";
+"Refresh issue" = "Issue を更新";
+"Activity (%lld)" = "アクティビティ (%lld)";
+"Activity" = "アクティビティ";
+"No comments" = "コメントはありません";
+"Showing the latest %lld comments" = "最新の %lld 件のコメントを表示しています";
+"Unknown author" = "不明な作成者";
+"Add a comment" = "コメントを追加";
+"Comment" = "コメント";
+"Retry" = "再試行";
+"Writing is available for issues in the selected checkout’s GitHub repository." = "書き込みは、選択したチェックアウトの GitHub リポジトリにある Issue でのみ利用できます。";
+
+/* KeyVault.swift */
+"Enter the API key as a single line of at least eight characters." = "API キーは 8 文字以上の 1 行で入力してください。";
+"Keychain access failed (%d)." = "キーチェーンへのアクセスに失敗しました (%d)。";
+"The saved API key is invalid." = "保存されている API キーが無効です。";
+
+/* ModelSettingsView.swift */
 "Model" = "モデル";
 "Scope" = "適用範囲";
+"Inherits Workspace default" = "ワークスペースのデフォルトを継承";
+"Project override" = "プロジェクトで上書き";
+"Workspace default" = "ワークスペースのデフォルト";
+"Project: %@" = "プロジェクト: %@";
 "Provider" = "プロバイダー";
 "Model ID" = "モデル ID";
+"Base URL" = "ベース URL";
+"A loopback OpenAI-compatible endpoint." = "ループバックの OpenAI 互換エンドポイント。";
+"Context window" = "コンテキストウィンドウ";
+"Coding tools" = "コーディングツール";
+"The model supports tool calls." = "モデルがツール呼び出しに対応しています。";
+"Model supports coding tools" = "モデルがコーディングツールに対応";
+"Image input" = "画像入力";
+"The model accepts images." = "モデルが画像を受け付けます。";
+"Model supports image input" = "モデルが画像入力に対応";
 "Thinking level" = "思考レベル";
+"Pi adjusts the requested level to the model’s supported levels." = "Pi は、要求されたレベルをモデルが対応しているレベルに合わせて調整します。";
+"Credentials" = "資格情報";
 "API key" = "API キー";
+"Projects using this provider share its saved API key." = "このプロバイダーを使用するプロジェクトは、保存された API キーを共有します。";
+"A key is saved in Keychain." = "キーはキーチェーンに保存されています。";
+"Replace saved API key" = "保存された API キーを置き換え";
+"Remove saved key" = "保存されたキーを削除";
+"Remove the key for every project using this provider account." = "このプロバイダーアカウントを使用するすべてのプロジェクトからキーを削除します。";
+"Reset to Workspace default" = "ワークスペースのデフォルトにリセット";
+
+/* PiHistoryDiscovery.swift */
+"The folder for %@ changed or is unavailable. Scan again to update the list." = "%@ のフォルダーが変更されたか、利用できません。もう一度スキャンしてリストを更新してください。";
+"Could not read the local Pi sessions folder. %@" = "ローカルの Pi セッションフォルダーを読み取れませんでした。%@";
+"Missing project folder." = "プロジェクトフォルダーがありません。";
+"Expected a regular Pi session file." = "通常の Pi セッションファイルが必要です。";
+"Invalid Pi session header." = "Pi セッションのヘッダーが無効です。";
+"Pi session" = "Pi セッション";
+"The selected Pi session changed or is unavailable. Scan again to update the list." = "選択した Pi セッションが変更されたか、利用できません。もう一度スキャンしてリストを更新してください。";
+"The selected Pi session is empty or exceeds the 32 MB import limit." = "選択した Pi セッションが空か、インポートの上限 (32 MB) を超えています。";
+"The selected Pi session contains invalid or incomplete history." = "選択した Pi セッションに無効または不完全な履歴が含まれています。";
+"Import requires a Pi session in version 3 format." = "インポートにはバージョン 3 形式の Pi セッションが必要です。";
+"The selected Pi session has no messages to display." = "選択した Pi セッションには表示するメッセージがありません。";
+
+/* PiProcess.swift */
+"App resources are missing." = "アプリのリソースが見つかりません。";
+
+/* PiWorkspaceApp.swift */
+"Dismiss" = "閉じる";
+"Your draft couldn’t be saved" = "下書きを保存できませんでした";
+"A file couldn’t be saved" = "ファイルを保存できませんでした";
+"Keep Editing" = "編集を続ける";
+"Retry and Quit" = "再試行して終了";
+"Restore write access to the workspace and try again." = "ワークスペースへの書き込みアクセスを復元してから、もう一度お試しください。";
+"About %@" = "%@ について";
+"Settings…" = "設定…";
 "Model Settings…" = "モデル設定…";
+"Appearance Settings…" = "外観設定…";
+"Usage…" = "使用量…";
+"Browser Settings…" = "ブラウザー設定…";
+"Show Welcome" = "ようこそページを表示";
+"Add Project…" = "プロジェクトを追加…";
+"New Thread" = "新しいスレッド";
+"New Thread Without a Project" = "プロジェクトなしで新しいスレッド";
+"Paste and Match Style" = "ペーストしてスタイルを合わせる";
+"Open Thread Link from Clipboard" = "クリップボードのスレッドリンクを開く";
+"Open a thread or draft link from the clipboard" = "クリップボードにあるスレッドまたは下書きのリンクを開く";
+"Command Palette…" = "コマンドパレット…";
+"Search Threads" = "スレッドを検索";
+
+/* ProjectFolderView.swift */
+"Relink project" = "プロジェクトを再リンク";
+"Clone repository" = "リポジトリをクローン";
+"Repository URL" = "リポジトリの URL";
+"Enter a Git clone URL" = "Git のクローン URL を入力";
+"Project name" = "プロジェクト名";
+"Enter a project name" = "プロジェクト名を入力";
+"Add existing project" = "既存のプロジェクトを追加";
+"Open a folder or clone a repository" = "フォルダーを開くか、リポジトリをクローン";
+"Cancelling clone…" = "クローンをキャンセルしています…";
+"Cloning repository…" = "リポジトリをクローンしています…";
+"Local folder" = "ローカルフォルダー";
+"Git URL" = "Git URL";
+"New project" = "新しいプロジェクト";
+"Browse…" = "参照…";
+"Parent folder" = "親フォルダー";
+"Destination folder" = "保存先フォルダー";
+"Enter a folder path" = "フォルダーのパスを入力";
+"Folders" = "フォルダー";
+"↑ ↓ Highlight, Tab Complete" = "↑ ↓ で選択、Tab で補完";
+"Create Project" = "プロジェクトを作成";
 "Continue" = "続行";
+"Clone" = "クローン";
+"Relink" = "再リンク";
+
+/* ProjectIcon.swift */
+"Imported image" = "インポートした画像";
+"Choose an image file." = "画像ファイルを選択してください。";
+"Choose an icon file of 8 MiB or smaller." = "8 MiB 以下のアイコンファイルを選択してください。";
+
+/* ProjectIconView.swift */
+"Default project icon" = "デフォルトのプロジェクトアイコン";
+"Icons" = "アイコン";
+"Emoji" = "絵文字";
+"Monogram" = "モノグラム";
+"Choose project icon" = "プロジェクトのアイコンを選択";
+"Icon type" = "アイコンの種類";
+"Color" = "色";
+"Save icon" = "アイコンを保存";
+"Paste an emoji" = "絵文字を貼り付け";
+"Letters" = "文字";
+"One or two letters or numbers." = "1〜2 文字の英字または数字。";
+
+/* ProjectOverviewSettingsView.swift */
+"Name" = "名前";
+"Project folder" = "プロジェクトフォルダー";
+"The project folder is no longer available." = "プロジェクトフォルダーは利用できなくなりました。";
+"Copy path" = "パスをコピー";
+"Pin" = "ピン留め";
+"Keep this project at the top of the sidebar." = "このプロジェクトをサイドバーの一番上に表示します。";
+"Pin project" = "プロジェクトをピン留め";
+"Choose a model for this project or inherit the workspace default." = "このプロジェクトのモデルを選択するか、ワークスペースのデフォルトを継承します。";
+"Model settings" = "モデル設定";
+"Checkouts" = "チェックアウト";
+"Detached" = "デタッチ済み";
+"Project icon" = "プロジェクトのアイコン";
+"Shown in the sidebar and breadcrumbs." = "サイドバーとパンくずリストに表示されます。";
+"Reset project icon to default" = "プロジェクトのアイコンをデフォルトにリセット";
+"Choose icon" = "アイコンを選択";
+"Choose file" = "ファイルを選択";
+"Choose a project icon file" = "プロジェクトのアイコンファイルを選択";
+"Couldn’t save the project name." = "プロジェクト名を保存できませんでした。";
+
+/* PromptLink.swift */
+"This prompt link is invalid." = "このプロンプトのリンクは無効です。";
+"This prompt exceeds the 8,000 character limit." = "このプロンプトは 8,000 文字の上限を超えています。";
+"This prompt contains only hidden characters." = "このプロンプトには非表示の文字しか含まれていません。";
+"This link names a pull request Pi Workspace couldn’t read." = "このリンクは Pi Workspace が読み取れないプルリクエストを指しています。";
+"This link has no prompt." = "このリンクにはプロンプトがありません。";
+"This link names a repository Pi Workspace couldn’t read." = "このリンクは Pi Workspace が読み取れないリポジトリを指しています。";
+
+/* PromptLinkView.swift */
+"This link is open" = "このリンクは開いています";
+"Review shared prompt" = "共有されたプロンプトを確認";
+"Repository: %@" = "リポジトリ: %@";
+"If the requested model isn’t configured here, the draft uses the default model." = "要求されたモデルがここで設定されていない場合、下書きではデフォルトのモデルが使用されます。";
+"Open It Again" = "もう一度開く";
+"Use without project" = "プロジェクトなしで使用";
+"Find Registered Project" = "登録済みのプロジェクトを探す";
+"Checking registered projects…" = "登録済みのプロジェクトを確認しています…";
+"No registered project matches this repository." = "このリポジトリに一致する登録済みのプロジェクトはありません。";
+"Clone %@" = "%@ をクローン";
+"Hidden characters were removed. Review the prompt before sending it." = "非表示の文字が削除されました。送信する前にプロンプトを確認してください。";
+
+/* PullRequestCodeView.swift */
+"Open files on GitHub" = "GitHub でファイルを開く";
+"Load latest changes" = "最新の変更を読み込む";
+"This pull request has no file changes." = "このプルリクエストにはファイルの変更がありません。";
+"Changed files" = "変更されたファイル";
+"Pull request #%lld files" = "プルリクエスト #%lld のファイル";
+"%lld of %lld files" = "%lld / %lld ファイル";
+"Load more files" = "さらにファイルを読み込む";
+"GitHub returned a partial file list." = "GitHub から返されたファイルリストは一部のみです。";
+"Loading file diff…" = "ファイルの差分を読み込んでいます…";
+"Select a changed file" = "変更されたファイルを選択";
+"Previously %@" = "変更前: %@";
+"GitHub supplied part of this diff." = "GitHub から提供されたのはこの差分の一部です。";
+"GitHub didn’t supply a text diff for this file." = "GitHub はこのファイルのテキスト差分を提供しませんでした。";
+"This diff is too large to display here." = "この差分は大きすぎるため、ここには表示できません。";
+"Loading changed files…" = "変更されたファイルを読み込んでいます…";
+"Loading more files…" = "さらにファイルを読み込んでいます…";
+
+/* PullRequestPromptLinkView.swift */
+"Check out pull request?" = "プルリクエストをチェックアウトしますか？";
+"Open linked pull request thread" = "リンクされたプルリクエストのスレッドを開く";
+"You don’t have %@" = "%@ がありません";
+"Review pull request link" = "プルリクエストのリンクを確認";
+"Check out this commit in a new worktree for %@." = "%@ の新しいワークツリーでこのコミットをチェックアウトします。";
+"This thread already has a draft. Open it as is or replace its draft text with the linked prompt." = "このスレッドにはすでに下書きがあります。そのまま開くか、下書きのテキストをリンクのプロンプトに置き換えてください。";
+"Clone the repository and open the link again, or open a draft with the pull request URL." = "リポジトリをクローンしてからもう一度リンクを開くか、プルリクエストの URL を含む下書きを開いてください。";
+"Looking up the pull request…" = "プルリクエストを検索しています…";
+"Refresh" = "更新";
+"Checking out…" = "チェックアウトしています…";
+"Check out" = "チェックアウト";
+"Open Thread" = "スレッドを開く";
+"Replace Draft and Open" = "下書きを置き換えて開く";
+"Clone Repository" = "リポジトリをクローン";
+"The pull request head changed. Review the new commit and confirm again." = "プルリクエストの head が変更されました。新しいコミットを確認して、もう一度確定してください。";
+
+/* PullRequestsView.swift */
+"Pull Requests and Issues" = "プルリクエストと Issue";
+"Pull Requests" = "プルリクエスト";
+"Issues" = "Issue";
+"Done" = "完了";
+"Loading %@s…" = "%@ を読み込んでいます…";
+"Search %@s, or label:bug" = "%@ または label:bug で検索";
+"Search %@s" = "%@ を検索";
+"Search" = "検索";
+"State" = "状態";
+"Refresh %@s" = "%@ を更新";
+"Select a %@" = "%@ を選択";
+"No matching %@s" = "一致する %@ はありません";
+"No %@s" = "%@ はありません";
+"Clear search" = "検索をクリア";
+"Load more %@s" = "さらに %@ を読み込む";
+"Loading more %@s…" = "さらに %@ を読み込んでいます…";
+"Author" = "作成者";
+"Labels" = "ラベル";
+"Any" = "すべて";
+"Search authors" = "作成者を検索";
+"Search labels" = "ラベルを検索";
+"Anyone" = "すべてのユーザー";
+"Clear labels" = "ラベルをクリア";
+"Loading choices" = "選択肢を読み込んでいます";
+"No authors found" = "作成者が見つかりません";
+"No labels found" = "ラベルが見つかりません";
+"Type to narrow results" = "入力して結果を絞り込む";
+"Summary" = "概要";
+"Code" = "コード";
+"Checks" = "チェック";
+"No checks reported" = "報告されたチェックはありません";
+"View log" = "ログを表示";
+"View log for %@" = "%@ のログを表示";
+"Open check details" = "チェックの詳細を開く";
+"Open check details for %@" = "%@ のチェックの詳細を開く";
+"Back to checks" = "チェックに戻る";
+"Loading job log…" = "ジョブのログを読み込んでいます…";
+"Showing the end of this log." = "このログの末尾を表示しています。";
+"Refresh pull request" = "プルリクエストを更新";
+
+/* QueuedMessagesView.swift */
+"1 queued message" = "キュー内のメッセージ 1 件";
+"%lld queued messages" = "キュー内のメッセージ %lld 件";
+"Resume Queue" = "キューを再開";
+"Show fewer" = "表示を減らす";
+"%lld more queued messages" = "さらにキュー内のメッセージ %lld 件";
+"Start a turn with this message" = "このメッセージでターンを開始";
+"Skip compaction and send this message" = "圧縮をスキップしてこのメッセージを送信";
+"%lld attachments" = "添付ファイル %lld 件";
+"Editing" = "編集中";
+"Edit in Composer" = "入力欄で編集";
+"Move to Front" = "先頭に移動";
+"Remove Queued Message" = "キュー内のメッセージを削除";
+"Queued message actions" = "キュー内のメッセージのアクション";
+
+/* SettingsComponents.swift */
+"Reset to default" = "デフォルトにリセット";
+
+/* SettingsSearch.swift */
+"General" = "一般";
+"Appearance" = "外観";
+"Chat" = "チャット";
+"Providers" = "プロバイダー";
+"Source control & issues" = "ソース管理と Issue";
+"Diffs & pull requests" = "差分とプルリクエスト";
+"Worktrees" = "ワークツリー";
+"Archive" = "アーカイブ";
+"Project Overview" = "プロジェクトの概要";
+"Source Control" = "ソース管理";
+"Browser Settings" = "ブラウザー設定";
+"Agents" = "エージェント";
+"Restore Defaults" = "デフォルトに戻す";
+
+/* SettingsView.swift */
+"Restore default settings?" = "デフォルトの設定に戻しますか？";
+"Confirm" = "確認";
+"This will reset: %@." = "リセットされる項目: %@。";
+"Settings" = "設定";
+"Restore device defaults" = "デバイスのデフォルトに戻す";
+"Close (Esc)" = "閉じる (Esc)";
+"Close settings" = "設定を閉じる";
+"Search settings" = "設定を検索";
+"Clear settings search" = "設定の検索をクリア";
+"No settings found" = "一致する設定はありません";
+"Sidebar" = "サイドバー";
+"Project grouping" = "プロジェクトのグループ化";
+"Group threads under their project in the sidebar." = "サイドバーでスレッドをプロジェクトごとにグループ化します。";
+"Group by Project" = "プロジェクトでグループ化";
+"Confirmations" = "確認ダイアログ";
+"New projects" = "新しいプロジェクト";
+"Display" = "表示";
+"Diffs" = "差分";
+"Hide whitespace changes" = "空白の変更を非表示";
+"Ignore whitespace-only edits in the Changes panel by default." = "変更パネルで、空白のみの編集をデフォルトで無視します。";
+"Reset diff whitespace changes to default" = "差分の空白の変更をデフォルトにリセット";
+"Creation" = "作成";
+"This project is no longer open." = "このプロジェクトはもう開かれていません。";
+"Composer" = "入力欄";
+"Send shortcut" = "送信ショートカット";
+"Choose when Enter sends a prompt or inserts a new line. Shift + Enter inserts a new line." = "Enter でプロンプトを送信するか改行を挿入するかを選択します。Shift + Enter で改行を挿入します。";
+"Reset send shortcut to default" = "送信ショートカットをデフォルトにリセット";
+"Follow-up behavior" = "フォローアップの動作";
+"Queue follow-ups or steer the current turn. Press %@ to use the other action for one message." = "フォローアップをキューに入れるか、現在のターンを軌道修正します。%@ を押すと、1 件のメッセージに対してもう一方の動作を使用します。";
+"Reset follow-up behavior to default" = "フォローアップの動作をデフォルトにリセット";
+"Archive confirmation" = "アーカイブの確認";
+"Ask before archiving a thread." = "スレッドをアーカイブする前に確認します。";
+"Reset archive confirmation to default" = "アーカイブの確認をデフォルトにリセット";
+"Terminal close confirmation" = "ターミナルを閉じる際の確認";
+"Ask before closing terminals and stopping their running processes." = "ターミナルを閉じて実行中のプロセスを停止する前に確認します。";
+"Reset terminal close confirmation to default" = "ターミナルを閉じる際の確認をデフォルトに戻す";
+"Confirm terminal closing" = "ターミナルを閉じる前に確認";
+"Language" = "言語";
+"The language Pi Workspace uses for menus and settings." = "Pi Workspace のメニューと設定で使用する言語です。";
+"Restart Pi Workspace to use this language." = "この言語を使用するには、Pi Workspace を再起動してください。";
+"Restart now" = "今すぐ再起動";
+"Add project starts in" = "プロジェクト追加の開始場所";
+"Leave empty to start in your home folder." = "空欄にするとホームフォルダーから開始します。";
+"Reset add project starts in to default" = "「プロジェクト追加の開始場所」をデフォルトにリセット";
+"Worktree location" = "ワークツリーの場所";
+"Folder where new worktrees are created on this Mac. Leave empty to use the workspace’s worktrees folder." = "この Mac で新しいワークツリーを作成するフォルダーです。空欄にすると、ワークスペースの worktrees フォルダーを使用します。";
+"Reset worktree location to default" = "ワークツリーの場所をデフォルトにリセット";
+"Default" = "デフォルト";
+"Uses the latest commit of the base branch’s tracked remote branch, even if its name differs. Otherwise uses the same-named branch on origin. Uses your local branch if that remote branch is missing." = "ベースブランチが追跡しているリモートブランチの最新コミットを使用します (名前が異なる場合も含む)。それ以外の場合は origin 上の同名ブランチを使用します。そのリモートブランチがない場合はローカルブランチを使用します。";
+"Reset new worktrees start from remote to default" = "「新しいワークツリーをリモートから開始」をデフォルトにリセット";
+"Start new worktrees from remote by default" = "デフォルトで新しいワークツリーをリモートから開始";
+
+/* SideChatPane.swift */
+"Add to chat" = "チャットに追加";
+"Attach this side chat to the parent’s next message." = "このサイドチャットを親スレッドの次のメッセージに添付します。";
+"Delete side chat" = "サイドチャットを削除";
+"Close side chat" = "サイドチャットを閉じる";
+"Open parent thread" = "親スレッドを開く";
+"Open parent thread: %@" = "親スレッドを開く: %@";
+"You" = "あなた";
+"Reconnect" = "再接続";
+"Ask a side question" = "サイドチャットで質問する";
+"Send" = "送信";
+"Delete side chat \"%@\"?" = "サイドチャット「%@」を削除しますか？";
+"This permanently clears its conversation history." = "会話履歴が完全に消去されます。";
+
+/* SidebarMessageSearch.swift */
+"The thread history is incomplete." = "スレッドの履歴が不完全です。";
+"Unsupported search history." = "サポートされていない検索履歴です。";
+
+/* SidebarProjectScopePicker.swift */
+"All Projects" = "すべてのプロジェクト";
+"Show Archive" = "アーカイブを表示";
+
+/* SidebarProjectScopeRow.swift */
+"Filter by %@. Shift-click to add or remove this project." = "%@ で絞り込みます。Shift+クリックでこのプロジェクトを追加または削除します。";
+"Project settings for %@" = "%@ のプロジェクト設定";
+
+/* SnoozeOptionsSettingsView.swift */
+"Snooze options" = "スヌーズのオプション";
+"Reset snooze options to default" = "スヌーズのオプションをデフォルトにリセット";
+"Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today." = "すべてのスヌーズメニューに表示される選択肢で、早い順に並びます。曜日は今日以降の次のその曜日を指します。";
+"Remove snooze option %lld" = "スヌーズのオプション %lld を削除";
+"Menus offer only Custom…" = "メニューには「カスタム…」のみが表示されます";
+"Menu now: %@" = "現在のメニュー: %@";
+"Add option" = "オプションを追加";
+"Up to %lld options" = "最大 %lld 個のオプション";
+"Passed for today" = "今日はすでに過ぎています";
+"Duplicate of an option above" = "上のオプションと重複しています";
+"Same time as an option above" = "上のオプションと同じ時刻です";
+"Could not save snooze options. %@" = "スヌーズのオプションを保存できませんでした。%@";
+"When" = "条件";
+"In" = "期間指定";
+"Amount" = "量";
+
+/* SourceControlView.swift */
+"Refresh Git changes" = "Git の変更を更新";
+"Changes" = "変更";
+"Working Tree" = "作業ツリー";
+"No Git repository in this workspace." = "このワークスペースには Git リポジトリがありません。";
+"Diff scope: %@" = "差分の範囲: %@";
+"Disable line wrapping" = "行の折り返しを無効にする";
+"Enable line wrapping" = "行の折り返しを有効にする";
+"Disable diff line wrapping" = "差分の行の折り返しを無効にする";
+"Enable diff line wrapping" = "差分の行の折り返しを有効にする";
+"Show whitespace changes" = "空白の変更を表示";
+"On" = "オン";
+"Off" = "オフ";
+"Automatic (%@)" = "自動 (%@)";
+"Automatic (HEAD)" = "自動 (HEAD)";
+"Change comparison target. Currently %@" = "比較対象を変更します。現在: %@";
+"Uncommitted" = "未コミット";
+"Open commit %@" = "コミット %@ を開く";
+"Branch" = "ブランチ";
+"Remote" = "リモート";
+"Automatic" = "自動";
+"No matching refs." = "一致する ref はありません。";
+"Use remote version of %@" = "%@ のリモートバージョンを使用";
+"%lld of %lld selected" = "%lld / %lld 件を選択済み";
+"Include all files" = "すべてのファイルを含める";
+"Committing will unstage the excluded files." = "コミットすると、除外されたファイルのステージが解除されます。";
+"Working tree clean" = "作業ツリーはクリーンです";
+"Include %@" = "%@ を含める";
+"Include %@ in the commit" = "%@ をコミットに含める";
+"Stage" = "ステージ";
+"Unstage" = "ステージを解除";
+"Open Source File" = "ソースファイルを開く";
+"Show all changes" = "すべての変更を表示";
+"All files" = "すべてのファイル";
+"All" = "すべて";
+"Unstaged" = "未ステージ";
+"Staged" = "ステージ済み";
+"No changes to display" = "表示する変更はありません";
+"Generating commit message…" = "コミットメッセージを生成しています…";
+"Commit" = "コミット";
+"Commit the current contents of the included files" = "含めたファイルの現在の内容をコミット";
+"The checkout changed. Review the changes and try again." = "チェックアウトが変更されました。変更を確認して、もう一度お試しください。";
+"Leave empty to auto-generate" = "空欄にすると自動生成されます";
+"Commit message" = "コミットメッセージ";
+
+/* ThreadCopy.swift */
+"This thread’s checkout has no current branch." = "このスレッドのチェックアウトには現在のブランチがありません。";
+"This thread has no workspace path to copy." = "このスレッドにはコピーできるワークスペースのパスがありません。";
+"Couldn’t copy to the clipboard." = "クリップボードにコピーできませんでした。";
+"Couldn’t copy the draft link." = "下書きのリンクをコピーできませんでした。";
+"Couldn’t copy the thread reference." = "スレッドの参照をコピーできませんでした。";
+
+/* ThreadFind.swift */
+"Search failed" = "検索に失敗しました";
+"0 matches" = "0 件";
+
+/* ThreadLinkedItemsView.swift */
+"Linked items" = "リンクされた項目";
+"Link issue" = "Issue をリンク";
+"Link pull request" = "プルリクエストをリンク";
+"No linked pull requests or issues" = "リンクされたプルリクエストや Issue はありません";
+"Pull requests" = "プルリクエスト";
+"Select a linked item" = "リンクされた項目を選択";
+"Create the worktree to read pull request details." = "プルリクエストの詳細を読み取るには、ワークツリーを作成してください。";
+"Copy link" = "リンクをコピー";
+"Copy PR number" = "PR 番号をコピー";
+"Actions for %@ #%lld" = "%@ #%lld のアクション";
+"Issue URL or number" = "Issue の URL または番号";
+"Pull request URL or number" = "プルリクエストの URL または番号";
+"Link %@" = "%@ をリンク";
+"Enter the URL or number of an existing %@ from this thread’s checkout." = "このスレッドのチェックアウトにある既存の %@ の URL または番号を入力してください。";
+"Reading checkout…" = "チェックアウトを読み取っています…";
+"Issue URL or #42" = "Issue の URL または #42";
+"Pull request URL or #42" = "プルリクエストの URL または #42";
+"Linking…" = "リンクしています…";
+"Link" = "リンク";
+
+/* ThreadLocationView.swift */
+"Thread workspace" = "スレッドのワークスペース";
+"Use Project Folder" = "プロジェクトフォルダーを使用";
+"New worktree" = "新しいワークツリー";
+"Select ref" = "ref を選択";
+"Use New Worktree" = "新しいワークツリーを使用";
+"Existing worktrees" = "既存のワークツリー";
+"Detached HEAD" = "デタッチされた HEAD";
+"Git worktrees are available in projects with a Git repository." = "Git ワークツリーは、Git リポジトリのあるプロジェクトで利用できます。";
+
+/* ThreadSnooze.swift */
+"Minutes" = "分";
+"Hours" = "時間";
+"Days" = "日";
+"In %lld %@" = "%lld %@ 後";
+"This morning" = "今朝";
+"This afternoon" = "今日の午後";
+"This evening" = "今晩";
+"Tomorrow" = "明日";
+"Next week" = "来週";
+"Next %@" = "次の%@";
+
+/* ThreadTerminal.swift */
+"Terminal %lld" = "ターミナル %lld";
+
+/* ThreadTerminalDrawer.swift */
+"New Terminal" = "新しいターミナル";
+"Split Terminal Horizontally" = "ターミナルを水平に分割";
+"Split Terminal Vertically" = "ターミナルを垂直に分割";
+"Hide Terminal" = "ターミナルを非表示";
+"Close Terminal" = "ターミナルを閉じる";
+"Close Terminal %lld" = "ターミナル %lld を閉じる";
+"Resize Terminal Drawer" = "ターミナルドロワーのサイズを変更";
+
+/* ToolApproval.swift */
+"Read files" = "ファイルの読み取り";
 "Supervised" = "要承認";
+"Shell and edits" = "シェルと編集";
+"Allow %@?" = "%@ を許可しますか？";
+"Decline" = "拒否";
+"Approve" = "承認";
+
+/* UsageSettingsView.swift */
+" (Detached)" = " (デタッチ済み)";
+"Local workspace" = "ローカルワークスペース";
+"Usage metric" = "使用量の指標";
+"Live provider limits are unavailable in this workspace." = "このワークスペースでは、プロバイダーのリアルタイムの上限を利用できません。";
+"Reading saved usage…" = "保存された使用量を読み取っています…";
+"Could not read saved usage. Refresh to try again." = "保存された使用量を読み取れませんでした。更新してもう一度お試しください。";
+"Usage period" = "使用量の期間";
+"Refresh usage" = "使用量を更新";
+"All providers" = "すべてのプロバイダー";
+"Usage providers" = "使用量のプロバイダー";
+"Refreshing usage" = "使用量を更新しています";
+"No providers" = "プロバイダーなし";
+"%lld providers" = "%lld 件のプロバイダー";
+"Some saved histories could not be fully read." = "保存された履歴の一部を完全には読み取れませんでした。";
+"No saved assistant messages for these filters and period." = "このフィルターと期間に該当する保存済みのアシスタントメッセージはありません。";
+"Usage breakdown" = "使用量の内訳";
+"Hour" = "時間";
+"Day" = "日";
+"Back to usage" = "使用量に戻る";
+"Saved USD cost" = "保存された USD のコスト";
+"1 assistant message" = "アシスタントメッセージ 1 件";
+"%@ assistant messages" = "アシスタントメッセージ %@ 件";
+"Pi estimates in USD" = "Pi による推定額 (USD)";
+"Provider-reported cost in USD" = "プロバイダーが報告したコスト (USD)";
+"Provider-reported cost and Pi estimates in USD" = "プロバイダーが報告したコストと Pi による推定額 (USD)";
+"Cost" = "コスト";
+"Limits" = "上限";
+"Unknown cost" = "不明なコスト";
+"Unknown tokens" = "不明なトークン";
+"%@ tokens" = "%@ トークン";
+"%@ + unreported" = "%@ + 未報告";
+
+/* WelcomeProjectsSection.swift */
+"Projects" = "プロジェクト";
+"Find Pi Projects" = "Pi プロジェクトを探す";
+"Looking for Pi projects" = "Pi プロジェクトを探しています";
+"Scan Again" = "再スキャン";
+"Review projects and sessions from your local Pi history." = "ローカルの Pi 履歴からプロジェクトとセッションを確認します。";
+"Looking for projects in local Pi history…" = "ローカルの Pi 履歴からプロジェクトを探しています…";
+"Selected projects registered." = "選択したプロジェクトを登録しました。";
+"No projects found in local Pi history." = "ローカルの Pi 履歴にプロジェクトは見つかりませんでした。";
+"%lld selected" = "%lld 件を選択済み";
+"Select All" = "すべてを選択";
+"Select None" = "選択を解除";
+"Register folders or open an individual Pi transcript as a read-only copy." = "フォルダーを登録するか、個々の Pi トランスクリプトを読み取り専用のコピーとして開きます。";
+"Register Selected" = "選択した項目を登録";
+"Some Pi sessions could not be read or refer to unavailable folders." = "一部の Pi セッションを読み取れないか、利用できないフォルダーを参照しています。";
+"Scan limit reached. Some projects or session details may be missing." = "スキャンの上限に達しました。一部のプロジェクトやセッションの詳細が表示されていない可能性があります。";
+"1 session" = "1 件のセッション";
+"%lld sessions" = "%lld 件のセッション";
+"Select %@" = "%@ を選択";
+"Open Transcript" = "トランスクリプトを開く";
+"Open transcript for %@" = "%@ のトランスクリプトを開く";
+"%@ · Registered" = "%@ · 登録済み";
+"Open Project" = "プロジェクトを開く";
+"Open %@" = "%@ を開く";
+"Expanded" = "展開";
+"Collapsed" = "折りたたみ";
+
+/* Workspace.swift */
+"Local OpenAI-compatible" = "ローカル (OpenAI 互換)";
+"Extra high" = "超高";
+"Maximum" = "最大";
+"Minimal" = "最小";
+"Low" = "低";
+"Medium" = "中";
+"High" = "高";
+"Enter a model ID." = "モデル ID を入力してください。";
+"Use a loopback URL such as http://127.0.0.1:11434/v1." = "http://127.0.0.1:11434/v1 のようなループバック URL を使用してください。";
+"Enter a context window between 8,192 and 2,000,000 tokens." = "コンテキストウィンドウは 8,192〜2,000,000 トークンの範囲で入力してください。";
+"The local URL is invalid." = "ローカル URL が無効です。";
+"Local" = "ローカル";
+"Create worktree" = "ワークツリーを作成";
+"Open thread" = "スレッドを開く";
+"Send first message" = "最初のメッセージを送信";
+"Enter a Git clone URL or a local repository path." = "Git のクローン URL またはローカルリポジトリのパスを入力してください。";
+"Remove the password from the URL and use your Git credentials." = "URL からパスワードを削除し、Git の資格情報を使用してください。";
+"Enter a folder path." = "フォルダーのパスを入力してください。";
+"Enter an absolute path or open a project to use a relative path." = "絶対パスを入力するか、プロジェクトを開いて相対パスを使用してください。";
+"Choose a local folder." = "ローカルフォルダーを選択してください。";
+"Choose an existing folder." = "既存のフォルダーを選択してください。";
+"New thread" = "新しいスレッド";
+"This workspace is open in another Pi Workspace process." = "このワークスペースは別の Pi Workspace プロセスで開かれています。";
+"Could not access %@. %@" = "%@ にアクセスできませんでした。%@";
+"The workspace index is missing." = "ワークスペースのインデックスが見つかりません。";
+"The workspace index is damaged." = "ワークスペースのインデックスが破損しています。";
+" A readable, valid previous index is unavailable." = "読み取り可能で有効な以前のインデックスはありません。";
+"Lock: %@" = "ロック: %@";
+"Could not access %@." = "%@ にアクセスできませんでした。";
+"Path: %@" = "パス: %@";
+"Index: %@" = "インデックス: %@";
+"Previous index: %@" = "以前のインデックス: %@";
+"Expected a regular file." = "通常のファイルが必要です。";
+"The archive already contains different data." = "アーカイブにはすでに異なるデータが含まれています。";
+"The workspace index is damaged. Reopen the workspace to recover it." = "ワークスペースのインデックスが破損しています。ワークスペースを開き直して復旧してください。";
+"The workspace index is missing. Reopen the workspace to recover it." = "ワークスペースのインデックスが見つかりません。ワークスペースを開き直して復旧してください。";
+"The side chat history must be inside this workspace." = "サイドチャットの履歴はこのワークスペース内にある必要があります。";
+"A history folder already exists for this conversation. Try again." = "この会話の履歴フォルダーはすでに存在します。もう一度お試しください。";
+"The conversation history folder must be inside this workspace." = "会話の履歴フォルダーはこのワークスペース内にある必要があります。";
+"The scratch folder must be inside this workspace." = "スクラッチフォルダーはこのワークスペース内にある必要があります。";
+"The project’s worktree folder must be inside the worktree location." = "プロジェクトのワークツリーフォルダーはワークツリーの場所の中にある必要があります。";
+
+/* WorkspaceArchive.swift */
+"Preview limited to archives of 50 MiB or smaller." = "プレビューできるのは 50 MiB 以下のアーカイブです。";
+"This archive expands beyond the preview limit." = "このアーカイブは展開するとプレビューの上限を超えます。";
+"Preview limited to 2,048 archive entries." = "プレビューできるアーカイブのエントリは 2,048 件までです。";
+"An archive entry path exceeds the preview limit." = "アーカイブのエントリのパスがプレビューの上限を超えています。";
+"This archive is unreadable or damaged." = "このアーカイブは読み取れないか、破損しています。";
+"This ZIP uses encryption or an unsupported ZIP feature." = "この ZIP は暗号化、またはサポートされていない ZIP の機能を使用しています。";
+"This TAR uses an unsupported numeric format." = "この TAR はサポートされていない数値形式を使用しています。";
+"Archive metadata is too large." = "アーカイブのメタデータが大きすぎます。";
+"This archive has no readable entries." = "このアーカイブには読み取り可能なエントリがありません。";
+"The archive changed on disk. Retry to reopen it." = "アーカイブがディスク上で変更されました。再試行して開き直してください。";
+"Entry previews are limited to 10 MiB." = "エントリのプレビューは 10 MiB までです。";
+"Only UTF-8 text and images can be opened inside an archive." = "アーカイブ内で開けるのは UTF-8 のテキストと画像だけです。";
+
+/* WorkspaceArchiveView.swift */
+"Preview limited to the first 1 MiB." = "プレビューは最初の 1 MiB に限定されています。";
+"Parent Folder" = "親フォルダー";
+"Back to Archive" = "アーカイブに戻る";
+"Archive contents" = "アーカイブの内容";
+"This archive is empty." = "このアーカイブは空です。";
+"This folder is empty." = "このフォルダーは空です。";
+"Size" = "サイズ";
+"Modified" = "更新日時";
+
+/* WorkspaceDelimitedTable.swift */
+"Unclosed quoted field in row %lld." = "%lld 行目に閉じられていない引用符付きのフィールドがあります。";
+"Unexpected characters after a quoted field in row %lld." = "%lld 行目の引用符付きのフィールドの後に予期しない文字があります。";
+
+/* WorkspaceFileSaves.swift */
+"Couldn’t save %@ before switching branches. %@" = "ブランチを切り替える前に %@ を保存できませんでした。%@";
+"Couldn’t save %@ in %@. %@ " = "%2$@ 内の %1$@ を保存できませんでした。%3$@";
+"To recover the edits, open Files in that thread and choose Folder Actions > Unsaved Files." = "編集内容を復元するには、そのスレッドで「ファイル」を開き、「フォルダーのアクション」>「未保存のファイル」を選択してください。";
+
+/* WorkspaceFiles.swift */
+"The file or folder is missing." = "ファイルまたはフォルダーが見つかりません。";
+"This path cannot be opened from the workspace." = "このパスはワークスペースから開けません。";
+"This file is read-only." = "このファイルは読み取り専用です。";
+"The file changed on disk. Copy your edits or discard them to reload the file." = "ファイルがディスク上で変更されました。ファイルを再読み込みするには、編集内容をコピーするか破棄してください。";
+"This edit exceeds the 1 MiB save limit." = "この編集は保存の上限 (1 MiB) を超えています。";
+"The file changed on disk. Retry to reopen it." = "ファイルがディスク上で変更されました。再試行して開き直してください。";
+"This part of the file is not valid UTF-8 text." = "ファイルのこの部分は有効な UTF-8 テキストではありません。";
+"There is no line with that number." = "その番号の行はありません。";
+
+/* WorkspaceFilesView.swift */
+"Files" = "ファイル";
+"Refresh Files" = "ファイルを更新";
+"Hide Files" = "ファイルを非表示";
+"Recover unsaved edits?" = "未保存の編集を復元しますか？";
+"Copy Contents" = "内容をコピー";
+"Discard Edits" = "編集を破棄";
+"The unsaved edits belong to %@. Discarding them removes the draft." = "未保存の編集は %@ のものです。破棄すると下書きが削除されます。";
+"Search files" = "ファイルを検索";
+"Expand All Folders" = "すべてのフォルダーを展開";
+"Collapse All Folders" = "すべてのフォルダーを折りたたむ";
+"Unsaved Files" = "未保存のファイル";
+"Folder Actions" = "フォルダーのアクション";
+"Only part of this file tree is shown." = "このファイルツリーの一部のみを表示しています。";
+"No matching files." = "一致するファイルはありません。";
+"No files in this folder." = "このフォルダーにはファイルがありません。";
+"Unsaved" = "未保存";
+"Symbolic link" = "シンボリックリンク";
+"Failed to copy file mention." = "ファイルのメンションをコピーできませんでした。";
+"Copy file mention" = "ファイルのメンションをコピー";
+"Add to composer" = "入力欄に追加";
+"Hide File Explorer" = "ファイルエクスプローラーを非表示";
+"Show File Explorer" = "ファイルエクスプローラーを表示";
+"Close File" = "ファイルを閉じる";
+"Read-only. Unsaved edits are kept until write access returns." = "読み取り専用です。未保存の編集は、書き込みアクセスが戻るまで保持されます。";
+"Discard unsaved edits?" = "未保存の編集を破棄しますか？";
+"Reload %@ from disk." = "ディスクから %@ を再読み込みします。";
+"Workspace Root" = "ワークスペースのルート";
+"Copy Path" = "パスをコピー";
+"Disable Word Wrap" = "折り返しを無効にする";
+"Enable Word Wrap" = "折り返しを有効にする";
+"Open in Default App" = "デフォルトのアプリで開く";
+"Show in Finder" = "Finder で表示";
+"Discard Edits…" = "編集を破棄…";
+"File Actions" = "ファイルのアクション";
+"Binary file (%@). Showing %lld bytes." = "バイナリファイル (%@)。%lld バイトを表示しています。";
+"The default app could not open this file." = "デフォルトのアプリでこのファイルを開けませんでした。";
+"Large file (%@)" = "大きなファイル (%@)";
+"Previous Page" = "前のページ";
+"Next Page" = "次のページ";
+"Go to Line" = "行へ移動";
+"Lines %@–%@" = "%@–%@ 行目";
+"Long lines show their first 16 KiB." = "長い行は最初の 16 KiB のみ表示されます。";
+"Loading lines" = "行を読み込んでいます";
+"Could not read file. %@" = "ファイルを読み取れませんでした。%@";
+"Enter a positive line number." = "正の行番号を入力してください。";
+"File Contents" = "ファイルの内容";
+
+/* WorkspaceHistory.swift */
+"The linked thread’s history is missing or invalid." = "リンクされたスレッドの履歴が見つからないか、無効です。";
+"This conversation has more than one history file." = "この会話には複数の履歴ファイルがあります。";
+"Expected a regular conversation history." = "通常の会話履歴が必要です。";
+
+/* WorkspaceImageView.swift */
+"Zoom %@" = "%@ をズーム";
+"Image Preview" = "画像のプレビュー";
+"Close image preview" = "画像のプレビューを閉じる";
+"Zoom out" = "縮小";
+"Zoom in" = "拡大";
+"Fit image" = "画像をウィンドウに合わせる";
+"Actual image size" = "画像の実際のサイズ";
+
+/* WorkspaceLocalFile.swift */
+"Could not read %@." = "%@ を読み取れませんでした。";
+"Choose a regular local file." = "通常のローカルファイルを選択してください。";
+
+/* WorkspaceMarkdownView.swift */
+"Rendered Markdown" = "レンダリングされた Markdown";
+
+/* WorkspaceMediaFiles.swift */
+"Unable to load image." = "画像を読み込めません。";
+"Unable to open PDF." = "PDF を開けません。";
+"Preview limited to files of 50 MiB or smaller." = "プレビューできるのは 50 MiB 以下のファイルです。";
+"This image is too large to display." = "この画像は大きすぎて表示できません。";
+"This SVG refers to external resources." = "この SVG は外部リソースを参照しています。";
+"Preview limited to 2,000 pages." = "プレビューは 2,000 ページまでに限られます。";
+"This PDF is password protected. Open it in the default app to unlock it." = "この PDF はパスワードで保護されています。ロックを解除するには、デフォルトのアプリで開いてください。";
+
+/* WorkspaceModel.swift */
+"Could not open the workspace." = "ワークスペースを開けませんでした。";
+"The chat isn’t ready to accept input right now." = "チャットは現在入力を受け付けられません。";
+"Attach unavailable files again or remove them before stashing." = "退避する前に、利用できないファイルをもう一度添付するか削除してください。";
+"The stash holds %lld prompts. The oldest prompt was removed." = "退避できるプロンプトは %lld 件までです。最も古いプロンプトが削除されました。";
+"This prompt is still in the stash. Remove some composer attachments and try again." = "このプロンプトはまだ退避一覧にあります。入力欄の添付ファイルをいくつか削除して、もう一度お試しください。";
+"Remove the API key before restoring this prompt." = "このプロンプトを復元する前に API キーを削除してください。";
+"Attach the unavailable files again or remove them to send." = "送信するには、利用できないファイルをもう一度添付するか削除してください。";
+"This model does not support image input. Choose an image-capable model or remove the images." = "このモデルは画像入力に対応していません。画像に対応したモデルを選択するか、画像を削除してください。";
+"Attach up to %lld files per message." = "1 つのメッセージに添付できるファイルは最大 %lld 個です。";
+"Enter your API key in Model Settings." = "モデル設定で API キーを入力してください。";
+"Some pasted files or images could not be read." = "貼り付けたファイルまたは画像の一部を読み取れませんでした。";
+"The attachment target is no longer editable." = "添付先は編集できなくなりました。";
+"Attachments must total 4 MB or less." = "添付ファイルの合計は 4 MB 以下にしてください。";
+"This settings link is invalid." = "この設定のリンクは無効です。";
+"The linked project is unavailable in this workspace." = "リンクされたプロジェクトはこのワークスペースで利用できません。";
+"Finish the current operation and open Model Settings again." = "現在の操作を完了してから、もう一度モデル設定を開いてください。";
+"Finish opening the workspace and try the Usage link again." = "ワークスペースを開き終えてから、もう一度使用量のリンクをお試しください。";
+"Update or cancel the queued message edit before switching threads." = "スレッドを切り替える前に、キュー内のメッセージの編集を更新またはキャンセルしてください。";
+"Choose a local folder to relink this project." = "このプロジェクトを再リンクするローカルフォルダーを選択してください。";
+"The destination already belongs to a project. Choose another destination." = "保存先はすでにプロジェクトに属しています。別の保存先を選択してください。";
+"The destination changed before it could be added." = "保存先が追加される前に変更されました。";
+"The repository is ready at %@. %@\nAfter resolving the error, add the repository with Local folder." = "リポジトリは %@ に用意されています。%@\nエラーを解決したら、「ローカルフォルダー」でリポジトリを追加してください。";
+"The selected project changed. Try opening the session again." = "選択したプロジェクトが変更されました。もう一度セッションを開いてみてください。";
+"Wait for the current operation before switching projects." = "プロジェクトを切り替える前に、現在の操作が終わるまでお待ちください。";
+"That folder already belongs to a project." = "そのフォルダーはすでにプロジェクトに属しています。";
+"That folder already belongs to another project." = "そのフォルダーはすでに別のプロジェクトに属しています。";
+"Could not save the project." = "プロジェクトを保存できませんでした。";
+"Couldn’t copy the project path to the clipboard." = "プロジェクトのパスをクリップボードにコピーできませんでした。";
+"The thread’s workspace folder is no longer available." = "スレッドのワークスペースフォルダーは利用できなくなりました。";
+"Turn this thread into a project to keep its scratch files." = "スクラッチファイルを残すには、このスレッドをプロジェクトに変換してください。";
+"This thread doesn’t have a link." = "このスレッドにはリンクがありません。";
+"This draft doesn’t have a link." = "この下書きにはリンクがありません。";
+"Finish opening the workspace and try the prompt link again." = "ワークスペースを開き終えてから、もう一度プロンプトのリンクをお試しください。";
+"Finish reviewing the current prompt and open the other link again." = "現在のプロンプトの確認を終えてから、もう一方のリンクを開き直してください。";
+"This link has no repository." = "このリンクにはリポジトリがありません。";
+"Confirm the pull request checkout to open its draft." = "下書きを開くには、プルリクエストのチェックアウトを確定してください。";
+"The linked project changed. Find the registered project again." = "リンクされたプロジェクトが変更されました。登録済みのプロジェクトをもう一度探してください。";
+"Finish the current operation and open the prompt link again." = "現在の操作を完了してから、もう一度プロンプトのリンクを開いてください。";
+"The linked thread or its draft changed. Refresh the link before opening it." = "リンクされたスレッドまたはその下書きが変更されました。開く前にリンクを更新してください。";
+"The linked thread’s history is missing." = "リンクされたスレッドの履歴が見つかりません。";
+"The current thread changed. Open the link again." = "現在のスレッドが変更されました。もう一度リンクを開いてください。";
+"The selected project changed. Refresh the link before checking out." = "選択したプロジェクトが変更されました。チェックアウトする前にリンクを更新してください。";
+"The selected Git checkout changed. Refresh the link before checking out." = "選択した Git のチェックアウトが変更されました。チェックアウトする前にリンクを更新してください。";
+"A thread is already linked to this pull request. Refresh the link to open it." = "このプルリクエストにはすでにスレッドがリンクされています。リンクを更新して開いてください。";
+"This link has no pull request." = "このリンクにはプルリクエストがありません。";
+"The linked thread’s checkout or composer is unavailable." = "リンクされたスレッドのチェックアウトまたは入力欄を利用できません。";
+"GitHub didn’t provide a valid head for this checkout." = "GitHub はこのチェックアウトの有効な head を提供しませんでした。";
+"The selected project’s folder is unavailable." = "選択したプロジェクトのフォルダーを利用できません。";
+"The earlier pull request checkout at %@ belongs to another thread or project." = "%@ にある以前のプルリクエストのチェックアウトは、別のスレッドまたはプロジェクトに属しています。";
+"The earlier worktree at %@ could not be safely removed. Review it before retrying." = "%@ にある以前のワークツリーを安全に削除できませんでした。再試行する前に確認してください。";
+"The local commit differs from the reviewed pull request head." = "ローカルのコミットが、確認したプルリクエストの head と異なります。";
+"Enter a Pi Workspace thread link or draft link." = "Pi Workspace のスレッドリンクまたは下書きリンクを入力してください。";
+"Finish opening the workspace and try the thread link again." = "ワークスペースを開き終えてから、もう一度スレッドのリンクをお試しください。";
+"This draft link belongs to a different Pi Workspace." = "この下書きリンクは別の Pi Workspace のものです。";
+"The linked draft is unavailable." = "リンクされた下書きを利用できません。";
+"The linked thread changed. Open the link again." = "リンクされたスレッドが変更されました。もう一度リンクを開いてください。";
+"The Pi helper exited while opening the linked thread." = "リンクされたスレッドを開いている間に Pi ヘルパーが終了しました。";
+"The Pi transcript cannot access model credentials." = "Pi のトランスクリプトはモデルの資格情報にアクセスできません。";
+"This thread link belongs to a different Pi Workspace." = "このスレッドリンクは別の Pi Workspace のものです。";
+"The linked thread is unavailable." = "リンクされたスレッドを利用できません。";
+"The linked thread is archived. Restore it from the archive and try again." = "リンクされたスレッドはアーカイブされています。アーカイブから復元してから、もう一度お試しください。";
+"The linked thread’s checkout is unavailable." = "リンクされたスレッドのチェックアウトを利用できません。";
+"Finish the current operation or queued message edit and try the thread link again." = "現在の操作またはキュー内のメッセージの編集を完了してから、もう一度スレッドのリンクをお試しください。";
+"The linked %@’s checkout is unavailable." = "リンクされた %@ のチェックアウトを利用できません。";
+"Reopen Linked items for the current thread." = "現在のスレッドの「リンクされた項目」を開き直してください。";
+"Enter a GitHub pull request URL or a positive number such as #42." = "GitHub のプルリクエストの URL、または #42 のような正の数を入力してください。";
+"This thread’s checkout uses %@. Enter a pull request from that repository." = "このスレッドのチェックアウトは %@ を使用しています。そのリポジトリのプルリクエストを入力してください。";
+"The checkout’s GitHub repository changed. Reopen Link pull request to use the current checkout." = "チェックアウトの GitHub リポジトリが変更されました。現在のチェックアウトを使うには、「プルリクエストをリンク」を開き直してください。";
+"Enter a GitHub issue URL or a positive number such as #42." = "GitHub の Issue の URL、または #42 のような正の数を入力してください。";
+"This thread’s checkout uses %@. Enter an issue from that repository." = "このスレッドのチェックアウトは %@ を使用しています。そのリポジトリの Issue を入力してください。";
+"The checkout’s GitHub repository changed. Reopen Link issue to use the current checkout." = "チェックアウトの GitHub リポジトリが変更されました。現在のチェックアウトを使うには、「Issue をリンク」を開き直してください。";
+"The selected thread or checkout changed. Reopen Linked items and try again." = "選択したスレッドまたはチェックアウトが変更されました。「リンクされた項目」を開き直して、もう一度お試しください。";
+"This issue is already linked to this thread." = "この Issue はすでにこのスレッドにリンクされています。";
+"Could not create the conversation fork. %@" = "会話のフォークを作成できませんでした。%@";
+"The fork history was not saved. Try again." = "フォークの履歴が保存されませんでした。もう一度お試しください。";
+"This project is no longer open. Reopen it and try again." = "このプロジェクトはもう開かれていません。開き直してから、もう一度お試しください。";
+"This thread is no longer available." = "このスレッドは利用できなくなりました。";
+"Choose valid snooze options." = "有効なスヌーズのオプションを選択してください。";
+"That snooze time has passed. Choose another time." = "そのスヌーズ時刻は過ぎています。別の時刻を選択してください。";
+"Choose a valid date and time in the future." = "未来の有効な日時を選択してください。";
+"Enter a positive duration." = "正の期間を入力してください。";
+"This thread can no longer be snoozed at that time." = "このスレッドはその時刻にはスヌーズできなくなりました。";
+"Check this model’s configuration in Settings." = "設定でこのモデルの構成を確認してください。";
+"Start a new thread to switch providers." = "プロバイダーを切り替えるには、新しいスレッドを開始してください。";
+"This model is missing from Pi’s bundled catalog." = "このモデルは Pi の同梱カタログにありません。";
+"Wait for the current operation to finish." = "現在の操作が完了するまでお待ちください。";
+"Model settings were saved. %@" = "モデル設定は保存されました。%@";
+"That project is no longer open." = "そのプロジェクトはもう開かれていません。";
+"Choose the workspace before the first message." = "最初のメッセージの前にワークスペースを選択してください。";
+"This worktree is no longer registered with the repository." = "このワークツリーはリポジトリに登録されていません。";
+"Stop the current turn to switch branches or worktrees." = "ブランチまたはワークツリーを切り替えるには、現在のターンを停止してください。";
+"Wait for the active operation to finish." = "実行中の操作が完了するまでお待ちください。";
+"Restore the thread to change its branch." = "ブランチを変更するには、スレッドを復元してください。";
+"Finish or cancel worktree setup before changing branches." = "ブランチを変更する前に、ワークツリーのセットアップを完了するかキャンセルしてください。";
+"Wait for the current message to finish saving." = "現在のメッセージの保存が完了するまでお待ちください。";
+"The selected thread or checkout changed. Open the branch picker again." = "選択したスレッドまたはチェックアウトが変更されました。もう一度ブランチの選択を開いてください。";
+"The selected base branch is no longer available." = "選択したベースブランチは利用できなくなりました。";
+"Finish editing the queued message before moving this thread." = "このスレッドを移動する前に、キュー内のメッセージの編集を完了してください。";
+"Use Thread workspace to name the branch that will be created on first send." = "最初の送信時に作成されるブランチの名前は、「スレッドのワークスペース」で指定してください。";
+"Could not save the thread." = "スレッドを保存できませんでした。";
+"Wait for the active operation before changing the checkout." = "チェックアウトを変更する前に、実行中の操作が終わるまでお待ちください。";
+"Open a workspace before generating a commit message." = "コミットメッセージを生成する前に、ワークスペースを開いてください。";
+"The Pi helper exited while generating the commit message. Try again or enter a message." = "コミットメッセージの生成中に Pi ヘルパーが終了しました。もう一度お試しいただくか、メッセージを入力してください。";
+"Pi is unavailable. Reconnect to send your message." = "Pi を利用できません。メッセージを送信するには再接続してください。";
+"Pi disconnected while sending a queued message. Reconnect to try again." = "キュー内のメッセージの送信中に Pi が切断されました。再接続してもう一度お試しください。";
+"Select a thread first." = "先にスレッドを選択してください。";
+"Could not send the queued message. Reconnect to try again." = "キュー内のメッセージを送信できませんでした。再接続してもう一度お試しください。";
+"Remove the attachment that contains your API key." = "API キーを含む添付ファイルを削除してください。";
+"Reconnect this thread to its selected model before sending." = "送信する前に、このスレッドを選択したモデルに再接続してください。";
+"Pi disconnected while stopping the request." = "リクエストの停止中に Pi が切断されました。";
+"The Pi helper disconnected while sending the tool decision." = "ツールの判断を送信中に Pi ヘルパーが切断されました。";
+"The Pi helper disconnected while sending the question response." = "質問への回答を送信中に Pi ヘルパーが切断されました。";
+"The Pi helper exited. Reconnect to this conversation." = "Pi ヘルパーが終了しました。この会話に再接続してください。";
+"Save an API key for this provider in Settings." = "設定でこのプロバイダーの API キーを保存してください。";
+"Pi disconnected while sending the message. Reconnect to check its history." = "メッセージの送信中に Pi が切断されました。再接続して履歴を確認してください。";
+"The Pi helper disconnected during Keychain access." = "キーチェーンへのアクセス中に Pi ヘルパーが切断されました。";
+"The question expired. You can send a new message after the turn ends." = "質問の期限が切れました。ターンが終了したら新しいメッセージを送信できます。";
+"Pi rejected the response. Review your answers and try again." = "Pi が回答を拒否しました。回答を確認して、もう一度お試しください。";
+"The turn reached a different stage." = "ターンが別の段階に進みました。";
+" The message stayed in the queue." = "メッセージはキューに残っています。";
+"The message stayed in the queue." = "メッセージはキューに残っています。";
+"Pi stopped before recording your message." = "Pi がメッセージを記録する前に停止しました。";
+"Wait for attachments to finish pasting, then try again." = "添付ファイルの貼り付けが完了してから、もう一度お試しください。";
+"A history folder already exists for this side chat. Try again." = "このサイドチャットの履歴フォルダーはすでに存在します。もう一度お試しください。";
+"The Pi helper exited. Reconnect to this side chat." = "Pi ヘルパーが終了しました。このサイドチャットに再接続してください。";
+"Side chats cannot start side chats." = "サイドチャットからサイドチャットは開始できません。";
+"Save an API key for this provider in Model Settings." = "モデル設定でこのプロバイダーの API キーを保存してください。";
+"Remove unavailable attachments before sending." = "送信する前に、利用できない添付ファイルを削除してください。";
+"This model does not support image input." = "このモデルは画像入力に対応していません。";
+"Pi is unavailable. Reconnect to this side chat." = "Pi を利用できません。このサイドチャットに再接続してください。";
+"Pi disconnected while stopping the side chat." = "サイドチャットの停止中に Pi が切断されました。";
+"Remove the API key from your answer." = "回答から API キーを削除してください。";
+"The side chat title contains your API key." = "サイドチャットのタイトルに API キーが含まれています。";
+"Could not delete the side chat. %@" = "サイドチャットを削除できませんでした。%@";
+"The side chat deletion folder must be inside this workspace." = "サイドチャットの削除用フォルダーはこのワークスペース内にある必要があります。";
+"This side chat is no longer available." = "このサイドチャットは利用できなくなりました。";
+
+/* WorkspacePDFView.swift */
+"PDF Preview" = "PDF のプレビュー";
+"Previous page" = "前のページ";
+"Next page" = "次のページ";
+"Fit width" = "幅に合わせる";
+"Save file" = "ファイルを保存";
+"Find in PDF" = "PDF 内を検索";
+"Searching…" = "検索しています…";
+"Next matching page" = "次の一致するページ";
+
+/* WorkspaceRenderedFileView.swift */
+"Show markdown source" = "Markdown のソースを表示";
+"Show rendered markdown" = "レンダリングした Markdown を表示";
+"Show source" = "ソースを表示";
+"Show table" = "表を表示";
+"This file is empty." = "このファイルは空です。";
+"Showing the first %lld columns." = "最初の %lld 列を表示しています。";
+"Column %lld" = "列 %lld";
+"Delimited Table" = "区切り文字形式のテーブル";
+" Switch to source to view the file." = "ソースに切り替えるとファイルを表示できます。";
+
+/* WorkspaceRightPanel.swift */
+"Hide Right Panel" = "右パネルを非表示";
+"Close Others" = "その他を閉じる";
+"Close to the Right" = "右側を閉じる";
+"Close All" = "すべて閉じる";
+"Close %@" = "%@ を閉じる";
+
+/* WorkspaceSQLite.swift */
+"Could not read this SQLite database." = "この SQLite データベースを読み取れませんでした。";
+"SQLite preview is limited to 50 MiB." = "SQLite のプレビューは 50 MiB までです。";
+"SQLite preview supports up to 100 tables." = "SQLite のプレビューは 100 テーブルまで対応しています。";
+"This database uses a journal or WAL. Open a standalone SQLite copy to preview it." = "このデータベースはジャーナルまたは WAL を使用しています。プレビューするには、単体の SQLite のコピーを開いてください。";
+"The database changed on disk. Retry to reopen it." = "データベースがディスク上で変更されました。再試行して開き直してください。";
+"This table or page is unavailable." = "このテーブルまたはページは利用できません。";
+"This database took too long to preview." = "このデータベースはプレビューに時間がかかりすぎました。";
+
+/* WorkspaceSQLiteView.swift */
+"Read-only SQLite preview" = "読み取り専用の SQLite プレビュー";
+"No tables to preview." = "プレビューできるテーブルはありません。";
+"Previous Rows" = "前の行";
+"0 rows" = "0 行";
+"%@–%@ of %@" = "%3$@ 件中 %1$@–%2$@";
+"Next Rows" = "次の行";
+"Up to 50 columns and 1,024 characters per cell. BLOB contents are omitted." = "最大 50 列、セルあたり 1,024 文字まで表示します。BLOB の内容は省略されます。";
+"This table has no rows." = "このテーブルには行がありません。";
+"SQLite Rows" = "SQLite の行";
+"Loading rows" = "行を読み込んでいます";
+"Table" = "テーブル";
+
+/* WorkspaceStartupRecoveryView.swift */
+"Could Not Open Workspace" = "ワークスペースを開けませんでした";
+"Restoring can roll back recent changes to the project and thread list. The app keeps conversation files and a copy of any damaged index." = "復元すると、プロジェクトとスレッドの一覧に対する最近の変更が元に戻る可能性があります。会話ファイルと、破損したインデックスのコピーは保持されます。";
+"Quit the other instance of Pi Workspace, then choose Retry." = "ほかの Pi Workspace のインスタンスを終了してから、「再試行」を選択してください。";
+"After resolving the issue, choose Retry." = "問題を解決したら、「再試行」を選択してください。";
+"Quit" = "終了";
+"Copy Details" = "詳細をコピー";
+"Restore Previous Workspace" = "以前のワークスペースを復元";
+"%@ (%@) could not open its workspace." = "%@ (%@) はワークスペースを開けませんでした。";
+"Workspace: %@" = "ワークスペース: %@";
+
+/* WorkspaceUsage.swift */
+"Past 24h" = "過去 24 時間";
+"%lld days" = "%lld 日間";
+"Tokens" = "トークン";
+"Input tokens" = "入力トークン";
+"Output tokens" = "出力トークン";
+"Cache read tokens" = "キャッシュ読み取りトークン";
+"Cache write tokens" = "キャッシュ書き込みトークン";
+"Unknown model" = "不明なモデル";
+"Unknown provider" = "不明なプロバイダー";
+"Unsupported conversation history." = "サポートされていない会話履歴です。";
+
+/* WorkspaceView.swift */
+"Close terminal \"Terminal %lld\"?" = "ターミナル「ターミナル %lld」を閉じますか？";
+"Close %lld terminals?" = "%lld 個のターミナルを閉じますか？";
+"This stops the running process and clears its history." = "実行中のプロセスが停止し、履歴が消去されます。";
+"\"Terminal %lld\"" = "「ターミナル %lld」";
+"This stops their running processes and clears their histories: %@." = "実行中のプロセスが停止し、履歴が消去されます: %@。";
+"Thread title" = "スレッドのタイトル";
+"Resize sidebar" = "サイドバーのサイズを変更";
+"Close this thread’s terminals?" = "このスレッドのターミナルを閉じますか？";
+"Close Terminal and Choose Workspace" = "ターミナルを閉じてワークスペースを選択";
+"Workspace changes require a new terminal in the selected folder." = "ワークスペースを変更するには、選択したフォルダーで新しいターミナルが必要です。";
+"Start a thread in" = "スレッドを開始する場所";
 "No project" = "プロジェクトなし";
+"Rename" = "名前を変更";
+"Archive thread \"%@\"?" = "スレッド「%@」をアーカイブしますか？";
+"Remove project from the sidebar?" = "プロジェクトをサイドバーから削除しますか？";
+"Remove Project" = "プロジェクトを削除";
+"The folder and its threads stay on disk." = "フォルダーとそのスレッドはディスクに残ります。";
 "Welcome to Pi Workspace" = "Pi Workspace へようこそ";
+"Connect a model to send messages with Pi. You can open projects before setting up a model." = "Pi でメッセージを送信するには、モデルを接続してください。モデルを設定する前でもプロジェクトを開けます。";
 "Start" = "開始";
 "Start without an agent" = "エージェントなしで開始";
+"Workspace" = "ワークスペース";
+"Pi Workspace home" = "Pi Workspace のホーム";
+"No threads in the selected projects" = "選択したプロジェクトにスレッドはありません";
+"Show all projects" = "すべてのプロジェクトを表示";
+"Searching thread messages…" = "スレッドのメッセージを検索しています…";
+"No matching threads" = "一致するスレッドはありません";
+"Snoozed 1 thread" = "1 件のスレッドをスヌーズしました";
+"Snoozed %lld threads" = "%lld 件のスレッドをスヌーズしました";
+"Undo" = "元に戻す";
+"Usage (⌘U)" = "使用量 (⌘U)";
+"Usage" = "使用量";
+"Add Project" = "プロジェクトを追加";
+"Drop folders to add projects" = "フォルダーをドロップしてプロジェクトを追加";
+"Go back" = "戻る";
+"Go forward" = "進む";
+"Go back (⌘[)" = "戻る (⌘[)";
+"Go forward (⌘])" = "進む (⌘])";
+"No projects yet" = "プロジェクトはまだありません";
+"Add project" = "プロジェクトを追加";
+"Search threads" = "スレッドを検索";
+"Clear thread search" = "スレッドの検索をクリア";
+"Pinned" = "ピン留め済み";
+"Active" = "アクティブ";
+"Snoozed" = "スヌーズ中";
+"Settled" = "対応済み";
+"End of Pinned" = "「ピン留め済み」の末尾";
+"End of Active" = "「アクティブ」の末尾";
+"Thread filters" = "スレッドのフィルター";
+"New Thread in %@" = "%@ で新しいスレッド";
+"Wake thread now" = "スレッドを今すぐ再開";
+"Woke" = "再開";
+"Dismiss Woke notification" = "再開の通知を閉じる";
+"Rename Project…" = "プロジェクト名を変更…";
+"Relink Folder…" = "フォルダーを再リンク…";
+"Remove Project…" = "プロジェクトを削除…";
+"Unpin Project" = "プロジェクトのピン留めを解除";
+"Pin Project" = "プロジェクトをピン留め";
+"Project settings" = "プロジェクトの設定";
+"Find in thread" = "スレッド内を検索";
+"Discard draft" = "下書きを破棄";
+"Copy" = "コピー";
+"Path" = "パス";
+"Draft Link" = "下書きのリンク";
+"Thread" = "スレッド";
+"Thread ID" = "スレッド ID";
+"Turn into project" = "プロジェクトに変換";
+"Project created" = "プロジェクトを作成しました";
+"Show All Projects" = "すべてのプロジェクトを表示";
+"Filter by %@" = "%@ で絞り込み";
+"Rename Thread…" = "スレッド名を変更…";
+"Unpin Thread" = "スレッドのピン留めを解除";
+"Pin Thread" = "スレッドをピン留め";
+"Unsettle Thread" = "スレッドの対応済みを解除";
+"Settle Thread" = "スレッドを対応済みにする";
+"Restore Thread" = "スレッドを復元";
+"Archive Thread" = "スレッドをアーカイブ";
+"Failed to archive thread \"%@\"" = "スレッド「%@」をアーカイブできませんでした";
+"Wake thread" = "スヌーズを解除";
+"Custom…" = "カスタム…";
+"Couldn’t start a new thread" = "新しいスレッドを開始できませんでした";
+"The project is still available. Try opening the draft again." = "プロジェクトはまだ利用できます。もう一度下書きを開いてみてください。";
+"Try again" = "再試行";
+"Resize right panel" = "右パネルのサイズを変更";
+"Files will be available when the worktree is ready." = "ワークツリーの準備ができると、ファイルを利用できるようになります。";
+"Project Actions" = "プロジェクトアクション";
+"Add a project, or start without one." = "プロジェクトを追加するか、プロジェクトなしで開始します。";
+"Add a project to start your first thread." = "最初のスレッドを開始するには、プロジェクトを追加してください。";
+"What should we work on?" = "何に取り組みましょうか？";
+"Start without a project" = "プロジェクトなしで開始";
+"New thread in %@" = "%@ で新しいスレッド";
+"Draft project…" = "下書きのプロジェクト…";
+"Project actions for %@" = "%@ のプロジェクトアクション";
+"Changes (⌘D)" = "変更 (⌘D)";
+"Show Files" = "ファイルを表示";
+"Hide Browser" = "ブラウザーを非表示";
+"Show Browser" = "ブラウザーを表示";
+"Browser" = "ブラウザー";
+"Thread Details" = "スレッドの詳細";
+"Hide Thread Details" = "スレッドの詳細を非表示";
+"Show Thread Details" = "スレッドの詳細を表示";
+"Terminal (⌘J)" = "ターミナル (⌘J)";
+"Terminal" = "ターミナル";
+"Show Right Panel" = "右パネルを表示";
+"What should we build?" = "何を作りましょうか？";
+"or start without a project" = "またはプロジェクトなしで開始";
+"Start without a project (⌥⌘N)" = "プロジェクトなしで開始 (⌥⌘N)";
+"What should we build in %@?" = "%@ で何を作りますか？";
+"Choose a project" = "プロジェクトを選択";
+"Side chats" = "サイドチャット";
+"Open side chat: %@" = "サイドチャットを開く: %@";
+"Add Panel Surface" = "パネルにサーフェスを追加";
+"Side chat" = "サイドチャット";
+"Open a surface" = "サーフェスを開く";
+"Close Terminal Pane" = "ターミナルペインを閉じる";
+"The matching message is no longer available." = "一致したメッセージは利用できなくなりました。";
+"Open source conversation" = "元の会話を開く";
+"Open fork" = "フォークを開く";
+"Queue Edit" = "キューの編集";
+"Queued" = "キュー内";
+"Sent" = "送信済み";
+"Download %@" = "%@ をダウンロード";
+"Attachment unavailable" = "添付ファイルを利用できません";
+"Waiting for approval…" = "承認を待っています…";
+"Waiting for answers…" = "回答を待っています…";
+"Compacting conversation…" = "会話を圧縮しています…";
+"Pi is responding…" = "Pi が応答しています…";
+"Running %@…" = "%@ を実行しています…";
+"Fork from this response" = "この応答からフォーク";
+"Pi skips this interrupted reply in future model requests." = "Pi は今後のモデルへのリクエストで、この中断された返信をスキップします。";
+"This reply reached a token limit. Pi may skip it when continuing." = "この返信はトークンの上限に達しました。続行時に Pi がスキップする場合があります。";
+"Copy message" = "メッセージをコピー";
+"Dismiss error" = "エラーを閉じる";
+"Draft not saved. %@" = "下書きが保存されていません。%@";
+"Retry Saving" = "保存を再試行";
+"Read-only Pi transcript. The original account is unknown, so replies are unavailable here." = "読み取り専用の Pi トランスクリプトです。元のアカウントが不明なため、ここでは返信できません。";
+"Current checkout" = "現在のチェックアウト";
+"Thread workspace, %@" = "スレッドのワークスペース、%@";
+"Opening thread…" = "スレッドを開いています…";
+"Stopping…" = "停止しています…";
+"Pi hasn’t confirmed. Try Stop again." = "Pi から確認が得られていません。もう一度「停止」をお試しください。";
+"Snoozed until %@" = "%@ までスヌーズ中";
+"Wake now" = "今すぐ再開";
+"Woke from snooze" = "スヌーズから戻りました";
+"Stash %lld" = "退避 %lld";
+"Stashed prompts: %lld. Open stash." = "退避したプロンプト: %lld。退避一覧を開きます。";
+"Ask Pi anything" = "Pi に何でも聞いてください";
+"Edit queued message" = "キュー内のメッセージを編集";
+"Large paste attached as %@ (%@). Use ⌘⇧V to keep a paste inline." = "大きな貼り付けを %@ (%@) として添付しました。貼り付けをインラインのままにするには ⌘⇧V を使用します。";
+"Choose model, %@" = "モデルを選択、%@";
+"Send into the current turn" = "現在のターンに送信";
+"Send after the current turn" = "現在のターンの後に送信";
+"Cancel editing queued message" = "キュー内のメッセージの編集をキャンセル";
+"Update queued message" = "キュー内のメッセージを更新";
+"Queue" = "キュー";
+"From %@ (remote)" = "%@ から (リモート)";
+"From %@" = "%@ から";
+"%lld points" = "%lld ポイント";
+
+/* WorktreeDirectory.swift */
+"Choose an absolute folder path below / in Settings → Worktrees." = "「設定 → ワークツリー」で、/ 以下の絶対フォルダーパスを選択してください。";
+
+/* WorktreeLaunchView.swift */
+"Dismiss Pending Message" = "保留中のメッセージを閉じる";
+"Work locally" = "ローカルで作業";
+"Could not finish setup interruption" = "セットアップの中断を完了できませんでした";
+"Last setup step" = "最後のセットアップ手順";
+"Setup interruption pending" = "セットアップの中断を保留中";
+"Cancelling setup…" = "セットアップをキャンセルしています…";
+"Switching to local workspace…" = "ローカルワークスペースに切り替えています…";
+"Local thread setup failed" = "ローカルスレッドのセットアップに失敗しました";
+"Worktree setup failed" = "ワークツリーのセットアップに失敗しました";
+"Failed step" = "失敗した手順";
+"Pi could not confirm that it recorded this message." = "Pi がこのメッセージを記録したことを確認できませんでした。";
+"Waiting for Pi to confirm the first message…" = "Pi が最初のメッセージを確認するのを待っています…";
+"Pending step" = "保留中の手順";
+"Opening local thread…" = "ローカルスレッドを開いています…";
+"Preparing worktree…" = "ワークツリーを準備しています…";
+"Current step" = "現在の手順";
+"Setup paused" = "セットアップを一時停止しました";
+"Next step" = "次の手順";
+"Base" = "ベース";
+"Target path" = "作成先のパス";
+
+/* Nested and helper strings */
+"Search..." = "検索...";
+"Follow-ups" = "フォローアップ";
+"Read-only" = "読み取り専用";
+"entry" = "エントリ";
+"entries" = "エントリ";
+"page" = "ページ";
+"pages" = "ページ";
+"row" = "行";
+"rows" = "行";
+"issue" = "Issue";
+
+/* Relative times in the sidebar (timestampFormat.ts) */
+"now" = "たった今";
+"%lldm" = "%lld分";
+"%lldh" = "%lld時間";
+"%lldd" = "%lld日";
+
+/* Snooze schedule */
+"at" = "の";
+"Today" = "今日";
+"Monday" = "月曜日";
+"Tuesday" = "火曜日";
+"Wednesday" = "水曜日";
+"Thursday" = "木曜日";
+"Friday" = "金曜日";
+"Saturday" = "土曜日";
+"Sunday" = "日曜日";
+"In %lld minute" = "%lld 分後";
+"In %lld minutes" = "%lld 分後";
+"In %lld hour" = "%lld 時間後";
+"In %lld hours" = "%lld 時間後";
+"In %lld day" = "%lld 日後";
+"In %lld days" = "%lld 日後";
+"state.open" = "オープン";
+"state.merged" = "マージ済み";
+"state.closed" = "クローズ";
+"state.all" = "すべて";
+
+/* Strings localized through String(localized:) / NSLocalizedString in model and helper code */
+"Diff truncated after 256 KiB" = "差分は 256 KiB で切り詰められました";
+"draft" = "下書き";
+"thread" = "スレッド";
+"Gray" = "グレー";
+"Red" = "レッド";
+"Orange" = "オレンジ";
+"Yellow" = "イエロー";
+"Green" = "グリーン";
+"Teal" = "ティール";
+"Cyan" = "シアン";
+"Blue" = "ブルー";
+"Indigo" = "インディゴ";
+"Purple" = "パープル";
+"Pink" = "ピンク";
+"Folder" = "フォルダー";
+"Globe" = "地球儀";
+"Server" = "サーバー";
+"Database" = "データベース";
+"Sparkles" = "キラキラ";
+"Mobile" = "モバイル";
+"Desktop" = "デスクトップ";
+"Cloud" = "クラウド";
+"Package" = "パッケージ";
+"Book" = "ブック";
+"Science" = "サイエンス";
+"Shield" = "シールド";
+"Game" = "ゲーム";
+"Music" = "音楽";
+"Picture" = "写真";
+"Shopping" = "ショッピング";
+"Tools" = "ツール";
+"Layers" = "レイヤー";
+"The workspace folder is unavailable." = "ワークスペースのフォルダーを利用できません。";
+"Shell exited. Close this terminal to start another." = "シェルが終了しました。別のターミナルを開始するには、このターミナルを閉じてください。";
+"interrupted" = "中断";
+"truncated" = "切り詰め";
+"folder, " = "フォルダー, ";
+"file.status.added" = "追加済み";
+"file.status.modified" = "変更済み";
+"file.status.renamed" = "名前変更済み";
+"file.status.copied" = "コピー済み";
+"file.status.changed" = "変更あり";
+"file.status.unchanged" = "変更なし";
+"check.status.success" = "成功";
+"check.status.failure" = "失敗";
+"check.status.error" = "エラー";
+"check.status.cancelled" = "キャンセル済み";
+"check.status.timedOut" = "タイムアウト";
+"check.status.startupFailure" = "起動失敗";
+"check.status.actionRequired" = "対応が必要";
+"check.status.neutral" = "ニュートラル";
+"check.status.skipped" = "スキップ";
+"check.status.stale" = "古い";
+"check.status.pending" = "保留中";
+"check.status.queued" = "キュー内";
+"check.status.inProgress" = "実行中";
+"check.status.waiting" = "待機中";
+"check.status.requested" = "リクエスト済み";
+"check.status.expected" = "未報告";
 "Sign in…" = "ログイン…";
 "Agent" = "実行役";
 "Codex account" = "Codex アカウント";

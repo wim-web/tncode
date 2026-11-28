@@ -46,8 +46,15 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
     await until(() => visible(option), "choice " + option);
     driver.dismiss(option);
   }
-  await launch("toggle-changes", root);
-  press("toggle-changes");
+  async function openChanges() {
+    if (!has("hide-right-panel")) press("toggle-right-panel");
+    await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+    press("add-panel-surface");
+    await until(() => visible("add-panel-changes").includes("enabled=true"), "Changes in Add Panel Surface");
+    driver.dismiss("add-panel-changes");
+  }
+  await launch("toggle-right-panel", root);
+  await openChanges();
   await until(() => value("git-review-base").includes("Automatic (main)") && visible("git-review-file-one.txt"), "topic compared with main");
   press("git-review-file-one.txt");
   await patch("+topic-first-marker");
@@ -102,7 +109,7 @@ export async function verifyLocalChanges(driver, { root, git, launch, quit, reco
   assert(!patchLines().includes("topic-first-marker"));
   press("thread-row-" + parent);
   await until(() => value("composer").includes("Keep the parent draft."), "parent checkout selected");
-  press("toggle-changes");
+  await openChanges();
   await until(() => value("git-review-head").includes("main"), "parent branch");
   await choose("git-review-scope", "git-review-scope-uncommitted");
   press("git-file-tracked.txt");

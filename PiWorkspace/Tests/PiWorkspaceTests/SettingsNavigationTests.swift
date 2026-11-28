@@ -80,7 +80,7 @@ final class SettingsNavigationTests: XCTestCase {
             let phase = try XCTUnwrap(environment[phaseKey])
             let fixture = try Fixture(suiteName: suite)
             defer { fixture.close() }
-            let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+            let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search" }
             try await fixture.typeQuery("stop process shell", in: search)
             try await fixture.expectControls("settings-result-terminal-close-confirmation")
             try await fixture.key(kVK_Return, "\r")
@@ -147,7 +147,7 @@ final class SettingsNavigationTests: XCTestCase {
         defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
 
-        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search" }
         try await fixture.until("Settings opens with keyboard focus in search") {
             search.currentEditor() != nil && search.currentEditor() === fixture.window.firstResponder
         }
@@ -219,7 +219,7 @@ final class SettingsNavigationTests: XCTestCase {
         let request = try XCTUnwrap(fixture.model.settingsRequest)
         let licenses = try XCTUnwrap(URL(string: "pi-workspace://settings/open-source-licenses"))
         let version = try XCTUnwrap(URL(string: "pi-workspace://settings/about#app-version"))
-        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search" }
 
         try await fixture.typeQuery("Version", in: search)
         try await fixture.until("Version is a distinct About search result") {
@@ -261,14 +261,14 @@ final class SettingsNavigationTests: XCTestCase {
         let archive = try XCTUnwrap(URL(string: "pi-workspace://settings/general#archive-confirmation"))
         let fixture = try Fixture(link: appearance)
         defer { fixture.close() }
-        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search" }
         try await fixture.typeQuery("archive confirmation", in: search)
         try await fixture.press("settings-result-archive-confirmation")
         try await fixture.expectControls("settings-heading-general", "archive-confirmation")
         XCTAssertFalse(fixture.model.confirmsThreadArchive)
         XCTAssertNil(fixture.element("reset-archive-confirmation"))
 
-        try await fixture.press("archive-confirmation")
+        try await fixture.toggleSwitch("archive-confirmation")
         try await fixture.expectControls("reset-archive-confirmation")
         XCTAssertTrue(fixture.model.confirmsThreadArchive)
         let otherRoot = fixture.root.appendingPathComponent("other-workspace")
@@ -428,7 +428,7 @@ final class SettingsNavigationTests: XCTestCase {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         }
 
-        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search settings" }
+        let search = try await fixture.waitForField("settings search") { $0.placeholderString == "Search" }
         try await fixture.typeQuery("base directory", in: search)
         try await fixture.key(kVK_Return, "\r")
         let field = try await fixture.waitForField("Add project starts in") { $0.placeholderString == "~/" }
@@ -495,7 +495,7 @@ final class SettingsNavigationTests: XCTestCase {
         try await fixture.activate("start-from-origin")
         try await fixture.expectControls("reset-start-from-origin")
         try await fixture.press("settings-nav-general")
-        try await fixture.press("archive-confirmation")
+        try await fixture.toggleSwitch("archive-confirmation")
         try await fixture.activate("terminal-close-confirmation")
         try await fixture.expectControls("reset-terminal-close-confirmation")
         try await fixture.until("Restore is enabled") { fixture.isEnabled(restore) == true }
@@ -666,6 +666,16 @@ final class SettingsNavigationTests: XCTestCase {
             try await until("Control \(id) is visible") { element(id) != nil }
             let control = try XCTUnwrap(element(id))
             XCTAssertTrue(control.accessibilityPerformPress?() == true, "Press \(id)")
+        }
+
+        /// Settings switches are native switches: AppKit toggles them on press but reports the press as unhandled.
+        func toggleSwitch(_ id: String) async throws {
+            try await until("Control \(id) is visible") { element(id) != nil }
+            let control = try XCTUnwrap(element(id))
+            let value = { ((control as? NSAccessibilityProtocol)?.accessibilityValue() as? NSNumber)?.boolValue }
+            let before = try XCTUnwrap(value(), id)
+            _ = control.accessibilityPerformPress?()
+            try await until("\(id) toggled") { value() == !before }
         }
 
         func activate(_ id: String) async throws {

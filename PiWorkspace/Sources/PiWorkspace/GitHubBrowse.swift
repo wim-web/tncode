@@ -4,7 +4,8 @@ import Foundation
 enum GitHubBrowseKind: String, Hashable, Sendable {
     case pullRequests, issues
 
-    var itemName: String { self == .pullRequests ? "pull request" : "issue" }
+    /// Display noun, localized ("pull request" / "issue").
+    var itemName: String { self == .pullRequests ? String(localized: "pull request") : String(localized: "issue") }
     var idPrefix: String { self == .pullRequests ? "pr" : "issue" }
     var filters: [GitHubStateFilter] { self == .pullRequests ? [.open, .merged, .closed, .all] : [.open, .closed, .all] }
 }
@@ -13,7 +14,27 @@ enum GitHubStateFilter: String, Hashable, Identifiable, Sendable {
     case open, merged, closed, all
 
     var id: Self { self }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .open: String(localized: "state.open", defaultValue: "Open")
+        case .merged: String(localized: "state.merged", defaultValue: "Merged")
+        case .closed: String(localized: "state.closed", defaultValue: "Closed")
+        case .all: String(localized: "state.all", defaultValue: "All")
+        }
+    }
+}
+
+enum GitHubItemState {
+    /// Display label for a GitHub issue or pull request state ("OPEN", "MERGED", "CLOSED").
+    static func label(_ state: String, isDraft: Bool) -> String {
+        if isDraft && state == "OPEN" { return String(localized: "Draft") }
+        switch state {
+        case "OPEN": return GitHubStateFilter.open.title
+        case "MERGED": return GitHubStateFilter.merged.title
+        case "CLOSED": return GitHubStateFilter.closed.title
+        default: return state.capitalized
+        }
+    }
 }
 
 enum GitHubPullRequestFilterKind: String, Hashable, Sendable {
@@ -110,7 +131,7 @@ struct GitHubListItem: Decodable, Identifiable, Sendable {
     fileprivate let labels: Labels?
 
     var id: Int { number }
-    var stateLabel: String { isDraft == true && state == "OPEN" ? "Draft" : state.capitalized }
+    var stateLabel: String { GitHubItemState.label(state, isDraft: isDraft == true) }
     var labelNames: [String] { labels?.nodes.map(\.name) ?? [] }
 }
 

@@ -284,7 +284,7 @@ private final class ComposerShortcutWindow {
     }
 
     func search(_ query: String) async throws {
-        let search = { (field: NSTextField) in field.placeholderString == "Search settings" }
+        let search = { (field: NSTextField) in field.placeholderString == "Search" }
         try await until("settings search") { field(where: search) != nil }
         try replace(query, in: XCTUnwrap(field(where: search)))
     }

@@ -24,12 +24,13 @@ struct SidebarProjectScopeRow: View {
                     selectOnly()
                 }
             } label: {
-                HStack(spacing: 5) {
-                    ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder")
+                HStack(spacing: 8) {
+                    ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder",
+                                    projectName: project.title)
                         .accessibilityHidden(true)
-                    Text(project.title)
-                    if project.pinned == true && project.icon != nil {
-                        Image(systemName: "pin.fill").font(.system(size: 9))
+                    Text(project.title).font(.system(size: 14))
+                    if project.pinned == true {
+                        Image(systemName: "pin").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                 }
                     .lineLimit(1)
@@ -41,8 +42,8 @@ struct SidebarProjectScopeRow: View {
             .accessibilityIdentifier("project-filter-choice-\(project.id)")
             .accessibilityAddTraits(highlighted ? .isSelected : [])
             if let openSettings {
-                Button(action: openSettings) { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
+                Button(action: openSettings) { Image(systemName: "gearshape").font(.system(size: 12)) }
+                    .buttonStyle(T3IconButtonStyle(size: 24))
                     .help("Project settings for \(project.title)")
                     .accessibilityLabel("Project settings for \(project.title)")
                     .accessibilityIdentifier("project-filter-settings-\(project.id)")

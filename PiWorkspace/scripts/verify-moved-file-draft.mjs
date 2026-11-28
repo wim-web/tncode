@@ -23,7 +23,13 @@ export async function verifyMovedFileDraft(driver, { directory, repository, git,
                       (checkout ? where() && realpathSync(where()) === realpathSync(checkout) : !where()), "draft switched checkout");
   }
   async function showFiles() {
-    if (!has("files-folder-actions")) dismiss("toggle-files");
+    if (!has("files-folder-actions")) {
+      if (!has("hide-right-panel")) dismiss("toggle-right-panel");
+      await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+      dismiss("add-panel-surface");
+      await until(() => visible("add-panel-files").includes("enabled=true"), "Files in Add Panel Surface");
+      dismiss("add-panel-files");
+    }
     await until(() => visible("files-folder-actions"), "Files for the current checkout");
   }
   async function openNote() {
@@ -85,6 +91,6 @@ export async function verifyMovedFileDraft(driver, { directory, repository, git,
   await until(() => textIs(edit) && !has("files-unsaved"), "discard reloads the replacement");
   assert.equal(readFileSync(join(final, name), "utf8"), edit);
   assert.equal(readFileSync(join(repository, name), "utf8"), "Project copy\n");
-  dismiss("toggle-files");
+  dismiss("close-right-panel-files");
   await until(() => !has("files-folder-actions") && visible("composer"), "close Files after recovering the two drafts");
 }

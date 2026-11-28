@@ -26,13 +26,13 @@ enum ProjectIcon: Codable, Equatable {
         case tools = "wrench"
         case layers = "square.3.layers.3d"
 
-        var title: String { String(describing: self).capitalized }
+        var title: String { NSLocalizedString(String(describing: self).capitalized, comment: "Project icon symbol") }
     }
 
     enum Tint: String, CaseIterable, Codable {
         case gray, red, orange, yellow, green, teal, cyan, blue, indigo, purple, pink
 
-        var title: String { rawValue.capitalized }
+        var title: String { NSLocalizedString(rawValue.capitalized, comment: "Project icon color") }
     }
 
     case symbol(Symbol, Tint)
@@ -50,7 +50,7 @@ enum ProjectIcon: Codable, Equatable {
         case .symbol(let symbol, let tint): "\(symbol.title), \(tint.title)"
         case .emoji(let emoji): emoji
         case .monogram(let letters, let tint): "\(letters), \(tint.title)"
-        case .image: "Imported image"
+        case .image: String(localized: "Imported image")
         }
     }
 

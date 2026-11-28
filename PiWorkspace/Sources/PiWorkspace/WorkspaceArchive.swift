@@ -8,18 +8,18 @@ enum WorkspaceArchiveError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .tooLarge: "Preview limited to archives of 50 MiB or smaller."
-        case .expandedTooLarge: "This archive expands beyond the preview limit."
-        case .tooManyEntries: "Preview limited to 2,048 archive entries."
-        case .pathTooLong: "An archive entry path exceeds the preview limit."
-        case .damaged: "This archive is unreadable or damaged."
-        case .unsupportedZIP: "This ZIP uses encryption or an unsupported ZIP feature."
-        case .unsupportedTARNumber: "This TAR uses an unsupported numeric format."
-        case .metadataTooLarge: "Archive metadata is too large."
-        case .empty: "This archive has no readable entries."
-        case .changed: "The archive changed on disk. Retry to reopen it."
-        case .entryTooLarge: "Entry previews are limited to 10 MiB."
-        case .unsupportedEntry: "Only UTF-8 text and images can be opened inside an archive."
+        case .tooLarge: String(localized: "Preview limited to archives of 50 MiB or smaller.")
+        case .expandedTooLarge: String(localized: "This archive expands beyond the preview limit.")
+        case .tooManyEntries: String(localized: "Preview limited to 2,048 archive entries.")
+        case .pathTooLong: String(localized: "An archive entry path exceeds the preview limit.")
+        case .damaged: String(localized: "This archive is unreadable or damaged.")
+        case .unsupportedZIP: String(localized: "This ZIP uses encryption or an unsupported ZIP feature.")
+        case .unsupportedTARNumber: String(localized: "This TAR uses an unsupported numeric format.")
+        case .metadataTooLarge: String(localized: "Archive metadata is too large.")
+        case .empty: String(localized: "This archive has no readable entries.")
+        case .changed: String(localized: "The archive changed on disk. Retry to reopen it.")
+        case .entryTooLarge: String(localized: "Entry previews are limited to 10 MiB.")
+        case .unsupportedEntry: String(localized: "Only UTF-8 text and images can be opened inside an archive.")
         }
     }
 }

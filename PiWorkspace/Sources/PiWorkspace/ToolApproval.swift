@@ -5,9 +5,9 @@ enum ToolPermission: String, CaseIterable, Encodable {
 
     var title: String {
         switch self {
-        case .readFiles: "Read files"
-        case .supervised: "Supervised"
-        case .shellAndEdits: "Shell and edits"
+        case .readFiles: String(localized: "Read files")
+        case .supervised: String(localized: "Supervised")
+        case .shellAndEdits: String(localized: "Shell and edits")
         }
     }
 

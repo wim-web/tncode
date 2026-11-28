@@ -23,7 +23,7 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
     }
 
     var body: some View {
-        let pasteTarget = target
+        // 13 + 53.5 editor + 4 + 32 footer + 9 = the measured 111.5pt empty card.
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
                 if !model.composerAttachments.isEmpty {
@@ -53,22 +53,13 @@ struct ComposerAttachmentsView<Prompt: View, Controls: View>: View {
                 } label: {
                     Label("Attach Files", systemImage: "paperclip")
                         .labelStyle(.iconOnly)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                        .offset(y: 1)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(T3IconButtonStyle())
                 .help("Attach files")
                 .accessibilityIdentifier("attach-files")
                 .disabled(!model.canEditAttachments)
-                PasteButton(supportedContentTypes: ComposerAttachmentInput.contentTypes) {
-                    model.pasteAttachments($0, to: pasteTarget)
-                }
-                .buttonStyle(.borderless)
-                .labelStyle(.iconOnly)
-                .help("Paste files or images")
-                .accessibilityLabel("Paste files or images")
-                .accessibilityIdentifier("paste-attachments")
-                .disabled(!model.canEditAttachments)
+                .padding(.trailing, 8)
                 Spacer(minLength: 0)
                 controls()
             }

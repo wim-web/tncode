@@ -11,83 +11,107 @@ struct AboutView: View {
     @State private var notices = DependencyNotice.load()
     private let info = AboutInfo()
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    @Environment(\.t3Themes) private var t3Themes
+
     var body: some View {
         Group {
             if showingLicenses {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Button("About", systemImage: "chevron.left") { showingLicenses = false }
-                            .accessibilityIdentifier("licenses-back")
-                        Text("Open source licenses").font(.headline)
+                    HStack(spacing: 8) {
+                        Button { showingLicenses = false } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left").font(.system(size: 11))
+                                Text("About")
+                            }
+                        }
+                        .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+                        .accessibilityIdentifier("licenses-back")
+                        Text("Open source licenses").font(.system(size: 16, weight: .semibold))
                     }
                     if let notices {
                         LicensesView(notices: notices, settingsFocus: settingsFocus)
                     } else {
                         VStack(spacing: 12) {
                             Text("Open-source notices are unavailable in this app bundle.")
+                                .font(.system(size: 14))
+                                .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
                                 .accessibilityIdentifier("licenses-unavailable")
                             Button("Try Again") { notices = DependencyNotice.load() }
+                                .buttonStyle(T3SmallButtonStyle())
                                 .accessibilityIdentifier("licenses-retry")
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 24)
             } else {
-                appInformation
+                ScrollView {
+                    appInformation.settingsPageContainer()
+                }
             }
         }
+        .background(T3Palette(colorScheme, t3Themes).canvas)
     }
 
     private var appInformation: some View {
-        VStack(spacing: 18) {
-            VStack(spacing: 8) {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .frame(width: 64, height: 64)
-                    .accessibilityHidden(true)
-                Text(info.name)
-                    .font(.title.weight(.semibold))
-                    .accessibilityIdentifier("about-app-name")
-            }
-            VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 32) {
+            SettingsSection("App") {
                 versionRow
+                SettingsDivider()
                 informationRow("Build", value: info.build, id: "about-build")
-                Divider()
+                SettingsDivider()
                 informationRow("Pi coding agent", value: componentVersion(DependencyNotice.piPackage),
                                id: "about-pi-version")
+                SettingsDivider()
                 informationRow("Node.js", value: componentVersion("node"), id: "about-node-version")
+                SettingsDivider()
                 informationRow("SwiftTerm", value: componentVersion("swiftterm"), id: "about-swiftterm-version")
+                SettingsDivider()
                 informationRow("Model providers", value: Provider.allCases.map(\.label).joined(separator: ", "),
                                id: "about-providers")
-            }
-            .frame(width: 450)
-            if let openWelcome, let settingsFocus {
-                LabeledContent("Welcome page") {
-                    Button("Open", action: openWelcome)
-                        .accessibilityLabel("Open Welcome page")
-                        .settingsTarget(.welcomePage, focus: settingsFocus)
-                        .disabled(!welcomeEnabled)
+                if let openWelcome, let settingsFocus {
+                    SettingsDivider()
+                    SettingsRow("Welcome page", description: "Set up a model and add projects.") {
+                        Button("Open", action: openWelcome)
+                            .buttonStyle(T3SmallButtonStyle())
+                            .accessibilityLabel("Open Welcome page")
+                            .settingsTarget(.welcomePage, focus: settingsFocus)
+                            .disabled(!welcomeEnabled)
+                    }
                 }
-                .frame(width: 450)
             }
-            Button("Open source licenses…") {
-                notices = DependencyNotice.load()
-                showingLicenses = true
+            .overlay(alignment: .topTrailing) {
+                Text(info.name)
+                    .font(.system(size: 12))
+                    .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 28)
+                    .accessibilityIdentifier("about-app-name")
             }
-            .accessibilityIdentifier("about-licenses")
+            SettingsSection("Legal") {
+                SettingsRow("Open-source licenses", description: "Notices for the software bundled with this app.") {
+                    Button("View licenses") {
+                        notices = DependencyNotice.load()
+                        showingLicenses = true
+                    }
+                    .buttonStyle(T3SmallButtonStyle())
+                    .accessibilityIdentifier("about-licenses")
+                }
+            }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var versionRow: some View {
-        let row = informationRow("Version", value: info.version, id: "about-version")
+        let row = informationRow("Version", value: info.version, id: "about-version", chip: true)
         if let settingsFocus {
             row
                 .accessibilityElement(children: .contain)
                 .focusable()
+                .focusEffectDisabled()
                 .settingsTarget(.appVersion, focus: settingsFocus)
         } else {
             row
@@ -98,10 +122,17 @@ struct AboutView: View {
         notices?.first { $0.id == id }?.version
     }
 
-    private func informationRow(_ label: String, value: String?, id: String) -> some View {
-        LabeledContent(label) {
-            Text(value ?? "Unavailable")
+    private func informationRow(_ label: String, value: String?, id: String, chip: Bool = false) -> some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        return SettingsRow(label) {
+            Text(value ?? String(localized: "Unavailable"))
+                .font(chip ? .system(size: 11, design: .monospaced) : .system(size: 14))
+                .foregroundStyle(chip ? palette.foreground : palette.mutedForeground)
+                .padding(.horizontal, chip ? 6 : 0)
+                .padding(.vertical, chip ? 2 : 0)
+                .background(chip ? palette.kbdFill : .clear, in: RoundedRectangle(cornerRadius: 4))
                 .textSelection(.enabled)
+                .lineLimit(1)
                 .accessibilityIdentifier(id)
         }
     }
@@ -124,6 +155,8 @@ private struct LicensesView: View {
 
     private var searchField: some View {
         TextField("Search licenses", text: $query)
+            .textFieldStyle(T3TextFieldStyle())
+            .frame(maxWidth: 288)
     }
 
     var body: some View {

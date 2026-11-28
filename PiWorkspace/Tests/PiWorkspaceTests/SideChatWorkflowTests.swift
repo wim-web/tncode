@@ -81,6 +81,7 @@ final class SideChatWorkflowTests: XCTestCase {
             try ui.type("Keep this text in the parent.", in: "composer")
             XCTAssertTrue(first.savePendingComposer())
 
+            if ui.element("hide-right-panel") == nil { try await ui.press("toggle-right-panel") }
             try await ui.press("add-panel-surface")
             try await ui.until("side chat in add panel menu") { ui.enabled("add-panel-side-chat") }
             try ui.key(kVK_ANSI_S, "s")
@@ -237,6 +238,7 @@ final class SideChatWorkflowTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path + "/request-6"))
         XCTAssertEqual(try savedParent().composerText, failedSlash)
         XCTAssertEqual(try parentHistory(), afterHandoff)
+        if reopened.element("hide-right-panel") == nil { try await reopened.press("toggle-right-panel") }
         try await reopened.press("add-panel-surface")
         try await reopened.press("add-panel-side-chat")
         let unused = try XCTUnwrap(relaunched.conversation?.sideChats?.last)

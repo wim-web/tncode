@@ -68,9 +68,9 @@ struct WorkspaceArchiveView: View {
     private var toolbar: some View {
         let (back, label): (Destination?, String) = switch destination {
         case .folder(let folder):
-            (folder.isEmpty ? nil : .folder(Array(folder.dropLast())), "Parent Folder")
+            (folder.isEmpty ? nil : .folder(Array(folder.dropLast())), String(localized: "Parent Folder"))
         case .entry(_, let folder):
-            (.folder(folder), "Back to Archive")
+            (.folder(folder), String(localized: "Back to Archive"))
         }
         return HStack(spacing: 6) {
             fileButton(label, "chevron.left", id: "files-archive-back") {
@@ -90,7 +90,9 @@ struct WorkspaceArchiveView: View {
                 }
             }
             Spacer(minLength: 0)
-            Text("\(file.entries.count.formatted()) \(file.entries.count == 1 ? "entry" : "entries") · \(sizeLabel(Int(file.size)))")
+            Text(verbatim: "\(file.entries.count.formatted()) "
+                 + (file.entries.count == 1 ? String(localized: "entry") : String(localized: "entries"))
+                 + " · \(sizeLabel(Int(file.size)))")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .accessibilityIdentifier("files-archive-summary")
@@ -104,7 +106,7 @@ struct WorkspaceArchiveView: View {
     private var title: String {
         switch destination {
         case .folder(let folder):
-            folder.isEmpty ? "Archive contents" : folder.map(archiveString).joined(separator: "/") + "/"
+            folder.isEmpty ? String(localized: "Archive contents") : folder.map(archiveString).joined(separator: "/") + "/"
         case .entry(let index, _):
             file.entries[index].path
         }
@@ -146,7 +148,8 @@ struct WorkspaceArchiveView: View {
                         }
                         .buttonStyle(.plain)
                         .help(name)
-                        .accessibilityLabel("\(name), \(row.isFolder ? "folder, " : "")\(sizeLabel(row.size)), \(dateLabel(row.modified))")
+                        .accessibilityLabel(
+                            "\(name), \(row.isFolder ? String(localized: "folder, ") : "")\(sizeLabel(row.size)), \(dateLabel(row.modified))")
                         .accessibilityIdentifier("files-archive-row-\(row.id)")
                         Divider()
                     }
@@ -249,6 +252,6 @@ struct WorkspaceArchiveView: View {
     private func dateLabel(_ date: Date?) -> String { date?.formatted(date: .abbreviated, time: .omitted) ?? "—" }
 
     private func notice(_ text: String, id: String) -> some View {
-        Text(text).font(.callout).foregroundStyle(.secondary).padding(8).accessibilityIdentifier(id)
+        Text(localized: text).font(.callout).foregroundStyle(.secondary).padding(8).accessibilityIdentifier(id)
     }
 }

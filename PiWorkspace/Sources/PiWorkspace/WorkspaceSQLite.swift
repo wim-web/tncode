@@ -12,13 +12,13 @@ enum WorkspaceSQLiteError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidDatabase: "Could not read this SQLite database."
-        case .tooLarge: "SQLite preview is limited to 50 MiB."
-        case .tooManyTables: "SQLite preview supports up to 100 tables."
-        case .journaled: "This database uses a journal or WAL. Open a standalone SQLite copy to preview it."
-        case .changed: "The database changed on disk. Retry to reopen it."
-        case .unavailableTable: "This table or page is unavailable."
-        case .timedOut: "This database took too long to preview."
+        case .invalidDatabase: String(localized: "Could not read this SQLite database.")
+        case .tooLarge: String(localized: "SQLite preview is limited to 50 MiB.")
+        case .tooManyTables: String(localized: "SQLite preview supports up to 100 tables.")
+        case .journaled: String(localized: "This database uses a journal or WAL. Open a standalone SQLite copy to preview it.")
+        case .changed: String(localized: "The database changed on disk. Retry to reopen it.")
+        case .unavailableTable: String(localized: "This table or page is unavailable.")
+        case .timedOut: String(localized: "This database took too long to preview.")
         }
     }
 }

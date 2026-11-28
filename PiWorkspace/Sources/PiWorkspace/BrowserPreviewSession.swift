@@ -5,6 +5,8 @@ import WebKit
 enum BrowserProfile: String, CaseIterable {
     case standard = "Default"
     case alternate = "Alternate"
+
+    var label: String { NSLocalizedString(rawValue, comment: "Browser profile") }
 }
 
 enum BrowserSurface { case panel, miniPlayer, window }

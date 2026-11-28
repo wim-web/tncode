@@ -120,7 +120,7 @@ struct BrowserMiniPlayer: View {
         ZStack(alignment: .topLeading) {
             BrowserPageContent(session: tab, surface: .miniPlayer, emptyHint: "Open a URL in the Browser panel.")
             if case .notice(let message) = tab.problem {
-                Text(message).padding(10).frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text(localized: message).padding(10).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.regularMaterial)
             }
         }
@@ -181,6 +181,6 @@ struct BrowserMiniPlayer: View {
         Button(action: action) {
             Image(systemName: symbol).frame(width: 19, height: 23).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(title).accessibilityLabel(title).accessibilityIdentifier(id)
+        .buttonStyle(.plain).help(Text(localized: title)).accessibilityLabel(Text(localized: title)).accessibilityIdentifier(id)
     }
 }

@@ -18,7 +18,7 @@ struct GitChangesBaseChoice: Identifiable, Sendable {
     let remote: GitBranchRef?
 
     var id: Data { Data(primary.id.utf8) }
-    var label: String { primary.isRemote ? primary.name + " (Remote)" : primary.name }
+    var label: String { primary.isRemote ? primary.name + String(localized: " (Remote)") : primary.name }
 
     func matches(_ query: String) -> Bool {
         query.isEmpty || primary.name.localizedCaseInsensitiveContains(query)
@@ -55,7 +55,7 @@ struct GitChangesCommit: Identifiable, Hashable, Sendable {
     let subject: String
 
     var shortID: String { String(id.prefix(7)) }
-    var label: String { subject.isEmpty ? "Commit \(shortID)" : "\(shortID) · \(subject)" }
+    var label: String { subject.isEmpty ? String(localized: "Commit \(shortID)") : "\(shortID) · \(subject)" }
 
     var hasFullObjectID: Bool {
         [40, 64].contains(id.utf8.count) &&
@@ -75,9 +75,9 @@ enum GitChangesScope: Hashable, Sendable {
 
     var label: String {
         switch self {
-        case .changes: "Changes"
-        case .uncommitted: "Uncommitted"
-        case .commit(let commit): "Commit \(commit.shortID)"
+        case .changes: String(localized: "Changes")
+        case .uncommitted: String(localized: "Uncommitted")
+        case .commit(let commit): String(localized: "Commit \(commit.shortID)")
         }
     }
 }
@@ -108,14 +108,14 @@ private enum GitChangesError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingBase(let ref):
-            "The comparison branch \(GitBranchRef.displayName(ref)) is unavailable locally."
+            String(localized: "The comparison branch \(GitBranchRef.displayName(ref)) is unavailable locally.")
         case .noCommonCommit(let ref, let shallow):
-            "No common commit with \(GitBranchRef.displayName(ref))."
-                + (shallow ? " This checkout has shallow history." : "")
+            String(localized: "No common commit with \(GitBranchRef.displayName(ref)).")
+                + (shallow ? String(localized: " This checkout has shallow history.") : "")
         case .unavailableCommit:
-            "The selected commit is unavailable locally."
+            String(localized: "The selected commit is unavailable locally.")
         case .unavailableParent(let sha):
-            "Commit \(sha.prefix(7))’s first parent is unavailable locally."
+            String(localized: "Commit \(String(sha.prefix(7)))’s first parent is unavailable locally.")
         }
     }
 }
@@ -361,7 +361,9 @@ extension GitWorkspace {
         try await verifyChangesTarget(target)
         let patch = String(decoding: data, as: UTF8.self)
         guard truncated else { return patch }
-        let notice = file == nil ? "Diff preview limited. Select a file to view its patch." : "Diff truncated after 256 KiB."
+        let notice = file == nil
+            ? String(localized: "Diff preview limited. Select a file to view its patch.")
+            : String(localized: "Diff truncated after 256 KiB.")
         return patch + "\n[\(notice)]\n"
     }
 

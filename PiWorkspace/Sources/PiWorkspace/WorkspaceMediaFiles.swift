@@ -7,13 +7,13 @@ enum WorkspaceMediaError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .image: "Unable to load image."
-        case .pdf: "Unable to open PDF."
-        case .tooLarge: "Preview limited to files of 50 MiB or smaller."
-        case .imageDimensions: "This image is too large to display."
-        case .externalSVGResources: "This SVG refers to external resources."
-        case .pdfPages: "Preview limited to 2,000 pages."
-        case .lockedPDF: "This PDF is password protected. Open it in the default app to unlock it."
+        case .image: String(localized: "Unable to load image.")
+        case .pdf: String(localized: "Unable to open PDF.")
+        case .tooLarge: String(localized: "Preview limited to files of 50 MiB or smaller.")
+        case .imageDimensions: String(localized: "This image is too large to display.")
+        case .externalSVGResources: String(localized: "This SVG refers to external resources.")
+        case .pdfPages: String(localized: "Preview limited to 2,000 pages.")
+        case .lockedPDF: String(localized: "This PDF is password protected. Open it in the default app to unlock it.")
         }
     }
 }

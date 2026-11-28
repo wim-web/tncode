@@ -25,6 +25,7 @@ struct WorkspaceView: View {
     var workspacePasteboard: NSPasteboard = .general
     var attachmentSavePicker: ChatFileSavePicker = .native
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
     @AppStorage(SidebarPreference.groupByProject) private var grouped = false
     @AppStorage(ComposerSendShortcut.key) private var sendShortcut = ComposerSendShortcut.initial
     @AppStorage(ComposerFollowUp.key) private var followUpBehavior = ComposerFollowUp.initial
@@ -73,6 +74,7 @@ struct WorkspaceView: View {
     @State private var notice: Notice?
     @State private var checkoutsWithBranches: Set<String> = []
     @State private var copyTask: Task<Void, Never>?
+    @State private var composerOverlayHeight: CGFloat = 0
     @FocusState private var focusedComposer: UUID?
     @FocusState private var focusedDraftProject: UUID?
     @State private var focusScratchHeadline: DraftProjectScope?
@@ -139,14 +141,14 @@ struct WorkspaceView: View {
         }
 
         var title: String {
-            if panes.count == 1, let pane = panes.first { return "Close terminal \"Terminal \(pane)\"?" }
-            return "Close \(panes.count) terminals?"
+            if panes.count == 1, let pane = panes.first { return String(localized: "Close terminal \"Terminal \(pane)\"?") }
+            return String(localized: "Close \(panes.count) terminals?")
         }
 
         var message: String {
-            if panes.count == 1 { return "This stops the running process and clears its history." }
-            let labels = panes.map { "\"Terminal \($0)\"" }.joined(separator: ", ")
-            return "This stops their running processes and clears their histories: \(labels)."
+            if panes.count == 1 { return String(localized: "This stops the running process and clears its history.") }
+            let labels = panes.map { String(localized: "\"Terminal \($0)\"") }.joined(separator: ", ")
+            return String(localized: "This stops their running processes and clears their histories: \(labels).")
         }
 
         var accessibilitySuffix: String {
@@ -184,8 +186,8 @@ struct WorkspaceView: View {
 
         var fieldLabel: String {
             switch self {
-            case .project: "Project name"
-            case .conversation: "Thread title"
+            case .project: String(localized: "Project name")
+            case .conversation: String(localized: "Thread title")
             }
         }
     }
@@ -269,15 +271,18 @@ struct WorkspaceView: View {
     private var threads: [SidebarThread] { model.sidebarThreads }
     private var canReorderThreads: Bool { !grouped && searchTerm.isEmpty && !model.showArchive }
 
-    private var rail: Color { colorScheme == .dark ? Color(white: 3 / 255) : Color(white: 0.955) }
-    private var canvas: Color { colorScheme == .dark ? .black : Color(nsColor: .textBackgroundColor) }
-    private var workspaceEdge: Color? { colorScheme == .dark ? Color(white: 20 / 255) : nil }
-    private var emptyStateForeground: Color { Color(white: colorScheme == .dark ? 0.63 : 0.41) }
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
+    private var rail: Color { palette.sidebar }
+    private var canvas: Color { palette.canvas }
+    private var workspaceEdge: Color? { palette.isDark ? Color(white: 20 / 255) : palette.border }
+    private var emptyStateForeground: Color { palette.mutedForeground }
     private var surface: Color { colorScheme == .dark ? Color.white.opacity(0.065) : Color.black.opacity(0.042) }
-    private let accent = Color(red: 0.24, green: 0.48, blue: 0.70)
+    private var accent: Color { palette.primary }
 
     var body: some View {
         workspaceBody
+            // The window hides its title bar; the sidebar strip and header share its 52pt band.
+            .ignoresSafeArea(.container, edges: .top)
             .overlayPreferenceValue(ComposerModelAnchor.self) { anchor in
                 if let anchor, let picker = composerModelPicker, imagePreview == nil, filePreview == nil {
                     composerModelOverlay(picker, anchoredAt: anchor)
@@ -687,7 +692,7 @@ struct WorkspaceView: View {
             }
         }
         .alert("Rename", isPresented: Binding(get: { rename != nil }, set: { if !$0 { rename = nil } })) {
-            TextField(rename?.fieldLabel ?? "Name", text: $title)
+            TextField(rename?.fieldLabel ?? String(localized: "Name"), text: $title)
                 .accessibilityIdentifier("rename-title")
             Button("Cancel", role: .cancel) { rename = nil }
                 .accessibilityIdentifier("cancel-rename")
@@ -734,27 +739,33 @@ struct WorkspaceView: View {
         let returning = model.workspace.welcomeCompleted == true || !model.workspace.projects.isEmpty
         return VStack(alignment: .leading, spacing: 18) {
             Text("Welcome to Pi Workspace")
-                .font(.title.weight(.semibold))
+                .font(.system(size: 30, weight: .semibold))
+                .tracking(-0.75)
+                .foregroundStyle(palette.foreground)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("welcome-title")
             Text(ready ? LocalizedStringKey("Open a project to start chatting.")
                  : "Sign in with your account to start chatting. You can also open a project first.")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+                .foregroundStyle(palette.mutedForeground)
             LabeledContent("Model", value: model.workspace.model.displayModel)
-            HStack {
+                .font(.system(size: 14))
+            HStack(spacing: 8) {
                 Button(ready ? "Model Settings…" : "Sign in…") {
                     model.openSettings(.model, anchor: ready ? nil : .accountSignIn)
                 }
+                    .buttonStyle(T3ButtonStyle(kind: .outline))
                     .accessibilityIdentifier("model-settings")
                 Button("Add Project…") { model.openFolder() }
+                    .buttonStyle(T3ButtonStyle(kind: .outline))
                     .focused($welcomeFocus, equals: .addProject)
                     .accessibilityIdentifier("welcome-add-project")
                     .disabled(model.operationsInProgress)
             }
             WelcomeProjectsSection(model: model)
-            if !returning, let error = model.error { Text(error).foregroundStyle(.red) }
+            if !returning, let error = model.error { Text(error).foregroundStyle(palette.destructive) }
             Button(returning ? "Close" : ready ? "Start" : "Start without an agent", action: model.finishWelcome)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(T3ButtonStyle(kind: .primary))
                 .keyboardShortcut(returning ? .cancelAction : .defaultAction)
                 .focused($welcomeFocus, equals: .finish)
                 .accessibilityIdentifier(returning ? "welcome-close" : "start-workspace")
@@ -767,6 +778,9 @@ struct WorkspaceView: View {
         .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(canvas)
+        .overlay(alignment: .top) {
+            WindowDragArea().frame(height: WorkspaceLayout.headerHeight).padding(.leading, 80)
+        }
     }
 
     private func sidebarSearchRows(_ scopedThreads: [SidebarThread]) -> SidebarSearchResults {
@@ -791,43 +805,30 @@ struct WorkspaceView: View {
         let visibleThreads = searchRows.map(\.thread)
         let highlightedID = searchResult(in: visibleThreads)?.id
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: 0) {
                 Button(action: model.showHome) {
-                    Text("Pi Workspace")
-                        .font(.system(size: 14, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("Pi").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.sidebarForeground)
+                        Text(verbatim: "Workspace").font(.system(size: 14, weight: .medium)).tracking(-0.35)
+                            .foregroundStyle(palette.mutedForeground)
+                    }
+                    .padding(.horizontal, 4)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Pi Workspace home")
                 .accessibilityIdentifier("sidebar-home")
                 .disabled(model.operationsInProgress || model.editingQueuedMessageID != nil)
-                HStack(spacing: 0) {
-                    navigationButton(.back)
-                    navigationButton(.forward)
-                }
+                .padding(.trailing, 4)
+                navigationButton(.back)
+                navigationButton(.forward)
                 Spacer(minLength: 0)
-                Button { model.openFolder() } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .frame(width: 25, height: 25)
-                        .contentShape(Rectangle())
-                }
-                    .buttonStyle(.plain)
-                    .help("Add Project")
-                    .accessibilityLabel("Add Project")
-                    .accessibilityIdentifier("open-project")
-                    .disabled(model.operationsInProgress)
-                Button { newThread() } label: {
-                    Image(systemName: "square.and.pencil")
-                        .frame(width: 25, height: 25)
-                        .contentShape(Rectangle())
-                }
-                    .buttonStyle(.plain)
-                    .help("New Thread")
-                    .accessibilityLabel("New Thread")
-                    .accessibilityIdentifier("new-conversation")
-                    .disabled(model.operationsInProgress)
             }
-            .padding(.horizontal, 14)
+            .padding(.leading, WorkspaceLayout.trafficLightInset)
+            .padding(.trailing, 8)
             .frame(height: WorkspaceLayout.headerHeight)
+            .background(WindowDragArea())
 
             sidebarSearch(visibleThreads, messageMatches: search.messageMatches ?? [:])
 
@@ -835,13 +836,21 @@ struct WorkspaceView: View {
                 Button {
                     model.showArchive = false
                 } label: {
-                    Label("Archived threads", systemImage: "archivebox")
+                    HStack(spacing: 6) {
+                        Image(systemName: "archivebox").font(.system(size: 12))
+                        Text("Archived threads")
+                        Spacer(minLength: 0)
+                        Image(systemName: "xmark").font(.system(size: 10))
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 15)
-                .padding(.bottom, 6)
+                .foregroundStyle(palette.sidebarMuted)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
             }
 
             ScrollViewReader { reader in
@@ -849,42 +858,62 @@ struct WorkspaceView: View {
                     if searchTerm.isEmpty && !model.showArchive && model.projects.isEmpty && !shelves.hasThreads {
                         sidebarEmptyState
                     } else if searchTerm.isEmpty {
-                        LazyVStack(alignment: .leading, spacing: 3) {
+                        LazyVStack(alignment: .leading, spacing: 1) {
                             threadShelves(shelves)
+                        }
+                        .padding(.horizontal, 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            bottomShelves(shelves)
                             if !shelves.hasThreads && !projectFilter.selection.isEmpty {
-                                VStack(spacing: 6) {
+                                VStack(spacing: 8) {
                                     Text("No threads in the selected projects")
-                                        .foregroundStyle(.secondary)
-                                    Button("Show All Projects") { model.updateSidebarScope { $0.clear() } }
+                                        .foregroundStyle(palette.mutedForeground.opacity(0.6))
+                                    Button("Show all projects") { model.updateSidebarScope { $0.clear() } }
+                                        .buttonStyle(T3SidebarOutlineButtonStyle())
                                         .accessibilityIdentifier("sidebar-clear-project-scope")
                                 }
-                                .font(.caption)
+                                .font(.system(size: 12))
                                 .frame(maxWidth: .infinity)
-                                .padding(7)
+                                .padding(.vertical, 24)
                             }
                         }
                         .padding(.horizontal, 8)
                         .padding(.bottom, 8)
                     } else if searchRows.isEmpty {
                         Text(search.loading ? "Searching thread messages…" : "No matching threads")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(7)
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.mutedForeground)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 8)
                             .accessibilityIdentifier("thread-search-status")
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 3) {
+                        LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(searchRows) { result in
                                 if let match = result.match {
                                     Button { openThread(result.thread, messageMatch: match) } label: {
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text(result.thread.project.title).font(.caption).foregroundStyle(.secondary)
-                                            Text(result.thread.thread.title).font(.callout).lineLimit(1)
-                                            Text(verbatim: match.excerpt).font(.caption).lineLimit(2)
+                                            HStack(spacing: 6) {
+                                                ProjectIconView(icon: result.thread.project.icon,
+                                                                projectName: result.thread.project.title)
+                                                Text(result.thread.project.displayTitle).lineLimit(1)
+                                            }
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(palette.secondaryLabel)
+                                            Text(result.thread.thread.displayTitle)
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundStyle(palette.sidebarForeground)
+                                                .lineLimit(1)
+                                            Text(verbatim: match.excerpt)
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(palette.secondaryLabel)
+                                                .lineLimit(2)
                                         }
-                                        .padding(8)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(result.thread.id == highlightedID ? accent.opacity(0.18) : .clear,
-                                                    in: RoundedRectangle(cornerRadius: 7))
+                                        .background(result.thread.id == highlightedID ? palette.rowActive : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 6))
+                                        .padding(.vertical, 2)
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(model.operationsInProgress && model.conversation?.id != result.thread.id)
@@ -923,22 +952,40 @@ struct WorkspaceView: View {
                     Button("Undo", action: model.undoSnooze)
                         .accessibilityIdentifier("undo-snooze")
                 }
-                .font(.caption)
-                .padding(.horizontal, 14)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.sidebarMuted)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 7)
             }
-            Divider()
-            Button { model.openSettings() } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .font(.system(size: 12, weight: .medium))
+            HStack(spacing: 4) {
+                Button { model.openSettings() } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(T3SidebarIconButtonStyle(size: 32))
+                .help("Settings")
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("model-settings")
+                Button { model.openSettings(.usage) } label: {
+                    Image(systemName: "chart.bar")
+                }
+                .buttonStyle(T3SidebarIconButtonStyle(size: 32))
+                .help("Usage (⌘U)")
+                .accessibilityLabel("Usage")
+                .accessibilityIdentifier("sidebar-usage")
+                .disabled(model.startupFailure != nil)
+                Spacer(minLength: 0)
+                Button { model.openFolder() } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .buttonStyle(T3SidebarIconButtonStyle(size: 32))
+                .help("Add Project")
+                .accessibilityLabel("Add Project")
+                .accessibilityIdentifier("open-project")
+                .disabled(model.operationsInProgress)
             }
-            .buttonStyle(.plain)
-            .help("Settings")
-            .accessibilityIdentifier("model-settings")
-            .padding(13)
-        }
-        .background(alignment: .top) {
-            if colorScheme == .dark { sidebarHeaderBackdrop }
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
         }
         .background(rail)
         .onChange(of: canReorderThreads) { _, allowed in
@@ -985,66 +1032,35 @@ struct WorkspaceView: View {
         let back = direction == .back
         let label = back ? "Go back" : "Go forward"
         return Button { model.navigate(direction) } label: {
-            Image(systemName: back ? "arrow.left" : "arrow.right")
-                .frame(width: 25, height: 25)
-                .contentShape(Rectangle())
+            Image(systemName: back ? "arrow.left" : "arrow.right").font(.system(size: 13))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(T3IconButtonStyle(hoverFill: palette.sidebarAccent))
         .help(back ? "Go back (⌘[)" : "Go forward (⌘])")
-        .accessibilityLabel(label)
+        .accessibilityLabel(Text(localized: label))
         .accessibilityIdentifier(back ? "workspace-history-back" : "workspace-history-forward")
         .disabled(!model.canNavigate(direction))
-    }
-
-    private var sidebarHeaderBackdrop: some View {
-        LinearGradient(
-            stops: [
-                .init(color: Color(red: 57 / 255, green: 77 / 255, blue: 153 / 255), location: 0),
-                .init(color: Color(red: 17 / 255, green: 34 / 255, blue: 114 / 255), location: 0.15),
-                .init(color: Color(red: 48 / 255, green: 84 / 255, blue: 168 / 255), location: 0.50),
-                .init(color: Color(red: 115 / 255, green: 153 / 255, blue: 211 / 255), location: 0.72),
-                .init(color: Color(red: 64 / 255, green: 106 / 255, blue: 190 / 255), location: 1)
-            ],
-            startPoint: .leading, endPoint: .trailing
-        )
-        .mask {
-            LinearGradient(stops: [
-                .init(color: .black, location: 0.38),
-                .init(color: .black.opacity(0.72), location: 0.58),
-                .init(color: .black.opacity(0.28), location: 0.78),
-                .init(color: .clear, location: 1)
-            ], startPoint: .top, endPoint: .bottom)
-        }
-        .frame(height: 66)
-        .accessibilityHidden(true)
     }
 
     private var sidebarEmptyState: some View {
         VStack(spacing: 8) {
             Text("No projects yet")
                 .font(.system(size: 12))
+                .foregroundStyle(palette.mutedForeground.opacity(0.6))
                 .frame(minHeight: 16)
             Button {
                 model.openFolder()
             } label: {
-                Label("Add project", systemImage: "plus")
-                    .labelStyle(.titleAndIcon)
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.16))
-                    }
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .medium))
+                    Text("Add project")
+                }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(T3SidebarOutlineButtonStyle())
             .accessibilityIdentifier("sidebar-add-project")
             .disabled(model.operationsInProgress)
         }
-        .foregroundStyle(emptyStateForeground)
         .frame(maxWidth: .infinity)
-        .padding(.top, 32)
-        .padding(.bottom, 24)
+        .padding(.vertical, 24)
     }
 
     private func openDroppedProjects(_ urls: [URL]) -> Bool {
@@ -1069,12 +1085,17 @@ struct WorkspaceView: View {
 
     private func sidebarSearch(_ results: [SidebarThread],
                                messageMatches: [UUID: SidebarMessageSearch.Match]) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
+            T3SidebarSearchField(focused: searchFocused) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.sidebarIcon)
+                .frame(width: 16)
                 .accessibilityHidden(true)
-            TextField("Search threads", text: $query)
+            TextField("Search threads", text: $query,
+                      prompt: Text("Search threads").foregroundStyle(palette.sidebarMuted))
                 .textFieldStyle(.plain)
+                .font(.system(size: 14, weight: .medium))
                 .focused($searchFocused)
                 .accessibilityIdentifier("thread-search")
                 .onChange(of: query) { _, _ in highlightedSearchThread = nil }
@@ -1093,21 +1114,24 @@ struct WorkspaceView: View {
                     clearSearch()
                     searchFocused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(T3IconButtonStyle(size: 20))
                 .accessibilityLabel("Clear thread search")
                 .accessibilityIdentifier("clear-thread-search")
             }
+            }
             sidebarOptions
+            Button { newThread() } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .buttonStyle(T3SidebarIconButtonStyle())
+            .help("New Thread")
+            .accessibilityLabel("New Thread")
+            .accessibilityIdentifier("new-conversation")
+            .disabled(model.operationsInProgress)
         }
-        .font(.system(size: 12))
-        .padding(.horizontal, 9)
-        .frame(height: 29)
-        .background(surface, in: RoundedRectangle(cornerRadius: 7))
-        .padding(.horizontal, 10)
-        .padding(.bottom, 10)
+        .padding(8)
     }
 
     private func sidebarShelves(_ threads: [SidebarThread]) -> SidebarShelves {
@@ -1162,19 +1186,21 @@ struct WorkspaceView: View {
                 shelfDropTarget(.init(shelf: .active, slot: .last), id: "sidebar-active-end-drop")
             }
         }
+    }
+
+    /// Snoozed and Settled sit after the rows, like T3 Code's shelf block. They are built eagerly so the
+    /// headers exist even when a long list pushes them below the fold.
+    @ViewBuilder
+    private func bottomShelves(_ shelves: SidebarShelves) -> some View {
         if !shelves.snoozed.isEmpty {
             let expanded = model.workspace.snoozedShelfExpanded == true
             Button {
                 model.setSnoozedShelfExpanded(!expanded)
             } label: {
-                Label("Snoozed", systemImage: expanded ? "chevron.down" : "chevron.right")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(shelves.snoozed.count.formatted()).font(.caption).foregroundStyle(.secondary)
+                shelfHeader("Snoozed", count: shelves.snoozed.count, expanded: expanded)
             }
             .buttonStyle(.plain)
-            .padding(.top, 6)
-            .padding(.leading, 5)
+            .padding(.top, 4)
             .accessibilityIdentifier("snoozed-shelf")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             ForEach(visibleSnoozedRows(shelves.snoozed)) { row in
@@ -1183,15 +1209,37 @@ struct WorkspaceView: View {
             }
         }
         if !shelves.settled.isEmpty {
-            DisclosureGroup(isExpanded: $settledExpanded) {
-                ForEach(shelves.settled) { link in threadRow(link, showProject: true, reorder: canReorderThreads) }
+            Button {
+                settledExpanded.toggle()
             } label: {
-                Text("Settled").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                shelfHeader("Settled", count: shelves.settled.count, expanded: settledExpanded)
             }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
             .accessibilityIdentifier("settled-shelf")
-            .padding(.top, 6)
-            .padding(.leading, 5)
+            .accessibilityValue(settledExpanded ? "Expanded" : "Collapsed")
+            if settledExpanded {
+                ForEach(shelves.settled) { link in threadRow(link, showProject: true, reorder: canReorderThreads) }
+            }
         }
+    }
+
+    private func shelfHeader(_ title: String, count: Int, expanded: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(localized: title).fontWeight(.medium)
+            Spacer(minLength: 0)
+            Text(count.formatted())
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .medium))
+                .rotationEffect(.degrees(expanded ? 0 : -90))
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(palette.sidebarMuted)
+        .padding(.horizontal, 8)
+        .frame(height: 32)
+        .modifier(T3SidebarRowBackground(selected: false, targeted: false, draft: false))
+        .padding(.horizontal, 2)
+        .contentShape(Rectangle())
     }
 
     private func sidebarDrop(at placement: SidebarThreadPlacement) -> SidebarThreadDrag.Destination? {
@@ -1206,9 +1254,9 @@ struct WorkspaceView: View {
     private func shelfDropTarget(_ placement: SidebarThreadPlacement, label: String? = nil, id: String) -> some View {
         Group {
             if let label {
-                Text(label).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Text(localized: label).font(.system(size: 12, weight: .medium)).foregroundStyle(palette.sidebarMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 7).padding(.bottom, 4)
+                    .padding(.leading, 10).padding(.top, 4).padding(.bottom, 2)
                     .accessibilityIdentifier(id)
             } else {
                 Color.clear.frame(height: 8)
@@ -1231,13 +1279,13 @@ struct WorkspaceView: View {
 
     private var sidebarOptions: some View {
         Button { showingSidebarFilters.toggle() } label: {
-            Image(systemName: projectFilter.selection.isEmpty ?
-                  "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 22)
-                .contentShape(Rectangle())
+            if let only = projectFilter.selection.count == 1 ? model.projects.first(where: { projectFilter.selection.contains($0.id) }) : nil {
+                ProjectIconView(icon: only.icon, projectName: only.title)
+            } else {
+                Image(systemName: projectFilter.selection.isEmpty ? "folder" : "folder.fill")
+            }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(T3SidebarIconButtonStyle(active: showingSidebarFilters))
         .help("Thread filters")
         .accessibilityLabel("Thread filters")
         .accessibilityIdentifier("thread-filters")
@@ -1250,47 +1298,57 @@ struct WorkspaceView: View {
 
     private func projectGroup(_ project: Project, items: [SidebarThread]) -> some View {
         let expanded = project.sidebarFolderCollapsed != true
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 9) {
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 4) {
                 Button {
                     model.setSidebarFolderCollapsed(expanded, for: project.id)
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
-                        ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder")
+                    HStack(spacing: 10) {
+                        ProjectIconView(icon: project.icon, fallback: project.pinned == true ? "pin.fill" : "folder",
+                                        projectName: project.title)
                             .accessibilityHidden(true)
-                        Text(project.title).lineLimit(1)
-                        if project.pinned == true && project.icon != nil {
-                            Image(systemName: "pin.fill").font(.system(size: 9))
+                        Text(project.displayTitle).lineLimit(1)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(palette.sidebarForeground.opacity(0.9))
+                        if project.pinned == true {
+                            Image(systemName: "pin").font(.system(size: 10))
+                                .foregroundStyle(palette.mutedForeground.opacity(0.65))
                         }
                         Spacer(minLength: 0)
+                        if !expanded && !items.isEmpty {
+                            Text(items.count.formatted()).font(.system(size: 12))
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .medium))
+                            .rotationEffect(.degrees(expanded ? 0 : -90))
                     }
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("project-group-\(project.id)")
-                .accessibilityValue(project.icon?.summary ?? "Default project icon")
+                .accessibilityValue(project.icon?.summary ?? String(localized: "Default project icon"))
                 .accessibilityAddTraits(expanded ? .isSelected : [])
-                Button { openProjectSettings(project.id) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
+                Button { openProjectSettings(project.id) } label: { Image(systemName: "gearshape").font(.system(size: 12)) }
+                    .buttonStyle(T3SidebarIconButtonStyle(size: 24))
                     .help("Project settings for \(project.title)")
                     .accessibilityLabel("Project settings for \(project.title)")
                     .accessibilityIdentifier("project-group-settings-\(project.id)")
-                Button { startThread(in: project.id) } label: { Image(systemName: "square.and.pencil") }
-                    .buttonStyle(.plain)
+                Button { startThread(in: project.id) } label: { Image(systemName: "square.and.pencil").font(.system(size: 12)) }
+                    .buttonStyle(T3SidebarIconButtonStyle(size: 24))
                     .help("New Thread in \(project.title)")
                     .accessibilityLabel("New Thread in \(project.title)")
                     .accessibilityIdentifier("project-new-thread-\(project.id)")
                     .disabled(model.operationsInProgress)
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 6)
+            .foregroundStyle(palette.sidebarMuted)
+            .padding(.trailing, 4)
+            .modifier(T3SidebarRowBackground(selected: false, targeted: false, draft: false))
+            .padding(.top, 8)
             .contextMenu { projectActions(project) }
 
-            ForEach(items) { link in threadRow(link, showProject: false).padding(.leading, 13) }
+            ForEach(items) { link in threadRow(link, showProject: false) }
         }
     }
 
@@ -1320,32 +1378,85 @@ struct WorkspaceView: View {
         let drop = origin?.section.orderedShelf.flatMap {
             sidebarDrop(at: .init(shelf: $0, slot: .row(link.id)))
         }
+        let draft = link.thread.isDraft == true
+        let time = link.thread.lastActiveAt.map { SidebarTimeLabel.compact($0, now: model.snoozeClock) }
         return Button {
             openThread(link)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            Group {
                 if showProject {
-                    HStack(spacing: 5) {
-                        ProjectIconView(icon: link.project.icon, size: 12, fallback: link.project.isScratch ? "doc" : "folder")
-                            .accessibilityHidden(true)
-                        Text(link.project.title).lineLimit(1)
-                        Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 6) {
+                            if draft {
+                                Image(systemName: "pencil").font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(palette.warning)
+                                    .accessibilityHidden(true)
+                            }
+                            ProjectIconView(icon: link.project.icon, fallback: link.project.isScratch ? "doc" : "folder",
+                                            projectName: link.project.isScratch ? nil : link.project.title)
+                                .foregroundStyle(palette.sidebarIcon)
+                                .accessibilityHidden(true)
+                            if link.thread.threadShelf == .pinned {
+                                Image(systemName: "pin").font(.system(size: 10))
+                                    .foregroundStyle(palette.mutedForeground.opacity(0.65))
+                                    .accessibilityHidden(true)
+                            }
+                            Text(link.project.displayTitle).lineLimit(1)
+                                .fontWeight(draft ? .medium : .regular)
+                            Spacer(minLength: 0)
+                            if let time, !draft {
+                                Text(time).monospacedDigit().frame(minWidth: 32, alignment: .trailing)
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondaryLabel)
+                        .frame(height: 20)
+                        Text(link.thread.displayTitle)
+                            .font(.system(size: 14, weight: selected || draft ? .medium : .regular))
+                            .foregroundStyle(palette.sidebarForeground.opacity(selected || draft ? (draft ? 0.9 : 1) : 0.75))
+                            .lineLimit(1)
+                            .frame(height: 20)
+                            .padding(.top, 4)
+                        HStack(spacing: 6) {
+                            Image(systemName: link.thread.workingLocation.needsWorktree || link.thread.workingLocation != .project
+                                  ? "arrow.triangle.branch" : "laptopcomputer")
+                                .font(.system(size: 11))
+                                .accessibilityHidden(true)
+                            Text(link.thread.workingLocation.label).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondaryLabel)
+                        .frame(height: 16)
+                        .padding(.top, 2)
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(height: 78)
+                } else {
+                    HStack(spacing: 10) {
+                        Text(link.thread.displayTitle)
+                            .font(.system(size: 14, weight: selected ? .medium : .regular))
+                            .foregroundStyle(selected ? palette.sidebarForeground : palette.secondaryLabel)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if let time {
+                            Text(time).font(.system(size: 12)).monospacedDigit()
+                                .foregroundStyle(palette.secondaryLabel)
+                        }
+                    }
+                    .padding(.leading, 36)
+                    .padding(.trailing, 10)
+                    .frame(height: 36)
                 }
-                Text(link.thread.title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 9)
-            .padding(.vertical, showProject ? 8 : 6)
-            .background(emphasized || targetingAttachmentRow == link.id ? accent.opacity(0.18) : .clear,
-                        in: RoundedRectangle(cornerRadius: 7))
+            .modifier(T3SidebarRowBackground(selected: emphasized, targeted: targetingAttachmentRow == link.id,
+                                             draft: draft && showProject))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.vertical, showProject ? 2 : 0)
         .accessibilityIdentifier("thread-row-\(link.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(model.operationsInProgress && !selected)
@@ -1544,7 +1655,7 @@ struct WorkspaceView: View {
     private func turnIntoProject(_ thread: Conversation, project: Project) -> some View {
         Button("Turn into project") {
             if model.convertScratchThread(thread.id, in: project.id) {
-                notice = Notice(id: project.id, message: "Project created", accessibilityID: "project-created")
+                notice = Notice(id: project.id, message: String(localized: "Project created"), accessibilityID: "project-created")
             }
         }
         .accessibilityIdentifier("turn-into-project")
@@ -1590,7 +1701,7 @@ struct WorkspaceView: View {
                 restoreThread(thread.id, in: project.id)
             } else {
                 guard archiveConfirmation == nil else { return }
-                let request = ArchiveRequest(projectID: project.id, threadID: thread.id, title: thread.title)
+                let request = ArchiveRequest(projectID: project.id, threadID: thread.id, title: thread.displayTitle)
                 if model.confirmsThreadArchive {
                     archiveConfirmation = request
                 } else {
@@ -1706,6 +1817,9 @@ struct WorkspaceView: View {
                     threadWorkspace(project, thread, viewportWidth: viewport.width, size: workspace.size)
                 } else {
                     readyScreen
+                        .background(alignment: .top) {
+                            WindowDragArea().frame(height: WorkspaceLayout.headerHeight)
+                        }
                 }
             }
             terminalDrawer(limits: limits)
@@ -1722,8 +1836,7 @@ struct WorkspaceView: View {
                             .onTapGesture { addingPanelSurface = nil }
                             .accessibilityHidden(true)
                         panelSurfaceMenu(thread)
-                            .frame(width: 160, alignment: .leading)
-                            .offset(x: frame.maxX - 168, y: frame.minY + 33)
+                            .offset(x: frame.maxX - 216, y: frame.minY + 40)
                     }
                 }
             }
@@ -1750,7 +1863,6 @@ struct WorkspaceView: View {
         )
         return VStack(spacing: 0) {
             header(project, thread, panel: panel, detailsFitInline: layout.detailsFitInline)
-                .overlay(alignment: .bottom) { Divider() }
 
             // Keep the conversation in the same slot as the panel opens, closes, or overlays it.
             conversation(project, thread, layout: layout)
@@ -1760,7 +1872,11 @@ struct WorkspaceView: View {
                         inspector(project, thread, width: WorkspaceLayout.detailsWidth)
                             .anchorPreference(key: BrowserMiniPlayerObstacles.self, value: .bounds) { [.details: $0] }
                             .frame(maxHeight: layout.detailsHeight, alignment: .topLeading)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            .background(palette.dropdownGlass, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(palette.dropdownBorder).allowsHitTesting(false) }
+                            .shadow(color: .black.opacity(palette.isDark ? 0.6 : 0.2), radius: 20, y: 12)
                             .padding(WorkspaceLayout.detailsInset)
                     }
                 }
@@ -1860,7 +1976,7 @@ struct WorkspaceView: View {
             case .sideChat(let id):
                 sideChatPanel(.init(projectID: project.id, parentID: thread.id, id: id), parent: thread)
             case nil:
-                Spacer()
+                panelLauncher(thread)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -1872,14 +1988,14 @@ struct WorkspaceView: View {
         if let child = model.sideChat(scope) {
             Group {
                 if let session = model.sideChatSession(scope) {
-                    SideChatPane(model: model, session: session, child: child, parentTitle: parent.title,
+                    SideChatPane(model: model, session: session, child: child, parentTitle: parent.displayTitle,
                                  pasteboard: workspacePasteboard, focus: $focusedComposer, openParent: {
                         if rightPanels[scope.parentID]?.visibleTab == .sideChat(scope.id) {
                             rightPanels[scope.parentID]?.isOpen = false
                             focusedComposer = scope.parentID
                         }
                     }, delete: {
-                        deletingSideChat = SideChatDeletion(scope: scope, title: child.title)
+                        deletingSideChat = SideChatDeletion(scope: scope, title: child.displayTitle)
                     }, close: {
                         closeRightPanelTabs([.sideChat(scope.id)], in: scope.parentID)
                     })
@@ -1949,9 +2065,9 @@ struct WorkspaceView: View {
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
                 }
-                Text(project.title).font(.system(size: 26, weight: .semibold)).lineLimit(1)
+                Text(project.displayTitle).font(.system(size: 30, weight: .semibold)).lineLimit(1)
                 Button("New Thread") { newThread() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(T3ButtonStyle(kind: .primary))
                     .disabled(model.operationsInProgress)
                 Menu("Project Actions") { projectActions(project) }
                     .fixedSize()
@@ -1972,6 +2088,7 @@ struct WorkspaceView: View {
         return VStack(spacing: 4) {
             Text("What should we work on?")
                 .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(palette.foreground)
                 .frame(minHeight: 36)
                 .accessibilityAddTraits(.isHeader)
             Text(description)
@@ -1999,56 +2116,46 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private var emptyHomeActions: some View {
-        let addFill = colorScheme == .dark ? Color(red: 52 / 255, green: 107 / 255, blue: 241 / 255) : accent
         Button {
             model.openFolder()
         } label: {
             emptyHomeActionLabel("Add project", icon: "plus")
-                .foregroundStyle(.white)
-                .background(addFill, in: RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(T3ButtonStyle(kind: .primary))
         .accessibilityIdentifier("empty-open-project")
         if model.canStartScratchThread {
             Button(action: startScratchThread) {
-                emptyHomeActionLabel("Start without a project", icon: "message")
-                    .background(colorScheme == .dark ? Color(white: 9 / 255) : surface,
-                                in: RoundedRectangle(cornerRadius: 8))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.16))
-                    }
+                emptyHomeActionLabel("Start without a project", icon: "bubble.left", muted: true)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(T3ButtonStyle(kind: .outline))
             .accessibilityIdentifier("start-without-project")
         }
     }
 
-    private func emptyHomeActionLabel(_ title: LocalizedStringKey, icon: String) -> some View {
-        HStack(spacing: 6) {
+    private func emptyHomeActionLabel(_ title: LocalizedStringKey, icon: String, muted: Bool = false) -> some View {
+        HStack(spacing: 4) {
             Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(muted ? palette.mutedForeground : palette.primaryForeground)
                 .frame(width: 16)
                 .accessibilityHidden(true)
             Text(title)
         }
-        .font(.system(size: 14, weight: .medium))
-        .padding(.horizontal, 8)
-        .frame(minHeight: 28)
-        .contentShape(Rectangle())
     }
 
     private func header(_ project: Project, _ thread: Conversation, panel: WorkspaceRightPanelState,
                         detailsFitInline: Bool) -> some View {
-        let filesAreVisible = panel.visibleTab == .files
-        let browserIsVisible = panel.visibleTab == .browser
-        return HStack(spacing: 8) {
+        HStack(spacing: 12) {
             let canSwitchProject = canChooseDraftProject(thread.id)
             if !project.isScratch {
                 Button { startThread(in: project.id) } label: {
-                    Label(project.title, systemImage: "folder")
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        ProjectIconView(icon: project.icon, size: 14, projectName: project.title)
+                            .accessibilityHidden(true)
+                        Text(project.title).lineLimit(1)
+                    }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(T3TextLinkStyle(color: palette.mutedForeground))
                 .fixedSize(horizontal: true, vertical: false)
                 .help("New thread in \(project.title)")
                 .accessibilityLabel("New thread in \(project.title)")
@@ -2066,119 +2173,92 @@ struct WorkspaceView: View {
                     }
                 } label: {
                     if project.isScratch {
-                        Label(project.title, systemImage: "doc")
+                        Label(project.displayTitle, systemImage: "doc")
                             .lineLimit(1)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.mutedForeground)
                     } else {
                         Image(systemName: "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(palette.mutedForeground)
                     }
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .tint(.primary)
+                .tint(palette.mutedForeground)
                 .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Project actions for \(project.title)")
+                .padding(.leading, project.isScratch ? 0 : -8)
+                .accessibilityLabel("Project actions for \(project.displayTitle)")
                 .accessibilityIdentifier("thread-project")
             } else {
-                Label(project.title, systemImage: "doc")
+                Label(project.displayTitle, systemImage: "doc")
                     .lineLimit(1)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.mutedForeground)
             }
-            Text("/").foregroundStyle(.tertiary).accessibilityHidden(true)
+            Text("/")
+                .fontWeight(.regular)
+                .foregroundStyle(palette.mutedForeground)
+                .accessibilityHidden(true)
             Menu {
                 threadActions(thread, project: project)
             } label: {
-                Text(thread.title)
-                    .fontWeight(.medium)
+                Text(thread.displayTitle)
                     .lineLimit(1)
+                    .foregroundStyle(palette.foreground)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .tint(.primary)
+            .tint(palette.foreground)
             .accessibilityIdentifier("conversation-title")
-            Spacer()
-            if let scope = model.gitHubScope, scope.canReadRepository || thread.hasGitHubLinks {
-                PullRequestsButton(workspace: model, scope: scope, pasteboard: workspacePasteboard)
-                    .id(scope)
-            }
-            Button {
-                toggleChanges(in: thread.id)
-            } label: {
-                Image(systemName: panel.visibleTab == .changes ? "doc.text.fill" : "doc.text")
-            }
-            .buttonStyle(.plain)
-            .help("Changes (⌘D)")
-            .accessibilityLabel("Changes")
-            .accessibilityIdentifier("toggle-changes")
-            .disabled(thread.workingLocation.needsWorktree)
-
-            Button {
-                if filesAreVisible {
-                    closeRightPanelTabs([.files], in: thread.id)
-                } else {
-                    rightPanels[thread.id, default: .init()].show(.files)
+            Spacer(minLength: 96)
+            HStack(spacing: 4) {
+                if let scope = model.gitHubScope, scope.canReadRepository || thread.hasGitHubLinks {
+                    PullRequestsButton(workspace: model, scope: scope, pasteboard: workspacePasteboard)
+                        .id(scope)
                 }
-            } label: {
-                Image(systemName: filesAreVisible ? "folder.fill" : "folder")
-            }
-            .buttonStyle(.plain)
-            .help(filesAreVisible ? "Hide Files" : "Show Files")
-            .accessibilityLabel("Files")
-            .accessibilityAddTraits(filesAreVisible ? .isSelected : [])
-            .accessibilityIdentifier("toggle-files")
-
-            Button {
-                if browserIsVisible {
-                    browserPanel(for: thread.id).wrappedValue.isVisible = false
-                } else {
-                    showPanelBrowser(in: thread.id)
+                Button { showingDetails.toggle() } label: {
+                    Image(systemName: "list.bullet.rectangle")
                 }
-            } label: {
-                Image(systemName: "globe")
-                    .foregroundStyle(browserIsVisible ? Color.accentColor : Color.primary)
-            }
-            .buttonStyle(.plain)
-            .help(browserIsVisible ? "Hide Browser" : "Show Browser")
-            .accessibilityLabel("Browser")
-            .accessibilityAddTraits(browserIsVisible ? .isSelected : [])
-            .accessibilityIdentifier("toggle-browser")
+                .buttonStyle(T3IconButtonStyle(active: showingDetails))
+                .help("Thread Details")
+                .accessibilityLabel(showingDetails ? "Hide Thread Details" : "Show Thread Details")
+                .accessibilityIdentifier("thread-details")
+                .popover(isPresented: Binding(
+                    get: { showingDetails && !detailsFitInline },
+                    set: { if !detailsFitInline { showingDetails = $0 } }
+                ), arrowEdge: .top) {
+                    inspector(project, thread, width: 296)
+                }
 
-            Button(action: toggleTerminal) {
-                Image(systemName: terminalIsVisible ? "terminal.fill" : "terminal")
-            }
-            .buttonStyle(.plain)
-            .help("Terminal")
-            .accessibilityLabel("Terminal")
-            .accessibilityIdentifier("toggle-terminal")
-            .disabled(thread.workingLocation.needsWorktree)
+                Button(action: toggleTerminal) {
+                    Image(systemName: "dock.rectangle")
+                }
+                .buttonStyle(T3IconButtonStyle(active: terminalIsVisible))
+                .help("Terminal (⌘J)")
+                .accessibilityLabel("Terminal")
+                .accessibilityIdentifier("toggle-terminal")
+                .disabled(thread.workingLocation.needsWorktree)
 
-            if !panel.isOpen {
-                addPanelSurfaceButton(thread)
-            }
-            panelIcon(panel.isOpen ? "Hide Right Panel" : "Show Right Panel", icon: "sidebar.right",
-                      id: "toggle-right-panel") {
-                rightPanels[thread.id, default: .init()].isOpen.toggle()
-            }
-
-            Button { showingDetails.toggle() } label: {
-                Image(systemName: "info.circle")
-            }
-            .buttonStyle(.plain)
-            .help("Thread Details")
-            .accessibilityLabel(showingDetails ? "Hide Thread Details" : "Show Thread Details")
-            .accessibilityIdentifier("thread-details")
-            .popover(isPresented: Binding(
-                get: { showingDetails && !detailsFitInline },
-                set: { if !detailsFitInline { showingDetails = $0 } }
-            ), arrowEdge: .top) {
-                inspector(project, thread, width: 296)
+                Button {
+                    rightPanels[thread.id, default: .init()].isOpen.toggle()
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .buttonStyle(T3IconButtonStyle(active: panel.isOpen))
+                .help(panel.isOpen ? "Hide Right Panel" : "Show Right Panel")
+                .accessibilityLabel(panel.isOpen ? "Hide Right Panel" : "Show Right Panel")
+                .accessibilityIdentifier("toggle-right-panel")
             }
         }
-        .font(.system(size: 13))
-        .padding(.horizontal, 16)
+        .font(.system(size: 14, weight: .medium))
+        .padding(.leading, 20)
+        .padding(.trailing, 13)
         .frame(height: WorkspaceLayout.headerHeight)
+        .background {
+            ZStack {
+                canvas
+                WindowDragArea()
+            }
+        }
     }
 
     private func conversation(_ project: Project, _ thread: Conversation, layout: WorkspaceLayout) -> some View {
@@ -2186,61 +2266,67 @@ struct WorkspaceView: View {
         let legacyDraft = model.phase == .ready && model.messages.isEmpty && thread.worktreeLaunch == nil
         let drafting = !thread.archived && (thread.isDraft ?? legacyDraft)
         return VStack(spacing: 0) {
-            if let find { transcriptFind(find) }
+            if let find {
+                transcriptFind(find)
+                    .frame(width: layout.composerWidth)
+                    .padding(.leading, layout.composerLeading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if drafting {
                 DraftComposerLayout {
                     draftHeadline(project, thread: thread)
-                        .font(.system(size: 27, weight: .semibold))
                         .multilineTextAlignment(.center)
                         .reservesRoomAboveTerminal(terminalIsVisible, inset: DraftComposerLayout.bottomInset)
                     composer(project, thread, width: layout.composerWidth)
                         .reservesRoomAboveTerminal(terminalIsVisible)
                 }
+                .frame(width: layout.composerWidth)
+                .padding(.leading, layout.composerLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                transcript(find?.selection, project: project, thread: thread)
-                composer(project, thread, width: layout.composerWidth).padding(.vertical, 12)
-                    .reservesRoomAboveTerminal(terminalIsVisible)
+                // The composer floats over the timeline, which scrolls underneath it.
+                transcript(find?.selection, project: project, thread: thread, layout: layout)
+                    .overlay(alignment: .bottomLeading) {
+                        composer(project, thread, width: layout.composerWidth)
+                            .padding(.top, 8)
+                            .padding(.bottom, 20)
+                            .frame(width: layout.composerWidth)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerOverlayHeight = $0 }
+                            .reservesRoomAboveTerminal(terminalIsVisible)
+                            .padding(.leading, layout.composerLeading)
+                    }
             }
         }
-        .frame(width: layout.composerWidth)
-        .padding(.leading, layout.composerLeading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func draftHeadline(_ project: Project, thread: Conversation) -> some View {
-        VStack(spacing: 8) {
+        let heading = Font.system(size: 30, weight: .regular)
+        return VStack(spacing: 8) {
             if canChooseDraftProject(thread.id) {
-                if project.isScratch { Text("What should we work on?") }
-                HStack(spacing: 4) {
-                    if !project.isScratch { Text("What should we build in") }
-                    Button { openDraftProjectPicker(for: thread.id) } label: {
-                        HStack(spacing: 5) {
-                            Text(project.title).lineLimit(1)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption)
-                                .accessibilityHidden(true)
+                if project.isScratch {
+                    Text("What should we work on?").font(heading).tracking(-0.75)
+                    draftProjectTrigger(project, thread: thread)
+                        .font(.system(size: 14, weight: .medium))
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        // "What should we build in %@?" keeps the project picker where each language puts it.
+                        let template = NSLocalizedString("What should we build in %@?", comment: "Draft headline")
+                        let parts = template.components(separatedBy: "%@")
+                        HStack(spacing: 0) {
+                            Text(verbatim: parts.first ?? "").font(heading).tracking(-0.75)
+                            draftProjectTrigger(project, thread: thread)
+                                .font(.system(size: 30, weight: .medium))
+                            Text(verbatim: parts.count > 1 ? parts[1] : "").font(heading).tracking(-0.75)
+                        }
+                        .fixedSize()
+                        VStack(spacing: 8) {
+                            Text("What should we build?").font(heading).tracking(-0.75)
+                            draftProjectTrigger(project, thread: thread)
+                                .font(.system(size: 16, weight: .medium))
                         }
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(accent)
-                    .font(project.isScratch ? .callout.weight(.medium) : nil)
-                    .help("Choose a project")
-                    .focusable()
-                    .focused($focusedDraftProject, equals: thread.id)
-                    .accessibilityIdentifier("draft-project-trigger")
-                    .task(id: focusScratchHeadline) {
-                        guard let request = focusScratchHeadline, project.isScratch, request.threadID == thread.id else { return }
-                        await Task.yield()
-                        if !Task.isCancelled && model.draftProjectScope == request {
-                            focusedDraftProject = thread.id
-                        }
-                    }
-                    .onChange(of: focusedDraftProject) { _, id in
-                        if id == thread.id { focusScratchHeadline = nil }
-                    }
-                    if !project.isScratch { Text("?").padding(.leading, -4) }
-                }
-                if !project.isScratch {
+                    .frame(minHeight: 36)
                     Button("or start without a project") {
                         guard let source = model.draftProjectScope, source.threadID == thread.id else { return }
                         model.switchDraftProject(to: nil, from: source)
@@ -2250,15 +2336,19 @@ struct WorkspaceView: View {
                             focusScratchHeadline = destination
                         }
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(T3TextLinkStyle(color: palette.mutedForeground, underline: true))
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(height: 24)
+                    .help("Start without a project (⌥⌘N)")
                     .accessibilityIdentifier("draft-start-without-project")
                 }
             } else {
                 Text(project.isScratch ? "What should we work on?" : "What should we build in \(project.title)?")
+                    .font(heading)
+                    .tracking(-0.75)
             }
         }
+        .foregroundStyle(palette.foreground)
         .popover(item: Binding(
             get: { draftProjectPicker },
             set: { if $0 == nil, let session = draftProjectPicker { finishDraftProjectPicker(session, with: nil) } }
@@ -2270,62 +2360,96 @@ struct WorkspaceView: View {
         }
     }
 
-    private func inspector(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
-        let path = thread.workingLocation.directory(in: project)
-        return VStack(alignment: .leading, spacing: 11) {
-            Text("Thread details").font(.system(size: 13, weight: .semibold))
-            Divider()
-            Label(thread.workingLocation.label, systemImage: "desktopcomputer")
-                .font(.callout.weight(.medium))
-            Text(path)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            Button {
-                NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
-            } label: {
-                Label("Show in Finder", systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.plain)
-            .font(.callout)
-            Divider()
-            Text("Model").font(.callout.weight(.medium))
-            Text(model.effectiveModel.displayModel)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(model.effectiveModel.model)
-                .accessibilityIdentifier("thread-model")
-            if model.effectiveModel.provider == .codexAgent, let tools = model.codexCapabilities {
-                LabeledContent("Web search", value: tools.webSearch.label)
-                    .accessibilityIdentifier("thread-codex-web-search")
-                LabeledContent("Computer Use", value: tools.computerUseLabel)
-                    .accessibilityIdentifier("thread-codex-computer-use")
-            }
-            if let chats = thread.sideChats, !chats.isEmpty {
-                Divider()
-                Text("Side chats").font(.callout.weight(.medium))
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(chats) { chat in
-                            Button {
-                                model.openSideChat(.init(projectID: project.id, parentID: thread.id, id: chat.id))
-                            } label: {
-                                Label(chat.title, systemImage: "bubble.left.and.bubble.right")
-                                    .lineLimit(1)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Open side chat: \(chat.title)")
-                            .accessibilityIdentifier("open-side-chat-\(chat.id)")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 150)
+    private func draftProjectTrigger(_ project: Project, thread: Conversation) -> some View {
+        Button { openDraftProjectPicker(for: thread.id) } label: {
+            Text(project.displayTitle).lineLimit(1)
+        }
+        .buttonStyle(T3TextLinkStyle(color: palette.foreground, underline: true))
+        .help("Choose a project")
+        .focusable()
+        .focused($focusedDraftProject, equals: thread.id)
+        .accessibilityIdentifier("draft-project-trigger")
+        .task(id: focusScratchHeadline) {
+            guard let request = focusScratchHeadline, project.isScratch, request.threadID == thread.id else { return }
+            await Task.yield()
+            if !Task.isCancelled && model.draftProjectScope == request {
+                focusedDraftProject = thread.id
             }
         }
-        .padding(15)
+        .onChange(of: focusedDraftProject) { _, id in
+            if id == thread.id { focusScratchHeadline = nil }
+        }
+    }
+
+    private func inspector(_ project: Project, _ thread: Conversation, width: CGFloat) -> some View {
+        let path = thread.workingLocation.directory(in: project)
+        return VStack(alignment: .leading, spacing: 0) {
+            detailsSection(separated: false) {
+                DetailsRow(icon: "laptopcomputer", title: thread.workingLocation.label)
+                Text(path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.mutedForeground)
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
+                Button {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+                } label: {
+                    DetailsRow(icon: "arrow.up.right.square", title: "Show in Finder", interactive: true)
+                }
+                .buttonStyle(.plain)
+            }
+            detailsSection {
+                DetailsRow(icon: "cpu", title: model.effectiveModel.displayModel, interactive: false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(model.effectiveModel.model)
+                    .accessibilityIdentifier("thread-model")
+                if model.effectiveModel.provider == .codexAgent, let tools = model.codexCapabilities {
+                    DetailsRow(icon: "magnifyingglass", title: String(localized: "Web search") + " · " + tools.webSearch.label, interactive: false)
+                        .accessibilityIdentifier("thread-codex-web-search")
+                    DetailsRow(icon: "desktopcomputer", title: "Computer Use · " + tools.computerUseLabel, interactive: false)
+                        .accessibilityIdentifier("thread-codex-computer-use")
+                }
+            }
+            if let chats = thread.sideChats, !chats.isEmpty {
+                detailsSection(separated: true) {
+                    Text("Side chats")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(palette.mutedForeground)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 24, alignment: .leading)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(chats) { chat in
+                                Button {
+                                    model.openSideChat(.init(projectID: project.id, parentID: thread.id, id: chat.id))
+                                } label: {
+                                    DetailsRow(icon: "bubble.left.and.bubble.right", title: chat.title, interactive: true)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open side chat: \(chat.title)")
+                                .accessibilityIdentifier("open-side-chat-\(chat.id)")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 150)
+                }
+            }
+        }
         .frame(width: width, alignment: .leading)
         .accessibilityIdentifier("workspace-details")
+    }
+
+    private func detailsSection<Content: View>(separated: Bool = true, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) { content() }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .overlay(alignment: .top) {
+                if separated { Rectangle().fill(palette.border.opacity(0.65)).frame(height: 1) }
+            }
     }
 
     private var activeTerminal: ThreadTerminalLocation? {
@@ -2375,8 +2499,16 @@ struct WorkspaceView: View {
     }
 
     private func panelSurfaceMenu(_ thread: Conversation) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            panelSurfaceButton(.browser) {
+        panelSurfaceActions(thread, identifierPrefix: "add-panel")
+            .buttonStyle(T3MenuRowStyle())
+            .frame(width: 200)
+            .modifier(T3DropdownSurface())
+    }
+
+    /// Surfaces that can be added to the right panel, shared by the "+" menu and the empty-panel launcher.
+    private func panelSurfaceActions(_ thread: Conversation, identifierPrefix: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            panelSurfaceButton(.browser, shortcut: "B", prefix: identifierPrefix) {
                 browserPanel(for: thread.id).wrappedValue.addTab(profile: .standard)
                 rightPanels[thread.id, default: .init()].show(.browser)
             }
@@ -2384,59 +2516,54 @@ struct WorkspaceView: View {
                 addingPanelSurface = nil
                 addRightTerminal(in: thread.id)
             } label: {
-                HStack {
-                    Label("Terminal", systemImage: "terminal")
-                    Spacer()
-                    Text("T").foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
+                T3MenuRowLabel(title: "Terminal", icon: "terminal", shortcut: "T")
             }
-            .accessibilityIdentifier("add-panel-terminal")
+            .accessibilityIdentifier("\(identifierPrefix)-terminal")
             .disabled(activeTerminal?.thread != thread.id)
-            panelSurfaceButton(.files) { rightPanels[thread.id, default: .init()].show(.files) }
-            panelSurfaceButton(.changes) { rightPanels[thread.id, default: .init()].show(.changes) }
-                .disabled(thread.workingLocation.needsWorktree)
+            panelSurfaceButton(.files, shortcut: "F", prefix: identifierPrefix) {
+                rightPanels[thread.id, default: .init()].show(.files)
+            }
+            panelSurfaceButton(.changes, shortcut: "D", prefix: identifierPrefix) {
+                rightPanels[thread.id, default: .init()].show(.changes)
+            }
+            .disabled(thread.workingLocation.needsWorktree)
             Button {
                 addingPanelSurface = nil
                 model.startSideChat(in: thread.id)
             } label: {
-                HStack {
-                    Label("Side chat", systemImage: "bubble.left.and.bubble.right")
-                    Spacer()
-                    Text("S").foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
+                T3MenuRowLabel(title: "Side chat", icon: "bubble.left.and.bubble.right", shortcut: "S")
             }
-            .accessibilityIdentifier("add-panel-side-chat")
+            .accessibilityIdentifier("\(identifierPrefix)-side-chat")
             .disabled(!model.canStartSideChat)
         }
-        .buttonStyle(.plain)
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary).allowsHitTesting(false) }
-        .shadow(radius: 6, y: 3)
     }
 
-    private func panelSurfaceButton(_ tab: WorkspacePanelTab, action: @escaping () -> Void) -> some View {
+    private func panelSurfaceButton(_ tab: WorkspacePanelTab, shortcut: String, prefix: String,
+                                    action: @escaping () -> Void) -> some View {
         Button {
             addingPanelSurface = nil
             action()
         } label: {
-            Label(tab.title, systemImage: tab.icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            T3MenuRowLabel(title: tab.title, icon: tab.icon, shortcut: shortcut)
         }
-        .accessibilityIdentifier("add-panel-\(tab.id)")
+        .accessibilityIdentifier("\(prefix)-\(tab.id)")
     }
 
-    private func showPanelBrowser(in thread: UUID) {
-        let browser = browserPanel(for: thread)
-        if browser.wrappedValue.isVisible {
-            rightPanels[thread, default: .init()].show(.browser)
-        } else {
-            browser.wrappedValue.togglePanel()
+    /// Empty right panel: "Open a surface" launcher.
+    private func panelLauncher(_ thread: Conversation) -> some View {
+        VStack(spacing: 12) {
+            Text("Open a surface")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(palette.foreground)
+            panelSurfaceActions(thread, identifierPrefix: "panel-launcher")
+                .buttonStyle(T3MenuRowStyle())
         }
+        .frame(maxWidth: 320)
+        .padding(.vertical, 24)
+        .padding(.bottom, 52)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
 
     private func addRightTerminal(in thread: UUID) {
         guard let location = activeTerminal, location.thread == thread else { return }
@@ -2618,53 +2745,46 @@ struct WorkspaceView: View {
         return false
     }
 
-    private func transcript(_ selection: ThreadFindSession.Selection?, project: Project, thread: Conversation) -> some View {
+    private func transcript(_ selection: ThreadFindSession.Selection?, project: Project, thread: Conversation,
+                            layout: WorkspaceLayout) -> some View {
         let target = selection.flatMap { match in model.messages.contains { $0.id == match.messageID } ? match : nil }
         let forks = Dictionary(grouping: project.conversations.filter { $0.forkOrigin?.threadID == thread.id }) {
             $0.forkOrigin?.messageID
         }
         return ScrollViewReader { reader in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 23) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: 24)
                     if selection != nil, target == nil, model.phase != .connecting {
                         Text("The matching message is no longer available.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 14))
+                            .foregroundStyle(palette.mutedForeground)
+                            .padding(.bottom, 16)
                     }
-                    ForEach(model.messages) { message in
+                    let messages = model.messages
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                         let isMatch = message.id == target?.messageID
-                        VStack(alignment: .leading, spacing: 8) {
+                        let endsTurn = index == messages.count - 1 ? model.partial.isEmpty
+                            : messages[index + 1].role == .user
+                        VStack(alignment: .leading, spacing: 0) {
                             messageRow(message.text, role: message.role, attachments: message.attachments ?? [],
                                        attachmentOwner: .sent(thread: thread.id, message: message.id),
-                                       selection: isMatch ? target : nil)
+                                       selection: isMatch ? target : nil, laneWidth: layout.composerWidth,
+                                       meta: message.role == .assistant && endsTurn ? .init(message: message, thread: thread) : nil)
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("transcript-message-\(message.id)")
                                 .accessibilityAddTraits(isMatch ? .isSelected : [])
-                            if let incomplete = message.incompleteReply {
-                                Text(incomplete == .interrupted
-                                     ? "Pi skips this interrupted reply in future model requests."
-                                     : "This reply reached a token limit. Pi may skip it when continuing.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if message.canFork == true && !thread.archived {
-                                Button { model.forkResponse(message.id) } label: {
-                                    Image(systemName: "arrow.triangle.branch")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Fork from this response")
-                                .accessibilityLabel("Fork from this response")
-                                .accessibilityIdentifier("fork-from-response-\(message.id)")
-                                .disabled(!model.canForkResponse(message))
-                            }
                             if let origin = thread.forkOrigin, origin.messageID == message.id {
                                 forkHistoryLink("Open source conversation", threadID: origin.threadID, source: true)
+                                    .padding(.bottom, 8)
                             }
                             ForEach(forks[message.id] ?? []) { child in
                                 forkHistoryLink("Open fork", threadID: child.id, source: false)
                                     .help(child.title)
+                                    .padding(.bottom, 8)
                             }
                         }
+                        .padding(.bottom, message.role == .user || endsTurn ? 16 : 8)
                         .id(TranscriptAnchor.message(message.id))
                     }
                     if let origin = thread.forkOrigin, model.phase == .closed,
@@ -2672,14 +2792,24 @@ struct WorkspaceView: View {
                         forkHistoryLink("Open source conversation", threadID: origin.threadID, source: true)
                     }
                     if !model.partial.isEmpty {
-                        messageRow(model.partial, role: .assistant)
+                        messageRow(model.partial, role: .assistant, laneWidth: layout.composerWidth)
                             .accessibilityIdentifier("streaming-reply")
+                            .padding(.bottom, 8)
                     }
-                    Color.clear.frame(height: 1).id(TranscriptAnchor.latest)
+                    if model.phase.isRunning {
+                        workingRow
+                    }
+                    Color.clear.frame(height: max(1, composerOverlayHeight + 16)).id(TranscriptAnchor.latest)
                 }
-                .padding(.vertical, 22)
-                .padding(.horizontal, WorkspaceLayout.editorInset)
-                .frame(maxWidth: .infinity)
+                .frame(width: layout.composerWidth)
+                .padding(.leading, layout.composerLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 24)
+                    Color.black
+                }
             }
             .accessibilityIdentifier("transcript")
             .onChange(of: target?.messageID, initial: true) { _, id in
@@ -2741,7 +2871,7 @@ struct WorkspaceView: View {
         }
     }
 
-    private func forkHistoryLink(_ title: String, threadID: UUID, source: Bool) -> some View {
+    private func forkHistoryLink(_ title: LocalizedStringKey, threadID: UUID, source: Bool) -> some View {
         Button { model.openForkLink(threadID) } label: {
             Label(title, systemImage: "arrow.triangle.branch")
                 .font(.callout)
@@ -2832,7 +2962,7 @@ struct WorkspaceView: View {
         var load: (() async -> ComposerAttachment.Payload?)?
         switch opener.owner {
         case .composer(let target):
-            origin = target.queueEditID == nil ? "Draft" : "Queue Edit"
+            origin = target.queueEditID == nil ? String(localized: "Draft") : String(localized: "Queue Edit")
             if model.canEditAttachments {
                 remove = {
                     guard filePreview == opener, revision == model.threadSelectionRevision,
@@ -2848,9 +2978,9 @@ struct WorkspaceView: View {
                 }
             }
         case .queued:
-            origin = "Queued"
+            origin = String(localized: "Queued")
         case .sent(let threadID, let messageID):
-            origin = "Sent"
+            origin = String(localized: "Sent")
             load = { await model.readSentFile(threadID: threadID, messageID: messageID, attachmentID: opener.attachmentID) }
         }
         return ChatFilePreview(name: content.name, origin: origin, localText: content.payload?.text, load: load,
@@ -2912,48 +3042,155 @@ struct WorkspaceView: View {
         })
     }
 
+    struct MessageMeta {
+        let message: ChatMessage
+        let thread: Conversation
+    }
+
+    private var workingLabel: String {
+        if model.pendingToolApproval != nil { return String(localized: "Waiting for approval…") }
+        if model.pendingAgentQuestion != nil { return String(localized: "Waiting for answers…") }
+        if model.canSkipCompaction { return String(localized: "Compacting conversation…") }
+        if !model.activity.isEmpty { return String(localized: "Running \(model.activity)…") }
+        return model.effectiveModel.provider == .codexAgent ? String(localized: "Codex is responding…") : String(localized: "Pi is responding…")
+    }
+
+    /// "Working…" row closing a running turn (MessagesTimeline working row).
+    private var workingRow: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 16, height: 16)
+            Text(workingLabel)
+                .font(.system(size: 14))
+                .foregroundStyle(palette.mutedForeground)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 24)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("transcript-working")
+    }
+
     private func messageRow(_ text: String, role: ChatMessage.Role, attachments: [SentAttachment] = [],
                             attachmentOwner: ChatAttachment.Owner? = nil,
-                            selection: ThreadFindSession.Selection? = nil) -> some View {
+                            selection: ThreadFindSession.Selection? = nil, laneWidth: CGFloat = 736,
+                            meta: MessageMeta? = nil) -> some View {
         let rendered = TranscriptText.rendered(text, role: role)
-        return HStack {
-            if role == .user { Spacer(minLength: 35) }
-            VStack(alignment: .leading, spacing: 6) {
-                if !text.isEmpty {
-                    if let selection {
-                        FoundTranscriptText(rendered: rendered, selection: selection)
-                    } else {
-                        Text(rendered)
-                            .font(.system(size: 14))
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
-                    }
-                }
-                ForEach(attachments) { attachment in
-                    let label = Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
-                    if let attachmentOwner, case .sent(let threadID, let messageID) = attachmentOwner, attachment.hasImage == true {
-                        ChatAttachmentPreviewButton(opener: .init(owner: attachmentOwner, attachmentID: attachment.id),
-                                               name: attachment.name, identifier: "sent-attachment-\(attachment.id)",
-                                               focus: $focusedAttachmentOpener, open: openImagePreview) {
-                            SentImageThumbnail(name: attachment.name) {
-                                await model.readSentImage(threadID: threadID, messageID: messageID, attachmentID: attachment.id)
-                            }
-                        }
-                            .buttonStyle(.borderless)
-                            .font(.callout)
-                    } else if let attachmentOwner, attachment.mimeType == "text/plain" {
-                        sentFileCard(attachment, owner: attachmentOwner)
-                    } else {
-                        label
-                            .font(.callout)
-                            .accessibilityIdentifier("sent-attachment-\(attachment.id)")
-                    }
+        let body = VStack(alignment: .leading, spacing: 6) {
+            if !text.isEmpty {
+                if let selection {
+                    FoundTranscriptText(rendered: rendered, selection: selection)
+                } else if role == .assistant {
+                    ChatMarkdownView(text: text)
+                } else {
+                    Text(verbatim: text)
+                        .font(.system(size: T3Type.body))
+                        .lineSpacing(T3Type.bodyLineSpacing)
+                        .padding(.vertical, T3Type.bodyLineSpacing / 2)
+                        .foregroundStyle(palette.foreground)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(role == .user ? 11 : 0)
-            .background(role == .user ? surface : Color.clear, in: RoundedRectangle(cornerRadius: 11))
-            if role == .assistant { Spacer(minLength: 0) }
+            ForEach(attachments) { attachment in
+                let label = Label(attachment.name, systemImage: attachment.mimeType.hasPrefix("image/") ? "photo" : "doc.text")
+                if let attachmentOwner, case .sent(let threadID, let messageID) = attachmentOwner, attachment.hasImage == true {
+                    ChatAttachmentPreviewButton(opener: .init(owner: attachmentOwner, attachmentID: attachment.id),
+                                           name: attachment.name, identifier: "sent-attachment-\(attachment.id)",
+                                           focus: $focusedAttachmentOpener, open: openImagePreview) {
+                        SentImageThumbnail(name: attachment.name) {
+                            await model.readSentImage(threadID: threadID, messageID: messageID, attachmentID: attachment.id)
+                        }
+                    }
+                        .buttonStyle(.borderless)
+                        .font(.callout)
+                } else if let attachmentOwner, attachment.mimeType == "text/plain" {
+                    sentFileCard(attachment, owner: attachmentOwner)
+                } else {
+                    label
+                        .font(.callout)
+                        .accessibilityIdentifier("sent-attachment-\(attachment.id)")
+                }
+            }
         }
+        return Group {
+            if role == .user {
+                TranscriptHoverRow(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: laneWidth * 0.2)
+                        body
+                            .padding(12)
+                            .background(palette.userBubble, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                } actions: {
+                    HStack(spacing: 2) {
+                        copyMessageButton(text)
+                    }
+                    .padding(.trailing, 4)
+                    .frame(height: 24)
+                }
+            } else if let meta {
+                TranscriptHoverRow(alignment: .leading, spacing: 6) {
+                    body
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } actions: {
+                    assistantMeta(meta, text: text)
+                }
+            } else {
+                body
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func assistantMeta(_ meta: MessageMeta, text: String) -> some View {
+        let message = meta.message
+        return HStack(spacing: 8) {
+            copyMessageButton(text)
+            if message.canFork == true && !meta.thread.archived {
+                Button { model.forkResponse(message.id) } label: {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: 11))
+                }
+                .buttonStyle(T3IconButtonStyle(size: 24))
+                .help("Fork from this response")
+                .accessibilityLabel("Fork from this response")
+                .accessibilityIdentifier("fork-from-response-\(message.id)")
+                .disabled(!model.canForkResponse(message))
+            }
+            if let incomplete = message.incompleteReply {
+                Text(incomplete == .interrupted ? "interrupted" : "truncated")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(palette.mutedForeground)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay { Capsule().strokeBorder(palette.border.opacity(0.7)) }
+                    .accessibilityHidden(true)
+                Text(incomplete == .interrupted
+                     ? "Pi skips this interrupted reply in future model requests."
+                     : "This reply reached a token limit. Pi may skip it when continuing.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.mutedForeground)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 24)
+    }
+
+    private func copyMessageButton(_ text: String) -> some View {
+        Button {
+            workspacePasteboard.clearContents()
+            workspacePasteboard.setString(text, forType: .string)
+        } label: {
+            Image(systemName: "doc.on.doc").font(.system(size: 11))
+        }
+        .buttonStyle(T3IconButtonStyle(size: 24))
+        .help("Copy message")
+        .accessibilityLabel("Copy message")
     }
 
     @ViewBuilder
@@ -2989,53 +3226,55 @@ struct WorkspaceView: View {
         let canCompose = !thread.archived && thread.importedPiSessionID == nil &&
             (thread.worktreeLaunch == nil || model.phase.isRunning)
         let question = model.pendingAgentQuestion
-        return VStack(alignment: .leading, spacing: 8) {
-            if let saveError = model.composerSaveError {
-                HStack {
-                    Text("Draft not saved. \(saveError)").foregroundStyle(.red)
-                    Spacer()
-                    Button("Retry Saving") { model.savePendingComposer() }
-                        .accessibilityIdentifier("retry-saving-draft")
-                }
-                .font(.callout)
-            }
-            composerError(for: thread.id)
-            if let launch = thread.worktreeLaunch, !model.phase.isRunning {
-                WorktreeLaunchView(thread: thread, projectPath: project.path, checkedOutBranch: branchDisplay?.branch,
-                                   launch: launch, model: model)
-                    .id(launch.id ?? thread.id)
-            }
-            snoozeConversationStatus(thread, project: project)
-            if thread.importedPiSessionID != nil {
-                Text("Read-only Pi transcript. The original account is unknown, so replies are unavailable here.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("imported-pi-transcript")
-            }
-            if thread.archived {
-                Button("Restore Thread") {
-                    restoreThread(thread.id, in: project.id)
-                }
-                .accessibilityIdentifier("restore-open-thread")
-            } else if canCompose {
-                if let approval = model.pendingToolApproval, let directory = model.workingDirectory {
-                    ToolApprovalCard(approval: approval, directory: directory) {
-                        model.respond(to: approval.requestID, with: $0)
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let saveError = model.composerSaveError {
+                    HStack {
+                        Text("Draft not saved. \(saveError)").foregroundStyle(.red)
+                        Spacer()
+                        Button("Retry Saving") { model.savePendingComposer() }
+                            .accessibilityIdentifier("retry-saving-draft")
                     }
+                    .font(.callout)
                 }
-                QueuedMessagesView(model: model, threadID: thread.id, focusComposer: { focusedComposer = thread.id },
-                                   previewFocus: $focusedAttachmentOpener, openPreview: openImagePreview,
-                                   openFilePreview: openFilePreview)
-                    .id(thread.id)
-                if let scope = model.draftProjectScope {
-                    composerStash(in: scope)
+                composerError(for: thread.id)
+                if let launch = thread.worktreeLaunch, !model.phase.isRunning {
+                    WorktreeLaunchView(thread: thread, projectPath: project.path, checkedOutBranch: branchDisplay?.branch,
+                                       launch: launch, model: model)
+                        .id(launch.id ?? thread.id)
                 }
-                if let question {
-                    AgentQuestionCard(request: question.request, submitting: question.submitting, error: question.error,
-                                      respond: { model.respond(to: question.request.scope, with: $0) }, stop: model.cancel)
-                        .id(question.request.scope.requestID)
-                } else {
-                    inputCard(threadID: thread.id)
+                snoozeConversationStatus(thread, project: project)
+                if thread.importedPiSessionID != nil {
+                    Text("Read-only Pi transcript. The original account is unknown, so replies are unavailable here.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("imported-pi-transcript")
+                }
+                if thread.archived {
+                    Button("Restore Thread") {
+                        restoreThread(thread.id, in: project.id)
+                    }
+                    .accessibilityIdentifier("restore-open-thread")
+                } else if canCompose {
+                    if let approval = model.pendingToolApproval, let directory = model.workingDirectory {
+                        ToolApprovalCard(approval: approval, directory: directory) {
+                            model.respond(to: approval.requestID, with: $0)
+                        }
+                    }
+                    QueuedMessagesView(model: model, threadID: thread.id, focusComposer: { focusedComposer = thread.id },
+                                       previewFocus: $focusedAttachmentOpener, openPreview: openImagePreview,
+                                       openFilePreview: openFilePreview)
+                        .id(thread.id)
+                    if let scope = model.draftProjectScope {
+                        composerStash(in: scope)
+                    }
+                    if let question {
+                        AgentQuestionCard(request: question.request, submitting: question.submitting, error: question.error,
+                                          respond: { model.respond(to: question.request.scope, with: $0) }, stop: model.cancel)
+                            .id(question.request.scope.requestID)
+                    } else {
+                        inputCard(threadID: thread.id)
+                    }
                 }
             }
             composerContextStrip(project, thread, width: width, showsPermissions: canCompose && question == nil)
@@ -3060,19 +3299,15 @@ struct WorkspaceView: View {
             Group {
                 if model.canChangeWorkspace {
                     Button(action: chooseWorkspace) {
-                        Label(location, systemImage: "folder")
-                            .lineLimit(1)
-                            .padding(.horizontal, 7)
-                            .frame(minHeight: 24)
-                            .contentShape(Rectangle())
+                        stripLabel(location, icon: "folder")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(T3ChipButtonStyle(height: 24, horizontalPadding: 8, foreground: stripForeground))
                     .accessibilityLabel("Thread workspace, \(thread.workingLocation.label)")
                     .accessibilityIdentifier("choose-workspace")
                 } else {
-                    Label(location, systemImage: isCheckout ? "folder" : "desktopcomputer")
-                        .lineLimit(1)
-                        .padding(.horizontal, 7)
+                    stripLabel(location, icon: isCheckout ? "folder" : "desktopcomputer")
+                        .foregroundStyle(stripForeground)
+                        .padding(.horizontal, 8)
                 }
             }
             if compact { branchButton }
@@ -3081,21 +3316,8 @@ struct WorkspaceView: View {
                 if model.phase == .connecting && thread.worktreeLaunch == nil {
                     Text("Opening thread…")
                 }
-                if model.pendingToolApproval != nil {
-                    Text("Waiting for approval…")
-                } else if model.pendingAgentQuestion != nil {
-                    Text("Waiting for answers…")
-                } else if model.canSkipCompaction {
-                    Text("Compacting conversation…")
-                } else if model.phase == .running {
-                    if model.activity.isEmpty {
-                        Text(model.effectiveModel.provider == .codexAgent ? "Codex is responding…" : "Pi is responding…")
-                    } else {
-                        Text("Running \(model.activity)…")
-                    }
-                }
                 if model.phase == .stopping { Text("Stopping…") }
-                if model.phase == .stopTimedOut { Text("Pi hasn’t confirmed. Try Stop again.") }
+                if model.phase == .stopTimedOut { Text("The agent hasn’t confirmed. Try Stop again.") }
             }
             if !compact { branchButton }
             if showsPermissions && model.effectiveModel.supportsTools {
@@ -3105,20 +3327,36 @@ struct WorkspaceView: View {
                             .accessibilityIdentifier("tool-mode-\(permission.rawValue)")
                     }
                 } label: {
-                    Label(project.toolPermission.title, systemImage: project.toolPermission.icon)
+                    stripLabel(project.toolPermission.title, icon: project.toolPermission.icon)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .tint(.secondary)
+                .tint(stripForeground)
+                .foregroundStyle(stripForeground)
+                .padding(.horizontal, 8)
+                .frame(height: 24)
                 .fixedSize()
                 .disabled(model.operationsInProgress)
                 .accessibilityIdentifier("tool-permissions")
             }
         }
         .font(.system(size: 12))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(stripForeground)
         .padding(.horizontal, 8)
-        .frame(minHeight: 24)
+        .padding(.top, 8)
+        .frame(minHeight: 32)
+    }
+
+    private var stripForeground: Color {
+        palette.isDark ? palette.mutedForeground : palette.foreground.opacity(0.7)
+    }
+
+    private func stripLabel(_ title: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11)).accessibilityHidden(true)
+            Text(localized: title).lineLimit(1).frame(maxWidth: 240, alignment: .leading).fixedSize(horizontal: true, vertical: false)
+        }
+        .font(.system(size: 12))
     }
 
     @ViewBuilder
@@ -3243,7 +3481,7 @@ struct WorkspaceView: View {
                 model.foldPastedText(text, inlineLength: inlineLength, in: target) { attachment in
                     let size = ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .binary)
                     notice = Notice(id: attachment.id,
-                                    message: "Large paste attached as \(attachment.name) (\(size)). Use ⌘⇧V to keep a paste inline.",
+                                    message: String(localized: "Large paste attached as \(attachment.name) (\(size)). Use ⌘⇧V to keep a paste inline."),
                                     accessibilityID: "large-paste-attached")
                 }
             }
@@ -3275,12 +3513,27 @@ struct WorkspaceView: View {
             }
         }
         .id(target)
-        .background(colorScheme == .dark ? Color(.sRGB, white: 15.0 / 255, opacity: 1) : surface,
-                    in: RoundedRectangle(cornerRadius: 16))
+        .background {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(palette.composerFill)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .shadow(color: .black.opacity(palette.isDark ? 0 : 0.05), radius: 1, y: 1)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(targetingComposerDrop ? accent : .primary.opacity(colorScheme == .dark ? 0.05 : 0.11))
+                .strokeBorder(targetingComposerDrop ? accent : palette.composerBorder)
                 .allowsHitTesting(false)
+        }
+        .overlay(alignment: .top) {
+            if palette.isDark {
+                // inset 0 1px rgba(255,255,255,.03)
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(LinearGradient(stops: [.init(color: .white.opacity(0.03), location: 0),
+                                                         .init(color: .clear, location: 0.02)],
+                                                 startPoint: .top, endPoint: .bottom))
+                    .padding(1)
+                    .allowsHitTesting(false)
+            }
         }
         .background { drop.accessibilityHidden(true) }
         .onPasteCommand(of: ComposerAttachmentInput.contentTypes) { providers in
@@ -3295,17 +3548,27 @@ struct WorkspaceView: View {
             guard model.canChooseComposerModel, let scope = model.draftProjectScope else { return }
             composerModelPicker = ComposerModelPresentation(scope: scope, options: model.composerModelOptions())
         } label: {
-            HStack(spacing: 4) {
-                Label(title, systemImage: "cpu").lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption2).accessibilityHidden(true)
+            HStack(spacing: 6) {
+                Image(systemName: settings.provider.symbolName)
+                    .font(.system(size: 13))
+                    .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
+                HStack(spacing: 4) {
+                    Text(settings.displayModel)
+                        .foregroundStyle(palette.foreground.opacity(0.8))
+                    if let level = settings.thinkingLevel {
+                        Text(level.label)
+                    }
+                }
+                .lineLimit(1)
+                .frame(maxWidth: 224, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .frame(minHeight: 28)
-            .contentShape(Rectangle())
+            .font(.system(size: 14, weight: .medium))
         }
         .accessibilityLabel("Choose model, \(title)")
         .accessibilityIdentifier("active-model")
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .buttonStyle(T3ChipButtonStyle())
         .disabled(!model.canChooseComposerModel)
     }
 
@@ -3347,21 +3610,34 @@ struct WorkspaceView: View {
         model.phase == .running && model.sideChatCommand == nil && model.editingQueuedMessageID == nil
     }
 
-    private func followUpButton(_ action: ComposerFollowUp) -> some View {
-        Button(action.title) { model.queueDraft(steering: action == .steer) }
-            .help(action == .steer ? "Send into the current turn" : "Send after the current turn")
-            .accessibilityIdentifier(action == .steer ? "steer-message" : "queue-message")
-            .disabled(!model.canQueueDraft)
+    private func followUpButton(_ action: ComposerFollowUp, primary: Bool = false) -> some View {
+        Button { model.queueDraft(steering: action == .steer) } label: {
+            Image(systemName: action == .steer ? "arrow.turn.up.right" : "text.badge.plus")
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .buttonStyle(primary ? AnyButtonStyle(T3SendButtonStyle()) : AnyButtonStyle(T3IconButtonStyle()))
+        .help(action == .steer ? "Send into the current turn" : "Send after the current turn")
+        .accessibilityLabel(action.title)
+        .accessibilityIdentifier(action == .steer ? "steer-message" : "queue-message")
+        .disabled(!model.canQueueDraft)
+    }
+
+    private var composerHasDraft: Bool {
+        !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.composerAttachments.isEmpty
     }
 
     private var composerActions: some View {
         HStack(spacing: 6) {
             if model.editingQueuedMessageID != nil {
                 Button("Cancel", action: model.cancelQueuedMessageEdit)
+                    .buttonStyle(T3ButtonStyle(kind: .ghost))
                     .accessibilityLabel("Cancel editing queued message")
                     .accessibilityIdentifier("queue-cancel-edit")
-                Button("Update", action: model.updateQueuedMessage)
-                    .buttonStyle(.borderedProminent)
+                Button(action: model.updateQueuedMessage) {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold))
+                }
+                    .buttonStyle(T3SendButtonStyle())
+                    .help("Update queued message")
                     .accessibilityLabel("Update queued message")
                     .accessibilityIdentifier("queue-update")
                     .disabled(!model.canUpdateQueuedMessage)
@@ -3369,36 +3645,41 @@ struct WorkspaceView: View {
                 if isFollowingUp {
                     let primary = model.canSteer ? followUpBehavior : .queue
                     if model.canSteer { followUpButton(primary.alternate) }
-                    followUpButton(primary).buttonStyle(.borderedProminent)
+                    if composerHasDraft || !model.phase.canStop {
+                        followUpButton(primary, primary: true)
+                    }
                 } else if !model.phase.isRunning || model.sideChatCommand != nil {
                     if model.canSteer { followUpButton(.steer) }
                     if model.canStartQueuedMessage && !model.queuedMessages.isEmpty {
-                        Button("Queue") { model.queueDraft() }
+                        Button { model.queueDraft() } label: {
+                            Image(systemName: "text.badge.plus").font(.system(size: 13))
+                        }
+                            .buttonStyle(T3IconButtonStyle())
+                            .help("Queue")
+                            .accessibilityLabel("Queue")
                             .accessibilityIdentifier("queue-message")
                             .disabled(!model.canQueueDraft)
                     }
                     Button(action: model.send) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color(red: 0.14, green: 0.24, blue: 0.51), in: Circle())
-                            .contentShape(Circle())
+                        T3SendGlyph()
                     }
-                    .buttonStyle(.plain)
-                    .opacity(model.canSend ? 1 : 0.45)
+                    .buttonStyle(T3SendButtonStyle())
                     .accessibilityLabel("Send")
                     .accessibilityIdentifier("send-message")
                     .disabled(!model.canSend)
                 }
             }
             if model.phase.isRunning {
-                Button(action: model.cancel) { Image(systemName: "stop.fill") }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel("Stop")
-                    .accessibilityIdentifier("stop-message")
-                    .disabled(!model.phase.canStop)
+                // The red Stop circle takes the Send slot; with a follow-up typed it stays available beside it.
+                let replacesSend = !(isFollowingUp && composerHasDraft)
+                Button(action: model.cancel) {
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 8, height: 8)
+                }
+                .buttonStyle(T3StopButtonStyle(size: replacesSend ? 32 : 28))
+                .help("Stop")
+                .accessibilityLabel("Stop")
+                .accessibilityIdentifier("stop-message")
+                .disabled(!model.phase.canStop)
             }
         }
         .font(.system(size: 12))
@@ -3641,7 +3922,7 @@ struct WorkspaceView: View {
         case .newThread(let id):
             guard let project = model.projects.first(where: { $0.id == id }) else { return }
             guard project.folderIsAvailable else {
-                model.error = "The project folder is no longer available."
+                model.error = String(localized: "The project folder is no longer available.")
                 return
             }
             startThread(in: id)
@@ -3704,7 +3985,8 @@ struct WorkspaceView: View {
         if case let .newWorktree(_, base) = scope.location {
             let branch = GitBranchRef.displayName(base)
             let useRemote = model.conversation?.worktreeStartsFromRemote == true
-            let label = useRemote && base.hasPrefix("refs/heads/") ? "From \(branch) (remote)" : "From \(branch)"
+            let label = useRemote && base.hasPrefix("refs/heads/")
+                ? String(localized: "From \(branch) (remote)") : String(localized: "From \(branch)")
             return (branch, label)
         }
         guard let loadedBranch, loadedBranch.scope == scope else { return nil }
@@ -3724,7 +4006,7 @@ struct WorkspaceView: View {
 
     private func copyBranch(_ branch: String) {
         if !BranchPickerView.copyBranch(branch, to: workspacePasteboard) {
-            model.error = "Could not copy the branch name."
+            model.error = String(localized: "Could not copy the branch name.")
         }
     }
 
@@ -3844,7 +4126,7 @@ private struct DraftComposerLayout: Layout {
         let composerHeight = composer.sizeThatFits(lane).height
         let freeHeight = max(0, bounds.height - composerHeight - Self.bottomInset)
         let headlineSize = headline.sizeThatFits(ProposedViewSize(width: bounds.width, height: freeHeight))
-        let spacing = min(48, max(0, freeHeight - headlineSize.height))
+        let spacing = min(16, max(0, freeHeight - headlineSize.height))
         let composerTop = bounds.minY + max(freeHeight / 2, headlineSize.height + spacing)
         headline.place(at: CGPoint(x: bounds.midX, y: composerTop - spacing), anchor: .bottom,
                        proposal: ProposedViewSize(headlineSize))
@@ -3901,7 +4183,7 @@ private struct WorkspaceDivider: View {
                             .onEnded { onResize($0.translation.width) }
                     )
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(label)
+                    .accessibilityLabel(Text(localized: label))
                     .accessibilityValue("\(Int(width)) points")
                     .accessibilityAdjustableAction { direction in
                         let step: CGFloat = expandsToRight ? 16 : -16
@@ -3912,5 +4194,58 @@ private struct WorkspaceDivider: View {
                         }
                     }
             }
+    }
+}
+
+/// Message row whose action strip fades in on hover and keeps its layout space while hidden.
+private struct TranscriptHoverRow<Content: View, Actions: View>: View {
+    let alignment: HorizontalAlignment
+    let spacing: CGFloat
+    @ViewBuilder let content: Content
+    @ViewBuilder let actions: Actions
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: spacing) {
+            content
+            actions
+                .opacity(hovering ? 1 : 0)
+                .animation(.easeOut(duration: 0.2), value: hovering)
+        }
+        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Thread details row: h32, radius 8, 16pt muted icon, 13/500 text at 80%.
+private struct DetailsRow: View {
+    let icon: String
+    let title: String
+    var interactive = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+    @State private var hovering = false
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.mutedForeground)
+                .frame(width: 16)
+            Text(localized: title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(palette.foreground.opacity(0.8))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(interactive && hovering
+                    ? (palette.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.035)) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering = $0 }
     }
 }

@@ -164,7 +164,7 @@ final class WorkspaceModel: ObservableObject {
                     composerCredential = (account, try readCredential(account))
                 }
                 if let key = composerCredential?.key, text.contains(key) {
-                    error = "Enter your API key in Model Settings."
+                    error = String(localized: "Enter your API key in Model Settings.")
                     guard !preserveDraftOnCredentialMatch else { return false }
                     text = ""
                 }
@@ -325,7 +325,7 @@ final class WorkspaceModel: ObservableObject {
               attachmentImportsFinished(), hasStashablePrompt else { return false }
         let attachments = thread.composerAttachments ?? []
         guard attachments.allSatisfy({ $0.payload != nil }) else {
-            error = "Attach unavailable files again or remove them before stashing."
+            error = String(localized: "Attach unavailable files again or remove them before stashing.")
             return false
         }
         let prompt = StashedPrompt(prompt: StashedPrompt.trimmed(draft), attachments: attachments)
@@ -333,7 +333,7 @@ final class WorkspaceModel: ObservableObject {
         let evictsOldest = stashedPrompts.count >= limit
         let entries = [prompt] + stashedPrompts.prefix(limit - 1)
         guard saveStash(entries, threadID: thread.id, text: "", attachments: []) else { return false }
-        if evictsOldest { error = "The stash holds \(limit) prompts. The oldest prompt was removed." }
+        if evictsOldest { error = String(localized: "The stash holds \(limit) prompts. The oldest prompt was removed.") }
         return true
     }
 
@@ -353,7 +353,7 @@ final class WorkspaceModel: ObservableObject {
         }
         guard attachments.count <= ComposerAttachment.maxCount,
               attachments.reduce(0, { $0 + ($1.payload?.data.count ?? 0) }) <= ComposerAttachment.maxBytes else {
-            error = "This prompt is still in the stash. Remove some composer attachments and try again."
+            error = String(localized: "This prompt is still in the stash. Remove some composer attachments and try again.")
             return false
         }
         let text = entry.appending(to: draft)
@@ -398,7 +398,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func attachmentImportsFinished() -> Bool {
         guard !isImportingComposerAttachments else {
-            error = "Wait for attachments to finish pasting, then try again."
+            error = String(localized: "Wait for attachments to finish pasting, then try again.")
             return false
         }
         return true
@@ -406,11 +406,11 @@ final class WorkspaceModel: ObservableObject {
 
     private func attachmentSendError(for attachments: [ComposerAttachment]) -> String? {
         if attachments.contains(where: { $0.payload == nil }) {
-            return "Attach the unavailable files again or remove them to send."
+            return String(localized: "Attach the unavailable files again or remove them to send.")
         }
         if (phase == .ready || phase.isRunning) && !supportsImageInput &&
             attachments.contains(where: { $0.payload?.isImage == true }) {
-            return "This model does not support image input. Choose an image-capable model or remove the images."
+            return String(localized: "This model does not support image input. Choose an image-capable model or remove the images.")
         }
         return nil
     }
@@ -445,7 +445,7 @@ final class WorkspaceModel: ObservableObject {
             guard attachmentID == nil || replacement != nil else { return }
             for input in inputs {
                 guard replacement != nil || attachments.count < ComposerAttachment.maxCount else {
-                    throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
+                    throw WorkspaceError(String(localized: "Attach up to \(ComposerAttachment.maxCount) files per message."))
                 }
                 let name = input.name(among: attachments)
                 if let key, !key.isEmpty, name.contains(key) {
@@ -496,9 +496,9 @@ final class WorkspaceModel: ObservableObject {
             let attached = !items.isEmpty && attach(items, to: target)
             guard conversation?.id == target.threadID, error == nil else { return }
             if items.count < inputs.count {
-                error = "Some pasted files or images could not be read."
+                error = String(localized: "Some pasted files or images could not be read.")
             } else if !attached && !items.isEmpty {
-                error = "The attachment target is no longer editable."
+                error = String(localized: "The attachment target is no longer editable.")
             }
         }
     }
@@ -1051,10 +1051,10 @@ final class WorkspaceModel: ObservableObject {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw WorkspaceError("""
+            throw WorkspaceError(String(localized: """
                 The repository is ready at \(folder.path). \(error.localizedDescription)
                 After resolving the error, add the repository with Local folder.
-                """)
+                """))
         }
     }
 
@@ -1492,7 +1492,7 @@ final class WorkspaceModel: ObservableObject {
         let folder = URL(fileURLWithPath: path, isDirectory: true)
         guard folder.resolvingSymlinksInPath().path == path,
               (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-            error = "The thread’s workspace folder is no longer available."
+            error = String(localized: "The thread’s workspace folder is no longer available.")
             return false
         }
         return save {
@@ -1508,7 +1508,7 @@ final class WorkspaceModel: ObservableObject {
         let target = workspace.projects.firstIndex { $0.id == projectID && !$0.isScratch && $0.detached != true }
         guard projectID == nil ? !project.isScratch : target != nil else { return }
         if let target, (try? ProjectFolder.existing(at: URL(fileURLWithPath: workspace.projects[target].path))) == nil {
-            error = "The project folder is no longer available."
+            error = String(localized: "The project folder is no longer available.")
             return
         }
         if !thread.hasDraftContent, let target {
@@ -1882,12 +1882,12 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             guard !isInUse else {
-                throw WorkspaceError("The earlier pull request checkout at \(path) belongs to another thread or project.")
+                throw WorkspaceError(String(localized: "The earlier pull request checkout at \(path) belongs to another thread or project."))
             }
             if old.checkout.head == head { return old.checkout }
             try await git.discardPendingCheckout(old.checkout, attached: false)
             guard try await !git.worktrees().contains(where: { $0.path == old.checkout.path }) else {
-                throw WorkspaceError("The earlier worktree at \(old.checkout.path) could not be safely removed. Review it before retrying.")
+                throw WorkspaceError(String(localized: "The earlier worktree at \(old.checkout.path) could not be safely removed. Review it before retrying."))
             }
             pending.removeAll { $0.reference == reference }
         }
@@ -1947,7 +1947,7 @@ final class WorkspaceModel: ObservableObject {
             $0.id == link.draftID && $0.isDraft == true && !$0.archived
         }) else { throw WorkspaceError("The linked draft is unavailable.") }
         let project = workspace.projects[index]
-        try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "draft")
+        try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: String(localized: "draft"))
         let isSelected = self.project?.id == project.id && conversation?.id == thread.id
         if !isSelected || phase == .closed {
             try requireLinkNavigation()
@@ -2073,7 +2073,7 @@ final class WorkspaceModel: ObservableObject {
             throw WorkspaceError("The linked thread’s checkout is unavailable.")
         }
         if thread.importedPiSessionID == nil {
-            try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: "thread")
+            try requireLinkedCheckout(thread.workingLocation.directory(in: project), target: String(localized: "thread"))
         }
         var command = try openCommand(project: project, thread: thread, store: store)
         command.requireHistory = thread.isDraft != true
@@ -2090,7 +2090,7 @@ final class WorkspaceModel: ObservableObject {
         var isDirectory: ObjCBool = false
         guard directory.hasPrefix("/"), !directory.utf8.contains(0),
               FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw WorkspaceError("The linked \(target)’s checkout is unavailable.")
+            throw WorkspaceError(String(localized: "The linked \(target)’s checkout is unavailable."))
         }
     }
 
@@ -2125,7 +2125,7 @@ final class WorkspaceModel: ObservableObject {
         let revision = threadSelectionRevision
         let reader = gitHubReader(in: scope)
         if let url, url.repository != repository {
-            throw WorkspaceError("This thread’s checkout uses \(repository.slug). Enter a pull request from that repository.")
+            throw WorkspaceError(String(localized: "This thread’s checkout uses \(repository.slug). Enter a pull request from that repository."))
         }
         let details: GitHubPullRequestDetails
         do {
@@ -2164,7 +2164,7 @@ final class WorkspaceModel: ObservableObject {
             throw WorkspaceError("Enter a GitHub issue URL or a positive number such as #42.")
         }
         guard reference.repository == repository else {
-            throw WorkspaceError("This thread’s checkout uses \(repository.slug). Enter an issue from that repository.")
+            throw WorkspaceError(String(localized: "This thread’s checkout uses \(repository.slug). Enter an issue from that repository."))
         }
         try requireUnlinkedIssue(reference, in: conversation)
         let revision = threadSelectionRevision
@@ -2230,7 +2230,7 @@ final class WorkspaceModel: ObservableObject {
         } catch {
             forkRequest = nil
             try? store.recoverHistory(in: workspace)
-            self.error = "Could not create the conversation fork. \(error.localizedDescription)"
+            self.error = String(localized: "Could not create the conversation fork. \(error.localizedDescription)")
         }
     }
 
@@ -2637,14 +2637,14 @@ final class WorkspaceModel: ObservableObject {
             guard seen.insert(settings.identity).inserted else { return }
             let reason: String?
             if validated == nil {
-                reason = "Check this model’s configuration in Settings."
+                reason = String(localized: "Check this model’s configuration in Settings.")
             } else if let lockedAccount, settings.account != lockedAccount {
                 reason = String(localized: "Start a new thread to switch providers.")
             } else if settings.provider == .codexAgent {
                 reason = codexAccountStatus == .notInstalled ? CodexAccountStatus.notInstalled.label : nil
             } else if settings.provider != .local, let catalog = modelCatalog[settings.provider],
                       catalog[settings.model] == nil {
-                reason = "This model is missing from Pi’s bundled catalog."
+                reason = String(localized: "This model is missing from Pi’s bundled catalog.")
             } else {
                 let exists = hasCredential[settings.account] ?? ((try? credentialExists(settings.account)) ?? false)
                 hasCredential[settings.account] = exists
@@ -2743,7 +2743,7 @@ final class WorkspaceModel: ObservableObject {
             if removeKey { try vault.remove(settings.account) }
             else if let replacement { try vault.save(replacement, account: settings.account) }
         } catch {
-            throw WorkspaceError("Model settings were saved. \(error.localizedDescription)")
+            throw WorkspaceError(String(localized: "Model settings were saved. \(error.localizedDescription)"))
         }
     }
 
@@ -2850,11 +2850,11 @@ final class WorkspaceModel: ObservableObject {
     }
 
     var branchChangeBlocked: String? {
-        if phase.isRunning { return "Stop the current turn to switch branches or worktrees." }
-        if operationsInProgress { return "Wait for the active operation to finish." }
-        guard let conversation, !conversation.archived else { return "Restore the thread to change its branch." }
-        if conversation.worktreeLaunch != nil { return "Finish or cancel worktree setup before changing branches." }
-        if conversation.composerSubmission != nil { return "Wait for the current message to finish saving." }
+        if phase.isRunning { return String(localized: "Stop the current turn to switch branches or worktrees.") }
+        if operationsInProgress { return String(localized: "Wait for the active operation to finish.") }
+        guard let conversation, !conversation.archived else { return String(localized: "Restore the thread to change its branch.") }
+        if conversation.worktreeLaunch != nil { return String(localized: "Finish or cancel worktree setup before changing branches.") }
+        if conversation.composerSubmission != nil { return String(localized: "Wait for the current message to finish saving.") }
         return nil
     }
 
@@ -3018,7 +3018,7 @@ final class WorkspaceModel: ObservableObject {
             if queuedMessages.isEmpty { queueDelivery.paused = false }
             try beginTurn(text, using: process, submissionID: submissionID, attachments: attachments)
         } catch {
-            self.error = "Pi is unavailable. Reconnect to send your message."
+            self.error = String(localized: "Pi is unavailable. Reconnect to send your message.")
             shutdown()
         }
     }
@@ -3112,7 +3112,7 @@ final class WorkspaceModel: ObservableObject {
             queueDelivery.inFlight.insert(item.id)
             if skipping { queueDelivery.mode = .waiting }
         } catch {
-            connectionFailed("Pi disconnected while sending a queued message. Reconnect to try again.")
+            connectionFailed(String(localized: "Pi disconnected while sending a queued message. Reconnect to try again."))
         }
     }
 
@@ -3151,7 +3151,7 @@ final class WorkspaceModel: ObservableObject {
             queueDelivery.inFlight.insert(item.id)
             queueDelivery.paused = false
         } catch {
-            connectionFailed("Could not send the queued message. Reconnect to try again.")
+            connectionFailed(String(localized: "Could not send the queued message. Reconnect to try again."))
         }
     }
 
@@ -3212,7 +3212,7 @@ final class WorkspaceModel: ObservableObject {
         }
         guard key.isEmpty || !text.contains(key) else {
             if fromComposer { draft = "" }
-            error = "Enter your API key in Model Settings."
+            error = String(localized: "Enter your API key in Model Settings.")
             return false
         }
         if !key.isEmpty, (attachments ?? []).contains(where: {
@@ -3400,7 +3400,7 @@ final class WorkspaceModel: ObservableObject {
             try process.send(CancelPrompt(turnID: activeTurnID))
             awaitStopAcknowledgement(turnID: activeTurnID, from: process)
         } catch {
-            self.error = "Pi disconnected while stopping the request."
+            self.error = String(localized: "Pi disconnected while stopping the request.")
             shutdown()
         }
     }
@@ -3432,7 +3432,7 @@ final class WorkspaceModel: ObservableObject {
             try process.send(ToolApprovalResult(approval, decision: decision))
         } catch {
             shutdown()
-            self.error = "The Pi helper disconnected while sending the tool decision."
+            self.error = String(localized: "The Pi helper disconnected while sending the tool decision.")
         }
     }
 
@@ -3449,7 +3449,7 @@ final class WorkspaceModel: ObservableObject {
                 do {
                     if let key = try readCredential(effectiveModel.validated().account), !key.isEmpty,
                        text.contains(where: { $0.contains(key) }) {
-                        pendingAgentQuestion?.error = "Remove the API key from your answer."
+                        pendingAgentQuestion?.error = String(localized: "Remove the API key from your answer.")
                         return
                     }
                 } catch {
@@ -3463,7 +3463,7 @@ final class WorkspaceModel: ObservableObject {
         do {
             try process.send(AgentQuestionReply(scope: scope, decision: decision))
         } catch {
-            connectionFailed("The Pi helper disconnected while sending the question response.")
+            connectionFailed(String(localized: "The Pi helper disconnected while sending the question response."))
         }
     }
 
@@ -3496,7 +3496,7 @@ final class WorkspaceModel: ObservableObject {
         var isDirectory: ObjCBool = false
         guard conversation.importedPiSessionID != nil ||
                 (FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory) && isDirectory.boolValue) else {
-            connectionFailed("The thread’s workspace folder is no longer available.")
+            connectionFailed(String(localized: "The thread’s workspace folder is no longer available."))
             return
         }
         do {
@@ -3578,7 +3578,7 @@ final class WorkspaceModel: ObservableObject {
                           attachments: attachments)
             queueDelivery.paused = false
         } catch {
-            connectionFailed("Pi disconnected while sending the message. Reconnect to check its history.")
+            connectionFailed(String(localized: "Pi disconnected while sending the message. Reconnect to check its history."))
         }
     }
 
@@ -3666,13 +3666,13 @@ final class WorkspaceModel: ObservableObject {
             sentAttachmentRequests.removeValue(forKey: requestID)?.resume(returning: payload)
         case let .credential(id, read):
             guard let account else {
-                connectionFailed("The Pi transcript cannot access model credentials.")
+                connectionFailed(String(localized: "The Pi transcript cannot access model credentials."))
                 return
             }
             do {
                 try replyToCredential(id, read: read, account: account, worker: worker)
             } catch {
-                connectionFailed("The Pi helper disconnected during Keychain access.")
+                connectionFailed(String(localized: "The Pi helper disconnected during Keychain access."))
             }
         case let .modelCatalog(catalog):
             modelCatalog = catalog
@@ -3725,12 +3725,12 @@ final class WorkspaceModel: ObservableObject {
             activity = ""
             if end.status == .expired {
                 awaitStopAcknowledgement(turnID: end.scope.turnID, from: worker)
-                error = "The question expired. You can send a new message after the turn ends."
+                error = String(localized: "The question expired. You can send a new message after the turn ends.")
             }
         case let .agentQuestionRejected(scope):
             guard pendingAgentQuestion?.request.scope == scope else { return }
             pendingAgentQuestion?.submitting = false
-            pendingAgentQuestion?.error = "Pi rejected the response. Review your answers and try again."
+            pendingAgentQuestion?.error = String(localized: "Pi rejected the response. Review your answers and try again.")
         case let .inputMode(turnID, mode):
             guard activeTurnID == turnID, phase == .running else { return }
             queueDelivery.mode = mode
@@ -3738,7 +3738,7 @@ final class WorkspaceModel: ObservableObject {
             guard activeTurnID == turnID, queueDelivery.inFlight.remove(queuedID) != nil else { return }
             queueDelivery.paused = true
             if phase == .running {
-                error = (reason ?? "The turn reached a different stage.") + " The message stayed in the queue."
+                error = (reason ?? String(localized: "The turn reached a different stage.")) + String(localized: " The message stayed in the queue.")
             }
         case let .compactionSkipped(turnID, queuedID):
             guard activeTurnID == turnID, phase == .running, queueDelivery.inFlight.contains(queuedID) else { return }
@@ -3770,7 +3770,7 @@ final class WorkspaceModel: ObservableObject {
             queueDelivery.mode = .waiting
             if error != nil || !undelivered.isEmpty { queueDelivery.paused = true }
             if let error { self.error = error }
-            else if !undelivered.isEmpty && phase == .running { self.error = "The message stayed in the queue." }
+            else if !undelivered.isEmpty && phase == .running { self.error = String(localized: "The message stayed in the queue.") }
             pendingToolApproval = nil
             pendingAgentQuestion = nil
             activeTurnID = nil
@@ -3784,7 +3784,7 @@ final class WorkspaceModel: ObservableObject {
             reconcileQueue(history)
             if !confirmWorktreePrompt(in: history), conversation?.worktreeLaunch?.awaitingHistory == true {
                 self.error = nil
-                failWorktreeLaunch(at: .sendPrompt, message: error ?? "Pi stopped before recording your message.")
+                failWorktreeLaunch(at: .sendPrompt, message: error ?? String(localized: "Pi stopped before recording your message."))
             }
             if queueDelivery.paused { queueDelivery.skipAfterTurn = nil }
             releaseUnsentModel(in: history)
@@ -3916,7 +3916,7 @@ extension WorkspaceModel {
             }
             worker.onClose = { [weak self, weak session, weak worker] in
                 guard let self, let session, let worker, session.process === worker else { return }
-                self.sideChatFailed(session, "The Pi helper exited. Reconnect to this side chat.")
+                self.sideChatFailed(session, String(localized: "The Pi helper exited. Reconnect to this side chat."))
             }
             try worker.send(OpenConversation(cwd: cwd, sessionDir: directory.path, threadID: child.id.uuidString,
                                              config: config, toolPermission: project.toolPermission,
@@ -3991,7 +3991,7 @@ extension WorkspaceModel {
                 try worker.send(SendPrompt(turnID: id, text: child.prompt, submissionID: id,
                                            attachments: child.attachments, sideChatContext: context))
             } catch {
-                sideChatFailed(session, "Pi is unavailable. Reconnect to this side chat.")
+                sideChatFailed(session, String(localized: "Pi is unavailable. Reconnect to this side chat."))
                 return
             }
             session.turnID = id
@@ -4017,7 +4017,7 @@ extension WorkspaceModel {
                 session.phase = .stopTimedOut
             }
         } catch {
-            sideChatFailed(session, "Pi disconnected while stopping the side chat.")
+            sideChatFailed(session, String(localized: "Pi disconnected while stopping the side chat."))
         }
     }
 
@@ -4029,7 +4029,7 @@ extension WorkspaceModel {
         do {
             try worker.send(ToolApprovalResult(approval, decision: decision))
         } catch {
-            sideChatFailed(session, "The Pi helper disconnected while sending the tool decision.")
+            sideChatFailed(session, String(localized: "The Pi helper disconnected while sending the tool decision."))
         }
     }
 
@@ -4055,7 +4055,7 @@ extension WorkspaceModel {
         do {
             try worker.send(AgentQuestionReply(scope: request, decision: decision))
         } catch {
-            sideChatFailed(session, "The Pi helper disconnected while sending the question response.")
+            sideChatFailed(session, String(localized: "The Pi helper disconnected while sending the question response."))
         }
     }
 
@@ -4071,7 +4071,7 @@ extension WorkspaceModel {
         _ = editAttachments(in: target) { attachments, settings in
             let index = attachments.firstIndex { $0.id == child.id }
             guard index != nil || attachments.count < ComposerAttachment.maxCount else {
-                throw WorkspaceError("Attach up to \(ComposerAttachment.maxCount) files per message.")
+                throw WorkspaceError(String(localized: "Attach up to \(ComposerAttachment.maxCount) files per message."))
             }
             let key = try readCredential(settings.validated().account)
             guard key.map({ $0.isEmpty || !reference.name.contains($0) }) != false else {
@@ -4114,7 +4114,7 @@ extension WorkspaceModel {
             if files.fileExists(atPath: staging.path) { try files.removeItem(at: staging) }
             sideChatSessions.removeValue(forKey: scope)
         } catch {
-            session.error = "Could not delete the side chat. \(error.localizedDescription)"
+            session.error = String(localized: "Could not delete the side chat. \(error.localizedDescription)")
             if sideChat(scope) == nil { self.error = session.error }
         }
     }
@@ -4201,7 +4201,7 @@ extension WorkspaceModel {
         switch event {
         case let .credential(id, read):
             do { try replyToCredential(id, read: read, account: account, worker: worker) }
-            catch { sideChatFailed(session, "The Pi helper disconnected during Keychain access.") }
+            catch { sideChatFailed(session, String(localized: "The Pi helper disconnected during Keychain access.")) }
         case let .ready(history, supportsImages):
             session.supportsImages = supportsImages
             session.messages = history
@@ -4229,7 +4229,7 @@ extension WorkspaceModel {
             session.question = nil
         case let .agentQuestionRejected(request) where session.question?.request.scope == request:
             session.question?.submitting = false
-            session.question?.error = "Pi rejected the response. Review your answers and try again."
+            session.question?.error = String(localized: "Pi rejected the response. Review your answers and try again.")
         case let .finished(id, history, error) where id == session.turnID:
             session.messages = history
             session.partial = ""

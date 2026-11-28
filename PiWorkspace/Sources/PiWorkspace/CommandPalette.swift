@@ -53,12 +53,14 @@ struct CommandPaletteRow: Identifiable {
     var id: CommandPaletteAction { action }
 
     private func rank(for words: [String], exact: Bool) -> Int? {
-        let label = Self.fold(title)
+        // Rows show their title localized; match it as shown and in English.
+        let shownTitle = NSLocalizedString(title, comment: "")
+        let labels = Set([Self.fold(shownTitle), Self.fold(title)])
         let phrase = words.joined(separator: " ")
-        if label == phrase { return 0 }
-        if label.hasPrefix(phrase) { return 1 }
-        if exact ? label.contains(phrase) : words.allSatisfy(label.contains) { return 2 }
-        let searchable = Self.fold([title, detail, searchTerms].compactMap { $0 }.joined(separator: " "))
+        if labels.contains(phrase) { return 0 }
+        if labels.contains(where: { $0.hasPrefix(phrase) }) { return 1 }
+        if labels.contains(where: { label in exact ? label.contains(phrase) : words.allSatisfy(label.contains) }) { return 2 }
+        let searchable = Self.fold([shownTitle, title, detail, searchTerms].compactMap { $0 }.joined(separator: " "))
         return (exact ? searchable.contains(phrase) : words.allSatisfy(searchable.contains)) ? 3 : nil
     }
 
@@ -114,7 +116,7 @@ struct CommandPaletteContents {
     var commands: [CommandPaletteRow] {
         var rows: [CommandPaletteRow] = []
         if let project = localThreadProject {
-            rows.append(.init(action: .newThread(project.id), title: "New thread in \(project.title)",
+            rows.append(.init(action: .newThread(project.id), title: String(localized: "New thread in \(project.title)"),
                               icon: "square.and.pencil", searchTerms: "chat create draft"))
             rows.append(.init(action: .chooseProject, title: "New thread in...", icon: "square.and.pencil",
                               searchTerms: "new thread project pick choose select"))
@@ -167,7 +169,7 @@ struct CommandPaletteContents {
 
     private func threadRow(_ thread: SidebarThread) -> CommandPaletteRow {
         CommandPaletteRow(action: .openThread(thread.id, project: thread.project.id),
-                          title: thread.thread.title, icon: "bubble.left", detail: thread.project.title)
+                          title: thread.thread.title, icon: "bubble.left", detail: thread.project.displayTitle)
     }
 
     func messageSearch(for query: String, choosingProject: Bool) -> SidebarMessageSearch? {

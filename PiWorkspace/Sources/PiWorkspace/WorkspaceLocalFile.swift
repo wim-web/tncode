@@ -11,7 +11,7 @@ enum WorkspaceLocalFile {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { throw WorkspaceError("Could not read \(url.lastPathComponent).") }
+        guard fd >= 0 else { throw WorkspaceError(String(localized: "Could not read \(url.lastPathComponent).")) }
         let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {

@@ -49,7 +49,7 @@ final class BrowserFloatingPanel: NSPanel, NSWindowDelegate {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 500, height: 360),
                    styleMask: [.titled, .closable, .resizable, .utilityWindow],
                    backing: .buffered, defer: true)
-        title = "Floating Browser Preview"
+        title = String(localized: "Floating Browser Preview")
         setAccessibilityIdentifier("browser-floating-window")
         isFloatingPanel = true
         hidesOnDeactivate = true

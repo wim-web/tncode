@@ -88,7 +88,7 @@ struct ThreadLinkedItemsView: View {
     }
 
     private func sectionHeading(_ title: String) -> some View {
-        Text(title)
+        Text(localized: title)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -193,7 +193,7 @@ struct ThreadLinkedItemsView: View {
 
     private func copy(_ text: String) {
         pasteboard.clearContents()
-        error = pasteboard.setString(text, forType: .string) ? nil : "Couldn’t copy to the clipboard."
+        error = pasteboard.setString(text, forType: .string) ? nil : String(localized: "Couldn’t copy to the clipboard.")
     }
 
     private func unlink(_ item: Selection, perform operation: () throws -> Void) {
@@ -255,7 +255,9 @@ struct LinkThreadGitHubItemDialog: View {
 
     private var prefix: String { "linked-\(link.kind.idPrefix)" }
     private var itemName: String { link.kind.itemName }
-    private var fieldLabel: String { link.kind == .issues ? "Issue URL or number" : "Pull request URL or number" }
+    private var fieldLabel: String {
+        link.kind == .issues ? String(localized: "Issue URL or number") : String(localized: "Pull request URL or number")
+    }
 
     var body: some View {
         let work = request

@@ -6,6 +6,14 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { verifyIssueLinks } from "./verify-linked-prs.mjs";
 
+async function openPanelSurface({ press, dismiss, visible, tree, until }, surface) {
+  if (!tree().includes('id="hide-right-panel"')) press("toggle-right-panel");
+  await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+  press("add-panel-surface");
+  await until(() => visible("add-panel-" + surface).includes("enabled=true"), surface + " in Add Panel Surface");
+  dismiss("add-panel-" + surface);
+}
+
 export async function verifyBrowserFind(driver, { root, launch, quit, record, keyboard = false }) {
   const { press, dismiss, visible, value, tree, until, setField, focus, keyFor } = driver;
   const contents = new Map([
@@ -49,7 +57,7 @@ export async function verifyBrowserFind(driver, { root, launch, quit, record, ke
   }
   try {
     await launch("composer", root);
-    press("toggle-browser");
+    await openPanelSurface(driver, "browser");
     await until(() => visible("browser-address") && tabIDs().length === 1, "first browser tab");
     const first = tabIDs()[0];
     await navigate("/first", "First fixture tab");
@@ -95,8 +103,16 @@ export async function verifyBrowserFind(driver, { root, launch, quit, record, ke
 }
 
 export async function verifyPreview(driver, baseURL, network, verifyFiles) {
-  const { press, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
+  const { press, dismiss, visible, tree, setField, until, closeWindow, sizeWindow, frame, drag } = driver;
   const tabIDs = () => Array.from(tree().matchAll(/id="browser-tab-([\dA-F-]+)"/gi), match => match[1]);
+  // Browser in Add Panel Surface always adds a blank tab. Show the retained tab again and close the blank one.
+  async function reopenBrowser(id, retained) {
+    await openPanelSurface(driver, "browser");
+    const blank = await until(() => tabIDs().find(tab => !retained.includes(tab)), "blank tab beside the retained tabs");
+    press("browser-tab-" + id);
+    press("browser-close-tab-" + blank);
+    await until(() => !tabIDs().includes(blank), "closed the blank browser tab");
+  }
   async function newTab(profile) {
     const previous = new Set(tabIDs());
     press("browser-new-tab");
@@ -113,7 +129,7 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   }
   sizeWindow(1080, 748);
   await setField("composer", "Keep this text while previewing.");
-  press("toggle-browser");
+  await openPanelSurface(driver, "browser");
   for (const name of ["one", "two"]) {
     await until(() => visible("browser-address"), "browser address field");
     await setField("browser-address", baseURL + "/preview/" + name);
@@ -126,10 +142,10 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   await until(() => tree().includes("Local preview two"), "forward navigation");
   press("browser-zoom-in");
   await until(() => tree().includes("110%"), "preview zoom");
-  press("toggle-browser");
+  press("hide-right-panel");
   await until(() => !tree().includes('id="browser-address"'), "hidden preview");
   assert(tree().includes("Keep this text while previewing."));
-  press("toggle-browser");
+  press("toggle-right-panel");
   await until(() => tree().includes("Local preview two") && tree().includes("110%"), "reopened thread preview");
   const [first] = tabIDs();
   assert(first);
@@ -168,7 +184,7 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   await until(() => visible("browser-mini-close"), "Mini Player close control");
   press("browser-mini-close");
   await until(() => !tree().includes('id="browser-mini-player"'), "closed in-chat preview");
-  press("toggle-browser");
+  await reopenBrowser(first, [first]);
   await until(() => visible("browser-open-mini") && tabIDs().includes(first) && tree().includes("Preview document 1"), "closed Mini Player tab retained");
   press("browser-open-mini");
   await until(() => visible("browser-mini-undock"), "pop-out from the Mini Player");
@@ -195,7 +211,7 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   await until(() => visible("browser-floating-window"), "floating window before Close");
   closeWindow("browser-floating-window");
   await until(() => !tree().includes('id="browser-dock"'), "closed floating preview");
-  press("toggle-browser");
+  await reopenBrowser(first, [first, third]);
   await until(() => tree().includes("Preview document 1") && tabIDs().includes(third), "closed floating tab retained in its thread");
   assert(tree().includes("Keep this text while previewing."));
   const testing = await newTab("default");
@@ -203,7 +219,7 @@ export async function verifyPreview(driver, baseURL, network, verifyFiles) {
   await verifyAddressSearch(driver, baseURL, network);
   press("browser-close-tab-" + testing);
   await until(() => !tabIDs().includes(testing), "closed navigation test tab");
-  press("toggle-browser");
+  dismiss("close-right-panel-browser");
   await until(() => !tree().includes('id="browser-address"'), "closed reopened preview");
 }
 

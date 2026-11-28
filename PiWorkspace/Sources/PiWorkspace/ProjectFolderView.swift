@@ -52,7 +52,7 @@ struct ProjectFolderView: View {
     var body: some View {
         let suggestions = pathSuggestions
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title3.weight(.semibold))
+            Text(localized: title).font(.title3.weight(.semibold))
             if let cloneRemote {
                 Text(cloneRemote.argument)
                     .textSelection(.enabled)
@@ -110,7 +110,7 @@ struct ProjectFolderView: View {
                     .disabled(cancelling || (submitting && page != .cloneDestination))
                     .accessibilityIdentifier("cancel-project")
                 if page != .sources {
-                    Button(confirmTitle, action: submit)
+                    Button(LocalizedStringKey(confirmTitle), action: submit)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!canSubmit || submitting)
                         .accessibilityIdentifier("confirm-project")
@@ -191,7 +191,7 @@ struct ProjectFolderView: View {
 
     private var pathInput: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(pathLabel).font(.callout.weight(.medium))
+            Text(localized: pathLabel).font(.callout.weight(.medium))
             HStack(spacing: 8) {
                 pathField
                 Button("Browse…") { browsing = true }
@@ -267,7 +267,7 @@ struct ProjectFolderView: View {
         let identifier: String
         switch row {
         case .parent:
-            title = "Parent folder"
+            title = String(localized: "Parent folder")
             icon = "arrow.turn.left.up"
             identifier = "project-path-up"
         case .folder(let name):

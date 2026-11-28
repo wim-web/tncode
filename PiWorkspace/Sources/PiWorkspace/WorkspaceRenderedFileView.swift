@@ -73,11 +73,12 @@ struct WorkspaceRenderedFileView: View {
                         notice("This file is empty.", id: "files-rendered-table-empty")
                     } else {
                         if table.clippedColumns {
-                            notice("Showing the first \(table.columnCount) columns.", id: "files-rendered-table-limit")
+                            notice(String(localized: "Showing the first \(table.columnCount) columns."),
+                                   id: "files-rendered-table-limit")
                         }
                         WorkspaceReadOnlyTable(
                             columns: (0..<table.columnCount).map { index in
-                                table.rows[0].indices.contains(index) ? table.rows[0][index] : "Column \(index + 1)"
+                                table.rows[0].indices.contains(index) ? table.rows[0][index] : String(localized: "Column \(index + 1)")
                             },
                             rows: Array(table.rows.dropFirst()), label: "Delimited Table",
                             identifier: "files-rendered-table", cellIdentifier: "files-table-cell"
@@ -85,7 +86,7 @@ struct WorkspaceRenderedFileView: View {
                             .id(rendered.id)
                     }
                 case .failure(let error):
-                    notice(error.localizedDescription + " Switch to source to view the file.",
+                    notice(error.localizedDescription + String(localized: " Switch to source to view the file."),
                            id: "files-rendered-preview-error")
                 }
             } else {
@@ -105,7 +106,7 @@ struct WorkspaceRenderedFileView: View {
     }
 
     private func notice(_ message: String, id: String) -> some View {
-        Text(message).font(.callout).foregroundStyle(.secondary).padding(8)
+        Text(localized: message).font(.callout).foregroundStyle(.secondary).padding(8)
             .accessibilityIdentifier(id)
     }
 }
@@ -121,7 +122,7 @@ struct WorkspaceReadOnlyTable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let view = NSTableView()
-        view.setAccessibilityLabel(label)
+        view.setAccessibilityLabel(NSLocalizedString(label, comment: ""))
         view.setAccessibilityIdentifier(identifier)
         view.style = .plain
         view.columnAutoresizingStyle = .noColumnAutoresizing

@@ -13,8 +13,8 @@ struct WorkspaceDelimitedTable: Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .unclosedQuote(let row): "Unclosed quoted field in row \(row)."
-            case .charactersAfterQuote(let row, _): "Unexpected characters after a quoted field in row \(row)."
+            case .unclosedQuote(let row): String(localized: "Unclosed quoted field in row \(row).")
+            case .charactersAfterQuote(let row, _): String(localized: "Unexpected characters after a quoted field in row \(row).")
             }
         }
     }

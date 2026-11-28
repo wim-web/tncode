@@ -5,6 +5,14 @@ import { chmodSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileS
 import { join } from "node:path";
 import { verifyMediaFiles } from "./verify-media-files.mjs";
 
+async function openPanelSurface({ press, dismiss, visible, tree, until }, surface) {
+  if (!tree().includes('id="hide-right-panel"')) press("toggle-right-panel");
+  await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+  press("add-panel-surface");
+  await until(() => visible("add-panel-" + surface).includes("enabled=true"), surface + " in Add Panel Surface");
+  dismiss("add-panel-" + surface);
+}
+
 export async function verifySQLiteFiles(driver, { root, git, launch, quit, record }) {
   const { press, dismiss, pick, visible, value, until, tree } = driver;
   const main = join(root, "Project"), linked = join(root, "Linked"), name = "fruit.sqlite";
@@ -32,7 +40,7 @@ export async function verifySQLiteFiles(driver, { root, git, launch, quit, recor
   const has = id => tree().includes('id="' + id + '"');
   const cell = text => value("files-sqlite-cell-1-2").includes("value=" + JSON.stringify(text));
   async function open(expected) {
-    if (!has("files-row-" + name)) press("toggle-files");
+    if (!has("files-row-" + name)) await openPanelSurface(driver, "files");
     await until(() => visible("files-row-" + name), "fruit.sqlite in Files");
     press("files-row-" + name);
     await until(() => visible("files-sqlite-table") && cell(expected), "the selected checkout's " + expected + " row");
@@ -101,7 +109,7 @@ export async function verifyFiles(driver, checkout, project, git) {
     catch (error) { if (!/AX error -(25200|25204)/.test(String(error.stderr))) throw error; }
     await until(ready, label);
   }
-  press("toggle-files");
+  await openPanelSurface(driver, "files");
   await until(() => visible(row("notes")) && visible(row("sample.bin")), "files in the selected checkout");
   assert(!has(row(relative)));
   await actions("files-folder-actions", "files-expand-all");
@@ -164,8 +172,10 @@ export async function verifyFiles(driver, checkout, project, git) {
     await transition("terminate:", () => visible("keep-editing-draft") && driver.tree().includes("Couldn’t save " + relative),
                      "quit blocked by the unsaved file");
     await transition("keep-editing-draft", () => !has("keep-editing-draft") && editorIs("Keep these unsaved edits"), "keep editing the blocked file");
-    await transition("toggle-files", () => visible("browser-address"), "browser returned under Files");
-    await transition("toggle-files", () => editorIs("Keep these unsaved edits") && visible("files-unsaved"), "unsaved file after panel switch");
+    // Closing the Files tab selects the Browser tab beside it; reopening Files must keep the blocked draft.
+    await transition("close-right-panel-files", () => visible("browser-address"), "browser returned under Files");
+    await openPanelSurface(driver, "files");
+    await until(() => editorIs("Keep these unsaved edits") && visible("files-unsaved"), "unsaved file after panel switch");
   } finally {
     chmodSync(file, 0o644);
   }
@@ -188,7 +198,7 @@ export async function verifyFiles(driver, checkout, project, git) {
   await transition("files-confirm-discard", () => editorIs("External edit\n") && !has("files-unsaved"), "discard reloads the external text");
   assert.equal(git(checkout, "show", ":" + relative), "Staged original");
   assert.equal(readFileSync(parentFile, "utf8"), "Parent checkout\n");
-  press("toggle-files");
+  await transition("close-right-panel-files", () => !has("right-panel-tab-files"), "closed Files tab");
 }
 
 async function verifyRenderedFiles({ press, visible, value, until, setField }, checkout) {

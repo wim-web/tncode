@@ -8,9 +8,9 @@ struct CommitWritingSettings: Codable, Equatable {
 
         var title: String {
             switch self {
-            case .repository: "Repository conventions"
-            case .conventional: "Conventional Commits"
-            case .custom: "Custom instructions"
+            case .repository: String(localized: "Repository conventions")
+            case .conventional: String(localized: "Conventional Commits")
+            case .custom: String(localized: "Custom instructions")
             }
         }
     }

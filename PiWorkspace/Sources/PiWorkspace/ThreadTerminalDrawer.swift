@@ -227,7 +227,7 @@ struct ThreadTerminalDrawer: View {
             .accessibilityAddTraits(active ? .isSelected : [])
             .accessibilityIdentifier("terminal-tab-\(group.number)")
             if group.panes.count == 1, let pane = group.panes.first {
-                toolbarButton("Close Terminal \(pane)", icon: "xmark", id: "close-terminal-pane-\(pane)") {
+                toolbarButton(String(localized: "Close Terminal \(pane)"), icon: "xmark", id: "close-terminal-pane-\(pane)") {
                     requestClose(pane)
                 }
                 .font(.system(size: 9, weight: .medium))
@@ -271,8 +271,8 @@ struct ThreadTerminalDrawer: View {
         Button(action: action) {
             Image(systemName: icon).frame(width: 22, height: 22)
         }
-        .help(title)
-        .accessibilityLabel(title)
+        .help(Text(localized: title))
+        .accessibilityLabel(Text(localized: title))
         .accessibilityIdentifier(id)
     }
 }
@@ -313,7 +313,7 @@ final class TerminalDrawerDividerView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.splitter)
         setAccessibilityOrientation(.horizontal)
-        setAccessibilityLabel("Resize Terminal Drawer")
+        setAccessibilityLabel(String(localized: "Resize Terminal Drawer"))
         setAccessibilityIdentifier("terminal-drawer-resize-handle")
     }
 

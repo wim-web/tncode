@@ -62,6 +62,13 @@ struct ComposerTextField: NSViewRepresentable {
         field.submit = submit
         field.isEnabled = context.environment.isEnabled
         field.placeholderString = placeholder
+        if let cell = field.cell as? Cell {
+            let color = NSColor(T3Palette(context.environment.colorScheme, context.environment.t3Themes).mutedForeground)
+            if cell.placeholderColor != color {
+                cell.placeholderColor = color
+                field.needsDisplay = true
+            }
+        }
         let editor = field.currentEditor() as? NSTextView
         if field.stringValue != text, editor?.hasMarkedText() != true {
             field.stringValue = text
@@ -190,6 +197,20 @@ struct ComposerTextField: NSViewRepresentable {
 
     final class Cell: NSTextFieldCell {
         private let editor = Editor()
+
+        /// T3 Code draws the placeholder in the theme's muted-foreground rather than the dim system grey.
+        var placeholderColor = NSColor.secondaryLabelColor
+
+        override var placeholderAttributedString: NSAttributedString? {
+            get {
+                guard let text = placeholderString else { return nil }
+                return NSAttributedString(string: text, attributes: [
+                    .font: font ?? NSFont.systemFont(ofSize: 14),
+                    .foregroundColor: placeholderColor
+                ])
+            }
+            set {}
+        }
 
         override func select(withFrame rect: NSRect, in controlView: NSView, editor: NSText, delegate: Any?,
                              start: Int, length: Int) {

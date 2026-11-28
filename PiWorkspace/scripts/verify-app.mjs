@@ -428,7 +428,7 @@ async function launch(expectedControl = "model-settings", root = workspace, shel
       "--env", "https_proxy=http://127.0.0.1:1", "--env", "NO_PROXY=localhost,127.0.0.1", "--env", "no_proxy=localhost,127.0.0.1"] : []),
     ...(backgroundScenario === "--prompt-links-only" || prPromptLinks ? ["--env", "XDG_CONFIG_HOME=" + promptLinkConfig] : []),
     ...(prPromptLinks ? ["--env", "PI_GH_FIXTURE_PR_HEAD_FILE=" + prHeadFile] : []),
-    "--args", "--workspace", root,
+    "--args", "-AppleLanguages", "(en)", "--workspace", root,
     "-ApplePersistenceIgnoreState", "YES",
   ]);
   const id = await until(() => {
@@ -662,8 +662,22 @@ async function chooseNewWorktree(branch, expectedCheckouts = 1) {
   press("create-worktree");
   await until(() => tree().includes("New worktree") && !tree().includes("worktree-branch"), "selected worktree draft");
   assert.equal(git(project, "worktree", "list", "--porcelain").split("\n").filter(line => line.startsWith("worktree ")).length, expectedCheckouts);
-  try { press("toggle-changes"); } catch { /* the button is disabled for a pending checkout */ }
+  // The new draft's right panel is empty, so its launcher offers Changes, disabled until the checkout exists.
+  press("toggle-right-panel");
+  await until(() => visible("panel-launcher-changes").includes("enabled=false"), "Changes disabled for a pending checkout");
+  try { press("panel-launcher-changes"); } catch { /* the surface is disabled for a pending checkout */ }
   assert(!tree().includes('id="git-refresh"'));
+  press("hide-right-panel");
+  await until(() => !tree().includes('id="hide-right-panel"'), "right panel hidden again");
+}
+
+async function openPanelSurface(surface) {
+  if (!tree().includes('id="hide-right-panel"')) press("toggle-right-panel");
+  await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+  press("add-panel-surface");
+  const item = "add-panel-" + surface;
+  await until(() => visible(item).includes("enabled=true"), surface + " in Add Panel Surface");
+  pressDismissal(item);
 }
 
 async function verifyDraftCopy(id, expected) {
@@ -806,7 +820,7 @@ async function verifyCheckout(checkout) {
   git(checkout, "add", "base.txt");
   appendFileSync(join(checkout, "base.txt"), "second edit\n");
   const excludedDiff = git(checkout, "diff", "HEAD", "--", "base.txt");
-  press("toggle-changes");
+  await openPanelSurface("changes");
   await until(() => visible("git-file-tty-proof.txt"), "untracked file in Changes");
   press("git-file-tty-proof.txt");
   await until(() => tree().includes("+") && tree().includes(checkout), "file contents in the diff");
@@ -828,7 +842,8 @@ async function verifyCheckout(checkout) {
   assert.equal(git(checkout, "diff", "--cached", "--name-only"), "");
   assert.equal(git(checkout, "diff", "--", "base.txt"), excludedDiff);
   assert.equal(git(project, "log", "-1", "--format=%s"), "Fixture base");
-  press("toggle-changes");
+  pressDismissal("close-right-panel-changes");
+  await until(() => !tree().includes('id="right-panel-tab-changes"'), "closed Changes tab");
   record("Changes committed only the checked file. The excluded tracked file kept both edits unstaged. The other untracked file and original checkout were unchanged.");
 }
 

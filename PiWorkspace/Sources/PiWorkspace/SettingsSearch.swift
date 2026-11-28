@@ -9,39 +9,58 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .threads: "Threads"
-        case .appearance: "Appearance"
-        case .chat: "Chat"
-        case .project: "Project Overview"
-        case .model: "Model Settings"
-        case .sourceControl: "Source Control"
-        case .diffs: "Diffs & pull requests"
-        case .worktrees: "Worktrees"
-        case .usage: "Usage"
-        case .browser: "Browser Settings"
-        case .archived: "Archive"
-        case .about: "About"
+        case .general: String(localized: "General")
+        case .threads: String(localized: "Threads")
+        case .appearance: String(localized: "Appearance")
+        case .chat: String(localized: "Chat")
+        case .project: String(localized: "Projects")
+        case .model: String(localized: "Providers")
+        case .sourceControl: String(localized: "Source control & issues")
+        case .diffs: String(localized: "Diffs & pull requests")
+        case .worktrees: String(localized: "Worktrees")
+        case .usage: String(localized: "Usage")
+        case .browser: String(localized: "Browser")
+        case .archived: String(localized: "Archive")
+        case .about: String(localized: "About")
         }
     }
 
     var icon: String {
         switch self {
-        case .general: "gearshape"
+        case .general: "slider.horizontal.3"
         case .threads: "bubble.left.and.bubble.right"
-        case .appearance: "paintbrush"
-        case .chat: "bubble.left"
-        case .project: "folder"
+        case .appearance: "paintpalette"
+        case .chat: "text.bubble"
+        case .project: "macwindow"
         case .model: "cpu"
         case .sourceControl: "arrow.triangle.branch"
-        case .diffs: "doc.text"
-        case .worktrees: "arrow.triangle.branch"
+        case .diffs: "plus.forwardslash.minus"
+        case .worktrees: "folder"
         case .usage: "chart.bar"
         case .browser: "globe"
         case .archived: "archivebox"
         case .about: "info.circle"
         }
     }
+
+    /// Earlier page names, still matched by settings search.
+    var searchAliases: String {
+        switch self {
+        case .project: "Project Overview"
+        case .model: "Model Settings"
+        case .sourceControl: "Source Control"
+        case .browser: "Browser Settings"
+        default: ""
+        }
+    }
+
+    /// Navigation groups in T3 Code's order. Untitled groups are separated by space only.
+    static let navigationGroups: [(title: String?, pages: [SettingsPage])] = [
+        (nil, [.general, .appearance, .chat, .diffs]),
+        ("Agents", [.model, .threads, .browser]),
+        ("Code", [.project, .sourceControl, .worktrees]),
+        (nil, [.about, .archived, .usage])
+    ]
 }
 
 enum SidebarPreference {
@@ -185,6 +204,10 @@ final class SettingsRequest: ObservableObject, Identifiable {
 
     let id = UUID()
     @Published private(set) var destination: Destination
+    /// Incremented when the user clicks outside the modal; Settings validates fields before closing.
+    @Published private(set) var closeRequests = 0
+
+    func requestClose() { closeRequests += 1 }
 
     var page: SettingsPage { destination.page }
     var projectID: UUID? { destination.projectID }
@@ -269,11 +292,13 @@ struct SettingsSearch {
         guard !words.isEmpty else { return [] }
         let phrase = words.joined(separator: " ")
         return Self.availableResults(available).compactMap { result -> (rank: Int, result: SettingsSearchResult)? in
-            let title = Self.fold(result.title)
-            if title == phrase { return (0, result) }
-            if title.hasPrefix(phrase) { return (1, result) }
-            if words.allSatisfy(title.contains) { return (2, result) }
-            let fields = Self.fold("\(result.title) \(result.page.title) \(result.keywords)")
+            // Match the title as shown (localized) and in English, so either language finds it.
+            let shownTitle = NSLocalizedString(result.title, comment: "")
+            let titles = Set([Self.fold(shownTitle), Self.fold(result.title)])
+            if titles.contains(phrase) { return (0, result) }
+            if titles.contains(where: { $0.hasPrefix(phrase) }) { return (1, result) }
+            if titles.contains(where: { title in words.allSatisfy(title.contains) }) { return (2, result) }
+            let fields = Self.fold("\(shownTitle) \(result.title) \(result.page.title) \(result.page.searchAliases) \(result.keywords)")
             return words.allSatisfy(fields.contains) ? (3, result) : nil
         }.sorted { $0.rank < $1.rank }.map(\.result)
     }

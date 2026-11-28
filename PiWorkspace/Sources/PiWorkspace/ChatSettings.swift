@@ -10,17 +10,17 @@ enum ComposerSendShortcut: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .enter: "Enter"
-        case .commandForMultiline: "⌘ + Enter for multiline prompts"
-        case .commandAlways: "⌘ + Enter always"
+        case .enter: String(localized: "Enter")
+        case .commandForMultiline: String(localized: "⌘ + Enter for multiline prompts")
+        case .commandAlways: String(localized: "⌘ + Enter always")
         }
     }
 
     var alternateShortcutDescription: String {
         switch self {
-        case .enter: "⌘ + Enter"
-        case .commandForMultiline: "⌘ + Enter for one line or ⌘ + Shift + Enter for multiple lines"
-        case .commandAlways: "⌘ + Shift + Enter"
+        case .enter: String(localized: "⌘ + Enter")
+        case .commandForMultiline: String(localized: "⌘ + Enter for one line or ⌘ + Shift + Enter for multiple lines")
+        case .commandAlways: String(localized: "⌘ + Shift + Enter")
         }
     }
 
@@ -37,8 +37,8 @@ enum ComposerFollowUp: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .queue: "Queue"
-        case .steer: "Steer"
+        case .queue: String(localized: "Queue")
+        case .steer: String(localized: "Steer")
         }
     }
 

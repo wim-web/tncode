@@ -38,7 +38,7 @@ struct ThreadTerminal: View {
             view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
             view.isHidden = true
             view.setAccessibilityRole(.textArea)
-            view.setAccessibilityLabel("Terminal \(terminal.number)")
+            view.setAccessibilityLabel(String(localized: "Terminal \(terminal.number)"))
             view.start(in: terminal.directory)
             return view
         }
@@ -194,7 +194,7 @@ final class TerminalSessionView: LocalProcessTerminalView {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory),
               isDirectory.boolValue, access(directory, X_OK) == 0 else {
-            feed(text: "The workspace folder is unavailable.\r\n")
+            feed(text: String(localized: "The workspace folder is unavailable.") + "\r\n")
             return
         }
 
@@ -219,6 +219,6 @@ final class TerminalSessionView: LocalProcessTerminalView {
 
     override func processTerminated(_ source: LocalProcess, exitCode: Int32?) {
         super.processTerminated(source, exitCode: exitCode)
-        feed(text: "\r\n[Shell exited. Close this terminal to start another.]\r\n")
+        feed(text: "\r\n[" + String(localized: "Shell exited. Close this terminal to start another.") + "]\r\n")
     }
 }

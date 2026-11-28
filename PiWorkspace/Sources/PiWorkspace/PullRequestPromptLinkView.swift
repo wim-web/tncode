@@ -17,12 +17,12 @@ struct PullRequestPromptLinkView: View {
     private var numberLabel: String { "\(reference.repository.slug)#\(reference.number)" }
 
     private var title: String {
-        if alreadyOpened { return "This link is open" }
+        if alreadyOpened { return String(localized: "This link is open") }
         switch target {
-        case .checkout: return "Check out pull request?"
-        case .thread: return "Open linked pull request thread"
-        case .missingProject: return "You don’t have \(reference.repository.slug)"
-        case nil: return "Review pull request link"
+        case .checkout: return String(localized: "Check out pull request?")
+        case .thread: return String(localized: "Open linked pull request thread")
+        case .missingProject: return String(localized: "You don’t have \(reference.repository.slug)")
+        case nil: return String(localized: "Review pull request link")
         }
     }
 
@@ -161,7 +161,7 @@ struct PullRequestPromptLinkView: View {
             do {
                 if let changed = try await model.preparePullRequestPromptLink(review, target: checkout) {
                     target = .checkout(changed)
-                    error = "The pull request head changed. Review the new commit and confirm again."
+                    error = String(localized: "The pull request head changed. Review the new commit and confirm again.")
                 } else {
                     finish()
                 }

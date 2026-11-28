@@ -17,6 +17,8 @@ struct SideChat: Codable, Identifiable {
     let cutoff: String?
     let model: ModelSettings
     var title = "Side chat"
+    /// The stored default title is English; show it in the interface language.
+    var displayTitle: String { title == "Side chat" ? String(localized: "Side chat") : title }
     var draft = ""
     var attachments: [ComposerAttachment]?
     var sourceDraft: String?

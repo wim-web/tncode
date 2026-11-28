@@ -121,7 +121,7 @@ struct GitHubBrowserView: View {
 
     private func tabButton(_ title: String, for destination: Tab, id: String) -> some View {
         Button { tab = destination } label: {
-            Text(title)
+            Text(localized: title)
                 .fontWeight(tab == destination ? .semibold : .regular)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -357,15 +357,15 @@ private struct PullRequestFilterButton: View {
     @ObservedObject var model: GitHubBrowserModel
     @State private var isPresented = false
 
-    private var title: String { kind == .author ? "Author" : "Labels" }
+    private var title: String { kind == .author ? String(localized: "Author") : String(localized: "Labels") }
 
     private var summary: String {
         switch kind {
         case .author:
-            return model.query.pullRequestFilters?.author ?? "Anyone"
+            return model.query.pullRequestFilters?.author ?? String(localized: "Anyone")
         case .label:
             let count = model.query.pullRequestFilters?.labels.count ?? 0
-            return count == 0 ? "Any" : "\(count) selected"
+            return count == 0 ? String(localized: "Any") : String(localized: "\(count) selected")
         }
     }
 
@@ -431,7 +431,7 @@ private struct PullRequestFilterChoices: View {
                 .accessibilityIdentifier("\(prefix)-search")
             if kind == .author {
                 Button { chooseAuthor(nil) } label: {
-                    choice("Anyone", selected: selected.isEmpty)
+                    choice(String(localized: "Anyone"), selected: selected.isEmpty)
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected.isEmpty ? .isSelected : [])
@@ -658,7 +658,7 @@ struct PullRequestDetailsView: View {
                 }
             }
             Spacer(minLength: 4)
-            Text(verbatim: check.status.replacingOccurrences(of: "_", with: " ").capitalized)
+            Text(verbatim: check.statusLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("pr-check-status-\(index)")

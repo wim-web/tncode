@@ -205,8 +205,8 @@ export async function verifyAppearance(driver) {
     await until(() => value(id).includes(label), "selected " + label);
   }
   async function done() {
-    press("appearance-done");
-    await until(() => { try { visible("appearance-done"); } catch { return true; } }, "dismiss appearance settings");
+    press("settings-close");
+    await until(() => { try { visible("settings-close"); } catch { return true; } }, "dismiss appearance settings");
     assert(value("composer").includes(draft));
   }
   await openAppearance(driver);
@@ -236,7 +236,7 @@ export async function restoreAppearance(driver) {
   press("appearance-restore-defaults");
   await until(() => value("appearance-chat-width").includes("Comfortable") && value("appearance-color-scheme").includes("System") &&
                     visible("appearance-restore-defaults").includes("enabled=false"), "default appearance restored");
-  press("appearance-done");
+  press("settings-close");
 }
 export async function verifySettingsSearch({ press, visible, value, tree, setField, until, keyFor }, index) {
   const before = index();

@@ -8,6 +8,8 @@ struct WorkspaceLayout {
     static let detailsWidth: CGFloat = 280
     static let detailsInset: CGFloat = 12
     static let editorInset: CGFloat = 13
+    /// Room for the window's traffic lights in the sidebar's top strip (first control at x=91 in T3 Code).
+    static let trafficLightInset: CGFloat = 84
 
     private static let minimumSplitWidth: CGFloat = 360
     private static let chatGutter: CGFloat = 48

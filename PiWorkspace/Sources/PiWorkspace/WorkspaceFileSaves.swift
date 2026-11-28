@@ -62,7 +62,7 @@ final class WorkspaceFileSaves {
             let directory = GitWorkspace.canonicalCheckoutPath(session.target.location.directory)
             guard directory == checkout || directory.hasPrefix(prefix) else { continue }
             if let error = session.flush() {
-                throw WorkspaceError("Couldn’t save \(session.target.path) before switching branches. \(error.localizedDescription)")
+                throw WorkspaceError(String(localized: "Couldn’t save \(session.target.path) before switching branches. \(error.localizedDescription)"))
             }
         }
     }
@@ -72,8 +72,8 @@ final class WorkspaceFileSaves {
         for session in Array(sessions.values) {
             if let error = session.flush(), firstFailure == nil {
                 let target = session.target
-                firstFailure = "Couldn’t save \(target.path) in \(target.location.directory). \(error.localizedDescription) " +
-                    "To recover the edits, open Files in that thread and choose Folder Actions > Unsaved Files."
+                firstFailure = String(localized: "Couldn’t save \(target.path) in \(target.location.directory). \(error.localizedDescription) ") +
+                    String(localized: "To recover the edits, open Files in that thread and choose Folder Actions > Unsaved Files.")
             }
         }
         return firstFailure

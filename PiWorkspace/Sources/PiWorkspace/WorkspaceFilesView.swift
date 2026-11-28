@@ -290,7 +290,7 @@ struct WorkspaceFilesView: View {
         .disabled(entry.kind == .link)
         .background(selection == entry.path ? Color.accentColor.opacity(0.13) : .clear,
                     in: RoundedRectangle(cornerRadius: 4))
-        .help(entry.kind == .link ? "Symbolic link" : entry.path)
+        .help(entry.kind == .link ? String(localized: "Symbolic link") : entry.path)
         .accessibilityAddTraits(selection == entry.path ? .isSelected : [])
         .accessibilityIdentifier("files-row-" + entry.path)
         .contextMenu {
@@ -450,7 +450,9 @@ private struct WorkspaceFilePreviewView: View {
             .padding(.bottom, 6)
             Divider()
             if session?.isReadOnly == true {
-                let message = draft == nil ? "Read-only" : "Read-only. Unsaved edits are kept until write access returns."
+                let message = draft == nil
+                    ? String(localized: "Read-only")
+                    : String(localized: "Read-only. Unsaved edits are kept until write access returns.")
                 status(message, id: "files-read-only")
             } else if let message = actionError ?? session?.saveError?.localizedDescription ??
                         (session?.changedOnDisk == true ? WorkspaceFileError.changed.localizedDescription : nil) {
@@ -588,7 +590,8 @@ private struct WorkspaceFilePreviewView: View {
             case .success(.largeText(let file)):
                 WorkspaceLargeTextView(file: file, wraps: wraps, retry: { reload += 1 })
             case .success(.binary(let prefix, let size)):
-                status("Binary file (\(formattedSize(size))). Showing \(prefix.count) bytes.", id: "files-binary-preview")
+                status(String(localized: "Binary file (\(formattedSize(size))). Showing \(prefix.count) bytes."),
+                       id: "files-binary-preview")
                 FileTextView(text: hexadecimal(prefix), editable: false, wraps: false, identifier: "files-contents")
             case .success(.sqlite(let file)):
                 WorkspaceSQLiteView(file: file, retry: { reload += 1 })
@@ -767,7 +770,7 @@ private struct WorkspaceLargeTextView: View {
 
     private func goToLine() {
         guard let line = Int64(lineInput.trimmingCharacters(in: .whitespaces)), line > 0 else {
-            lineError = "Enter a positive line number."
+            lineError = String(localized: "Enter a positive line number.")
             return
         }
         request = Request(line: line, select: true)
@@ -805,8 +808,8 @@ func fileButton(_ label: String, _ symbol: String, id: String,
                 action: @escaping () -> Void) -> some View {
     Button(action: action) { Image(systemName: symbol).frame(width: 18, height: 18) }
         .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+        .help(Text(localized: label))
+        .accessibilityLabel(Text(localized: label))
         .accessibilityIdentifier(id)
 }
 
@@ -837,7 +840,7 @@ struct FileTextView: NSViewRepresentable {
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.textContainerInset = NSSize(width: 5, height: 8)
         textView.layoutManager?.allowsNonContiguousLayout = true
-        textView.setAccessibilityLabel("File Contents")
+        textView.setAccessibilityLabel(String(localized: "File Contents"))
         textView.setAccessibilityIdentifier(identifier)
         return scroll
     }

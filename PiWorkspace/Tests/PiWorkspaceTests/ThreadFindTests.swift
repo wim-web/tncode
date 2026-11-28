@@ -157,7 +157,11 @@ final class ThreadFindTests: XCTestCase {
         XCTAssertNotEqual(newThreadSelection, selection)
         XCTAssertEqual(model.draft, unicode)
 
-        try app.press("toggle-browser")
+        if app.element("hide-right-panel") == nil { try app.press("toggle-right-panel") }
+        try await app.until("right panel add button") { app.element("add-panel-surface") != nil }
+        try app.press("add-panel-surface")
+        try await app.until("add panel menu") { app.element("add-panel-browser") != nil }
+        try app.press("add-panel-browser")
         try await app.until("browser tab attached") { app.webView != nil }
         let web = try XCTUnwrap(app.webView)
         let page = try XCTUnwrap(URL(string: "http://127.0.0.1/find-fixture"))
@@ -400,7 +404,7 @@ final class ThreadFindTests: XCTestCase {
                                            openWelcome: {}))
         defer { settings.close() }
         try await settings.key(kVK_ANSI_F, "f", .command)
-        try await settings.until("Settings owned Command-F") { settings.isEditing("Search settings") }
+        try await settings.until("Settings owned Command-F") { settings.isEditing("Search") }
         try settings.type("Model ID")
         try await settings.key(kVK_Escape, "\u{1b}")
         XCTAssertEqual(model.activeThreadFind?.status.label, "1 of 2")

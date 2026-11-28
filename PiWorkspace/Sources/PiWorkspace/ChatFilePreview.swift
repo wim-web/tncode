@@ -123,7 +123,7 @@ struct ChatFileSavePanel: NSViewRepresentable {
                 let payload = await request.load()
                 guard let self, self.requestID == request.id, !Task.isCancelled, request.isCurrent() else { return }
                 guard let payload, let window = view?.window else {
-                    request.finish("Attachment unavailable.")
+                    request.finish(String(localized: "Attachment unavailable."))
                     return
                 }
                 self.cancelPicker = picker.present(window, request.name) { [weak self] result in

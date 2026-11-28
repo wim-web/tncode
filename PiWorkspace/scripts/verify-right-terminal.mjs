@@ -29,10 +29,15 @@ export async function verifyRightTerminal(driver, { root, git, launch, quit, rec
   const readPID = id => Number(value(id).match(/PANEL-SHELL (\d+)/)?.[1]);
   const active = pid => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } };
   const proofOf = pid => readFileSync(join(proof, String(pid)), "utf8").trimEnd().split("\n");
-  async function add(n) {
+  async function openPanelSurface(surface) {
+    if (!tree().includes('id="hide-right-panel"')) press("toggle-right-panel");
+    await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
     press("add-panel-surface");
-    await until(() => visible("add-panel-terminal"), "Terminal in Add Panel Surface");
-    dismiss("add-panel-terminal");
+    await until(() => visible("add-panel-" + surface).includes("enabled=true"), surface + " in Add Panel Surface");
+    dismiss("add-panel-" + surface);
+  }
+  async function add(n) {
+    await openPanelSurface("terminal");
     return until(() => readPID(pane(n)), "new right panel PTY " + n);
   }
   async function select(thread, text) {
@@ -49,9 +54,9 @@ export async function verifyRightTerminal(driver, { root, git, launch, quit, rec
   assert(active(right));
   press("toggle-right-panel");
   await until(() => readPID(pane(2)) === right, "right pane with the same PID");
-  press("toggle-files");
+  await openPanelSurface("files");
   await until(() => visible("files-search"), "Files tab");
-  press("toggle-browser");
+  await openPanelSurface("browser");
   await until(() => visible("browser-address"), "Browser tab");
   press(tab(2));
   await until(() => readPID(pane(2)) === right, "terminal tab keeps its shell across Files and Browser");

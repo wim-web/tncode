@@ -565,7 +565,7 @@ final class SidebarPersistenceTests: XCTestCase {
             defer { settings.close() }
             try await settings.press("project-settings-copy-path")
             XCTAssertEqual(pasteboard.string(forType: .string), first.path)
-            try await settings.press("project-settings-pin")
+            try await settings.toggleSwitch("project-settings-pin")
             XCTAssertTrue(model.projects.first { $0.id == alpha.id }?.pinned == true)
             XCTAssertNil(model.project?.pinned)
             try await settings.replaceField("Project", with: "Renamed project")
@@ -696,6 +696,15 @@ private extension NSWindow {
         let button = try await waitForElement(identifier)
         XCTAssertTrue(button.accessibilityPerformPress?() == true, identifier)
         await Task.yield()
+    }
+
+    /// Settings switches are native switches: AppKit toggles them on press but reports the press as unhandled.
+    func toggleSwitch(_ identifier: String) async throws {
+        let control = try await waitForElement(identifier)
+        let value = { ((control as? NSAccessibilityProtocol)?.accessibilityValue() as? NSNumber)?.boolValue }
+        let before = try XCTUnwrap(value(), identifier)
+        _ = control.accessibilityPerformPress?()
+        try await waitFor("\(identifier) toggled") { value() == !before }
     }
 
     func field(withValue value: String) async throws -> NSTextField {

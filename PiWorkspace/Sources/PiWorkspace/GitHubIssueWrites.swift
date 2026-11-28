@@ -45,14 +45,14 @@ enum GitHubIssueWriteError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidTitle: "Enter an issue title of 1 to 1,024 characters."
-        case .invalidDescription: "Enter an issue description of at most 65,536 characters."
-        case .invalidComment: "Enter a comment of 1 to 65,536 characters."
-        case .selectionChanged: "The selected issue, thread, or checkout changed. Reopen the issue and try again."
-        case .editDenied: "Your GitHub CLI account can’t edit this issue."
-        case .acknowledgementLost: "GitHub did not confirm the change. Check the result."
-        case .editUnconfirmed: "GitHub does not show the saved edit. Review the issue and try saving again."
-        case .commentUnconfirmed: "GitHub has not confirmed this comment. Check again before posting."
+        case .invalidTitle: String(localized: "Enter an issue title of 1 to 1,024 characters.")
+        case .invalidDescription: String(localized: "Enter an issue description of at most 65,536 characters.")
+        case .invalidComment: String(localized: "Enter a comment of 1 to 65,536 characters.")
+        case .selectionChanged: String(localized: "The selected issue, thread, or checkout changed. Reopen the issue and try again.")
+        case .editDenied: String(localized: "Your GitHub CLI account can’t edit this issue.")
+        case .acknowledgementLost: String(localized: "GitHub did not confirm the change. Check the result.")
+        case .editUnconfirmed: String(localized: "GitHub does not show the saved edit. Review the issue and try saving again.")
+        case .commentUnconfirmed: String(localized: "GitHub has not confirmed this comment. Check again before posting.")
         }
     }
 }

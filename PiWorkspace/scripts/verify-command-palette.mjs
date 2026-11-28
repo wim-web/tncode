@@ -85,7 +85,7 @@ export async function verifyPaletteFiles(driver, { root, git, launch, quit, reco
   await until(() => visible("settings-heading-appearance") && value("appearance-chat-width").includes("Comfortable"),
               "the palette opened the current Chat width setting");
   driver.pick("appearance-chat-width", "Full");
-  dismiss("appearance-done");
+  dismiss("settings-close");
   await until(() => driver.frame("composer")[2] > initialWidth && shown("composer", secondText), "the same draft widened");
   driver.menuItem("Command Palette…");
   await until(() => visible(field).includes("focused=true"), "palette for scoped Model ID");

@@ -38,56 +38,78 @@ struct DraftProjectPicker: View {
 
     private var currentDestination: Destination? { highlightedDestination(in: results.destinations) }
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    @Environment(\.t3Themes) private var t3Themes
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
+
     var body: some View {
         let (matches, actions, destinations) = results
         let selected = highlightedDestination(in: destinations)
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Search projects", text: Binding(get: { query }, set: { value in
-                if query != value { highlight = nil }
-                query = value
-            }))
-                .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
-                .accessibilityIdentifier("draft-project-search")
-                .onSubmit { if let currentDestination { finish(currentDestination) } }
-                .submitScope()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.mutedForeground.opacity(0.55))
+                TextField("Search projects", text: Binding(get: { query }, set: { value in
+                    if query != value { highlight = nil }
+                    query = value
+                }))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($searchFocused)
+                    .accessibilityIdentifier("draft-project-search")
+                    .onSubmit { if let currentDestination { finish(currentDestination) } }
+                    .submitScope()
+            }
+            .frame(height: 26)
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(searchFocused ? palette.ring : palette.border.opacity(0.7)).frame(height: 1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
             if destinations.isEmpty {
                 Text("No matching projects.")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.mutedForeground)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .accessibilityIdentifier("draft-project-no-results")
             } else {
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(spacing: 2) {
+                        VStack(spacing: 0) {
                             ForEach(matches) { project in
                                 let destination = Destination.project(project.id)
                                 row(project.title, icon: "folder", destination: destination, selected: selected,
                                     identifier: "draft-project-\(project.id)", project: project)
                                     .id(destination)
                             }
-                            if !matches.isEmpty && !actions.isEmpty { Divider() }
+                            if !matches.isEmpty && !actions.isEmpty {
+                                Rectangle().fill(palette.border).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+                            }
                             if actions.contains(.noProject) {
-                                row("No project", icon: "doc", destination: .noProject, selected: selected,
+                                row(String(localized: "No project"), icon: "doc", destination: .noProject, selected: selected,
                                     identifier: "draft-no-project")
                                     .id(Destination.noProject)
                             }
                             if actions.contains(.addProject) {
-                                row("Add project", icon: "folder.badge.plus", destination: .addProject, selected: selected,
+                                row(String(localized: "Add project"), icon: "folder.badge.plus", destination: .addProject, selected: selected,
                                     identifier: "draft-add-project")
                                     .id(Destination.addProject)
                             }
                         }
                     }
-                    .frame(height: min(230, CGFloat(destinations.count * 30 + 4)))
+                    .scrollIndicators(.never)
+                    .frame(height: min(296, CGFloat(destinations.count * 32 + 9)))
                     .onChange(of: selected) { _, value in
                         if let value { reader.scrollTo(value) }
                     }
                 }
             }
         }
-        .padding(12)
-        .frame(width: 292)
+        .padding(4)
+        .frame(width: 320)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Draft project chooser")
         .accessibilityIdentifier("draft-project-chooser")
@@ -147,16 +169,21 @@ struct DraftProjectPicker: View {
         return HStack(spacing: 0) {
             Button { finish(destination) } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: icon)
-                        .frame(width: 17)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(title).lineLimit(1)
+                    Group {
+                        if let project {
+                            ProjectIconView(icon: project.icon, projectName: project.title)
+                        } else {
+                            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(palette.mutedForeground)
+                        }
+                    }
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                    Text(title).lineLimit(1).font(.system(size: 14))
                     Spacer()
-                    if current { Image(systemName: "checkmark").accessibilityHidden(true) }
+                    if current { Image(systemName: "checkmark").font(.system(size: 12)).accessibilityHidden(true) }
                 }
-                .padding(.horizontal, 7)
-                .frame(height: 28)
+                .padding(.horizontal, 8)
+                .frame(height: 32)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -165,12 +192,13 @@ struct DraftProjectPicker: View {
             .accessibilityIdentifier(identifier)
             if let project {
                 let pinned = project.pinned == true
-                let action = pinned ? "Unpin \(project.title)" : "Pin \(project.title)"
+                let action = pinned ? String(localized: "Unpin \(project.title)") : String(localized: "Pin \(project.title)")
                 Button { togglePin(project.id) } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.mutedForeground)
                         .opacity(pinned || destination == selected ? 1 : 0)
-                        .frame(width: 26, height: 28)
+                        .frame(width: 24, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -182,7 +210,7 @@ struct DraftProjectPicker: View {
         .onHover { hovering in
             if hovering { highlight = destination }
         }
-        .background(destination == selected ? Color.accentColor.opacity(0.15) : .clear,
-                    in: RoundedRectangle(cornerRadius: 5))
+        .background(destination == selected ? palette.itemHighlight : .clear,
+                    in: RoundedRectangle(cornerRadius: 4))
     }
 }

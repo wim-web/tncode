@@ -67,9 +67,13 @@ struct ModelSettings: Codable, Equatable {
         var id: Self { self }
         var label: String {
             switch self {
-            case .xhigh: "Extra high"
-            case .max: "Maximum"
-            default: rawValue.capitalized
+            case .off: String(localized: "Off")
+            case .minimal: String(localized: "Minimal")
+            case .low: String(localized: "Low")
+            case .medium: String(localized: "Medium")
+            case .high: String(localized: "High")
+            case .xhigh: String(localized: "Extra high")
+            case .max: String(localized: "Maximum")
             }
         }
     }
@@ -140,9 +144,9 @@ enum ThreadLocation: Codable, Equatable {
 
     var label: String {
         switch self {
-        case .project: "Local"
-        case .newWorktree: "New worktree"
-        case .worktree: "Worktree"
+        case .project: String(localized: "Local")
+        case .newWorktree: String(localized: "New worktree")
+        case .worktree: String(localized: "Worktree")
         }
     }
 
@@ -179,9 +183,9 @@ struct WorktreeLaunch: Codable {
 
         var label: String {
             switch self {
-            case .createCheckout: "Create worktree"
-            case .openThread: "Open thread"
-            case .sendPrompt: "Send first message"
+            case .createCheckout: String(localized: "Create worktree")
+            case .openThread: String(localized: "Open thread")
+            case .sendPrompt: String(localized: "Send first message")
             }
         }
     }
@@ -237,6 +241,10 @@ struct Conversation: Codable, Identifiable {
     var sidebarActiveOrder: String?
 
     var workingLocation: ThreadLocation { location ?? .project }
+    /// Untitled drafts store the English placeholder title; show it in the interface language.
+    var displayTitle: String {
+        ["New thread", "New conversation"].contains(title) ? String(localized: "New thread") : title
+    }
     var threadShelf: ThreadShelf { shelf ?? .active }
     var pullRequestLinks: [ThreadPullRequestLink] { linkedPullRequests ?? [] }
     var issueLinks: [ThreadIssueLink] { linkedIssues ?? [] }
@@ -389,6 +397,8 @@ struct Project: Codable, Identifiable {
     var icon: ProjectIcon?
 
     var isScratch: Bool { kind == .scratch }
+    /// Scratch projects store the English placeholder title; show it in the interface language.
+    var displayTitle: String { isScratch && title == "No project" ? String(localized: "No project") : title }
 
     var folderIsAvailable: Bool {
         path.hasPrefix("/") && !path.utf8.contains(0) &&
@@ -496,7 +506,8 @@ struct PendingConversationHistory: Codable {
 
 struct WorkspaceError: LocalizedError {
     let message: String
-    init(_ message: String) { self.message = message }
+    /// Fixed messages are translated; messages built at runtime fall back to English.
+    init(_ message: String) { self.message = NSLocalizedString(message, comment: "") }
     var errorDescription: String? { message }
 }
 
@@ -513,26 +524,26 @@ enum WorkspaceStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .inUse:
-            "This workspace is open in another Pi Workspace process."
+            String(localized: "This workspace is open in another Pi Workspace process.")
         case let .access(file, error):
-            "Could not access \(file.lastPathComponent). \(error.localizedDescription)"
+            String(localized: "Could not access \(file.lastPathComponent). \(error.localizedDescription)")
         case let .invalidIndex(missing, canRestore, _):
-            (missing ? "The workspace index is missing." : "The workspace index is damaged.")
-                + (canRestore ? "" : " A readable, valid previous index is unavailable.")
+            (missing ? String(localized: "The workspace index is missing.") : String(localized: "The workspace index is damaged."))
+                + (canRestore ? "" : String(localized: " A readable, valid previous index is unavailable."))
         }
     }
 
     func diagnosticLines(root: URL) -> [String] {
         switch self {
         case let .inUse(file, code):
-            [localizedDescription, "Lock: \(file.path)"]
+            [localizedDescription, String(localized: "Lock: \(file.path)")]
                 + Self.accessDetails(NSError(domain: NSPOSIXErrorDomain, code: Int(code)))
         case let .access(file, error):
-            ["Could not access \(file.lastPathComponent).", "Path: \(file.path)"] + Self.accessDetails(error)
+            [String(localized: "Could not access \(file.lastPathComponent)."), String(localized: "Path: \(file.path)")] + Self.accessDetails(error)
         case let .invalidIndex(_, _, previousReadError):
             [localizedDescription,
-             "Index: \(root.appendingPathComponent(WorkspaceStore.indexName).path)",
-             "Previous index: \(root.appendingPathComponent(WorkspaceStore.previousIndexName).path)"]
+             String(localized: "Index: \(root.appendingPathComponent(WorkspaceStore.indexName).path)"),
+             String(localized: "Previous index: \(root.appendingPathComponent(WorkspaceStore.previousIndexName).path)")]
                 + (previousReadError.map(Self.accessDetails) ?? [])
         }
     }
@@ -555,8 +566,8 @@ private enum WorkspaceStoreFileError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notRegularFile: "Expected a regular file."
-        case .archiveMismatch: "The archive already contains different data."
+        case .notRegularFile: String(localized: "Expected a regular file.")
+        case .archiveMismatch: String(localized: "The archive already contains different data.")
         }
     }
 }

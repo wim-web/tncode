@@ -33,11 +33,11 @@ enum WorkspaceFileError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .missing: "The file or folder is missing."
-        case .unsupportedPath: "This path cannot be opened from the workspace."
-        case .readOnly: "This file is read-only."
-        case .changed: "The file changed on disk. Copy your edits or discard them to reload the file."
-        case .tooLarge: "This edit exceeds the 1 MiB save limit."
+        case .missing: String(localized: "The file or folder is missing.")
+        case .unsupportedPath: String(localized: "This path cannot be opened from the workspace.")
+        case .readOnly: String(localized: "This file is read-only.")
+        case .changed: String(localized: "The file changed on disk. Copy your edits or discard them to reload the file.")
+        case .tooLarge: String(localized: "This edit exceeds the 1 MiB save limit.")
         }
     }
 }
@@ -152,9 +152,9 @@ enum WorkspaceLargeTextError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .changed: "The file changed on disk. Retry to reopen it."
-        case .invalidText: "This part of the file is not valid UTF-8 text."
-        case .lineNotFound: "There is no line with that number."
+        case .changed: String(localized: "The file changed on disk. Retry to reopen it.")
+        case .invalidText: String(localized: "This part of the file is not valid UTF-8 text.")
+        case .lineNotFound: String(localized: "There is no line with that number.")
         }
     }
 }

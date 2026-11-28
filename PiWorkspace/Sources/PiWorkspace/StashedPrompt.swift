@@ -31,6 +31,6 @@ struct StashedPrompt: Codable, Identifiable {
         let text = prompt.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         if !text.isEmpty { return text.count > 90 ? String(text.prefix(90)) + "…" : text }
         if let item = attachments.first, attachments.count == 1 { return item.name }
-        return "\(attachments.count) attachments"
+        return String(localized: "\(attachments.count) attachments")
     }
 }

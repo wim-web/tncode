@@ -4,12 +4,15 @@ struct ProjectIconView: View {
     let icon: ProjectIcon?
     var size: CGFloat = 16
     var fallback = "folder"
+    /// With a name, an unset icon shows T3 Code's derived monogram instead of the fallback symbol.
+    var projectName: String? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         artwork
             .frame(width: size, height: size)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(icon?.summary ?? "Default project icon")
+            .accessibilityLabel(icon?.summary ?? String(localized: "Default project icon"))
             .accessibilityAddTraits(.isImage)
     }
 
@@ -39,7 +42,11 @@ struct ProjectIconView: View {
                 fallbackImage
             }
         case nil:
-            fallbackImage
+            if let projectName {
+                T3ProjectMonogram(name: projectName, size: size, dark: colorScheme == .dark)
+            } else {
+                fallbackImage
+            }
         }
     }
 
@@ -119,7 +126,7 @@ struct ProjectIconPicker: View {
             Text("Choose project icon").font(.headline).accessibilityAddTraits(.isHeader)
             Picker("Icon type", selection: $mode) {
                 ForEach(Mode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(localized: mode.rawValue).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -232,5 +239,69 @@ struct ProjectIconPicker: View {
         .accessibilityLabel(label)
         .accessibilityIdentifier("project-icon-\(id)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// T3 Code's default project mark (ProjectMonogram.tsx, projectIdentity.ts, projectMonogram.ts).
+struct T3ProjectMonogram: View {
+    let name: String
+    let size: CGFloat
+    let dark: Bool
+
+    private static let colors: [(dark: UInt32, light: UInt32)] = [
+        (0x99A1AF, 0x4A5565), (0xFF6467, 0xE7000B), (0xFF8904, 0xF54900), (0xFFB900, 0xE17100),
+        (0xFDC700, 0xD08700), (0x9AE600, 0x5EA500), (0x05DF72, 0x00A63E), (0x00D492, 0x009966),
+        (0x00D5BE, 0x009689), (0x00D3F2, 0x0092B8), (0x00BCFF, 0x0084D1), (0x51A2FF, 0x155DFC),
+        (0x7C86FF, 0x4F39F6), (0xA684FF, 0x7F22FE), (0xC27AFF, 0x9810FA), (0xED6AFF, 0xC800DE),
+        (0xFB64B6, 0xE60076), (0xFF637E, 0xEC003F)
+    ]
+
+    static func colorIndex(for name: String) -> Int {
+        let normalized = name.precomposedStringWithCompatibilityMapping.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seed = normalized.isEmpty ? "project" : normalized.lowercased(with: Locale(identifier: "en_US"))
+        var index = 0
+        for scalar in seed.unicodeScalars {
+            index = (index * 31 + Int(scalar.value)) % colors.count
+        }
+        return index
+    }
+
+    static func letters(for name: String) -> String {
+        let normalized = name.precomposedStringWithCompatibilityMapping.trimmingCharacters(in: .whitespacesAndNewlines)
+        var words: [[Character]] = []
+        var current: [Character] = []
+        for character in normalized {
+            if character.isLetter || character.isNumber {
+                current.append(character)
+            } else if !current.isEmpty {
+                words.append(current)
+                current = []
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        guard let firstWord = words.first, let first = firstWord.first else { return "PR" }
+        if first.unicodeScalars.first.map({ (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) ||
+            (0xAC00...0xD7AF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) }) == true {
+            return String(first)
+        }
+        let second = firstWord.dropFirst().first(where: \.isNumber)
+            ?? (words.count > 1 ? words[words.count - 1].first : firstWord.last) ?? first
+        return String(String([first, second]).uppercased().prefix(2))
+    }
+
+    var body: some View {
+        let pair = Self.colors[Self.colorIndex(for: name)]
+        let tint = Color(hex: dark ? pair.dark : pair.light)
+        let text = Self.letters(for: name)
+        let glyphs = text.count
+        let fontSize = size * 8.25 / 16
+        Text(verbatim: text)
+            .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+            .foregroundStyle(tint)
+            .fixedSize()
+            .scaleEffect(x: (size * (glyphs == 1 ? 6 : 12) / 16) / (fontSize * 0.6 * CGFloat(max(glyphs, 1))), y: 1)
+            .frame(width: size, height: size)
+            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: size * 0.25))
+            .accessibilityHidden(true)
     }
 }

@@ -15,6 +15,10 @@ struct CommandPaletteView: View {
 
     @State private var session: CommandPaletteSession
     @FocusState private var focusedField: SearchField?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
 
     init(contents: CommandPaletteContents, latestMessageID: String?, startingAt session: CommandPaletteSession = .init(),
          filesLocation: WorkspaceFilesLocation? = nil, activeFilesLocation: @escaping () -> WorkspaceFilesLocation? = { nil },
@@ -69,20 +73,26 @@ struct CommandPaletteView: View {
 
     private var fileStatus: String? {
         guard let mode = session.fileSearchMode else { return nil }
-        guard filesLocation != nil else { return "Open a thread with an available checkout to search its files." }
+        guard filesLocation != nil else {
+            return String(localized: "Open a thread with an available checkout to search its files.")
+        }
         if mode == .contents {
             if session.query.utf16.count > WorkspaceFileSearch.queryLimit {
-                return "Search is limited to \(WorkspaceFileSearch.queryLimit) characters."
+                return String(localized: "Search is limited to \(WorkspaceFileSearch.queryLimit) characters.")
             }
-            if fileSearch == nil { return "Type to search file contents." }
+            if fileSearch == nil { return String(localized: "Type to search file contents.") }
         }
         switch fileResult {
-        case nil: return mode == .files && session.query.isEmpty ? "Indexing workspace files…" : "Searching…"
+        case nil:
+            return mode == .files && session.query.isEmpty
+                ? String(localized: "Indexing workspace files…") : String(localized: "Searching…")
         case .failure(let error): return error.localizedDescription
         case .success(let result):
-            if result.invalidRegex { return "Invalid regular expression. Showing literal matches." }
-            if result.limited { return "Search limit reached. Refine your query for more matches." }
-            if result.matches.isEmpty { return mode == .files ? "No matching files" : "No matching lines" }
+            if result.invalidRegex { return String(localized: "Invalid regular expression. Showing literal matches.") }
+            if result.limited { return String(localized: "Search limit reached. Refine your query for more matches.") }
+            if result.matches.isEmpty {
+                return mode == .files ? String(localized: "No matching files") : String(localized: "No matching lines")
+            }
             return nil
         }
     }
@@ -96,78 +106,103 @@ struct CommandPaletteView: View {
         let fileSearch = self.fileSearch
         let mode = session.fileSearchMode
         let fileStatus = self.fileStatus
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
                 if session.choosingProject || mode != nil {
                     Button(action: back) {
-                        Label("Back", systemImage: "arrow.left").labelStyle(.iconOnly)
+                        Label("Back", systemImage: "arrow.left").labelStyle(.iconOnly).font(.system(size: 13))
                     }
+                    .buttonStyle(T3IconButtonStyle(size: 24))
                     .accessibilityIdentifier("command-palette-back")
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundStyle(palette.mutedForeground)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
                 }
-                TextField(prompt, text: $session.query)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: searchField)
-                .accessibilityIdentifier("command-palette-search")
-                .disabled(mode != nil && filesLocation == nil)
-                .id(searchField)
+                TextField(LocalizedStringKey(prompt), text: $session.query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($focusedField, equals: searchField)
+                    .accessibilityIdentifier("command-palette-search")
+                    .disabled(mode != nil && filesLocation == nil)
+                    .id(searchField)
                 if mode == .contents {
                     searchOption("Aa", label: "Match case", id: "match-case", value: $session.fileOptions.caseSensitive)
                     searchOption("ab", label: "Match whole word", id: "whole-word", value: $session.fileOptions.wholeWord)
                     searchOption(".*", label: "Use regular expression", id: "regex", value: $session.fileOptions.regex)
                 }
             }
+            .padding(.horizontal, 12)
+            .frame(height: 48)
             if rows.isEmpty {
-                Text(fileStatus ?? (searching ? "Searching messages…" : "No results"))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 80)
+                Text(fileStatus ?? (searching ? String(localized: "Searching messages…") : String(localized: "No results")))
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.mutedForeground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
                     .accessibilityIdentifier(mode != nil ? "command-palette-file-status" :
                                              searching ? "command-palette-searching" : "command-palette-empty")
             } else {
                 ScrollViewReader { reader in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 6) {
                             ForEach(groups) { group in
-                                Text(group.id.rawValue)
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.leading, 9)
-                                    .padding(.top, 4)
-                                    .accessibilityAddTraits(.isHeader)
-                                    .accessibilityIdentifier(group.id == .messages ? "command-palette-in-messages" : "command-palette-group-\(group.id)")
-                                ForEach(group.rows) { row in
-                                    resultRow(row, selected: row.id == selected)
-                                        .id(row.id)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(localized: group.id.rawValue)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(palette.mutedForeground)
+                                        .padding(.horizontal, 8)
+                                        .frame(height: 28)
+                                        .accessibilityAddTraits(.isHeader)
+                                        .accessibilityIdentifier(group.id == .messages ? "command-palette-in-messages" : "command-palette-group-\(group.id)")
+                                    ForEach(group.rows) { row in
+                                        resultRow(row, selected: row.id == selected)
+                                            .id(row.id)
+                                    }
                                 }
                             }
                         }
+                        .padding(8)
                     }
-                    .frame(height: min(330, CGFloat(rows.count * 40 + groups.count * 22)))
+                    .scrollIndicators(.never)
+                    .frame(height: min(356, CGFloat(rows.count * 32 + groups.count * 34) + 16))
                     .onChange(of: selected) { _, id in
                         if let id { reader.scrollTo(id) }
                     }
                 }
             }
             if let fileStatus, !rows.isEmpty {
-                Text(fileStatus).font(.caption).foregroundStyle(.secondary)
+                Text(fileStatus)
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.mutedForeground)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                     .accessibilityIdentifier("command-palette-file-status")
             }
-            HStack {
-                Text("↑ ↓ Navigate")
-                if selected != nil { Text(mode == nil ? "↩ Select" : "↩ Open File") }
-                if session.choosingProject { Text("⌫ Back") }
-                if mode != nil { Text("⎋ Back") }
+            HStack(spacing: 12) {
+                paletteHint(["↑", "↓"], "Navigate")
+                if selected != nil { paletteHint(["↩"], mode == nil ? "Select" : "Open File") }
+                if session.choosingProject { paletteHint(["⌫"], "Back") }
+                paletteHint(["esc"], mode != nil ? "Back" : "Close")
                 Spacer()
                 if searching && !rows.isEmpty {
                     Text("Searching messages…").accessibilityIdentifier("command-palette-searching")
                 }
                 Button("Cancel") { finish(nil) }
+                    .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
                     .accessibilityIdentifier("command-palette-cancel")
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(palette.mutedForeground)
+            .padding(.horizontal, 16)
+            .frame(height: 41)
+            .background(palette.commandFooterFill)
+            .overlay(alignment: .top) { Rectangle().fill(palette.commandFooterBorder).frame(height: 1) }
         }
-        .padding(18)
-        .frame(width: 520)
+        .frame(width: 576)
+        .background(palette.isDark ? Color(hex: 0x0A0A0A) : palette.canvas)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(mode == .files ? "File picker" : mode == .contents ? "Search project contents" : "Command palette")
         .accessibilityIdentifier(mode == .files ? "project-file-picker" : mode == .contents ? "project-content-search" : "command-palette")
@@ -236,45 +271,65 @@ struct CommandPaletteView: View {
             default: row.action.identifier
             }
         }
+        let twoLine = (row.action.isMessage || session.fileSearchMode == .contents) && row.detail != nil
         return Button {
             guard groups(for: search).contains(where: { $0.rows.contains { $0.id == row.id } }) else { return }
             _ = handle(session.select(row.action))
         } label: {
-            HStack(spacing: 9) {
+            HStack(alignment: twoLine ? .top : .center, spacing: 8) {
                 Image(systemName: row.icon)
-                    .frame(width: 18)
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.mutedForeground)
+                    .frame(width: 16, height: 20)
                     .accessibilityHidden(true)
-                if (row.action.isMessage || session.fileSearchMode == .contents), let snippet = row.detail {
+                if twoLine, let snippet = row.detail {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title).lineLimit(1)
-                        Text(snippet).lineLimit(1).font(.caption).foregroundStyle(.secondary)
+                        Text(localized: row.title).lineLimit(1).font(.system(size: 14)).foregroundStyle(palette.foreground)
+                        Text(snippet).lineLimit(1).font(.system(size: 12))
+                            .foregroundStyle(palette.mutedForeground.opacity(0.7))
                     }
                 } else {
-                    Text(row.title).lineLimit(1)
+                    Text(localized: row.title).lineLimit(1).font(.system(size: 14)).foregroundStyle(palette.foreground)
                     if let detail = row.detail {
                         Text(detail)
                             .truncationMode(.head)
                             .lineLimit(1)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.mutedForeground.opacity(0.7))
                     }
                 }
                 Spacer(minLength: 0)
                 if row.action == .chooseProject {
-                    Image(systemName: "chevron.right").font(.caption)
+                    Image(systemName: "chevron.right").font(.system(size: 12))
+                        .foregroundStyle(palette.mutedForeground.opacity(0.7))
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 9)
-            .frame(height: 34)
+            .padding(.horizontal, 8)
+            .padding(.vertical, twoLine ? 6 : 0)
+            .frame(minHeight: 32)
             .contentShape(Rectangle())
-            .background(selected ? Color.accentColor.opacity(0.17) : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .background(selected ? palette.itemHighlight : .clear, in: RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(row.title)
+        .accessibilityLabel(Text(localized: row.title))
         .accessibilityHint(row.detail ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("command-palette-\(identifier)")
+    }
+
+    private func paletteHint(_ keys: [String], _ label: String) -> some View {
+        HStack(spacing: 4) {
+            ForEach(keys, id: \.self) { key in
+                Text(key)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(palette.foreground)
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(palette.foreground.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+            }
+            Text(localized: label)
+        }
     }
 
     private func searchOption(_ title: String, label: String, id: String, value: Binding<Bool>) -> some View {
@@ -282,11 +337,12 @@ struct CommandPaletteView: View {
             value.wrappedValue.toggle()
             focusedField = searchField
         } label: {
-            Text(title).font(.system(.caption, design: .monospaced)).frame(minWidth: 18)
+            Text(title).font(.system(size: 11, design: .monospaced)).frame(minWidth: 18)
         }
-        .tint(value.wrappedValue ? .accentColor : .secondary)
-        .help(label)
-        .accessibilityLabel(label)
+        .buttonStyle(T3IconButtonStyle(size: 24, active: value.wrappedValue,
+                                       foreground: value.wrappedValue ? palette.primary : nil))
+        .help(Text(localized: label))
+        .accessibilityLabel(Text(localized: label))
         .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
         .accessibilityIdentifier("command-palette-" + id)
         .disabled(filesLocation == nil)

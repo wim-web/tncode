@@ -149,7 +149,11 @@ export async function verifyThreadActions(driver, { root, app, git, launch, quit
 
   await launch("model-settings", root);
   await until(() => composer(seed) && visible("remove-attachment-" + note.id), "saved draft with its note");
-  press("toggle-files");
+  if (!has("hide-right-panel")) press("toggle-right-panel");
+  await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+  press("add-panel-surface");
+  await until(() => visible("add-panel-files"), "Files in Add Panel Surface");
+  dismiss("add-panel-files");
   await until(() => visible("files-row-shortcut.txt"), "workspace file beside the chat draft");
   press("files-row-shortcut.txt");
   await setField("files-editor", "Saved from Files.");

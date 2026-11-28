@@ -12,41 +12,60 @@ struct ComposerModelPicker: View {
     @State private var query = ""
     @State private var highlight: ModelSettings.Identity?
     @FocusState private var searchFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
 
     var body: some View {
         let matches = options.filter { $0.matches(query) }
         let selectable = matches.filter { $0.unavailableReason == nil }
         let selected = selectable.first { $0.id == highlight } ?? selectable.first
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Search models…", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
-                .accessibilityIdentifier("composer-model-search")
-                .onChange(of: query) { highlight = nil }
-                .onSubmit { if let selected { choose(selected) } }
-                .submitScope()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.mutedForeground.opacity(0.55))
+                TextField("Search models…", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($searchFocused)
+                    .accessibilityIdentifier("composer-model-search")
+                    .onChange(of: query) { highlight = nil }
+                    .onSubmit { if let selected { choose(selected) } }
+                    .submitScope()
+            }
+            .frame(height: 26)
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(searchFocused ? palette.ring : palette.border.opacity(0.7)).frame(height: 1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
             if matches.isEmpty {
                 Text("No matching models.")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.mutedForeground)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("composer-model-no-results")
             } else {
                 ScrollViewReader { reader in
                     ScrollView {
-                        LazyVStack(spacing: 2) {
+                        LazyVStack(spacing: 0) {
                             ForEach(matches) { option in
                                 row(option, highlighted: searchFocused && selected?.id == option.id)
                                     .id(option.id)
                             }
                         }
                     }
+                    .scrollIndicators(.never)
                     .onChange(of: selected?.id) { _, id in
                         if let id { reader.scrollTo(id) }
                     }
                 }
+                .padding(4)
             }
-            Divider()
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 if canUseDefault {
                     Button("Use Default", action: useDefault)
                         .accessibilityIdentifier("composer-model-default")
@@ -57,12 +76,15 @@ struct ComposerModelPicker: View {
                 Button("Close", action: close)
                     .accessibilityIdentifier("composer-model-close")
             }
-            .controlSize(.small)
+            .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .overlay(alignment: .top) { Rectangle().fill(palette.border.opacity(0.7)).frame(height: 1) }
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator).allowsHitTesting(false) }
-        .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .background(palette.dropdownGlass, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.dropdownBorder).allowsHitTesting(false) }
+        .shadow(color: .black.opacity(palette.isDark ? 0.8 : 0.55), radius: 22, y: 17)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose model")
         .accessibilityIdentifier("composer-model-picker")
@@ -98,24 +120,25 @@ struct ComposerModelPicker: View {
         Button { choose(option) } label: {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(option.name).lineLimit(1)
+                    Text(option.name).lineLimit(1).font(.system(size: 14)).foregroundStyle(palette.foreground)
                     Text(option.unavailableReason ?? option.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.mutedForeground)
                         .lineLimit(2)
                 }
                 Spacer(minLength: 4)
                 if option.unavailableReason != nil {
-                    Text("Unavailable").font(.caption)
+                    Text("Unavailable").font(.system(size: 12)).foregroundStyle(palette.mutedForeground)
                 }
                 if current == option.id {
-                    Image(systemName: "checkmark").accessibilityHidden(true)
+                    Image(systemName: "checkmark").font(.system(size: 12)).accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(highlighted ? Color.accentColor.opacity(0.15) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(minHeight: 32)
+            .background(highlighted ? palette.itemHighlight : current == option.id ? palette.itemSelected : .clear,
+                        in: RoundedRectangle(cornerRadius: 4))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

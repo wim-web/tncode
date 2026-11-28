@@ -10,6 +10,10 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
     @State private var query = ""
     @State private var highlight: Choice?
     @FocusState private var searchFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    private var palette: T3Palette { T3Palette(colorScheme, t3Themes) }
 
     private enum Choice: Hashable {
         case all
@@ -36,7 +40,8 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
                 .accessibilityIdentifier("project-filter-search")
             if choices.isEmpty {
                 Text("No matching projects.")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(palette.mutedForeground)
                     .frame(maxWidth: .infinity, minHeight: 26)
                     .accessibilityIdentifier("project-filter-no-results")
             } else {
@@ -45,11 +50,13 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
                         VStack(alignment: .leading, spacing: 0) {
                             if choices.first == .all {
                                 Button("All Projects") { select(.all) }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 14))
                                     .accessibilityIdentifier("project-filter-all")
                                     .accessibilityAddTraits(active == .all ? .isSelected : [])
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 4)
-                                    .frame(height: 26)
+                                    .padding(.horizontal, 8)
+                                    .frame(height: 32)
                                     .background(highlightBackground(active == .all))
                                     .id(Choice.all)
                             }
@@ -67,36 +74,45 @@ struct SidebarProjectScopePicker<ProjectMenu: View>: View {
                                         model.openSettings(.project, projectID: project.id)
                                     }
                                 )
-                                .padding(.horizontal, 4)
-                                .frame(height: 26)
+                                .padding(.horizontal, 8)
+                                .frame(height: 32)
                                 .background(highlightBackground(active == choice))
                                 .contextMenu { projectMenu(project) }
                                 .id(choice)
                             }
                         }
                     }
-                    .frame(height: CGFloat(min(choices.count, 9)) * 26)
+                    .frame(height: CGFloat(min(choices.count, 9)) * 32)
                     .onChange(of: active) { _, choice in
                         if let choice { reader.scrollTo(choice) }
                     }
                 }
             }
-            Divider()
+            Rectangle().fill(palette.border.opacity(0.7)).frame(height: 1)
             Toggle("Group by Project", isOn: $grouped)
+                .font(.system(size: 13))
+                .padding(.horizontal, 8)
                 .accessibilityIdentifier("group-threads-by-project")
             Toggle("Show Archive", isOn: $model.showArchive)
+                .font(.system(size: 13))
+                .padding(.horizontal, 8)
                 .accessibilityIdentifier("show-thread-archive")
-            Button("Done", action: dismiss)
-                .accessibilityIdentifier("close-thread-filters")
+            HStack {
+                Spacer()
+                Button("Done", action: dismiss)
+                    .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+                    .accessibilityIdentifier("close-thread-filters")
+            }
         }
-        .padding(12)
-        .frame(width: 230)
+        .padding(8)
+        .frame(width: 288)
+        .tint(palette.primary)
         .defaultFocus($searchFocused, true)
         .onAppear { searchFocused = true }
     }
 
     private func highlightBackground(_ highlighted: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 5).fill(highlighted ? Color.accentColor.opacity(0.18) : .clear)
+        RoundedRectangle(cornerRadius: 4).fill(highlighted ? palette.itemHighlight : .clear)
     }
 
     private func select(_ choice: Choice) {
@@ -151,7 +167,7 @@ private struct SidebarProjectSearch: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField(string: text)
         field.bezelStyle = .roundedBezel
-        field.placeholderString = "Search projects"
+        field.placeholderString = String(localized: "Search projects")
         let coordinator = context.coordinator
         field.delegate = coordinator
         coordinator.monitor = WindowKeyMonitor.observeKeys(in: field, includesPopoverFieldEditor: true) {

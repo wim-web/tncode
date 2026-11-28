@@ -69,7 +69,7 @@ final class GitHubIssueSession: ObservableObject {
             }
         } catch {
             operation = .restoreFailed
-            operationError = "Couldn’t read the saved comment receipt. \(error.localizedDescription)"
+            operationError = String(localized: "Couldn’t read the saved comment receipt. \(error.localizedDescription)")
         }
     }
 
@@ -133,7 +133,7 @@ final class GitHubIssueSession: ObservableObject {
                             do {
                                 try store().setPendingIssueComment(pending, for: reference)
                             } catch {
-                                throw WorkspaceError("Couldn’t save the comment receipt before posting. \(error.localizedDescription)")
+                                throw WorkspaceError(String(localized: "Couldn’t save the comment receipt before posting. \(error.localizedDescription)"))
                             }
                             recorded = pending
                         }
@@ -204,7 +204,7 @@ final class GitHubIssueSession: ObservableObject {
             }
         } catch {
             operation = .clearFailed(pending, rejection: rejection)
-            operationError = "Couldn’t clear the saved comment receipt. \(error.localizedDescription)"
+            operationError = String(localized: "Couldn’t clear the saved comment receipt. \(error.localizedDescription)")
         }
     }
 
@@ -302,7 +302,7 @@ struct IssueDetailsView: View {
                 }
             }
             HStack {
-                Text(issue.state.capitalized)
+                Text(GitHubItemState.label(issue.state, isDraft: false))
                     .accessibilityIdentifier("issue-detail-state")
                 if let login = issue.author?.login, !login.isEmpty {
                     Text(verbatim: "· @\(login)")
@@ -376,8 +376,8 @@ struct IssueDetailsView: View {
 
     private func editButton(_ label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: "pencil") }
-            .help(label)
-            .accessibilityLabel(label)
+            .help(Text(localized: label))
+            .accessibilityLabel(Text(localized: label))
             .accessibilityIdentifier(id)
             .disabled(session.locked)
     }
@@ -462,7 +462,7 @@ struct IssueDetailsView: View {
             ForEach(comments.nodes) { comment in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(comment.author.map { "@\($0.login)" } ?? "Unknown author")
+                        Text(comment.author.map { "@\($0.login)" } ?? String(localized: "Unknown author"))
                         if let url = URL(string: comment.url), GitHubIssueReference(url: comment.url) == reference {
                             Link(destination: url) { Text(comment.createdAt, style: .date) }
                         } else {
@@ -536,7 +536,7 @@ struct IssueDetailsView: View {
             let repository = try? await reader.repository()
             guard !Task.isCancelled else { return }
             let blocked = repository == issue.reference.repository
-                ? nil : "Writing is available for issues in the selected checkout’s GitHub repository."
+                ? nil : String(localized: "Writing is available for issues in the selected checkout’s GitHub repository.")
             loaded = Loaded(issue: issue, snapshot: snapshot, writeBlocked: blocked)
             readError = nil
         } catch {

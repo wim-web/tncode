@@ -15,11 +15,11 @@ enum WorkspacePanelTab: Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .browser: "Browser"
-        case .files: "Files"
-        case .changes: "Changes"
-        case .terminal(let number): "Terminal \(number)"
-        case .sideChat: "Side chat"
+        case .browser: String(localized: "Browser")
+        case .files: String(localized: "Files")
+        case .changes: String(localized: "Changes")
+        case .terminal(let number): String(localized: "Terminal \(number)")
+        case .sideChat: String(localized: "Side chat")
         }
     }
 
@@ -224,11 +224,11 @@ struct WorkspacePanelTabs<AddButton: View>: View {
                     }
                 }
                 addButton()
+                Spacer(minLength: 0)
                 panelIcon("Hide Right Panel", icon: "sidebar.right", id: "hide-right-panel", action: hide)
             }
-            .frame(height: 32)
+            .frame(height: 40)
             .padding(.horizontal, 8)
-            Divider()
         }
         .onPreferenceChange(TabFrames.self) { tabFrames = $0 }
     }
@@ -238,22 +238,8 @@ struct WorkspacePanelTabs<AddButton: View>: View {
         let title = panel.terminals[tab].map { WorkspacePanelTab.terminal($0.selectedPane).title } ?? titleForTab(tab)
         let index = panel.tabs.firstIndex(of: tab) ?? 0
         let toRight = Array(panel.tabs.dropFirst(index + 1))
-        return HStack(spacing: 2) {
-            Button { select(tab) } label: {
-                Label(title, systemImage: tab.icon)
-                    .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .frame(height: 24)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityAddTraits(active ? .isSelected : [])
-            .accessibilityIdentifier("right-panel-tab-\(tab.id)")
-            panelIcon("Close \(title)", icon: "xmark", id: "close-right-panel-\(tab.id)") { close([tab]) }
-                .font(.system(size: 9, weight: .medium))
-        }
-        .buttonStyle(.plain)
-        .font(.caption)
-        .background(active ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 4))
+        return PanelTabChip(title: title, icon: tab.icon, active: active, id: tab.id,
+                            select: { select(tab) }, close: { close([tab]) })
         .background {
             GeometryReader { geometry in
                 Color.clear.preference(key: TabFrames.self, value: [tab: geometry.frame(in: .named(tabStrip))])
@@ -333,11 +319,131 @@ private struct PanelTabMiddleClick: NSViewRepresentable {
 func panelIcon(_ title: String, icon: String, id: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
         Image(systemName: icon)
-            .frame(width: 22, height: 22)
-            .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .help(title)
-    .accessibilityLabel(title)
+    .buttonStyle(T3IconButtonStyle())
+    .help(Text(localized: title))
+    .accessibilityLabel(Text(localized: title))
     .accessibilityIdentifier(id)
+}
+
+/// Right panel tab: h24, radius 6, 12pt. The leading icon turns into the close button while hovered.
+private struct PanelTabChip: View {
+    let title: String
+    let icon: String
+    let active: Bool
+    let id: String
+    let select: () -> Void
+    let close: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+    @State private var hovering = false
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        HStack(spacing: 2) {
+            Button(action: close) {
+                Image(systemName: hovering ? "xmark" : icon)
+                    .font(.system(size: hovering ? 9 : 11, weight: hovering ? .semibold : .regular))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Close \(title)")
+            .accessibilityLabel("Close \(title)")
+            .accessibilityIdentifier("close-right-panel-\(id)")
+            Button(action: select) {
+                Text(localized: title)
+                    .lineLimit(1)
+                    .frame(maxWidth: 118, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(active ? .isSelected : [])
+            .accessibilityIdentifier("right-panel-tab-\(id)")
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(active || hovering ? palette.foreground : palette.mutedForeground)
+        .padding(.leading, 6)
+        .padding(.trailing, 8)
+        .frame(height: 24)
+        .background(active ? palette.accentFill : hovering ? palette.accentFill.opacity(0.6) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Row in a T3 dropdown menu: min-h28, px8, radius 4, 14pt, muted icon and trailing shortcut letter.
+struct T3MenuRowStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Chrome(configuration: configuration, palette: T3Palette(colorScheme, t3Themes), isEnabled: isEnabled)
+    }
+
+    private struct Chrome: View {
+        let configuration: ButtonStyleConfiguration
+        let palette: T3Palette
+        let isEnabled: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 14))
+                .foregroundStyle(palette.foreground)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(hovering || configuration.isPressed ? palette.accentFill : .clear,
+                            in: RoundedRectangle(cornerRadius: 4))
+                .contentShape(RoundedRectangle(cornerRadius: 4))
+                .opacity(isEnabled ? 1 : 0.64)
+                .onHover { hovering = $0 && isEnabled }
+        }
+    }
+}
+
+/// Menu row content: icon, title and trailing shortcut.
+struct T3MenuRowLabel: View {
+    let title: String
+    let icon: String
+    var shortcut: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    var body: some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.mutedForeground.opacity(0.8))
+                .frame(width: 16)
+            Text(localized: title)
+            Spacer(minLength: 12)
+            if let shortcut {
+                Text(shortcut)
+                    .font(.system(size: 12, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(palette.mutedForeground)
+            }
+        }
+    }
+}
+
+/// Dropdown surface: glass fill, hairline border, radius 8, padding 4.
+struct T3DropdownSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.t3Themes) private var t3Themes
+
+    func body(content: Content) -> some View {
+        let palette = T3Palette(colorScheme, t3Themes)
+        content
+            .padding(4)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(palette.dropdownGlass, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(palette.dropdownBorder).allowsHitTesting(false) }
+            .shadow(color: .black.opacity(palette.isDark ? 0.8 : 0.55), radius: 22, y: 17)
+    }
 }

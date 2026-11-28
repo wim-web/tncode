@@ -195,7 +195,9 @@ final class ThreadRowActionTests: XCTestCase {
         defer { board.releaseGlobally() }
         let host = OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
-        try await host.press("toggle-files")
+        if host.element("hide-right-panel") == nil { try await host.press("toggle-right-panel") }
+        try await host.press("add-panel-surface")
+        try await host.press("add-panel-files")
         try await host.press("files-row-shortcut.txt")
         let editor: NSTextView = try await host.waitFor("Files editor") { host.element("files-editor") as? NSTextView }
         XCTAssertTrue(host.window.makeFirstResponder(editor))

@@ -44,7 +44,7 @@ enum PiHistoryDiscovery {
 
         func checkedFolder() throws -> URL {
             guard let current = try? ProjectFolder.existing(at: folder), FolderID(current.path) == id else {
-                throw WorkspaceError("The folder for \(title) changed or is unavailable. Scan again to update the list.")
+                throw WorkspaceError(String(localized: "The folder for \(title) changed or is unavailable. Scan again to update the list."))
             }
             return current
         }
@@ -104,7 +104,7 @@ enum PiHistoryDiscovery {
         let fd = Darwin.open(sessions.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         if fd < 0 {
             if errno == ENOENT { return Result() }
-            throw WorkspaceError("Could not read the local Pi sessions folder. \(WorkspaceHistory.accessError(errno).localizedDescription)")
+            throw WorkspaceError(String(localized: "Could not read the local Pi sessions folder. \(WorkspaceHistory.accessError(errno).localizedDescription)"))
         }
 
         var result = Result()
@@ -222,7 +222,7 @@ enum PiHistoryDiscovery {
         }
         let modified = Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec) +
                             Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)
-        let displayTitle = sessionName ?? firstMessage ?? "Pi session"
+        let displayTitle = sessionName ?? firstMessage ?? String(localized: "Pi session")
         let session = Session(id: sessionID(header.id), title: displayTitle,
                               firstMessage: firstMessage == displayTitle ? nil : firstMessage,
                               modified: modified, bucket: bucket, fileName: name, fileID: FileID(info))

@@ -20,7 +20,7 @@ struct KeyVault {
     }
 
     private func check(_ status: OSStatus) throws {
-        guard status == errSecSuccess else { throw WorkspaceError("Keychain access failed (\(status)).") }
+        guard status == errSecSuccess else { throw WorkspaceError(String(localized: "Keychain access failed (\(status)).")) }
     }
 
     func read(_ account: String) throws -> String? {

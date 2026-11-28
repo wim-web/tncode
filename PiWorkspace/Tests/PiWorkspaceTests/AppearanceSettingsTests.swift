@@ -166,7 +166,9 @@ final class AppearanceSettingsTests: XCTestCase {
         for (mode, width) in [(ChatWidth.full, 1301.0), (.wide, 1126.0), (.comfortable, 710.0)] {
             settings.chatWidth = mode
             try await assertWidth(width, in: host) { composer()?.superview }
-            try await assertWidth(width + 26, in: host, view: transcript)
+            // Like T3 Code, the timeline scrolls across the whole chat column, outside the sidebar and its edge.
+            try await assertWidth(1680 - WorkspaceLayout.defaultSidebarWidth - WorkspaceLayout.dividerWidth,
+                                  in: host, view: transcript)
         }
     }
 

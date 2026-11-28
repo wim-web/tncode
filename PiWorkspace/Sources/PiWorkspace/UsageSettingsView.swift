@@ -5,7 +5,7 @@ import SwiftUI
 struct UsageSettingsView: View {
     let root: URL
     let projects: [Project]
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeSettings) private var dismiss
 
     @AppStorage("usagePeriod") private var period = UsagePeriod.month
     @AppStorage("usageMetric") private var metric = UsageMetric.tokens
@@ -26,7 +26,7 @@ struct UsageSettingsView: View {
 
     private var projectOptions: [(id: UsageProject, title: String)] {
         let folders = projects.filter { !$0.isScratch }.map {
-            (UsageProject.project($0.id), $0.title + ($0.detached == true ? " (Detached)" : ""))
+            (UsageProject.project($0.id), $0.title + ($0.detached == true ? String(localized: " (Detached)") : ""))
         }
         return projects.contains(where: \.isScratch) ? folders + [(.scratch, "No project")] : folders
     }
@@ -34,16 +34,11 @@ struct UsageSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Local workspace").font(.headline)
+                Text("Local workspace").font(.system(size: 16, weight: .semibold))
                 Spacer()
-                Picker("Usage metric", selection: $metric) {
-                    ForEach(UsageMetric.allCases) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 190)
-                .accessibilityLabel("Usage metric")
-                .accessibilityIdentifier("usage-metric")
+                T3SegmentedControl("Usage metric", selection: $metric,
+                                   options: UsageMetric.allCases.map { ($0, $0.title, nil) }, nativeAccessibility: true)
+                    .accessibilityIdentifier("usage-metric")
             }
 
             if metric == .limits {
@@ -120,32 +115,28 @@ struct UsageSettingsView: View {
     private var filters: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Picker("Usage period", selection: $period) {
-                    ForEach(UsagePeriod.allCases) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Usage period")
-                .accessibilityIdentifier("usage-period")
+                T3SegmentedControl("Usage period", selection: $period,
+                                   options: UsagePeriod.allCases.map { ($0, $0.title, nil) }, nativeAccessibility: true)
+                    .accessibilityIdentifier("usage-period")
 
                 Spacer()
                 Button {
                     refresh += 1
                 } label: {
-                    Label("Refresh usage", systemImage: "arrow.clockwise")
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 11))
+                        Text("Refresh usage")
+                    }
                 }
+                .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
                 .disabled(refreshing)
                 .accessibilityIdentifier("usage-refresh")
             }
             HStack {
-                Picker("Project", selection: $project) {
-                    Text("All projects").tag(nil as UsageProject?)
-                    ForEach(projectOptions, id: \.id) { option in
-                        Text(option.title).tag(Optional(option.id))
-                    }
-                }
-                .fixedSize()
-                .accessibilityIdentifier("usage-project")
+                T3Select("Project", selection: $project,
+                         options: [(nil as UsageProject?, "All projects")] + projectOptions.map { (Optional($0.id), $0.title) },
+                         width: 176)
+                    .accessibilityIdentifier("usage-project")
 
                 Menu {
                     Button("All providers") { saveHiddenProviders([]) }
@@ -182,11 +173,11 @@ struct UsageSettingsView: View {
     }
 
     private var providerFilterTitle: String {
-        guard let snapshot else { return "All providers" }
+        guard let snapshot else { return String(localized: "All providers") }
         let visible = snapshot.providers.subtracting(hiddenProviders)
-        if visible.count == snapshot.providers.count { return "All providers" }
+        if visible.count == snapshot.providers.count { return String(localized: "All providers") }
         if visible.count == 1, let provider = visible.first { return providerName(provider) }
-        return visible.isEmpty ? "No providers" : "\(visible.count) providers"
+        return visible.isEmpty ? String(localized: "No providers") : String(localized: "\(visible.count) providers")
     }
 
     private func providerName(_ provider: String?) -> String {
@@ -233,15 +224,10 @@ struct UsageSettingsView: View {
         } else {
             summary(readout.total, id: "usage")
             timelineChart(readout, snapshot: snapshot)
-            Picker("Usage breakdown", selection: $breakdown) {
-                Text("Model").tag(Breakdown.model)
-                Text(period == .pastDay ? "Hour" : "Day").tag(Breakdown.time)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .accessibilityLabel("Usage breakdown")
-            .accessibilityIdentifier("usage-breakdown")
+            T3SegmentedControl("Usage breakdown", selection: $breakdown,
+                               options: [(Breakdown.model, "Model", nil), (Breakdown.time, period == .pastDay ? "Hour" : "Day", nil)],
+                               nativeAccessibility: true)
+                .accessibilityIdentifier("usage-breakdown")
 
             if breakdown == .model {
                 let models = readout.models.sorted { lhs, rhs in
@@ -270,7 +256,7 @@ struct UsageSettingsView: View {
                         .accessibilityLabel("\(row.key.title), \(row.key.providerTitle)")
                         .accessibilityValue(metric.formatted(row.value))
                         .accessibilityIdentifier("usage-model-\(row.key.provider ?? "unidentified")-\(row.key.model ?? "unidentified")")
-                        Divider()
+                        SettingsDivider()
                     }
                 }
                 .accessibilityElement(children: .contain)
@@ -284,11 +270,17 @@ struct UsageSettingsView: View {
     private func modelDetail(_ model: UsageModel, snapshot: WorkspaceUsage) -> some View {
         let readout = snapshot.readout(period: period, project: project, hiddenProviders: hiddenProviders, model: model)
         return VStack(alignment: .leading, spacing: 12) {
-            Button("Back to usage", systemImage: "chevron.left") { selectedModel = nil }
-                .accessibilityIdentifier("usage-model-back")
+            Button { selectedModel = nil } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 11))
+                    Text("Back to usage")
+                }
+            }
+            .buttonStyle(T3SmallButtonStyle(kind: .ghost, height: 24))
+            .accessibilityIdentifier("usage-model-back")
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("usage-model-heading")
                 Text(model.providerTitle).foregroundStyle(.secondary)
@@ -300,7 +292,8 @@ struct UsageSettingsView: View {
                     detailRow(category.title, value: UsageMetric.tokens.formatted(amount, responses: readout.total.responses),
                               id: "usage-detail-\(category.rawValue)")
                 }
-                detailRow("Saved USD cost", value: UsageMetric.cost.formatted(readout.total), id: "usage-detail-cost")
+                detailRow(String(localized: "Saved USD cost"), value: UsageMetric.cost.formatted(readout.total),
+                          id: "usage-detail-cost")
                 if let basis = costBasis(readout.total), metric != .cost {
                     Text(basis)
                         .font(.caption)
@@ -317,7 +310,7 @@ struct UsageSettingsView: View {
     private func summary(_ totals: UsageTotals, id: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(metric.formatted(totals))
-                .font(.title2.weight(.semibold))
+                .font(.system(size: 36, weight: .semibold))
                 .monospacedDigit()
                 .accessibilityIdentifier("\(id)-total")
             Text(totals.responses == 1 ? "1 assistant message" : "\(totals.responses.formatted()) assistant messages")
@@ -332,9 +325,9 @@ struct UsageSettingsView: View {
 
     private func costBasis(_ totals: UsageTotals) -> String? {
         guard totals.cost.recorded > 0 else { return nil }
-        if totals.reportedCosts == 0 { return "Pi estimates in USD" }
-        if totals.reportedCosts == totals.cost.recorded { return "Provider-reported cost in USD" }
-        return "Provider-reported cost and Pi estimates in USD"
+        if totals.reportedCosts == 0 { return String(localized: "Pi estimates in USD") }
+        if totals.reportedCosts == totals.cost.recorded { return String(localized: "Provider-reported cost in USD") }
+        return String(localized: "Provider-reported cost and Pi estimates in USD")
     }
 
     @ViewBuilder
@@ -379,8 +372,9 @@ struct UsageSettingsView: View {
                     .monospacedDigit()
                     .accessibilityIdentifier(id)
             }
-            .padding(.vertical, 5)
-            Divider()
+            .font(.system(size: 14))
+            .padding(.vertical, 6)
+            SettingsDivider()
         }
     }
 }
@@ -389,7 +383,13 @@ private enum UsageMetric: String, CaseIterable, Identifiable {
     case tokens, cost, limits
 
     var id: Self { self }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .tokens: String(localized: "Tokens")
+        case .cost: String(localized: "Cost")
+        case .limits: String(localized: "Limits")
+        }
+    }
 
     func amount(in totals: UsageTotals) -> UsageTotals.Amount {
         self == .cost ? totals.cost : totals.tokens[.total, default: .init()]
@@ -400,10 +400,12 @@ private enum UsageMetric: String, CaseIterable, Identifiable {
     }
 
     func formatted(_ amount: UsageTotals.Amount, responses: Int) -> String {
-        guard amount.recorded > 0 else { return self == .cost ? "Unknown cost" : "Unknown tokens" }
+        guard amount.recorded > 0 else {
+            return self == .cost ? String(localized: "Unknown cost") : String(localized: "Unknown tokens")
+        }
         let value = self == .cost
             ? amount.sum.formatted(.currency(code: "USD").precision(.fractionLength(2...8)))
-            : "\(amount.sum.formatted(.number.precision(.fractionLength(0)))) tokens"
-        return amount.recorded < responses ? "\(value) + unreported" : value
+            : String(localized: "\(amount.sum.formatted(.number.precision(.fractionLength(0)))) tokens")
+        return amount.recorded < responses ? String(localized: "\(value) + unreported") : value
     }
 }

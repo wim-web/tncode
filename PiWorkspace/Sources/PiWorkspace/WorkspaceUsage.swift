@@ -7,7 +7,7 @@ enum UsagePeriod: Int, CaseIterable, Identifiable {
     var id: Self { self }
 
     var title: String {
-        self == .pastDay ? "Past 24h" : "\(rawValue) days"
+        self == .pastDay ? String(localized: "Past 24h") : String(localized: "\(rawValue) days")
     }
 
     func window(at now: Date, calendar: Calendar) -> Range<Date> {
@@ -32,11 +32,11 @@ enum UsageToken: String, CodingKey, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .total: "Tokens"
-        case .input: "Input tokens"
-        case .output: "Output tokens"
-        case .cacheRead: "Cache read tokens"
-        case .cacheWrite: "Cache write tokens"
+        case .total: String(localized: "Tokens")
+        case .input: String(localized: "Input tokens")
+        case .output: String(localized: "Output tokens")
+        case .cacheRead: String(localized: "Cache read tokens")
+        case .cacheWrite: String(localized: "Cache write tokens")
         }
     }
 }
@@ -46,10 +46,10 @@ struct UsageModel: Hashable, Identifiable, Sendable {
     let model: String?
 
     var id: Self { self }
-    var title: String { model ?? "Unknown model" }
+    var title: String { model ?? String(localized: "Unknown model") }
 
     var providerTitle: String {
-        guard let provider else { return "Unknown provider" }
+        guard let provider else { return String(localized: "Unknown provider") }
         return Provider(rawValue: provider)?.label ?? provider
     }
 }

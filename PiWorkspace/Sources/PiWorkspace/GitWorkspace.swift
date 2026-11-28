@@ -432,7 +432,7 @@ struct GitWorkspace: Sendable {
         }
 
         let output = String(decoding: result.output.bytes, as: UTF8.self)
-        return result.output.truncated ? output + "\n[Diff truncated after 256 KiB]\n" : output
+        return result.output.truncated ? output + "\n[" + String(localized: "Diff truncated after 256 KiB") + "]\n" : output
     }
 
     func pinWorktree(at target: String, branch: String, base: String, owner: UUID,
@@ -1206,49 +1206,49 @@ extension GitWorkspace {
 
         var errorDescription: String? {
             switch self {
-            case .invalidBranch: return "Enter a local branch name."
-            case .branchExists(let branch): return "A branch named '\(branch)' already exists."
-            case .worktreeChanged: return "The prepared worktree no longer matches the selected base. Choose an existing worktree to use it."
-            case .dirtyCheckout: return "The prepared worktree contains changes. Save them elsewhere and clean the worktree before retrying."
-            case .branchCheckoutChanged: return "Git could not confirm a single checkout for this branch. Refresh the picker and try again."
-            case .refUnavailable(let ref): return "The branch '\(GitBranchRef.displayName(ref))' is no longer available."
-            case .ambiguousTrackingBranch(let branch): return "Multiple local branches track '\(branch)'. Choose the local branch you want to use."
-            case .pendingWorktree: return "Finish or cancel the other thread’s worktree launch first."
+            case .invalidBranch: return String(localized: "Enter a local branch name.")
+            case .branchExists(let branch): return String(localized: "A branch named '\(branch)' already exists.")
+            case .worktreeChanged: return String(localized: "The prepared worktree no longer matches the selected base. Choose an existing worktree to use it.")
+            case .dirtyCheckout: return String(localized: "The prepared worktree contains changes. Save them elsewhere and clean the worktree before retrying.")
+            case .branchCheckoutChanged: return String(localized: "Git could not confirm a single checkout for this branch. Refresh the picker and try again.")
+            case .refUnavailable(let ref): return String(localized: "The branch '\(GitBranchRef.displayName(ref))' is no longer available.")
+            case .ambiguousTrackingBranch(let branch): return String(localized: "Multiple local branches track '\(branch)'. Choose the local branch you want to use.")
+            case .pendingWorktree: return String(localized: "Finish or cancel the other thread’s worktree launch first.")
             case .emptyRepositoryPath:
-                return "The Git repository path is empty."
+                return String(localized: "The Git repository path is empty.")
             case .emptySelection:
-                return "Select at least one file to commit."
+                return String(localized: "Select at least one file to commit.")
             case .staleSelection:
-                return "The selected changes have changed. Review the refreshed file list and try again."
+                return String(localized: "The selected changes have changed. Review the refreshed file list and try again.")
             case .changesCheckoutChanged:
-                return "The checkout or comparison branch changed. Refresh Git changes to continue."
+                return String(localized: "The checkout or comparison branch changed. Refresh Git changes to continue.")
             case .overlappingSelection(let path):
-                return "The selected changes overlap \(path). Include all related paths to commit them together."
+                return String(localized: "The selected changes overlap \(path). Include all related paths to commit them together.")
             case .indexLocked:
-                return "The Git index is locked. Finish the other Git operation and try again."
+                return String(localized: "The Git index is locked. Finish the other Git operation and try again.")
             case .indexInstallFailed(let error):
-                return "Git created the commit, but could not save the updated index. \(error.localizedDescription)"
+                return String(localized: "Git created the commit, but could not save the updated index. \(error.localizedDescription)")
             case .invalidArgument:
-                return "A Git argument contains a NUL character."
+                return String(localized: "A Git argument contains a NUL character.")
             case .invalidProjectName:
-                return "Enter a name that can be used for a new folder."
+                return String(localized: "Enter a name that can be used for a new folder.")
             case .projectFolderExists:
-                return "That name is already in use in the chosen folder."
+                return String(localized: "That name is already in use in the chosen folder.")
             case .invalidCloneDestination:
-                return "Choose a local destination folder for the cloned repository."
+                return String(localized: "Choose a local destination folder for the cloned repository.")
             case .cloneDestinationNotEmpty:
-                return "The clone destination must be an empty folder."
+                return String(localized: "The clone destination must be an empty folder.")
             case .cloneDestinationChanged:
-                return "The clone destination changed before the repository could be added."
+                return String(localized: "The clone destination changed before the repository could be added.")
             case .partialClone(let folder, let error):
-                return "Could not finish installing the clone at \(folder.path). Files already placed there were kept. \(error.localizedDescription)"
+                return String(localized: "Could not finish installing the clone at \(folder.path). Files already placed there were kept. \(error.localizedDescription)")
             case .repositoryCleanupFailed(let folder, let failure, let cleanup):
-                let reason = failure is CancellationError ? "The operation was cancelled." : failure.localizedDescription
-                return "\(reason) Could not remove the temporary repository at \(folder.path). \(cleanup.localizedDescription)"
+                let reason = failure is CancellationError ? String(localized: "The operation was cancelled.") : failure.localizedDescription
+                return String(localized: "\(reason) Could not remove the temporary repository at \(folder.path). \(cleanup.localizedDescription)")
             case .invalidOutput(let command):
-                return "Git returned unreadable output for \(command)."
+                return String(localized: "Git returned unreadable output for \(command).")
             case .commandFailed(let command, let status, let message):
-                return message.isEmpty ? "Git \(command) exited with status \(status)." : message
+                return message.isEmpty ? String(localized: "Git \(command) exited with status \(status).") : message
             }
         }
     }

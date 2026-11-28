@@ -277,7 +277,7 @@ final class GitChangesTests: XCTestCase {
         let ui = try ChangesReplay(model)
         defer { ui.close() }
 
-        try await ui.press("toggle-changes")
+        try await ui.openChanges()
         try await ui.waitForText("git-review-word-wrap", containing: "Disable diff line wrapping")
         try await ui.waitForText("git-review-whitespace", containing: "Show whitespace changes")
         try await ui.press("git-review-file-untracked-untracked.txt")
@@ -287,7 +287,7 @@ final class GitChangesTests: XCTestCase {
         let settingsRequest = SettingsRequest(page: appearanceLink.page, anchor: appearanceLink.anchor, projectID: nil)
         let settings = try ChangesReplay(model, settingsRequest: settingsRequest, sharedDefaults: ui.defaults)
         defer { settings.close() }
-        try await settings.press("word-wrap")
+        try await settings.pressSwitch("word-wrap")
         try await ui.waitForText("git-review-word-wrap", containing: "Enable diff line wrapping")
         try await ui.wait("unwrapped by the Appearance setting") {
             (ui.patchLineFrame(longLine)?.height ?? .infinity) < wrapped.height
@@ -307,7 +307,7 @@ final class GitChangesTests: XCTestCase {
         try await ui.waitForText("git-review-empty", containing: "No changes to display")
         let diffLink = try XCTUnwrap(SettingsDeepLink(url: URL(string: "pi-workspace://settings/diffs#hide-whitespace-changes")!))
         settingsRequest.navigate(to: diffLink.page, anchor: diffLink.anchor, projectID: nil)
-        try await settings.press("hide-whitespace-changes")
+        try await settings.pressSwitch("hide-whitespace-changes")
         try await ui.waitForPatch("+disk-base  ")
         try await settings.press("reset-hide-whitespace-changes")
         try await ui.waitForText("git-review-empty", containing: "No changes to display")
@@ -330,7 +330,7 @@ final class GitChangesTests: XCTestCase {
         try await ui.press("git-review-whitespace")
         try await ui.press("git-refresh")
         try await ui.press("thread-row-" + beta.id.uuidString)
-        try await ui.press("toggle-changes")
+        try await ui.openChanges()
         try await ui.waitForText("git-review-head", containing: "topic-beta")
         try await ui.waitForText("git-review-word-wrap", containing: "Disable diff line wrapping")
         try await ui.waitForText("git-review-whitespace", containing: "Hide whitespace changes")
@@ -374,7 +374,7 @@ final class GitChangesTests: XCTestCase {
         })
         defer { ui.close() }
 
-        try await ui.waitForText("toggle-changes", containing: "Changes")
+        try await ui.wait("workspace header") { ui.element("toggle-right-panel") != nil }
         try ui.pressChangesShortcut()
         try await ui.waitForText("git-review-base", containing: "Automatic (origin/main)")
         try ui.pressChangesShortcut(modifiers: [.command, .shift])
@@ -384,7 +384,7 @@ final class GitChangesTests: XCTestCase {
         try ui.pressChangesShortcut()
         try await ui.wait("Changes closes with ⌘D") { ui.element("git-review-scope") == nil }
         try ui.assertComposerCompositionOwnsChangesShortcut()
-        try await ui.press("toggle-changes")
+        try await ui.openChanges()
         try await ui.waitForText("git-review-base", containing: "Automatic (origin/main)")
         try await ui.press("git-review-file-alpha-base.txt")
         try await ui.waitForPatch("+alpha-base-marker")
@@ -456,7 +456,7 @@ final class GitChangesTests: XCTestCase {
         try await ui.press("git-review-scope-changes")
         try await ui.press("git-refresh")
         try await ui.press("thread-row-" + beta.id.uuidString)
-        try await ui.press("toggle-changes")
+        try await ui.openChanges()
         try await ui.waitForText("git-review-head", containing: "topic-beta")
         try await ui.waitForText("git-review-base", containing: "Automatic (beta-base)")
         try await ui.press("git-review-file-beta-head.txt")
@@ -650,6 +650,21 @@ private final class ChangesReplay {
     func press(_ id: String) async throws {
         try await wait(id) { element(id)?.isAccessibilityEnabled?() == true }
         XCTAssertTrue(element(id)?.accessibilityPerformPress?() == true, id)
+        await Task.yield()
+    }
+
+    /// Like T3 Code, the header has no Changes button: Changes opens from the right panel's add menu.
+    func openChanges() async throws {
+        if element("hide-right-panel") == nil { try await press("toggle-right-panel") }
+        try await press("add-panel-surface")
+        try await press("add-panel-changes")
+    }
+
+    /// Settings switches are native switches: AppKit toggles them on press but reports the press as unhandled.
+    /// Callers check the effect instead.
+    func pressSwitch(_ id: String) async throws {
+        try await wait(id) { element(id)?.isAccessibilityEnabled?() == true }
+        _ = element(id)?.accessibilityPerformPress?()
         await Task.yield()
     }
 

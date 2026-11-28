@@ -71,7 +71,7 @@ async function launch(expected) {
   launchNumber += 1;
   exec("/usr/bin/open", ["-gn", "-a", bundle, "--stdout", join(root, launchNumber + ".out"),
     "--stderr", join(root, launchNumber + ".err"), "--env", "PI_CODING_AGENT_DIR=" + agent,
-    "--args", "--workspace", workspace, "-ApplePersistenceIgnoreState", "YES"]);
+    "--args", "-AppleLanguages", "(en)", "--workspace", workspace, "-ApplePersistenceIgnoreState", "YES"]);
   pid = await until("isolated Pi Workspace PID", () => Number(exec("/bin/ps", ["-axo", "pid=,args="])
     .split("\n").find(line => line.includes("/MacOS/PiWorkspace --workspace " + workspace + " "))
     ?.trim().split(/\s+/)[0]));

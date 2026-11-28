@@ -36,7 +36,16 @@ struct GitHubPullRequestFile: Decodable, Sendable {
     }
 
     var statusLabel: String {
-        status == "removed" ? "Deleted" : status.capitalized
+        switch status {
+        case "added": String(localized: "file.status.added", defaultValue: "Added")
+        case "removed": String(localized: "Deleted")
+        case "modified": String(localized: "file.status.modified", defaultValue: "Modified")
+        case "renamed": String(localized: "file.status.renamed", defaultValue: "Renamed")
+        case "copied": String(localized: "file.status.copied", defaultValue: "Copied")
+        case "changed": String(localized: "file.status.changed", defaultValue: "Changed")
+        case "unchanged": String(localized: "file.status.unchanged", defaultValue: "Unchanged")
+        default: status.capitalized
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -89,8 +98,8 @@ enum GitHubPullRequestFilesError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .revisionChanged: "The pull request changed while reading its files."
-        case .checkoutChanged: "The checkout changed while reading the pull request’s files."
+        case .revisionChanged: String(localized: "The pull request changed while reading its files.")
+        case .checkoutChanged: String(localized: "The checkout changed while reading the pull request’s files.")
         }
     }
 }

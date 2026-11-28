@@ -28,39 +28,50 @@ struct SnoozeOptionsSettingsView: View {
         options.map(\.id).sorted() != ThreadSnoozeSchedule.defaultOptions.map(\.id).sorted()
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    @Environment(\.t3Themes) private var t3Themes
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Snooze options")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-                    .focusable()
-                    .settingsTarget(.snoozeOptions, focus: settingsFocus)
-                Spacer()
-                if canReset {
-                    Button("Reset to defaults") {
-                        if save(ThreadSnoozeSchedule.defaultOptions.map(Row.init(option:))) { settle() }
+        let palette = T3Palette(colorScheme, t3Themes)
+        SettingsSection("Snooze") {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("Snooze options")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(palette.foreground)
+                            .accessibilityAddTraits(.isHeader)
+                            .focusable()
+                            .focusEffectDisabled()
+                            .settingsTarget(.snoozeOptions, focus: settingsFocus)
+                        if canReset {
+                            SettingsResetButton("Reset snooze options to default", id: "reset-snooze-options") {
+                                if save(ThreadSnoozeSchedule.defaultOptions.map(Row.init(option:))) { settle() }
+                            }
+                        }
                     }
-                    .accessibilityLabel("Reset snooze options to default")
-                    .accessibilityIdentifier("reset-snooze-options")
+                    .frame(minHeight: 20)
+                    Text("Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.mutedForeground)
+                }
+                TimelineView(.everyMinute) { _ in
+                    optionList(at: model.snoozeOptionsTime)
+                }
+                .onHover { hoveringList = $0 }
+                .task(id: shouldSettle) {
+                    await Task.yield()
+                    if !Task.isCancelled, shouldSettle { settle() }
+                }
+                if let error {
+                    SettingsMessage(error)
+                        .accessibilityIdentifier("snooze-options-save-error")
                 }
             }
-            Text("Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today.")
-                .foregroundStyle(.secondary)
-                .font(.callout)
-            TimelineView(.everyMinute) { _ in
-                optionList(at: model.snoozeOptionsTime)
-            }
-            .onHover { hoveringList = $0 }
-            .task(id: shouldSettle) {
-                await Task.yield()
-                if !Task.isCancelled, shouldSettle { settle() }
-            }
-            if let error {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("snooze-options-save-error")
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
         }
     }
 
@@ -86,46 +97,51 @@ struct SnoozeOptionsSettingsView: View {
                         })
                     }
                     Spacer(minLength: 8)
-                    Text(rowPreview(resolved, at: index, now: now))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(verbatim: rowPreview(resolved, at: index, now: now))
+                        .font(.system(size: 12))
+                        .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
                     Button {
                         save(rows.filter { $0.id != row.id })
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "xmark").font(.system(size: 12))
                     }
+                    .buttonStyle(T3IconButtonStyle())
                     .accessibilityLabel("Remove snooze option \(index + 1)")
                     .accessibilityIdentifier("remove-snooze-option-\(index + 1)")
                     .focused($focus, equals: .remove(row.id))
                 }
             }
             Text(labels.isEmpty ? "Menus offer only Custom…" : "Menu now: \(labels.joined(separator: " · "))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
                 .accessibilityIdentifier("snooze-options-menu-preview")
             HStack {
                 Button {
                     save(rows + [Row(option: ThreadSnoozeSchedule.nextOption(in: options))])
                 } label: {
-                    Label("Add option", systemImage: "plus")
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 11))
+                        Text("Add option")
+                    }
                 }
+                .buttonStyle(T3SmallButtonStyle(kind: .ghost))
                 .accessibilityIdentifier("add-snooze-option")
                 .disabled(atLimit)
                 .focused($focus, equals: .add)
                 if atLimit {
                     Text("Up to \(ThreadSnoozeSchedule.maximumOptions) options")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(T3Palette(colorScheme, t3Themes).mutedForeground)
                 }
             }
         }
     }
 
     private func rowPreview(_ resolved: [ThreadSnoozeSchedule.Preset?], at index: Int, now: Date) -> String {
-        guard let preset = resolved[index] else { return "Passed for today" }
+        guard let preset = resolved[index] else { return String(localized: "Passed for today") }
         let earlier = resolved.prefix(index).compactMap { $0 }
-        if earlier.contains(where: { $0.id == preset.id }) { return "Duplicate of an option above" }
-        if earlier.contains(where: { $0.shownDeadline == preset.shownDeadline }) { return "Same time as an option above" }
+        if earlier.contains(where: { $0.id == preset.id }) { return String(localized: "Duplicate of an option above") }
+        if earlier.contains(where: { $0.shownDeadline == preset.shownDeadline }) { return String(localized: "Same time as an option above") }
         return preview(preset, at: now)
     }
 
@@ -141,7 +157,7 @@ struct SnoozeOptionsSettingsView: View {
             error = nil
             return true
         } catch {
-            self.error = "Could not save snooze options. \(error.localizedDescription)"
+            self.error = String(localized: "Could not save snooze options. \(error.localizedDescription)")
             return false
         }
     }
@@ -207,7 +223,7 @@ private struct SnoozeOptionFields: View {
             Picker("When", selection: Binding(get: { when }, set: changeWhen)) {
                 Text("In").tag(When.after)
                 ForEach(Schedule.Day.allCases, id: \.self) { day in
-                    Text(day.rawValue.capitalized).tag(When.at(day))
+                    Text(day.label).tag(When.at(day))
                 }
             }
             .labelsHidden()
@@ -236,7 +252,7 @@ private struct SnoozeOptionFields: View {
                 .focused(focus, equals: .step(id))
                 Picker("Unit", selection: Binding(get: { unit }, set: { changeUnit($0, amount: amount) })) {
                     ForEach(Schedule.Unit.allCases) { unit in
-                        Text(unit.rawValue).tag(unit)
+                        Text(unit.label).tag(unit)
                     }
                 }
                 .labelsHidden()
@@ -299,7 +315,7 @@ private struct SnoozeOptionTextField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField(string: value)
         field.bezelStyle = .roundedBezel
-        field.setAccessibilityLabel(label)
+        field.setAccessibilityLabel(NSLocalizedString(label, comment: ""))
         field.delegate = context.coordinator
         field.target = context.coordinator
         field.action = #selector(Coordinator.submit(_:))

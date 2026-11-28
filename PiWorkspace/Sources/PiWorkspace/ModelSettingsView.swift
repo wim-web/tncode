@@ -32,7 +32,7 @@ struct ModelSettingsView: View {
     @ObservedObject var model: WorkspaceModel
     @Binding var draft: ModelSettingsDraft
     var settingsFocus: FocusState<SettingsFocus?>.Binding
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeSettings) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var error: String?
     @StateObject private var signIn = ProviderSignIn()
@@ -49,85 +49,116 @@ struct ModelSettingsView: View {
         let savedProviders = profiles.map(\.provider)
         let accounts: [Provider] = [.piCodex, .piAnthropic, .piCopilot, .piOpenAI]
         let providers = savedProviders + accounts.filter { !savedProviders.contains($0) } + [.openai, .anthropic, .local]
-        VStack(alignment: .leading, spacing: 18) {
-            Form {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSection("Account") {
                 if let project = model.projects.first(where: { $0.id == draft.projectID }) {
-                    Picker("Scope", selection: Binding(get: { draft.scope }, set: selectScope)) {
-                        Text("Workspace default").tag(ModelSettingsScope.workspace)
-                        Text("Project: \(project.title)").tag(ModelSettingsScope.project(project.id))
+                    SettingsRow("Scope", description: scopedProject.map {
+                        $0.modelOverride == nil ? "Inherits Workspace default" : "Project override"
+                    }, descriptionID: "model-settings-source") {
+                        T3Select("Scope", selection: Binding(get: { draft.scope }, set: selectScope),
+                                 options: [(ModelSettingsScope.workspace, "Workspace default"),
+                                           (ModelSettingsScope.project(project.id), String(localized: "Project: \(project.title)"))],
+                                 width: 224)
+                            .settingsTarget(.scope, focus: settingsFocus)
                     }
-                    .settingsTarget(.scope, focus: settingsFocus)
+                    SettingsDivider()
                 }
-                if let project = scopedProject {
-                    Text(project.modelOverride == nil ? "Inherits Workspace default" : "Project override")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("model-settings-source")
+                SettingsRow("Agent") {
+                    T3Select("Agent", selection: Binding(get: { draft.settings.provider == .codexAgent }, set: { useCodex in
+                        selectProvider(useCodex ? .codexAgent : (profiles.first?.provider ?? .piOpenAI))
+                    }), options: [(true, "Codex"), (false, "Pi")], width: 224)
+                    .accessibilityIdentifier("model-agent")
                 }
-                Picker("Agent", selection: Binding(get: { draft.settings.provider == .codexAgent }, set: { useCodex in
-                    selectProvider(useCodex ? .codexAgent : (profiles.first?.provider ?? .piOpenAI))
-                })) {
-                    Text("Codex").tag(true)
-                    Text("Pi").tag(false)
-                }
-                .accessibilityIdentifier("model-agent")
                 if draft.settings.provider != .codexAgent {
-                    Picker("Provider", selection: Binding(get: { draft.settings.provider }, set: selectProvider)) {
-                        ForEach(providers) { provider in Text(provider.label).tag(provider) }
+                    SettingsDivider()
+                    SettingsRow("Provider") {
+                        T3Select("Provider", selection: Binding(get: { draft.settings.provider }, set: selectProvider),
+                                 options: providers.map { ($0, $0.label) }, width: 224)
+                            .settingsTarget(.provider, focus: settingsFocus)
                     }
-                    .settingsTarget(.provider, focus: settingsFocus)
                 }
                 if let provider = draft.settings.provider.signInProvider {
+                    SettingsDivider()
                     accountRow(provider, saved: provider == .codexAgent
                                ? (model.codexAccountStatus == .ready ? .codex : nil)
                                : profiles.first { $0.provider == provider })
                 }
-                if draft.settings.provider == .codexAgent {
+            }
+            if draft.settings.provider == .codexAgent {
+                SettingsSection("Codex tools") {
                     if let tools = model.codexCapabilities {
-                        LabeledContent("Web search", value: tools.webSearch.label)
-                            .accessibilityIdentifier("codex-web-search")
-                        LabeledContent("Computer Use", value: tools.computerUseLabel)
-                            .accessibilityIdentifier("codex-computer-use")
+                        SettingsRow("Web search") { Text(tools.webSearch.label).accessibilityIdentifier("codex-web-search") }
+                        SettingsDivider()
+                        SettingsRow("Computer Use") { Text(tools.computerUseLabel).accessibilityIdentifier("codex-computer-use") }
                     } else {
-                        Text("Open a Codex conversation to check its Web search and Computer Use tools.")
-                    }
-                }
-                TextField("Model ID", text: $draft.settings.model)
-                    .settingsTarget(.modelID, focus: settingsFocus)
-                if draft.settings.provider == .local {
-                    TextField("Base URL", text: Binding(get: { draft.settings.endpoint }, set: setEndpoint))
-                        .settingsTarget(.endpoint, focus: settingsFocus)
-                    TextField("Context window", value: $draft.settings.contextWindow, format: .number)
-                        .settingsTarget(.contextWindow, focus: settingsFocus)
-                    Toggle("Model supports coding tools", isOn: Binding(
-                        get: { draft.settings.localTools == true }, set: { draft.settings.localTools = $0 }
-                    ))
-                    .settingsTarget(.localTools, focus: settingsFocus)
-                    Toggle("Model supports image input", isOn: Binding(
-                        get: { draft.settings.localImages == true }, set: { draft.settings.localImages = $0 }
-                    ))
-                    .settingsTarget(.localImages, focus: settingsFocus)
-                } else {
-                    Picker("Thinking level", selection: Binding(
-                        get: { draft.settings.thinkingLevel ?? .off }, set: { draft.settings.thinkingLevel = $0 }
-                    )) {
-                        ForEach(ModelSettings.ThinkingLevel.allCases) { level in Text(level.label).tag(level) }
-                    }
-                    .settingsTarget(.thinkingLevel, focus: settingsFocus)
-                    .help(draft.settings.provider == .codexAgent ? "" : "Pi adjusts the requested level to the model’s supported levels.")
-                }
-                if draft.settings.provider != .codexAgent && draft.settings.provider.piProviderID == nil {
-                    SecureField(hasCredential ? "Replace saved API key" : "API key", text: $draft.key)
-                        .settingsTarget(.apiKey, focus: settingsFocus)
-                        .help("Projects using this provider share its saved API key.")
-                    if hasCredential {
-                        Toggle("Remove saved key", isOn: $draft.removeKey)
-                            .settingsTarget(.removeKey, focus: settingsFocus)
-                            .help("Remove the key for every project using this provider account.")
+                        SettingsRow("Tool availability", description: "Open a Codex conversation to check its Web search and Computer Use tools.") { EmptyView() }
                     }
                 }
             }
-            if let error { Text(error).foregroundStyle(.red) }
-            HStack {
+            SettingsSection("Model") {
+                SettingsRow("Model ID", description: draft.settings.provider == .codexAgent ? "Use auto for the model in your Codex configuration." : nil) {
+                    TextField("Model ID", text: $draft.settings.model)
+                        .frame(width: 256)
+                        .settingsTarget(.modelID, focus: settingsFocus)
+                }
+                if draft.settings.provider == .local {
+                    SettingsDivider()
+                    SettingsRow("Base URL", description: "A loopback OpenAI-compatible endpoint.") {
+                        TextField("Base URL", text: Binding(get: { draft.settings.endpoint }, set: setEndpoint))
+                            .frame(width: 256)
+                            .settingsTarget(.endpoint, focus: settingsFocus)
+                    }
+                    SettingsDivider()
+                    SettingsRow("Context window") {
+                        TextField("Context window", value: $draft.settings.contextWindow, format: .number)
+                            .frame(width: 160)
+                            .settingsTarget(.contextWindow, focus: settingsFocus)
+                    }
+                    SettingsDivider()
+                    SettingsRow("Coding tools", description: "The model supports tool calls.") {
+                        SettingsSwitch("Model supports coding tools", isOn: Binding(
+                            get: { draft.settings.localTools == true }, set: { draft.settings.localTools = $0 }
+                        ))
+                        .settingsTarget(.localTools, focus: settingsFocus)
+                    }
+                    SettingsDivider()
+                    SettingsRow("Image input", description: "The model accepts images.") {
+                        SettingsSwitch("Model supports image input", isOn: Binding(
+                            get: { draft.settings.localImages == true }, set: { draft.settings.localImages = $0 }
+                        ))
+                        .settingsTarget(.localImages, focus: settingsFocus)
+                    }
+                } else {
+                    SettingsDivider()
+                    SettingsRow("Thinking level",
+                                description: draft.settings.provider == .codexAgent ? nil : "Pi adjusts the requested level to the model’s supported levels.") {
+                        T3Select("Thinking level", selection: Binding(
+                            get: { draft.settings.thinkingLevel ?? .off }, set: { draft.settings.thinkingLevel = $0 }
+                        ), options: ModelSettings.ThinkingLevel.allCases.map { ($0, $0.label) })
+                        .settingsTarget(.thinkingLevel, focus: settingsFocus)
+                    }
+                }
+            }
+            if draft.settings.provider != .codexAgent && draft.settings.provider.piProviderID == nil {
+                SettingsSection("Credentials") {
+                    SettingsRow("API key", description: "Projects using this provider share its saved API key.",
+                                status: hasCredential ? "A key is saved in Keychain." : nil) {
+                        SecureField(hasCredential ? "Replace saved API key" : "API key", text: $draft.key)
+                            .frame(width: 256)
+                            .settingsTarget(.apiKey, focus: settingsFocus)
+                    }
+                    if hasCredential {
+                        SettingsDivider()
+                        SettingsRow("Remove saved key",
+                                    description: "Remove the key for every project using this provider account.") {
+                            SettingsSwitch("Remove saved key", isOn: $draft.removeKey)
+                                .settingsTarget(.removeKey, focus: settingsFocus)
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                if let error { SettingsMessage(error) }
                 if let project = scopedProject, project.modelOverride != nil {
                     Button("Reset to Workspace default") { reset(project.id) }
                         .settingsTarget(.resetModelOverride, focus: settingsFocus)
@@ -135,6 +166,7 @@ struct ModelSettingsView: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                 Button("Save", action: save)
+                    .buttonStyle(T3SmallButtonStyle(kind: .primary))
                     .disabled(signIn.instructions != nil)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("save-settings")
@@ -148,13 +180,9 @@ struct ModelSettingsView: View {
     }
 
     private func accountRow(_ provider: Provider, saved: ModelSettings?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if provider == .codexAgent {
-                Text(model.codexAccountStatus?.label ?? String(localized: "Checking Codex…"))
-                    .accessibilityIdentifier("pi-login-status")
-            } else if saved != nil {
-                Text("Signed in").accessibilityIdentifier("pi-login-status")
-            }
+        SettingsRow(provider == .codexAgent ? "Codex account" : provider.label,
+                    status: provider == .codexAgent ? (model.codexAccountStatus?.label ?? String(localized: "Checking Codex…"))
+                         : (saved == nil ? nil : "Signed in"), statusID: "pi-login-status") {
             if signIn.instructions != nil {
                 Button("Cancel sign-in") { signIn.cancel() }
                     .accessibilityIdentifier("provider-login-cancel")
@@ -163,6 +191,7 @@ struct ModelSettingsView: View {
                 Button("Check again") { model.refreshCodexAccount() }
             } else if provider == .codexAgent, let saved {
                 Button("Use Codex") { activate(saved) }
+                    .buttonStyle(T3SmallButtonStyle(kind: .primary))
                     .accessibilityIdentifier("use-codex-agent")
             } else if let saved {
                 if saved.account != draft.settings.account {
@@ -173,8 +202,10 @@ struct ModelSettingsView: View {
                     .accessibilityIdentifier("provider-login-start")
             } else {
                 Button(provider.signInLabel) { beginSignIn(provider) }
+                    .buttonStyle(T3SmallButtonStyle(kind: .primary))
                     .accessibilityIdentifier("provider-login-start")
             }
+        } detail: {
             if let instructions = signIn.instructions {
                 if let code = instructions.deviceCode {
                     Text("Enter this code on the sign-in page")
@@ -192,7 +223,7 @@ struct ModelSettingsView: View {
                 if let prompt = instructions.prompt { loginPrompt(prompt) }
             }
             if let message = signIn.error {
-                Text(message).foregroundStyle(.red).accessibilityIdentifier("provider-login-error")
+                SettingsMessage(message).accessibilityIdentifier("provider-login-error")
                 if signIn.instructions == nil && (provider == .codexAgent || provider == .piCodex || provider == .piAnthropic) {
                     Button("Sign in using a code") { beginSignIn(provider, useCode: true) }
                         .accessibilityIdentifier("provider-login-code-method")

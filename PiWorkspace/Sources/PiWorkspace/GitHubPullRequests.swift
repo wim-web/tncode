@@ -85,7 +85,7 @@ struct GitHubPullRequest: Decodable, Sendable {
     let isDraft: Bool
     let author: GitHubAuthor?
 
-    var stateLabel: String { state == "OPEN" && isDraft ? "Draft" : state.capitalized }
+    var stateLabel: String { GitHubItemState.label(state, isDraft: isDraft) }
 
     fileprivate static let fields = "number,title,state,isDraft,author"
 }
@@ -111,6 +111,30 @@ struct GitHubCheck: Decodable, Sendable {
 
     var hasFailureLog: Bool {
         ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"].contains(status)
+    }
+
+    /// Display label for the check state ("IN_PROGRESS" → "In Progress" in English).
+    var statusLabel: String {
+        let fallback = status.replacingOccurrences(of: "_", with: " ").capitalized
+        switch status {
+        case "SUCCESS": return String(localized: "check.status.success", defaultValue: "\(fallback)")
+        case "FAILURE": return String(localized: "check.status.failure", defaultValue: "\(fallback)")
+        case "ERROR": return String(localized: "check.status.error", defaultValue: "\(fallback)")
+        case "CANCELLED": return String(localized: "check.status.cancelled", defaultValue: "\(fallback)")
+        case "TIMED_OUT": return String(localized: "check.status.timedOut", defaultValue: "\(fallback)")
+        case "STARTUP_FAILURE": return String(localized: "check.status.startupFailure", defaultValue: "\(fallback)")
+        case "ACTION_REQUIRED": return String(localized: "check.status.actionRequired", defaultValue: "\(fallback)")
+        case "NEUTRAL": return String(localized: "check.status.neutral", defaultValue: "\(fallback)")
+        case "SKIPPED": return String(localized: "check.status.skipped", defaultValue: "\(fallback)")
+        case "STALE": return String(localized: "check.status.stale", defaultValue: "\(fallback)")
+        case "PENDING": return String(localized: "check.status.pending", defaultValue: "\(fallback)")
+        case "QUEUED": return String(localized: "check.status.queued", defaultValue: "\(fallback)")
+        case "IN_PROGRESS": return String(localized: "check.status.inProgress", defaultValue: "\(fallback)")
+        case "WAITING": return String(localized: "check.status.waiting", defaultValue: "\(fallback)")
+        case "REQUESTED": return String(localized: "check.status.requested", defaultValue: "\(fallback)")
+        case "EXPECTED": return String(localized: "check.status.expected", defaultValue: "\(fallback)")
+        default: return fallback
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -195,11 +219,11 @@ enum GitHubCheckLogError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupported: "There is no GitHub Actions job log for this check in the pull request’s repository."
-        case .pending: "This Actions job is still running or waiting to start."
-        case .unavailable: "GitHub couldn’t provide this job’s log. It may have expired, the job may never have started, or your account may lack access."
-        case .checkoutChanged: "The checkout changed while reading the log. Refresh the pull request and try again."
-        case .checkChanged: "This check no longer matches the pull request’s current head. Refresh the pull request and try again."
+        case .unsupported: String(localized: "There is no GitHub Actions job log for this check in the pull request’s repository.")
+        case .pending: String(localized: "This Actions job is still running or waiting to start.")
+        case .unavailable: String(localized: "GitHub couldn’t provide this job’s log. It may have expired, the job may never have started, or your account may lack access.")
+        case .checkoutChanged: String(localized: "The checkout changed while reading the log. Refresh the pull request and try again.")
+        case .checkChanged: String(localized: "This check no longer matches the pull request’s current head. Refresh the pull request and try again.")
         }
     }
 }
@@ -560,23 +584,23 @@ struct GitHubReader: Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .checkoutUnavailable: "Couldn’t read Git remotes from this checkout."
-            case .noGitHubRemote: "This checkout has no github.com fetch remote."
-            case .ambiguousRemote: "This checkout has multiple GitHub remotes and no GitHub origin."
-            case .repositoryChanged: "The checkout’s GitHub repository changed. Refresh the list."
-            case .cliUnavailable: "GitHub CLI (gh) is unavailable. Install it and make it available on the app’s PATH."
-            case .launchFailed: "Couldn’t start GitHub CLI (gh) in this checkout."
-            case .authentication: "Sign in with `gh auth login` in Terminal, then refresh."
-            case .accessDenied: "GitHub denied access. Check your GitHub CLI account’s repository permissions."
-            case .notFound(let kind): "GitHub couldn’t find the \(kind.itemName) or repository. Check access and refresh."
-            case .network: "Couldn’t reach GitHub. Check your connection and refresh."
-            case .timedOut: "The GitHub request timed out. Check your connection and refresh."
-            case .readFailed(let kind): "Couldn’t read \(kind.itemName)s from GitHub. Check your GitHub CLI setup and refresh."
-            case .responseTooLarge: "The GitHub response was too large to display."
-            case .invalidResponse(let kind): "GitHub CLI returned an unreadable \(kind.itemName) response."
-            case .invalidSearch: "Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces."
-            case .gone: "GitHub no longer has this resource."
-            case .issueValidation: "GitHub rejected the issue change. Review the text and try again."
+            case .checkoutUnavailable: String(localized: "Couldn’t read Git remotes from this checkout.")
+            case .noGitHubRemote: String(localized: "This checkout has no github.com fetch remote.")
+            case .ambiguousRemote: String(localized: "This checkout has multiple GitHub remotes and no GitHub origin.")
+            case .repositoryChanged: String(localized: "The checkout’s GitHub repository changed. Refresh the list.")
+            case .cliUnavailable: String(localized: "GitHub CLI (gh) is unavailable. Install it and make it available on the app’s PATH.")
+            case .launchFailed: String(localized: "Couldn’t start GitHub CLI (gh) in this checkout.")
+            case .authentication: String(localized: "Sign in with `gh auth login` in Terminal, then refresh.")
+            case .accessDenied: String(localized: "GitHub denied access. Check your GitHub CLI account’s repository permissions.")
+            case .notFound(let kind): String(localized: "GitHub couldn’t find the \(kind.itemName) or repository. Check access and refresh.")
+            case .network: String(localized: "Couldn’t reach GitHub. Check your connection and refresh.")
+            case .timedOut: String(localized: "The GitHub request timed out. Check your connection and refresh.")
+            case .readFailed(let kind): String(localized: "Couldn’t read \(kind.itemName)s from GitHub. Check your GitHub CLI setup and refresh.")
+            case .responseTooLarge: String(localized: "The GitHub response was too large to display.")
+            case .invalidResponse(let kind): String(localized: "GitHub CLI returned an unreadable \(kind.itemName) response.")
+            case .invalidSearch: String(localized: "Enter search words or a label such as label:bug. Use paired quotes around phrases and labels with spaces.")
+            case .gone: String(localized: "GitHub no longer has this resource.")
+            case .issueValidation: String(localized: "GitHub rejected the issue change. Review the text and try again.")
             }
         }
     }

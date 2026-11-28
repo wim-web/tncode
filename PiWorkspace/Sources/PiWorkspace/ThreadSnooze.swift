@@ -33,6 +33,19 @@ enum ThreadSnoozeSchedule {
             }
         }
 
+        var label: String { NSLocalizedString(rawValue, comment: "Snooze unit") }
+
+        func relativeLabel(_ amount: Int) -> String {
+            switch (self, amount == 1) {
+            case (.minutes, true): String(localized: "In \(amount) minute")
+            case (.minutes, false): String(localized: "In \(amount) minutes")
+            case (.hours, true): String(localized: "In \(amount) hour")
+            case (.hours, false): String(localized: "In \(amount) hours")
+            case (.days, true): String(localized: "In \(amount) day")
+            case (.days, false): String(localized: "In \(amount) days")
+            }
+        }
+
         static func forMinutes(_ minutes: Int) -> Self {
             allCases.reversed().first { minutes.isMultiple(of: $0.minutesPerUnit) } ?? .minutes
         }
@@ -40,6 +53,8 @@ enum ThreadSnoozeSchedule {
 
     enum Day: String, Codable, CaseIterable {
         case today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+
+        var label: String { NSLocalizedString(rawValue.capitalized, comment: "Snooze day") }
 
         private var weekday: Int? {
             switch self {
@@ -90,9 +105,8 @@ enum ThreadSnoozeSchedule {
             case let .after(minutes):
                 let unit = Unit.forMinutes(minutes)
                 let amount = minutes / unit.minutesPerUnit
-                let name = unit.rawValue.lowercased()
                 let elapsed = TimeInterval(minutes * 60)
-                return Preset(id: id, label: "In \(amount) \(amount == 1 ? String(name.dropLast()) : name)",
+                return Preset(id: id, label: unit.relativeLabel(amount),
                               shownDeadline: now.addingTimeInterval(elapsed), elapsed: elapsed)
             case let .at(day, time):
                 let days = day.daysAhead(at: now, calendar: calendar)
@@ -103,11 +117,13 @@ enum ThreadSnoozeSchedule {
                       deadline > now else { return nil }
                 let label: String
                 switch days {
-                case 0: label = hour < 12 ? "This morning" : hour < 17 ? "This afternoon" : "This evening"
-                case 1: label = "Tomorrow"
+                case 0:
+                    label = hour < 12 ? String(localized: "This morning")
+                        : hour < 17 ? String(localized: "This afternoon") : String(localized: "This evening")
+                case 1: label = String(localized: "Tomorrow")
                 default:
-                    let name = day.rawValue.capitalized
-                    label = day == .monday ? "Next week" : days == 7 ? "Next \(name)" : name
+                    let name = day.label
+                    label = day == .monday ? String(localized: "Next week") : days == 7 ? String(localized: "Next \(name)") : name
                 }
                 return Preset(id: id, label: label, shownDeadline: deadline)
             }

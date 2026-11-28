@@ -78,8 +78,8 @@ struct QueuedMessagesView: View {
                     } label: {
                         Image(systemName: "arrow.up")
                     }
-                    .help(sendLabel)
-                    .accessibilityLabel(sendLabel)
+                    .help(Text(localized: sendLabel))
+                    .accessibilityLabel(Text(localized: sendLabel))
                     .accessibilityIdentifier("queue-send-now-\(item.id)")
                 }
                 Menu {

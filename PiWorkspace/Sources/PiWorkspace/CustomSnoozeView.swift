@@ -36,7 +36,7 @@ struct CustomSnoozeView: View {
             Text("Custom snooze").font(.headline)
             Picker("Schedule type", selection: $mode) {
                 ForEach(Mode.allCases) { item in
-                    Text(item.rawValue).tag(item)
+                    Text(localized: item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
@@ -56,7 +56,7 @@ struct CustomSnoozeView: View {
                         .accessibilityIdentifier("snooze-duration")
                     Picker("Unit", selection: $unit) {
                         ForEach(ThreadSnoozeSchedule.Unit.allCases) { item in
-                            Text(item.rawValue).tag(item)
+                            Text(localized: item.rawValue).tag(item)
                         }
                     }
                     .accessibilityIdentifier("snooze-duration-unit")

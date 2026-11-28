@@ -29,7 +29,7 @@ struct ThreadLocationView: View {
                 Text("New worktree").font(.callout.weight(.semibold))
                 Picker("Base branch", selection: $base) {
                     if !refs.contains(where: { $0.id == base }) {
-                        Text(base.isEmpty ? "Select ref" : GitBranchRef.displayName(base)).tag(base)
+                        Text(base.isEmpty ? String(localized: "Select ref") : GitBranchRef.displayName(base)).tag(base)
                     }
                     ForEach(refs) { ref in Text(ref.name).tag(ref.id) }
                 }
@@ -54,7 +54,7 @@ struct ThreadLocationView: View {
                                     choose(.existing(path: checkout.path))
                                 } label: {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Label(checkout.branch ?? "Detached HEAD", systemImage: "arrow.triangle.branch")
+                                        Label(checkout.branch ?? String(localized: "Detached HEAD"), systemImage: "arrow.triangle.branch")
                                         Text(checkout.path)
                                             .font(.caption.monospaced())
                                             .foregroundStyle(.secondary)

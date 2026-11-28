@@ -4,7 +4,7 @@ import SwiftUI
 struct ThreadBranchButton: View {
     let branch: String?
     var label: String?
-    var fallback = "Detached HEAD"
+    var fallback = String(localized: "Detached HEAD")
     var identifier = "git-branch"
     let open: () -> Void
     let copy: (String) -> Void
@@ -176,13 +176,13 @@ struct BranchPickerView: View {
     private func badges(for ref: GitBranchRef) -> [String] {
         var badges: [String] = []
         if let pendingBase {
-            if ref.id == pendingBase || ref.name == pendingBase { badges.append("Base") }
+            if ref.id == pendingBase || ref.name == pendingBase { badges.append(String(localized: "Base")) }
         } else if !ref.isRemote && ref.name == choices?.current {
-            badges.append("Current")
+            badges.append(String(localized: "Current"))
         }
-        if !ref.isRemote && choices?.linkedBranches.contains(ref.name) == true { badges.append("Worktree") }
-        if ref.isRemote { badges.append("Remote") }
-        if ref.isDefault { badges.append("Default") }
+        if !ref.isRemote && choices?.linkedBranches.contains(ref.name) == true { badges.append(String(localized: "Worktree")) }
+        if ref.isRemote { badges.append(String(localized: "Remote")) }
+        if ref.isDefault { badges.append(String(localized: "Default")) }
         return badges
     }
 
@@ -238,7 +238,7 @@ struct BranchPickerView: View {
     }
 
     private func copy(_ branch: String) {
-        if !Self.copyBranch(branch, to: pasteboard) { failure = "Could not copy the branch name." }
+        if !Self.copyBranch(branch, to: pasteboard) { failure = String(localized: "Could not copy the branch name.") }
     }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -275,8 +275,8 @@ struct BranchPickerView: View {
             } catch {
                 let title: String
                 switch choice {
-                case .existing: title = "Failed to switch ref."
-                case .create: title = "Failed to create and switch ref."
+                case .existing: title = String(localized: "Failed to switch ref.")
+                case .create: title = String(localized: "Failed to create and switch ref.")
                 }
                 failure = "\(title) \(error.localizedDescription)"
                 await loadBranches()

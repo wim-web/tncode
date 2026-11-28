@@ -78,6 +78,7 @@ struct PiWorkspaceApp: App {
                         }
                 }
             }
+                .background(WindowChrome().frame(width: 0, height: 0).accessibilityHidden(true))
                 .handlesExternalEvents(preferring: [ThreadLink.scheme], allowing: [])
                 .onOpenURL { url in
                     if model.openSettingsLink(url) || model.openPromptLink(url) {
@@ -105,17 +106,15 @@ struct PiWorkspaceApp: App {
                         .background(.bar)
                     }
                 }
-                .sheet(item: $model.settingsRequest, onDismiss: {
-                    guard showWelcomeAfterSettings else { return }
+                .modifier(SettingsPresentation(model: model, appearance: appearance, browserDefaults: browserDefaults,
+                                               pasteboard: workspacePasteboard) {
+                    showWelcomeAfterSettings = true
+                    model.settingsRequest = nil
+                })
+                .onChange(of: model.settingsRequest == nil) { _, closed in
+                    guard closed, showWelcomeAfterSettings else { return }
                     showWelcomeAfterSettings = false
                     model.openWelcome()
-                }) { request in
-                    SettingsView(model: model, appearance: appearance, browserDefaults: browserDefaults,
-                                 request: request, pasteboard: workspacePasteboard) {
-                        showWelcomeAfterSettings = true
-                        model.settingsRequest = nil
-                    }
-                    .defaultAppStorage(browserDefaults)
                 }
                 .defaultAppStorage(browserDefaults)
                 .alert(model.quitFileSaveError == nil ? "Your draft couldn’t be saved" : "A file couldn’t be saved",
@@ -125,12 +124,15 @@ struct PiWorkspaceApp: App {
                     Button("Retry and Quit") { NSApp.terminate(nil) }
                         .accessibilityIdentifier("retry-save-and-quit")
                 } message: {
-                    Text(model.quitFileSaveError ?? model.composerSaveError ?? "Restore write access to the workspace and try again.")
+                    Text(model.quitFileSaveError ?? model.composerSaveError
+                         ?? String(localized: "Restore write access to the workspace and try again."))
                 }
                 .onChange(of: appearance.colorScheme, initial: true) { _, scheme in
                     scheme.apply(to: NSApplication.shared)
                 }
                 .frame(minWidth: 800, minHeight: 540)
+                // Outermost so Settings and other overlays use the chosen themes too.
+                .environment(\.t3Themes, appearance.themes)
         }
         .handlesExternalEvents(matching: [ThreadLink.scheme])
         .defaultSize(width: 1080, height: 720)
@@ -167,6 +169,7 @@ struct PiWorkspaceApp: App {
 
         Window("About \(AboutInfo().name)", id: AboutView.windowID) {
             AboutWindow()
+                .environment(\.t3Themes, appearance.themes)
         }
         .defaultSize(width: 760, height: 520)
         .windowResizability(.contentMinSize)

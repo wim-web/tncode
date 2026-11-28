@@ -59,7 +59,8 @@ struct WorkspaceStartupRecoveryView: View {
         #endif
         let system = ProcessInfo.processInfo.operatingSystemVersion
         let platform = "macOS \(system.majorVersion).\(system.minorVersion).\(system.patchVersion) \(architecture)"
-        let details = ["\(product) (\(platform)) could not open its workspace.", "Workspace: \(model.root.path)"]
+        let details = [String(localized: "\(product) (\(platform)) could not open its workspace."),
+                       String(localized: "Workspace: \(model.root.path)")]
             + failure.diagnosticLines(root: model.root)
         pasteboard.clearContents()
         pasteboard.setString(details.joined(separator: "\n"), forType: .string)

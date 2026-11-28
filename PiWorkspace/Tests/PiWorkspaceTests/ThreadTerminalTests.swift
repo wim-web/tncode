@@ -138,8 +138,16 @@ final class ThreadTerminalTests: XCTestCase {
             }
             return try XCTUnwrap(window.firstResponder as? TerminalSessionView)
         }
-        func add(_ pane: Int, usingKey: Bool = false) async throws -> TerminalSessionView {
+        func openAddPanelMenu() async throws {
+            if element("hide-right-panel") == nil { try await press("toggle-right-panel") }
             try await press("add-panel-surface")
+        }
+        func openPanelSurface(_ id: String) async throws {
+            try await openAddPanelMenu()
+            try await press("add-panel-\(id)")
+        }
+        func add(_ pane: Int, usingKey: Bool = false) async throws -> TerminalSessionView {
+            try await openAddPanelMenu()
             if usingKey {
                 try await waitFor("open Add Panel Surface menu") { element("add-panel-terminal") != nil }
                 try key(kVK_ANSI_T, "t", modifiers: [])
@@ -237,7 +245,7 @@ final class ThreadTerminalTests: XCTestCase {
         send("/bin/sh -c 'echo $$ > right-foreground; exec /bin/sleep 60'\n", to: right)
         let foreground = try await readPID(at: local.appendingPathComponent("right-foreground"))
 
-        try await press("toggle-files")
+        try await openPanelSurface("files")
         try await waitFor("loaded Files surface") { element("files-row-fixture.txt") != nil && right.isHidden }
         try await press("files-row-fixture.txt")
         try await waitFor("opened file") { element("files-preview") != nil }
@@ -245,7 +253,7 @@ final class ThreadTerminalTests: XCTestCase {
         try await waitFor("Cmd+T opens Add Panel Surface") { element("add-panel-terminal") != nil }
         try key(kVK_Escape, "\u{1B}", modifiers: [])
         try await waitFor("Escape dismisses Add Panel Surface") { element("add-panel-terminal") == nil }
-        try await press("toggle-browser")
+        try await openPanelSurface("browser")
         try await waitFor("Browser beside the terminal") { element("browser-address") != nil }
         try await press("right-panel-tab-files")
         try await waitFor("Files restores alongside Browser") { element("files-row-fixture.txt") != nil }
@@ -373,7 +381,7 @@ final class ThreadTerminalTests: XCTestCase {
             kill(linkedPID, 0) == -1 && element("hide-right-panel") == nil
         }
         try await select(pending)
-        try await press("add-panel-surface")
+        try await openAddPanelMenu()
         try await waitFor("pending checkout cannot launch a terminal") {
             element("add-panel-terminal")?.isAccessibilityEnabled?() == false
         }

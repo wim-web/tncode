@@ -101,8 +101,16 @@ export async function verifyArchiveFiles(driver, { root, app, git, launch, quit,
       displays("queued-message-" + queued.id, queued.text), conversation.title + " draft and queued message");
   }
 
+  async function showFiles() {
+    if (!has("hide-right-panel")) dismiss("toggle-right-panel");
+    await until(() => visible("add-panel-surface"), "Add Panel Surface in the right panel");
+    dismiss("add-panel-surface");
+    await until(() => visible("add-panel-files").includes("enabled=true"), "Files in Add Panel Surface");
+    dismiss("add-panel-files");
+  }
+
   async function openFile(name) {
-    if (!has("files-search")) dismiss("toggle-files");
+    if (!has("files-search")) await showFiles();
     const id = "files-row-" + name;
     await until(() => visible(id), name + " in Files");
     dismiss(id);

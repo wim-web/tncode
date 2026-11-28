@@ -10,7 +10,7 @@ struct WorktreeLaunchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(status.title)
+            Text(localized: status.title)
                 .font(.callout.weight(.semibold))
                 .accessibilityIdentifier("worktree-launch-status")
             if let failure = launch.failure {
@@ -115,7 +115,7 @@ struct WorktreeLaunchView: View {
 
     private func detailRow(_ label: String, _ value: String, id: String) -> some View {
         GridRow {
-            Text(label)
+            Text(localized: label)
                 .foregroundStyle(.secondary)
             Text(value)
                 .textSelection(.enabled)

@@ -16,10 +16,10 @@ struct ThreadFindSession {
         var label: String? {
             switch self {
             case .empty: nil
-            case .searching: "Searching…"
-            case .failed: "Search failed"
+            case .searching: String(localized: "Searching…")
+            case .failed: String(localized: "Search failed")
             case .matches(let matches, let index):
-                matches.isEmpty ? "0 matches" : "\(index + 1) of \(matches.count)"
+                matches.isEmpty ? String(localized: "0 matches") : String(localized: "\(index + 1) of \(matches.count)")
             }
         }
     }

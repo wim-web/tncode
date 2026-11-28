@@ -16,21 +16,23 @@ struct ProjectOverviewSettingsView: View {
 
     var body: some View {
         let folderIsAvailable = project.folderIsAvailable
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                TextField("Project name", text: $title)
-                    .accessibilityIdentifier("project-settings-name")
-                    .onSubmit(rename)
-                Button("Save Name", action: rename)
-                    .disabled(trimmedTitle.isEmpty || trimmedTitle == project.title)
-                    .accessibilityIdentifier("project-settings-save-name")
-            }
-            projectIconSetting
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label("Project folder", systemImage: "folder")
-                        .fontWeight(.medium)
-                    Spacer()
+        VStack(alignment: .leading, spacing: 32) {
+            SettingsSection("Project") {
+                SettingsRow("Name") {
+                    TextField("Project name", text: $title)
+                        .frame(width: 256)
+                        .accessibilityIdentifier("project-settings-name")
+                        .onSubmit(rename)
+                    Button("Save", action: rename)
+                        .disabled(trimmedTitle.isEmpty || trimmedTitle == project.title)
+                        .accessibilityIdentifier("project-settings-save-name")
+                }
+                SettingsDivider()
+                projectIconSetting
+                SettingsDivider()
+                SettingsRow("Project folder", description: project.path, descriptionID: "project-settings-path",
+                            status: folderIsAvailable ? nil : "The project folder is no longer available.",
+                            statusID: "project-settings-folder-unavailable") {
                     Button("Copy path") {
                         do {
                             try model.copyProjectPath(project.id, to: pasteboard)
@@ -42,39 +44,33 @@ struct ProjectOverviewSettingsView: View {
                     .disabled(!folderIsAvailable)
                     .accessibilityIdentifier("project-settings-copy-path")
                 }
-                Text(project.path)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("project-settings-path")
-                if !folderIsAvailable {
-                    Text("The project folder is no longer available.")
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("project-settings-folder-unavailable")
+                SettingsDivider()
+                SettingsRow("Pin", description: "Keep this project at the top of the sidebar.") {
+                    SettingsSwitch("Pin project", isOn: Binding(get: { project.pinned == true }, set: {
+                        model.setProjectPinned(project.id, pinned: $0)
+                    }))
+                    .accessibilityIdentifier("project-settings-pin")
+                }
+                SettingsDivider()
+                SettingsRow("Model", description: "Choose a model for this project or inherit the workspace default.") {
+                    Button("Model settings", action: openModelSettings)
+                        .disabled(!model.canOpenModelSettings)
+                        .accessibilityIdentifier("project-settings-model")
                 }
             }
-            Toggle("Pin project", isOn: Binding(get: { project.pinned == true }, set: {
-                model.setProjectPinned(project.id, pinned: $0)
-            }))
-            .accessibilityIdentifier("project-settings-pin")
-            Button("Model Settings", action: openModelSettings)
-                .disabled(!model.canOpenModelSettings)
-                .accessibilityIdentifier("project-settings-model")
             if folderIsAvailable && !checkouts.isEmpty {
-                Divider()
-                Text("Git checkouts").fontWeight(.medium)
-                ForEach(checkouts, id: \.path) { checkout in
-                    VStack(alignment: .leading, spacing: 3) {
-                        if let branch = checkout.branch {
-                            Text(branch).foregroundStyle(.secondary)
+                SettingsSection("Checkouts") {
+                    ForEach(Array(checkouts.enumerated()), id: \.element.path) { index, checkout in
+                        if index > 0 { SettingsDivider() }
+                        SettingsRow(checkout.branch ?? "Detached", description: checkout.path,
+                                    descriptionID: "project-settings-checkout-\(checkout.path)") {
+                            EmptyView()
                         }
-                        Text(checkout.path)
-                            .textSelection(.enabled)
-                            .accessibilityIdentifier("project-settings-checkout-\(checkout.path)")
                     }
                 }
             }
             if let error {
-                Text(error).foregroundStyle(.red)
-                    .accessibilityIdentifier("project-settings-error")
+                SettingsMessage(error).accessibilityIdentifier("project-settings-error")
             }
         }
         .task(id: project.path) {
@@ -86,28 +82,21 @@ struct ProjectOverviewSettingsView: View {
     }
 
     private var projectIconSetting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Project icon").fontWeight(.medium)
-                ProjectIconView(icon: project.icon, size: 28)
-                    .accessibilityIdentifier("project-settings-icon-preview")
-                Spacer()
-                Button("Choose icon") { choosingIcon = true }
-                    .accessibilityIdentifier("project-settings-choose-icon")
-                Button("Choose file") { choosingIconFile = true }
-                    .accessibilityLabel("Choose a project icon file")
-                    .accessibilityIdentifier("project-settings-choose-icon-file")
-                if project.icon != nil {
-                    Button("Reset") {
-                        updateIcon { nil }
-                    }
-                    .help("Reset project icon to default")
-                    .accessibilityLabel("Reset project icon to default")
-                    .accessibilityIdentifier("project-settings-reset-icon")
-                }
-            }
+        SettingsRow("Project icon", description: "Shown in the sidebar and breadcrumbs.",
+                    reset: project.icon == nil ? nil :
+                        SettingsResetButton("Reset project icon to default", id: "project-settings-reset-icon") {
+                            updateIcon { nil }
+                        }) {
+            ProjectIconView(icon: project.icon, size: 24, projectName: project.title)
+                .accessibilityIdentifier("project-settings-icon-preview")
+            Button("Choose icon") { choosingIcon = true }
+                .accessibilityIdentifier("project-settings-choose-icon")
+            Button("Choose file") { choosingIconFile = true }
+                .accessibilityLabel("Choose a project icon file")
+                .accessibilityIdentifier("project-settings-choose-icon-file")
+        } detail: {
             if let iconError {
-                Text(iconError).foregroundStyle(.red).accessibilityIdentifier("project-settings-icon-error")
+                SettingsMessage(iconError).accessibilityIdentifier("project-settings-icon-error")
             }
         }
         .sheet(isPresented: $choosingIcon) {

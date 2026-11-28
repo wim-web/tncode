@@ -118,6 +118,8 @@ final class WorkspaceUsageTests: XCTestCase {
         model.openSettings(.usage)
         let request = try XCTUnwrap(model.settingsRequest)
         XCTAssertEqual(request.projectID, fixture.ids.beta)
+        // SwiftUI publishes its accessibility tree once the app has finished launching.
+        NSApplication.shared.finishLaunching()
         let host = NSHostingView(rootView: SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
                                                        browserDefaults: defaults, request: request, openWelcome: {})
             .defaultAppStorage(defaults))
@@ -128,21 +130,28 @@ final class WorkspaceUsageTests: XCTestCase {
         window.contentView = host
         window.orderBack(nil)
         try XCTSkipIf(window.windowNumber <= 0, "Offscreen settings need an AppKit window number.")
-        func labels(in view: NSView) -> [[String]] {
-            if let control = view as? NSSegmentedControl {
-                return [(0..<control.segmentCount).compactMap { control.label(forSegment: $0) }]
+        // Segmented controls are drawn in SwiftUI; accessibility exposes one native segment per option.
+        func segments(_ id: String) -> Int? {
+            var visited = Set<ObjectIdentifier>()
+            func find(_ node: AnyObject) -> AnyObject? {
+                guard visited.insert(ObjectIdentifier(node)).inserted else { return nil }
+                if node.accessibilityIdentifier?() == id { return node }
+                for child in node.accessibilityChildren?() ?? [] {
+                    if let match = find(child as AnyObject) { return match }
+                }
+                return nil
             }
-            return view.subviews.flatMap(labels(in:))
+            return find(window).map { $0.accessibilityChildren?()?.count ?? 0 }
         }
         let deadline = ContinuousClock.now + .seconds(3)
         repeat {
             host.layoutSubtreeIfNeeded()
-            if labels(in: host).contains(["Model", "Day"]) { break }
+            if segments("usage-breakdown") == 2 { break }
             try await Task.sleep(for: .milliseconds(25))
         } while ContinuousClock.now < deadline
-        XCTAssertTrue(labels(in: host).contains(["Past 24h", "7 days", "30 days", "90 days"]))
-        XCTAssertTrue(labels(in: host).contains(["Tokens", "Cost", "Limits"]))
-        XCTAssertTrue(labels(in: host).contains(["Model", "Day"]))
+        XCTAssertEqual(segments("usage-period"), UsagePeriod.allCases.count)
+        XCTAssertEqual(segments("usage-metric"), 3)
+        XCTAssertEqual(segments("usage-breakdown"), 2)
 
         let rendered = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rendered)

@@ -35,7 +35,7 @@ struct SourceControlView: View {
     @State private var patchResult: (DiffRequest, String)?
     @State private var patchError: (DiffRequest, String)?
 
-    private let refreshLabel = "Refresh Git changes"
+    private let refreshLabel = String(localized: "Refresh Git changes")
 
     private struct ReadRequest: Hashable {
         let location: String
@@ -255,17 +255,18 @@ struct SourceControlView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(label)
+        .help(Text(localized: help))
+        .accessibilityLabel(Text(localized: label))
         .accessibilityValue(active ? "On" : "Off")
         .accessibilityIdentifier(id)
     }
 
     private var baseButton: some View {
         let label = baseRef.map { ref in
-            GitBranchRef.displayName(ref) + (ref.hasPrefix("refs/remotes/") ? " (Remote)" : "")
+            GitBranchRef.displayName(ref) + (ref.hasPrefix("refs/remotes/") ? String(localized: " (Remote)") : "")
         } ??
-            (checkout?.automaticRef.map { "Automatic (\(GitBranchRef.displayName($0)))" } ?? "Automatic (HEAD)")
+            (checkout?.automaticRef.map { String(localized: "Automatic (\(GitBranchRef.displayName($0)))") }
+                ?? String(localized: "Automatic (HEAD)"))
         return Button {
             refSearch = ""
             chooser = chooser == .base ? nil : .base
@@ -279,8 +280,8 @@ struct SourceControlView: View {
     private var scopeChoices: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
-                choice("Changes", id: "git-review-scope-changes") { selectScope(.changes) }
-                choice("Uncommitted", id: "git-review-scope-uncommitted") { selectScope(.uncommitted) }
+                choice(String(localized: "Changes"), id: "git-review-scope-changes") { selectScope(.changes) }
+                choice(String(localized: "Uncommitted"), id: "git-review-scope-uncommitted") { selectScope(.uncommitted) }
                 if let historyRequest {
                     if historyResult?.0 == historyRequest, let commits = historyResult?.1 {
                         ForEach(commits) { commit in
@@ -332,7 +333,7 @@ struct SourceControlView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     if query.isEmpty {
-                        choice("Automatic", id: "git-review-base-automatic") { selectBase(nil) }
+                        choice(String(localized: "Automatic"), id: "git-review-base-automatic") { selectBase(nil) }
                     } else if candidates.isEmpty {
                         Text("No matching refs.").foregroundStyle(.secondary)
                     }
@@ -352,7 +353,7 @@ struct SourceControlView: View {
                 selectBase(((useRemote ? candidate.remote : nil) ?? primary).id)
             }
             if let remote = candidate.remote {
-                let label = "Use remote version of \(primary.name)"
+                let label = String(localized: "Use remote version of \(primary.name)")
                 Toggle(label, isOn: Binding(get: { useRemote }, set: { remoteOn in
                     selectBase(remoteOn ? remote.id : primary.id, keepChooser: true)
                 }))
@@ -412,7 +413,7 @@ struct SourceControlView: View {
     private func files(_ state: GitRepositoryState) -> some View {
         let paths = Set(state.files.map(\.path))
         let trackedPaths = Set(state.files.filter { $0.indexStatus != "?" }.map(\.path))
-        let selectionCount = "\(paths.subtracting(excludedPaths).count) of \(paths.count) selected"
+        let selectionCount = String(localized: "\(paths.subtracting(excludedPaths).count) of \(paths.count) selected")
         return VStack(alignment: .leading, spacing: 0) {
             if !paths.isEmpty {
                 HStack {
@@ -487,12 +488,12 @@ struct SourceControlView: View {
                         .help(file.path)
                         .accessibilityIdentifier("git-file-" + file.path)
                         if file.worktreeStatus != " " {
-                            fileAction("Stage", symbol: "plus", id: "git-stage-", file: file) {
+                            fileAction(String(localized: "Stage"), symbol: "plus", id: "git-stage-", file: file) {
                                 try await $0.stage(file)
                             }
                         }
                         if file.isStaged {
-                            fileAction("Unstage", symbol: "minus", id: "git-unstage-", file: file) {
+                            fileAction(String(localized: "Unstage"), symbol: "minus", id: "git-unstage-", file: file) {
                                 try await $0.unstage(file)
                             }
                         }
@@ -802,8 +803,8 @@ private struct CommitMessageField: NSViewRepresentable {
     func makeNSView(context: Context) -> Field {
         let field = Field()
         field.bezelStyle = .roundedBezel
-        field.placeholderString = "Leave empty to auto-generate"
-        field.setAccessibilityLabel("Commit message")
+        field.placeholderString = String(localized: "Leave empty to auto-generate")
+        field.setAccessibilityLabel(String(localized: "Commit message"))
         field.setAccessibilityIdentifier("git-commit-message")
         field.delegate = field
         return field

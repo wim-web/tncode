@@ -17,7 +17,7 @@ struct WorkspaceMarkdownView: NSViewRepresentable {
         view.textContainerInset = NSSize(width: 12, height: 12)
         view.layoutManager?.allowsNonContiguousLayout = true
         view.delegate = context.coordinator
-        view.setAccessibilityLabel("Rendered Markdown")
+        view.setAccessibilityLabel(String(localized: "Rendered Markdown"))
         view.setAccessibilityIdentifier(accessibilityID)
         view.textStorage?.setAttributedString(renderText())
         return scroll

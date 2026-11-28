@@ -44,7 +44,10 @@ struct WorkspaceSQLiteView: View {
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 SQLiteTablePicker(
-                    titles: file.tables.map { "\($0.name) (\($0.rowCount.formatted()) \($0.rowCount == 1 ? "row" : "rows"))" },
+                    titles: file.tables.map {
+                        "\($0.name) (\($0.rowCount.formatted()) "
+                            + ($0.rowCount == 1 ? String(localized: "row") : String(localized: "rows")) + ")"
+                    },
                     selection: selection.table,
                     select: { self.selection = Selection(table: $0) }
                 )
@@ -104,7 +107,7 @@ struct WorkspaceSQLiteView: View {
     }
 
     private func notice(_ message: String, id: String) -> some View {
-        Text(message).font(.callout).foregroundStyle(.secondary).padding(8)
+        Text(localized: message).font(.callout).foregroundStyle(.secondary).padding(8)
             .accessibilityIdentifier(id)
     }
 }
@@ -123,7 +126,7 @@ private struct SQLiteTablePicker: NSViewRepresentable {
         picker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         picker.setAccessibilityElement(true)
         picker.setAccessibilityRole(.popUpButton)
-        picker.setAccessibilityLabel("Table")
+        picker.setAccessibilityLabel(String(localized: "Table"))
         picker.setAccessibilityIdentifier("files-sqlite-table")
         picker.addItems(withTitles: titles)
         picker.target = context.coordinator

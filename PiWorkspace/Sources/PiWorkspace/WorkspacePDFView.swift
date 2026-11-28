@@ -71,7 +71,8 @@ struct WorkspacePDFView: View {
 
     private var toolbar: some View {
         HStack(spacing: 4) {
-            Text("\(reader.page + 1) / \(reader.pageCount) \(reader.pageCount == 1 ? "page" : "pages")")
+            Text(verbatim: "\(reader.page + 1) / \(reader.pageCount) "
+                 + (reader.pageCount == 1 ? String(localized: "page") : String(localized: "pages")))
                 .accessibilityIdentifier("files-pdf-page")
                 .opacity(reader.pageCount > 0 ? 1 : 0)
             Spacer(minLength: 0)
@@ -81,7 +82,7 @@ struct WorkspacePDFView: View {
                 .disabled(reader.page + 1 >= reader.pageCount)
             fileButton("Zoom out", "minus", id: "files-pdf-zoom-out") { reader.stepZoom(-0.25) }
                 .disabled(!reader.canZoomOut)
-            Text(reader.zoom.map { "\(Int(($0 * 100).rounded()))%" } ?? "Fit width")
+            Text(reader.zoom.map { "\(Int(($0 * 100).rounded()))%" } ?? String(localized: "Fit width"))
                 .accessibilityIdentifier("files-pdf-zoom")
             fileButton("Zoom in", "plus", id: "files-pdf-zoom-in") { reader.stepZoom(0.25) }
                 .disabled(!reader.canZoomIn)

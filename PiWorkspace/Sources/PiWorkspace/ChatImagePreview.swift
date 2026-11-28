@@ -304,11 +304,11 @@ private struct ChatImagePreviewContent: View {
     private func copy(_ payload: ComposerAttachment.Payload) {
         actionError = nil
         guard let png = ComposerAttachment.pngForCopy(payload) else {
-            actionError = "Could not copy image."
+            actionError = String(localized: "Could not copy image.")
             return
         }
         pasteboard.clearContents()
-        if !pasteboard.setData(png, forType: .png) { actionError = "Could not copy image." }
+        if !pasteboard.setData(png, forType: .png) { actionError = String(localized: "Could not copy image.") }
     }
 
     private func save(_ payload: ComposerAttachment.Payload) {

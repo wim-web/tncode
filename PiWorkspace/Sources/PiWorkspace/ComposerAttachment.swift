@@ -120,10 +120,10 @@ private enum ComposerImageError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .sourceBytes: "Image sources must be 50 MB or smaller."
-        case .unreadable: "The image is damaged or too large to decode."
-        case .multipleFrames: "This image has multiple frames. Attach a single-frame PNG or JPEG."
-        case .tooLarge: "The image is too large to attach, even after compression."
+        case .sourceBytes: String(localized: "Image sources must be 50 MB or smaller.")
+        case .unreadable: String(localized: "The image is damaged or too large to decode.")
+        case .multipleFrames: String(localized: "This image has multiple frames. Attach a single-frame PNG or JPEG.")
+        case .tooLarge: String(localized: "The image is too large to attach, even after compression.")
         }
     }
 }

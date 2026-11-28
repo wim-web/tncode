@@ -29,7 +29,7 @@ struct BrowserPreviewView: View {
                 }
                 Menu {
                     ForEach(BrowserProfile.allCases, id: \.self) { profile in
-                        Button(profile.rawValue) { preview.addTab(profile: profile) }
+                        Button(profile.label) { preview.addTab(profile: profile) }
                             .accessibilityIdentifier("browser-new-tab-\(profile.rawValue.lowercased())")
                     }
                 } label: {
@@ -73,7 +73,7 @@ private struct BrowserTabButton: View {
     let close: () -> Void
 
     var body: some View {
-        let title = tab.pageURL?.host() ?? "Browser"
+        let title = tab.pageURL?.host() ?? String(localized: "Browser")
         HStack(spacing: 4) {
             Button(action: close) {
                 Image(systemName: "xmark")
@@ -91,8 +91,8 @@ private struct BrowserTabButton: View {
                     .frame(maxWidth: 114, minHeight: 20)
                     .contentShape(Rectangle())
             }
-            .help("\(title) (\(tab.profile.rawValue))")
-            .accessibilityValue(tab.profile.rawValue)
+            .help("\(title) (\(tab.profile.label))")
+            .accessibilityValue(tab.profile.label)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("browser-tab-\(tab.id)")
         }
@@ -150,11 +150,11 @@ struct BrowserSessionView: View {
             .frame(height: 36)
 
             HStack(spacing: 4) {
-                Text(session.profile.rawValue)
+                Text(session.profile.label)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .help("Each profile keeps separate website data for this thread until the app quits.")
-                    .accessibilityLabel("Browser Profile: \(session.profile.rawValue)")
+                    .accessibilityLabel("Browser Profile: \(session.profile.label)")
                     .accessibilityIdentifier("browser-profile")
                 Spacer()
                 browserControl("Find on page", "magnifyingglass", id: "browser-find", action: session.openFind)
@@ -174,7 +174,7 @@ struct BrowserSessionView: View {
 
             Divider()
             if case .notice(let message) = session.problem {
-                Text(message)
+                Text(localized: message)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,7 +219,7 @@ struct BrowserPageContent: View {
                     .accessibilityHidden(empty)
                     .allowsHitTesting(!empty)
                 if empty && session.problem == nil {
-                    Text(emptyHint)
+                    Text(localized: emptyHint)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding()
@@ -251,7 +251,7 @@ struct BrowserPageContent: View {
                     }
                 }
                 if let status = find.status.label {
-                    Text(status)
+                    Text(localized: status)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("browser-find-status")
@@ -303,8 +303,8 @@ private func browserControl(_ title: String, _ symbol: String, id: String, actio
             .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .help(title)
-    .accessibilityLabel(title)
+    .help(Text(localized: title))
+    .accessibilityLabel(Text(localized: title))
     .accessibilityIdentifier(id)
 }
 

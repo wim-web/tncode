@@ -96,7 +96,7 @@ struct WelcomeProjectsSection: View {
         }
     }
 
-    private func scanButton(_ label: String, id: String) -> some View {
+    private func scanButton(_ label: LocalizedStringKey, id: String) -> some View {
         Button(label) {
             actionStatus = nil
             scanState = .scanning
@@ -106,7 +106,7 @@ struct WelcomeProjectsSection: View {
         .accessibilityIdentifier(id)
     }
 
-    private func status(_ message: String) -> some View {
+    private func status(_ message: LocalizedStringKey) -> some View {
         Text(message).foregroundStyle(.secondary).accessibilityIdentifier("welcome-pi-scan-status")
     }
 
@@ -174,7 +174,7 @@ struct WelcomeProjectsSection: View {
 
     private func projectRow(_ candidate: PiHistoryDiscovery.Candidate, registered: Bool) -> some View {
         let count = candidate.sessions.count
-        let history = count == 1 ? "1 session" : "\(count) sessions"
+        let history = count == 1 ? String(localized: "1 session") : String(localized: "\(count) sessions")
         return HStack(alignment: .top, spacing: 8) {
             if !registered {
                 Toggle("Select \(candidate.title)", isOn: Binding(
@@ -213,7 +213,7 @@ struct WelcomeProjectsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(candidate.title).fontWeight(.medium)
                     Text(candidate.folder.path).lineLimit(1).truncationMode(.middle)
-                    Text(registered ? "\(history) · Registered" : history)
+                    Text(registered ? String(localized: "\(history) · Registered") : history)
                 }
                 .font(.caption)
             }
