@@ -23,7 +23,7 @@ open dist/tncode.app
 | [Sidecar](Sidecar) | Codex・Pi を動かす補助プロセス（Node.js） |
 | [Localization](Localization) | 英語・日本語の文言 |
 | [scripts](scripts) | ビルドと実機検証のスクリプト |
-| [reference/t3code](https://github.com/pingdotgg/t3code/tree/v0.1.12) | 手本にした T3 Code のソース。タグ v0.1.12（`ca81b7b97a1c4b91e5ac25768d0f6629f37732fd`）のサブモジュール |
+| [reference/t3code](https://github.com/pingdotgg/t3code/tree/v0.1.12) | 手本にした T3 Code v0.1.12 のソース |
 | [reference/screens](reference/screens/README.md) | T3 Code の全61画面の仕様と原本ソースの行、実測した寸法・色・余白 |
 | [ThirdPartyNotices](ThirdPartyNotices) | 流用した他者の著作物の権利表記。T3 Code の文言と日本語訳を流用しているので、その MIT License を置いている。ビルド時にアプリの「Open source licenses」にも入る |
 
@@ -35,13 +35,3 @@ open dist/tncode.app
 - Pi の補助プロセスには `PI_TELEMETRY=0` と `PI_OFFLINE=1` を渡す。Codex 本体は手元の Codex 設定を使う。[起動設定](Sources/tncode/PiProcess.swift)
 - 画面は T3 Code に合わせる。違いがあれば [reference/screens](reference/screens/README.md) と T3 Code のソースを正とする。
 - 旧名 Pi Workspace のときに保存したデータ・設定・API キーは、初回起動時に tncode へ引き継ぐ。[引き継ぎ処理](Sources/tncode/RenameMigration.swift)
-
-## T3 Code のソースを取得する
-
-アプリのビルドには要らない。画面を照合するときだけ取得する。
-
-```sh
-git -c submodule.recurse=false submodule update --init --depth 1 -- reference/t3code
-```
-
-T3 Code のソース内部には URL のない入れ子の gitlink があるため、上記の1階層だけを取得する。
