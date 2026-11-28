@@ -311,13 +311,10 @@ final class QueuedMessageTests: XCTestCase {
             let active = try worker.start("Owner's history", in: model)
             fixture.append(["After Stop"], in: model)
             XCTAssertFalse(model.chooseComposerModel(inherited, in: scope))
-            XCTAssertFalse(model.chooseComposerModel(nil, in: scope))
             model.cancel()
             worker.finish(active)
             XCTAssertTrue(model.queuePaused)
-            XCTAssertFalse(model.canUseInheritedComposerModel)
             XCTAssertFalse(model.chooseComposerModel(inherited, in: scope))
-            XCTAssertFalse(model.chooseComposerModel(nil, in: scope))
             XCTAssertEqual(model.effectiveModel, owner)
             model.shutdown()
         }
@@ -331,8 +328,6 @@ final class QueuedMessageTests: XCTestCase {
         XCTAssertEqual(reopened.phase, .closed)
         XCTAssertTrue(reopened.messages.isEmpty)
         let scope = try XCTUnwrap(reopened.draftProjectScope)
-        XCTAssertFalse(reopened.canUseInheritedComposerModel)
-        XCTAssertFalse(reopened.chooseComposerModel(nil, in: scope))
         let inherited = try XCTUnwrap(reopened.composerModelOptions().first { $0.settings.account != owner.account })
         XCTAssertNotNil(inherited.unavailableReason)
         XCTAssertFalse(reopened.chooseComposerModel(inherited, in: scope))
@@ -344,7 +339,6 @@ final class QueuedMessageTests: XCTestCase {
         let replacement = ComposerModelOption(settings: sameAccount, name: sameAccount.model, unavailableReason: nil)
         XCTAssertTrue(reopened.chooseComposerModel(replacement, in: scope))
         XCTAssertEqual(reopened.conversation?.modelSelection, sameAccount)
-        XCTAssertFalse(reopened.chooseComposerModel(nil, in: scope))
     }
 
     @MainActor

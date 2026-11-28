@@ -146,7 +146,7 @@ export async function verifyPromptLinks(driver, { root, gitConfigHome, git, endp
       await until(() => visible("composer-model-search"), "composer with the offline Pi catalog");
       await setField("composer-model-search", "gpt-5");
       await until(() => visible("composer-model-openai-gpt-5").includes("enabled=true"), "selectable GPT-5 from the bundled catalog");
-      dismiss("composer-model-close");
+      dismiss("active-model");
       openPromptLink(url({ prompt: "Keep the requested model", provider: "openai", model: "gpt-5" }));
       await until(() => visible("prompt-link-no-project"), "review with a catalog model hint");
       dismiss("prompt-link-no-project");

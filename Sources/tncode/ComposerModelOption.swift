@@ -17,3 +17,18 @@ struct ComposerModelOption: Identifiable {
         }
     }
 }
+
+/// One account in the model picker's provider rail.
+struct ComposerModelProvider: Identifiable {
+    let account: String
+    let provider: Provider
+    let endpoint: String
+    var options: [ComposerModelOption]
+    /// Another account owns this thread's history.
+    let locked: Bool
+    /// The account cannot run yet; the picker offers its setup instead of its models.
+    var setupReason: String?
+
+    var id: String { account }
+    var title: String { provider == .local ? "\(provider.label) · \(endpoint)" : provider.label }
+}

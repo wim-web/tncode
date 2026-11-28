@@ -148,7 +148,6 @@ final class ModelRoutingWireTests: XCTestCase {
         try await wait(model) { model.phase == .ready && model.conversation?.id == submitted.id }
         XCTAssertEqual(model.messages.filter { $0.role == .user }.map(\.text), ["inherited-first-marker", "inherited-model-marker"])
         XCTAssertTrue(model.composerModelOptions().contains { $0.id == second.identity && $0.unavailableReason == nil })
-        XCTAssertFalse(model.canUseInheritedComposerModel)
         try await send("inherited-resumed-marker", through: model, on: second)
         model.startSideChat(in: submitted.id)
         let scope = try XCTUnwrap(model.sideChatToOpen?.scope)
@@ -205,7 +204,6 @@ final class ModelRoutingWireTests: XCTestCase {
         let foreignChoice = try XCTUnwrap(model.composerModelOptions().first { $0.id == foreign.identity })
         XCTAssertNotNil(foreignChoice.unavailableReason)
         XCTAssertFalse(model.chooseComposerModel(foreignChoice, in: scope))
-        XCTAssertFalse(model.chooseComposerModel(nil, in: scope))
         try await wait("ready for the next turn") { model.phase == .ready }
 
         model.draft = "compaction-marker\n" + String(repeating: "context ", count: 14_000)

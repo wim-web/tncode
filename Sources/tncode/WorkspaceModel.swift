@@ -2668,27 +2668,84 @@ final class WorkspaceModel: ObservableObject {
         return options
     }
 
-    var canUseInheritedComposerModel: Bool {
-        guard conversation?.modelSelection != nil else { return false }
-        return lockedModelAccount.map { $0 == (try? inheritedModel.validated())?.account } ?? true
+    /// The picker's provider rail: one entry per account, in a fixed provider order.
+    func composerModelProviders() -> [ComposerModelProvider] {
+        let lockedAccount = lockedModelAccount
+        var providers: [ComposerModelProvider] = []
+        for option in composerModelOptions() {
+            if let index = providers.firstIndex(where: { $0.account == option.settings.account }) {
+                providers[index].options.append(option)
+            } else {
+                providers.append(.init(account: option.settings.account, provider: option.settings.provider,
+                                       endpoint: option.settings.endpoint, options: [option],
+                                       locked: lockedAccount.map { $0 != option.settings.account } ?? false))
+            }
+        }
+        for index in providers.indices where !providers[index].locked {
+            guard let settings = providers[index].options.lazy.compactMap({ try? $0.settings.validated() }).first else { continue }
+            if settings.provider == .codexAgent {
+                providers[index].setupReason = codexAccountStatus == .notInstalled ? CodexAccountStatus.notInstalled.label : nil
+            } else if (try? credentialExists(settings.account)) != true {
+                providers[index].setupReason = settings.provider.missingCredentialMessage
+            }
+        }
+        let order = Provider.allCases
+        return providers.enumerated().sorted {
+            let lhs = order.firstIndex(of: $0.element.provider) ?? 0, rhs = order.firstIndex(of: $1.element.provider) ?? 0
+            return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+        }.map(\.element)
+    }
+
+    /// The model's catalog name, as the picker lists it.
+    var effectiveModelName: String {
+        let settings = effectiveModel
+        return modelCatalog[settings.provider]?[settings.model] ?? settings.displayModel
+    }
+
+    var favoriteModels: Set<ModelSettings.Identity> {
+        Set((workspace.favoriteModels ?? []).map { ModelSettings.Identity(account: $0.account, model: $0.model) })
+    }
+
+    func toggleFavoriteModel(_ identity: ModelSettings.Identity) {
+        save(navigation: .replace) { workspace in
+            var favorites = workspace.favoriteModels ?? []
+            if let index = favorites.firstIndex(where: { $0.account == identity.account && $0.model == identity.model }) {
+                favorites.remove(at: index)
+            } else {
+                favorites.append(.init(account: identity.account, model: identity.model))
+            }
+            workspace.favoriteModels = favorites.isEmpty ? nil : favorites
+        }
     }
 
     @discardableResult
-    func chooseComposerModel(_ option: ComposerModelOption?, in scope: DraftProjectScope) -> Bool {
-        guard canChooseComposerModel, scope == draftProjectScope, let conversation else { return false }
-        if let option {
-            guard option.unavailableReason == nil,
-                  lockedModelAccount.map({ $0 == option.settings.account }) ?? true else { return false }
-            if effectiveModel.identity == option.id { return true }
-            guard option.settings.provider == .codexAgent || hasCredential(for: option.settings) else {
-                error = option.settings.provider.missingCredentialMessage
-                return false
-            }
-        } else {
-            guard canUseInheritedComposerModel else { return false }
+    func chooseComposerModel(_ option: ComposerModelOption, in scope: DraftProjectScope) -> Bool {
+        guard canChooseComposerModel, scope == draftProjectScope, conversation != nil else { return false }
+        guard option.unavailableReason == nil,
+              lockedModelAccount.map({ $0 == option.settings.account }) ?? true else { return false }
+        if effectiveModel.identity == option.id { return true }
+        guard option.settings.provider == .codexAgent || hasCredential(for: option.settings) else {
+            error = option.settings.provider.missingCredentialMessage
+            return false
         }
+        return selectComposerModel(option.settings)
+    }
+
+    /// Changes the reasoning level of the thread's current model.
+    @discardableResult
+    func chooseComposerThinkingLevel(_ level: ModelSettings.ThinkingLevel, in scope: DraftProjectScope) -> Bool {
+        guard canChooseComposerModel, scope == draftProjectScope, conversation != nil,
+              var settings = try? effectiveModel.validated(), settings.provider != .local else { return false }
+        let level = level == .off ? nil : level
+        if settings.thinkingLevel == level { return true }
+        settings.thinkingLevel = level
+        return selectComposerModel(settings)
+    }
+
+    private func selectComposerModel(_ settings: ModelSettings) -> Bool {
+        guard let conversation else { return false }
         do {
-            try saveThread(conversation.id) { $0.modelSelection = option?.settings }
+            try saveThread(conversation.id) { $0.modelSelection = settings }
             if !phase.isRunning, connectedModel != (try? effectiveModel.validated()) {
                 error = nil
                 connect(keepingThread: true)
