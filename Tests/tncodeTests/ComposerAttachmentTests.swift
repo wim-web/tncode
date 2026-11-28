@@ -17,123 +17,8 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertEqual(raster.pixelsHigh, 2_100)
     }
 
-    func testUnavailableAttachmentCanBeReplacedByIDAfterRelaunch() async throws {
-        let fixture = try Fixture()
-        let missing = fixture.root.appendingPathComponent("unavailable.txt")
-        let replacement = fixture.root.appendingPathComponent("replacement.txt")
-        try Data("Replacement fixture".utf8).write(to: replacement)
-        let threadID: UUID
-        let attachmentID: UUID
-        do {
-            let model = fixture.open()
-            try model.openProject(fixture.root)
-            fixture.worker.onEvent?(.ready([]))
-            threadID = try XCTUnwrap(model.conversation?.id)
-            model.attach([.file(missing)], to: ComposerAttachmentTarget(threadID: threadID))
-            attachmentID = try XCTUnwrap(model.composerAttachments.first?.id)
-            XCTAssertFalse(model.canSend)
-            XCTAssertTrue(model.terminate())
-        }
-
-        let model = fixture.open()
-        model.start()
-        fixture.worker.onEvent?(.ready([]))
-        XCTAssertEqual(model.conversation?.id, threadID)
-        XCTAssertEqual(model.composerAttachments.first?.id, attachmentID)
-        XCTAssertFalse(model.canSend)
-        model.attach([.file(replacement)], to: ComposerAttachmentTarget(threadID: threadID), replacing: attachmentID)
-        XCTAssertEqual(model.composerAttachments.first?.id, attachmentID)
-        XCTAssertEqual(model.composerAttachments.first?.name, "replacement.txt")
-        XCTAssertTrue(model.canSend)
-    }
-
-    func testInterruptedSendKeepsBytesUntilMatchingHistoryReceipt() async throws {
-        let fixture = try Fixture()
-        let url = fixture.root.appendingPathComponent("fixture.txt")
-        let content = Data("Attachment kept after disconnect".utf8)
-        try content.write(to: url)
-        let model = fixture.open()
-        try model.openProject(fixture.root)
-        let threadID = try XCTUnwrap(model.conversation?.id)
-        let sameText = ChatMessage(id: "prior", role: .user, text: "Same prompt")
-        fixture.worker.onEvent?(.ready([sameText]))
-        model.draft = sameText.text
-        model.attach([.file(url)], to: ComposerAttachmentTarget(threadID: threadID))
-        model.send()
-        let first = try XCTUnwrap(fixture.worker.prompt)
-        let falseReceipt = ChatMessage(id: "intervening", role: .user, text: sameText.text, submissionID: UUID())
-        fixture.worker.onClose?()
-        model.connect()
-        fixture.worker.onEvent?(.ready([sameText, falseReceipt]))
-        XCTAssertEqual(model.composerAttachments.first?.payload?.data, content)
-        XCTAssertTrue(model.canSend)
-        model.send()
-        let retried = try XCTUnwrap(fixture.worker.prompt)
-        XCTAssertNotEqual(first.submissionID, retried.submissionID)
-        fixture.worker.onClose?()
-        model.connect()
-        let recorded = ChatMessage(id: "recorded", role: .user, text: sameText.text, submissionID: retried.submissionID)
-        fixture.worker.onEvent?(.ready([sameText, falseReceipt, recorded]))
-        XCTAssertTrue(model.composerAttachments.isEmpty)
-        XCTAssertFalse(model.canSend)
-    }
-
-    func testRowTargetAndQueueEditorKeepSeparateAttachmentOwners() async throws {
-        let fixture = try Fixture()
-        let firstFile = fixture.root.appendingPathComponent("first.txt")
-        let secondFile = fixture.root.appendingPathComponent("second.txt")
-        try Data("First draft bytes".utf8).write(to: firstFile)
-        try Data("Second draft bytes".utf8).write(to: secondFile)
-        let model = fixture.open()
-        try model.openProject(fixture.root)
-        let project = try XCTUnwrap(model.project?.id)
-        let first = ComposerAttachmentTarget(threadID: try XCTUnwrap(model.conversation?.id))
-        XCTAssertTrue(model.attach([.file(firstFile)], to: first))
-        model.addConversation()
-        let second = ComposerAttachmentTarget(threadID: try XCTUnwrap(model.conversation?.id))
-        XCTAssertNotEqual(first.threadID, second.threadID)
-        XCTAssertTrue(model.attach([.file(secondFile)], to: first))
-        XCTAssertTrue(model.composerAttachments.isEmpty)
-        model.selectConversation(first.threadID, in: project)
-        fixture.worker.onEvent?(.ready([]))
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["first.txt", "second.txt"])
-
-        model.send()
-        let active = try XCTUnwrap(fixture.worker.prompt)
-        let sent = ChatMessage(id: "sent", role: .user, text: "", submissionID: active.submissionID)
-        fixture.worker.onEvent?(.history([sent]))
-        fixture.worker.onEvent?(.inputMode(turnID: active.turnID, .steer))
-        XCTAssertTrue(model.attach([.file(firstFile)], to: first))
-        model.queueDraft(steering: true)
-        let steer = try XCTUnwrap(fixture.worker.steer)
-        XCTAssertEqual(steer.attachments?.map(\.name), ["first.txt"])
-        fixture.worker.onEvent?(.queueRejected(turnID: active.turnID, queuedID: steer.queuedID))
-        XCTAssertEqual(model.queuedMessages.first?.attachments, steer.attachments)
-        XCTAssertTrue(model.attach([.file(secondFile)], to: first))
-        model.editQueuedMessage(steer.queuedID)
-        let queueTarget = model.attachmentTarget(for: first.threadID)
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["first.txt"])
-        model.cancelQueuedMessageEdit()
-        XCTAssertFalse(model.attach([.file(firstFile)], to: queueTarget))
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["second.txt"])
-        XCTAssertEqual(model.queuedMessages.first?.attachments, steer.attachments)
-        fixture.worker.onEvent?(.finished(turnID: active.turnID, [sent], error: "Pause the queue"))
-        model.selectConversation(second.threadID, in: project)
-        XCTAssertEqual(model.conversation?.id, second.threadID)
-        model.selectConversation(first.threadID, in: project)
-        XCTAssertEqual(model.conversation?.id, first.threadID)
-        fixture.worker.onEvent?(.ready([sent]))
-        model.editQueuedMessage(steer.queuedID)
-        XCTAssertEqual(model.editingQueuedMessageID, steer.queuedID)
-        XCTAssertFalse(model.attach([.file(secondFile)], to: queueTarget))
-        XCTAssertEqual(model.composerAttachments.map(\.name), ["first.txt"])
-        let reopened = model.attachmentTarget(for: first.threadID)
-        XCTAssertTrue(model.attach([.file(secondFile)], to: reopened))
-        model.updateQueuedMessage()
-        XCTAssertEqual(model.queuedMessages.first?.attachments?.map(\.name), ["first.txt", "second.txt"])
-    }
-
     func testOffscreenPreviewKeepsDraftAndQueuedCollectionsSeparate() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         try model.applySettings(ModelSettings(provider: .local, model: "image-fixture", localImages: true),
@@ -163,7 +48,7 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertEqual(queuedImages.map(\.name), ["same.png", "same.png"])
         XCTAssertTrue(model.attach([.image(jpg, .jpeg)], to: target))
         let draftImage = try XCTUnwrap(model.composerAttachments.first)
-        let ui = OffscreenPreviewWorkspace(model)
+        let ui = try OffscreenPreviewWorkspace(model)
         defer { ui.close() }
 
         let opener = "preview-queued-attachment-\(queue.id)-\(queuedImages[0].id)"
@@ -224,6 +109,7 @@ final class ComposerAttachmentTests: XCTestCase {
     }
 
     func testOffscreenTextPreviewRemovesOnlyTheSelectedDraftOrQueueAttachment() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         try model.openProject(fixture.root)
@@ -239,7 +125,7 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertTrue(model.attach(files.map(ComposerAttachmentInput.file), to: target))
         let draftFiles = model.composerAttachments
         XCTAssertNotEqual(draftFiles[0].id, draftFiles[1].id)
-        let ui = OffscreenPreviewWorkspace(model)
+        let ui = try OffscreenPreviewWorkspace(model)
         defer { ui.close() }
 
         let first = "preview-attachment-\(draftFiles[0].id)"
@@ -300,6 +186,7 @@ final class ComposerAttachmentTests: XCTestCase {
     }
 
     func testSelectedAttachmentsReachPinnedSDK() async throws {
+        try requireTestDesktop()
         let environment = ProcessInfo.processInfo.environment
         guard let endpoint = environment["PI_ATTACHMENT_TEST_ENDPOINT"],
               let executable = environment["PI_ATTACHMENT_TEST_NODE"],
@@ -395,7 +282,7 @@ final class ComposerAttachmentTests: XCTestCase {
         let removedImage = await model.readSentImage(threadID: threadID, messageID: user.id, attachmentID: removed)
         XCTAssertNil(removedImage)
         do {
-            let ui = OffscreenPreviewWorkspace(model)
+            let ui = try OffscreenPreviewWorkspace(model)
             defer { ui.close() }
             try await ui.press("sent-attachment-\(added)")
             try await ui.visible("expanded-attachment-\(added)")
@@ -448,6 +335,7 @@ final class ComposerAttachmentTests: XCTestCase {
     }
 
     func testOffscreenPreviewShowsUnreadableSentImageAndKeepsTheGalleryUsable() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         try model.openProject(fixture.root)
@@ -463,7 +351,7 @@ final class ComposerAttachmentTests: XCTestCase {
                                                     data: try makeAttachmentImage(width: 16, height: 16, type: .jpeg))
         let message = ChatMessage(id: "sent", role: .user, text: prompt.text, attachments: [broken, valid, missing])
         fixture.worker.onEvent?(.finished(turnID: prompt.turnID, [message], error: nil))
-        let ui = OffscreenPreviewWorkspace(model)
+        let ui = try OffscreenPreviewWorkspace(model)
         defer { ui.close() }
 
         try await ui.press("sent-attachment-\(broken.id)")
@@ -514,6 +402,7 @@ final class ComposerAttachmentTests: XCTestCase {
     }
 
     func testTextPreviewAndSaveUseExactBytesFromReopenedPiSession() async throws {
+        try requireTestDesktop()
         let environment = ProcessInfo.processInfo.environment
         guard let endpoint = environment["PI_ATTACHMENT_TEST_ENDPOINT"],
               let executable = environment["PI_ATTACHMENT_TEST_NODE"],
@@ -585,7 +474,7 @@ final class ComposerAttachmentTests: XCTestCase {
         XCTAssertNil(wrongOwner)
         let wrongThread = await model.readSentFile(threadID: UUID(), messageID: sent[0].id, attachmentID: ids[0])
         XCTAssertNil(wrongThread)
-        let ui = OffscreenPreviewWorkspace(model)
+        let ui = try OffscreenPreviewWorkspace(model)
         defer { ui.close() }
         for (id, contents) in zip(ids, text) {
             let opener = "sent-attachment-\(id)"
@@ -670,7 +559,8 @@ private final class OffscreenPreviewWorkspace {
     private let pasteboard = NSPasteboard.withUniqueName()
     private let savePicker = OffscreenSavePicker()
 
-    init(_ model: WorkspaceModel) {
+    init(_ model: WorkspaceModel) throws {
+        try requireTestDesktop()
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()

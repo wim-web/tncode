@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class PullRequestPromptLinkTests: XCTestCase {
     func testOffscreenCheckoutReconfirmsHeadAndResumesOneOwnedWorktree() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         let link = try fixture.link(prompt: "%E2%80%8EReview+the+changed+head")
@@ -25,7 +26,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
             let reviewID = model.promptLinkReview?.id
             XCTAssertTrue(model.openPromptLink(link))
             XCTAssertEqual(model.promptLinkReview?.id, reviewID)
-            let panel = LinkPanel(model: model)
+            let panel = try LinkPanel(model: model)
             defer { panel.close() }
             try await panel.waitFor(checkout)
             try panel.check("prompt-link-pull-request", includes: "fixture/repo#17")
@@ -81,7 +82,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
         defer { reopened.terminate() }
         XCTAssertNil(reopened.startupFailure)
         XCTAssertTrue(reopened.openPromptLink(link))
-        let resumedPanel = LinkPanel(model: reopened)
+        let resumedPanel = try LinkPanel(model: reopened)
         defer { resumedPanel.close() }
         try await resumedPanel.waitFor(checkout)
         try resumedPanel.press(checkout)
@@ -120,6 +121,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
     }
 
     func testOffscreenLinkedThreadKeepsDraftUntilExplicitReplacement() async throws {
+        try requireTestDesktop()
         guard let path = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"] else {
             throw XCTSkip("Set PI_PROMPT_LINK_TEST_APP to exercise a saved Pi session.")
         }
@@ -127,6 +129,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
     }
 
     func testOffscreenUnsentPRDraftKeepsDraftUntilExplicitReplacement() async throws {
+        try requireTestDesktop()
         let app = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"].map { URL(fileURLWithPath: $0) }
         try await checkDraftReplacement(app: app, isDraft: true)
     }
@@ -163,7 +166,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
             return XCTFail("Expected the existing linked PR thread.")
         }
         XCTAssertEqual(target.threadID, linked.id)
-        let panel = LinkPanel(model: model)
+        let panel = try LinkPanel(model: model)
         defer { panel.close() }
         try await panel.waitFor("prompt-link-pr-draft-conflict")
         try panel.check("prompt-link-pr-thread", includes: linked.title)
@@ -214,6 +217,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
     }
 
     func testDamagedPRForkKeepsCurrentWorkerSelectionAndBothDrafts() async throws {
+        try requireTestDesktop()
         guard let path = ProcessInfo.processInfo.environment["PI_PROMPT_LINK_TEST_APP"] else {
             throw XCTSkip("Set PI_PROMPT_LINK_TEST_APP to exercise the bundled Pi worker.")
         }
@@ -232,7 +236,7 @@ final class PullRequestPromptLinkTests: XCTestCase {
         }
         let model = fixture.open(app: app)
         defer { model.terminate() }
-        let panel = LinkPanel(model: model)
+        let panel = try LinkPanel(model: model)
         defer { panel.close() }
         model.selectConversation(fixture.mainDraft.id, in: fixture.project.id)
         try await panel.waitUntil("parent history") { model.messages.last?.id == parent.latestID }
@@ -581,7 +585,8 @@ private final class LinkPanel {
     private let host = NSHostingView(rootView: AnyView(EmptyView()))
     private weak var model: WorkspaceModel?
 
-    init(model: WorkspaceModel) {
+    init(model: WorkspaceModel) throws {
+        try requireTestDesktop()
         self.model = model
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)

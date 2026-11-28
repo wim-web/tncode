@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class WindowChromeTests: XCTestCase {
     func testRestoresHiddenTitleBarAfterSomethingResetsIt() throws {
+        try requireTestDesktop()
         let host = NSHostingView(rootView: Color.clear.background(WindowChrome().frame(width: 0, height: 0)))
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 900, height: 600),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)

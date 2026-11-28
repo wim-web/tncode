@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class SideChatWorkflowTests: XCTestCase {
     func testNativeSideChatsWithBundledPi() async throws {
+        try requireTestDesktop()
         let env = ProcessInfo.processInfo.environment
         guard let path = env["PI_SIDE_CHAT_TEST_ROOT"], let endpoint = env["PI_SIDE_CHAT_TEST_ENDPOINT"],
               let node = env["PI_SIDE_CHAT_TEST_NODE"], let worker = env["PI_SIDE_CHAT_TEST_WORKER"] else {
@@ -70,7 +71,7 @@ final class SideChatWorkflowTests: XCTestCase {
         do {
             let first = launch()
             previousModel = first
-            let ui = SideChatOffscreenWorkspace(first)
+            let ui = try SideChatOffscreenWorkspace(first)
             defer { ui.close(); XCTAssertTrue(first.terminate()) }
             try await ui.until("parent Pi connection and draft ready", details: {
                 "phase=\(first.phase) draft=\(first.draft) error=\(first.error ?? "none") canSend=\(first.canSend)"
@@ -170,7 +171,7 @@ final class SideChatWorkflowTests: XCTestCase {
         XCTAssertNil(previousModel)
 
         let relaunched = launch()
-        let reopened = SideChatOffscreenWorkspace(relaunched)
+        let reopened = try SideChatOffscreenWorkspace(relaunched)
         defer { reopened.close(); _ = relaunched.terminate() }
         try await reopened.until("parent ready after relaunch") { relaunched.phase == .ready }
         XCTAssertEqual(relaunched.conversation?.id, parent.id)
@@ -276,7 +277,8 @@ private final class SideChatOffscreenWorkspace {
     private let suite = "dev.tncode.side-chat-test.\(UUID())"
     private let defaults: UserDefaults
 
-    init(_ model: WorkspaceModel) {
+    init(_ model: WorkspaceModel) throws {
+        try requireTestDesktop()
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()

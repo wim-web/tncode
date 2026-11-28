@@ -4,6 +4,9 @@ import { once } from "node:events";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
 import { withCommitWritingFixture } from "./fixtures/commit-writing.mjs";
 import { join, resolve } from "node:path";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
+
+requireDedicatedDesktop();
 
 const workspace = join(import.meta.dirname, "..");
 const sidecar = join(workspace, "Sidecar");

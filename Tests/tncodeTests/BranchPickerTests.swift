@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class BranchPickerTests: XCTestCase {
     func testKeyboardSwitchRejectsConflictThenSelectsLinkedWorktree() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = try fixture.open()
         let thread = try XCTUnwrap(model.conversation?.id)
@@ -76,6 +77,7 @@ final class BranchPickerTests: XCTestCase {
     }
 
     func testCreateSwitchAndTrackUseExactGitRefs() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = try fixture.open()
         let scope = try XCTUnwrap(model.branchPickerScope)
@@ -287,6 +289,7 @@ final class BranchPickerTests: XCTestCase {
         private(set) var finished = false
 
         init(model: WorkspaceModel) throws {
+            try requireTestDesktop()
             _ = NSApplication.shared
             let scope = try XCTUnwrap(model.branchPickerScope)
             window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 510, height: 450),

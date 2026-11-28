@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class ComposerModelPickerTests: XCTestCase {
     func testOffscreenPickerSendsSelectedModelsThroughPi() async throws {
+        try requireTestDesktop()
         let env = ProcessInfo.processInfo.environment
         guard let path = env["PI_MODEL_PICKER_TEST_ROOT"],
               let endpoint = env["PI_MODEL_PICKER_TEST_ENDPOINT"],
@@ -59,7 +60,7 @@ final class ComposerModelPickerTests: XCTestCase {
         do {
             let model = launch()
             previousModel = model
-            let ui = OffscreenComposerModels(model)
+            let ui = try OffscreenComposerModels(model)
             defer { ui.close(); XCTAssertTrue(model.terminate()) }
             try await ui.until("Pi worker ready for the inherited model") { model.phase == .ready || model.error != nil }
             XCTAssertNil(model.error)
@@ -86,7 +87,7 @@ final class ComposerModelPickerTests: XCTestCase {
         }
         XCTAssertNil(previousModel, "The first offscreen workspace released its store")
         let model = launch()
-        let ui = OffscreenComposerModels(model)
+        let ui = try OffscreenComposerModels(model)
         defer { ui.close(); XCTAssertTrue(model.terminate()) }
         try await ui.until("saved model after relaunch") { model.phase == .ready && ui.modelLabel.contains(alpha.model) }
         XCTAssertEqual(model.conversation?.id, draft.id)
@@ -166,7 +167,8 @@ private final class OffscreenComposerModels {
     private let pasteboard = NSPasteboard.withUniqueName()
     let model: WorkspaceModel
 
-    init(_ model: WorkspaceModel) {
+    init(_ model: WorkspaceModel) throws {
+        try requireTestDesktop()
         self.model = model
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)

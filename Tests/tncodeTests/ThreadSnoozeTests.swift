@@ -70,10 +70,11 @@ final class ThreadSnoozeTests: XCTestCase {
     }
 
     func testNativeShelfWakeUndoAndQueueEditOwnership() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
-        let host = OffscreenSnoozeView(workspace: model)
+        let host = try OffscreenSnoozeView(workspace: model)
         defer { host.close() }
 
         XCTAssertNil(model.nextSnoozeUpdate)
@@ -128,10 +129,11 @@ final class ThreadSnoozeTests: XCTestCase {
     }
 
     func testNativeTimerReturnsTheThreadWithoutReopeningIt() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open(now: Date.init)
         defer { model.terminate() }
-        let host = OffscreenSnoozeView(workspace: model)
+        let host = try OffscreenSnoozeView(workspace: model)
         defer { host.close() }
         _ = try await host.waitFor("conversation-title")
 
@@ -143,6 +145,7 @@ final class ThreadSnoozeTests: XCTestCase {
     }
 
     func testDeadlineAndRelaunchKeepWokeScopedToEachThreadAndWorkspace() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let otherRoot = fixture.root.appendingPathComponent("other")
         try WorkspaceStore(root: otherRoot).save(fixture.initial)
@@ -180,7 +183,7 @@ final class ThreadSnoozeTests: XCTestCase {
         reopened.start()
         XCTAssertNil(reopened.nextSnoozeUpdate)
         XCTAssertEqual(reopened.snoozeUndoCount, 0)
-        let host = OffscreenSnoozeView(workspace: reopened)
+        let host = try OffscreenSnoozeView(workspace: reopened)
         defer { host.close() }
         let pinnedWoke = "dismiss-woke-\(fixture.pinned.threadID)"
         _ = try await host.waitFor(pinnedWoke)
@@ -196,12 +199,13 @@ final class ThreadSnoozeTests: XCTestCase {
     }
 
     func testNativeCustomSnoozeRejectsElapsedSelectionThenSavesFutureTime() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
         let initial = fixture.now
         var submitted = false
-        let host = OffscreenSnoozeView(CustomSnoozeView(model: model, target: fixture.selected, editOptions: {}) {
+        let host = try OffscreenSnoozeView(CustomSnoozeView(model: model, target: fixture.selected, editOptions: {}) {
             submitted = $0
         })
         defer { host.close() }
@@ -219,6 +223,7 @@ final class ThreadSnoozeTests: XCTestCase {
     }
 
     func testNativeSnoozeOptionsPreserveDraftQueueAndDeadlinesAcrossReopen() async throws {
+        try requireTestDesktop()
         if let path = ProcessInfo.processInfo.environment[Self.snoozeEditorFixture] {
             let fixture = try Fixture(opening: URL(fileURLWithPath: path))
             try await runSnoozeOptionsEditor(fixture)
@@ -245,7 +250,7 @@ final class ThreadSnoozeTests: XCTestCase {
         XCTAssertNil(reopened.startupFailure)
         XCTAssertEqual(reopened.draft, "Open draft")
         XCTAssertEqual(reopened.queuedMessages, [fixture.queue])
-        let host = OffscreenSnoozeView(workspace: reopened)
+        let host = try OffscreenSnoozeView(workspace: reopened)
         defer { host.close() }
         try await host.withSnoozeMenu(for: fixture.archived.threadID) { menu in
             XCTAssertTrue(try XCTUnwrap(menu.items.first).title.hasPrefix("In 31 minutes"))
@@ -279,7 +284,7 @@ final class ThreadSnoozeTests: XCTestCase {
         model.editQueuedMessage(fixture.queue.id)
         model.draft = "In-progress queue edit"
 
-        let host = OffscreenSnoozeView(workspace: model)
+        let host = try OffscreenSnoozeView(workspace: model)
         defer { host.close() }
         try await host.withSnoozeMenu(for: fixture.selected.threadID) { menu in
             try host.choose("Custom…", from: menu)
@@ -422,18 +427,19 @@ private final class OffscreenSnoozeView {
     private var defaults: UserDefaults?
     private var defaultsName: String?
 
-    convenience init(workspace model: WorkspaceModel) {
+    convenience init(workspace model: WorkspaceModel) throws {
         let board = NSPasteboard.withUniqueName()
         let defaultsName = "dev.tncode.snooze-tests.\(UUID())"
         let defaults = UserDefaults(suiteName: defaultsName)!
-        self.init(WorkspaceWithSnoozeSettings(model: model, defaults: defaults, pasteboard: board)
+        try self.init(WorkspaceWithSnoozeSettings(model: model, defaults: defaults, pasteboard: board)
             .defaultAppStorage(defaults))
         pasteboard = board
         self.defaults = defaults
         self.defaultsName = defaultsName
     }
 
-    init(_ view: some View) {
+    init(_ view: some View) throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         activationPolicy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)

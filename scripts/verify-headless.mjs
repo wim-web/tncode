@@ -3,18 +3,18 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { constants, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { withModelRoutingFixture } from "./fixtures/model-routing.mjs";
 
 const usage = `Usage: node scripts/verify-headless.mjs
-Runs Pi worker and session fixtures on loopback HTTP, checkout Git, and Swift
-persistence and file format tests. Requires macOS, Swift 6.2+, Node.js 22.19+,
-and the pinned Sidecar dependencies. From tncode, install them with
+Runs Pi worker and session fixtures on loopback HTTP, checkout Git, and every
+Swift test that does not create AppKit windows. Requires macOS, Swift 6.2+,
+Node.js 22.19+, and the pinned Sidecar dependencies. From tncode, install them with
 npm --prefix Sidecar ci --ignore-scripts.
 
-Native windows, panels, keyboard, pointer, and pasteboard checks require a
-separate GUI run on an isolated macOS desktop. See verify-app.mjs,
-verify-file-drops.mjs, and verify-native-paste.mjs.`;
+Swift tests that create AppKit windows skip unless TNCODE_TEST_DESKTOP=dedicated.
+Run them, verify-app.mjs, verify-file-drops.mjs, and verify-native-paste.mjs in a
+separate macOS session.`;
 
 if (process.argv.length > 2) {
   if (process.argv.length === 3 && process.argv[2] === "--help") console.log(usage);
@@ -79,16 +79,15 @@ async function verify() {
     return logs.map(read => read()).join("\n");
   }
 
-  // Select only audited suites. Mixed suites contribute individual data cases.
-  const suites = [
-    "ComposerDraft", "ConversationFork", "GitWorktree", "ModelRoutingWire", "ModelSettings",
-    "PiHistoryDiscovery", "PiLogin", "ProjectPathSuggestions", "ProjectSources", "PromptLink", "PromptLinkDestination",
-    "QueuedMessage", "SidebarFilter", "StartupDraft", "StopAcknowledgement", "ThreadPullRequest",
-    "WorkspaceLayout", "WorktreeDirectory", "WorktreeLaunch",
-  ].map(name => name + "Tests");
-  const fileCases = ["testLargeTextPagesKeepUTF8AndCRLFBoundaries",
-    "testQuotedCSVFieldCanResolveAnAmbiguousDelimiter", "testSQLiteBoundsAndLiveJournalPreserveDatabaseFiles"];
-  const filter = `^tncodeTests\\.(?:(?:${suites.join("|")})/|WorkspaceFilesTests/(?:${fileCases.join("|")})$)`;
+  // Every XCTest runs. Tests that create AppKit windows skip themselves outside a dedicated desktop.
+  const desktopSkip = readFileSync(join(workspace, "Tests/tncodeTests/TestDesktop.swift"), "utf8")
+    .match(/^let testDesktopSkipMessage = "(.+)"$/m)?.[1];
+  assert(desktopSkip, "Tests/tncodeTests/TestDesktop.swift must define testDesktopSkipMessage.");
+  // These tests run only from their own setup.
+  const optIn = new Set([
+    "CodexAgentTests/testCodexSessionSearchToolsAndHistoryFromSwift", // verify-codex-agent.mjs with PI_CODEX_XCTEST
+    "DesignSnapshotTests/testRenderDesignSnapshots", // TNCODE_DESIGN_SNAPSHOTS
+  ]);
 
   try {
     for (const fixture of ["sidecar", "queued-sidecar", "conversation-fork"]) {
@@ -108,17 +107,21 @@ async function verify() {
     await run("Selected commits in disposable checkouts", selectedCommit, []);
 
     await withModelRoutingFixture(process.execPath, join(sidecar, "worker.mjs"), async fixture => {
-      const log = await run("Swift checkout, persistence, file formats, and model routing", "/usr/bin/swift",
-        ["test", "--disable-sandbox", "--disable-swift-testing",
-          "--only-use-versions-from-resolved-file", "--filter", filter],
-        { ...environment, ...fixture });
-      assert(!/^Test Case .* skipped\b/m.test(log), "The selected XCTest run reported a skipped test.");
-      for (const suite of suites) {
-        assert(log.includes(`Test Suite '${suite}' passed`), `XCTest did not report a pass for ${suite}.`);
-      }
-      for (const test of fileCases) {
-        assert(log.includes(` ${test}]' passed`), `XCTest did not report a pass for ${test}.`);
-      }
+      const log = await run("Swift tests without AppKit windows", "/usr/bin/swift",
+        ["test", "--disable-sandbox", "--disable-swift-testing", "--only-use-versions-from-resolved-file"],
+        { ...environment, ...fixture, PATH: `${dirname(process.execPath)}:${environment.PATH}`,
+          PI_PALETTE_NODE: process.execPath, PI_PALETTE_SIDECAR: sidecar });
+      assert(log.includes("Test Suite 'All tests' passed"), "XCTest did not report a pass for all tests.");
+      const reasons = new Map(Array.from(log.matchAll(/-\[tncodeTests\.(\w+) (\w+)\] : Test skipped - (.*)$/gm),
+        ([, suite, test, reason]) => [`${suite}/${test}`, reason]));
+      const skipped = Array.from(log.matchAll(/^Test Case '-\[tncodeTests\.(\w+) (\w+)\]' skipped\b/gm),
+        ([, suite, test]) => `${suite}/${test}`);
+      const unexpected = skipped.filter(test => reasons.get(test) !== desktopSkip && !optIn.has(test))
+        .map(test => `${test}: ${reasons.get(test) ?? "no reason"}`);
+      assert.deepEqual(unexpected, [], "Only tests that create AppKit windows may skip.");
+      const passed = log.match(/^Test Case '.*' passed\b/gm)?.length ?? 0;
+      const windowed = skipped.filter(test => reasons.get(test) === desktopSkip).length;
+      console.log(`\n${passed} XCTest cases passed. ${windowed} window tests need a dedicated desktop.`);
     });
     console.log("\nHeadless verification passed. GUI checks require a separate run.");
   } finally {

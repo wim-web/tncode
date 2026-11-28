@@ -156,6 +156,7 @@ final class ComposerStashTests: XCTestCase {
     }
 
     func testShortcutMovesTheDraftInAnOffscreenWorkspace() async throws {
+        try requireTestDesktop()
         let fixture = Fixture()
         let source = Conversation(id: UUID(), title: "Source", isDraft: true, composerText: "  Test shortcut 🌱 ")
         try fixture.save([fixture.project(for: source)])

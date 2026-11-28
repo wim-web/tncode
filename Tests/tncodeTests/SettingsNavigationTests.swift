@@ -73,6 +73,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testTerminalClosePreferenceAcrossRelaunch() async throws {
+        try requireTestDesktop()
         let environment = ProcessInfo.processInfo.environment
         let suiteKey = "TNCODE_TERMINAL_CLOSE_SUITE"
         let phaseKey = "TNCODE_TERMINAL_CLOSE_PHASE"
@@ -143,6 +144,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativeSearchReachesScopedModelAndCustomBrowserURL() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
@@ -193,6 +195,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testBrowserSearchResetClearsTheSavedEngineAndTemplate() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         let index = fixture.root.appendingPathComponent("workspace.json")
@@ -213,6 +216,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativeVersionSearchAndLinksKeepTheOpenSettingsDraft() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
@@ -250,6 +254,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativeLicenseLinkOpensDirectlyFromClosedSettings() async throws {
+        try requireTestDesktop()
         let link = try XCTUnwrap(URL(string: "tncode://settings/open-source-licenses"))
         let fixture = try Fixture(link: link)
         defer { fixture.close() }
@@ -257,6 +262,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativeArchiveConfirmationSearchLinkAndReset() async throws {
+        try requireTestDesktop()
         let appearance = try XCTUnwrap(URL(string: "tncode://settings/appearance"))
         let archive = try XCTUnwrap(URL(string: "tncode://settings/general#archive-confirmation"))
         let fixture = try Fixture(link: appearance)
@@ -284,6 +290,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testSecondLinkBeforeSheetPresentationOpensLatestDestination() async throws {
+        try requireTestDesktop()
         let first = try XCTUnwrap(URL(string: "tncode://settings/appearance"))
         let second = try XCTUnwrap(URL(string: "tncode://settings/open-source-licenses"))
         let fixture = try Fixture(link: first, linkBeforePresentation: second)
@@ -338,6 +345,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativePageLinksKeepTheSheetAndItsProjectEdits() async throws {
+        try requireTestDesktop()
         let first = UUID()
         let second = UUID()
         let fixture = try Fixture(link: URL(string: "tncode://usage"), projectIDs: [first, second])
@@ -419,6 +427,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testNativeFolderPreferenceCommitsOnReturnAndBlur() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         try XCTSkipIf(fixture.window.windowNumber <= 0, "Native key events need an AppKit window number.")
@@ -459,6 +468,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testRestoreDeviceDefaultsPreservesWorkspaceAndPendingScopedEdits() async throws {
+        try requireTestDesktop()
         let projectID = UUID()
         let threadID = UUID()
         let queue = [QueuedMessage(text: "Keep the queued prompt")]
@@ -546,6 +556,7 @@ final class SettingsNavigationTests: XCTestCase {
              suiteName: String? = nil,
              browserSettings: BrowserSearchSettings = .init(engine: .custom, customURL: "https://example.test/?q=%s"),
              configure: (inout Workspace, UserDefaults) -> Void = { _, _ in }) throws {
+            try requireTestDesktop()
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             suite = suiteName ?? "SettingsNavigationTests.\(root.lastPathComponent)"
             ownsDefaults = suiteName == nil

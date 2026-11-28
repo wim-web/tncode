@@ -153,7 +153,7 @@ open -na "dist/tncode.app" --args --project "/path/to/project"
 
 ## Verify the app locally
 
-Run the headless suite while using your Mac. It exercises the Pi worker, saved conversations, checkout Git operations, and file formats with private fixtures. A skipped selected test makes the run fail.
+Run the headless suite while using your Mac. It exercises the Pi worker, saved conversations, and checkout Git operations with private fixtures, and runs every Swift test that does not create AppKit windows. Tests that create windows call `requireTestDesktop()` first and skip unless `TNCODE_TEST_DESKTOP=dedicated` is set, so plain `swift test` leaves your screen and keyboard alone. Any other skipped test makes the run fail.
 
 ```sh
 node scripts/verify-headless.mjs
@@ -233,7 +233,7 @@ After `node scripts/verify-app.mjs "$PWD/.build/ax" --sidebar-and-checks-only` i
 4. Choose **All Projects** (`project-filter-all`). Reopen the picker, search for `EMPTY`, and press Return. Confirm the picker closes and the sidebar offers **Show All Projects** (`sidebar-clear-project-scope`). Press it to restore the full scope.
 5. Open the context menu on Beta's inactive thread. Choose **Filter by Beta**, then reopen the menu and choose **Show All Projects** (`thread-project-scope`). Confirm both actions keep Gamma's draft active.
 
-Run `swift test --filter SidebarPersistenceTests` for the offscreen AppKit check that sends Shift-Return while the search field contains marked text.
+In the dedicated session, run `swift test --filter SidebarPersistenceTests` for the offscreen AppKit check that sends Shift-Return while the search field contains marked text.
 
 ### Verify GitHub reads
 

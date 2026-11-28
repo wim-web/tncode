@@ -104,6 +104,7 @@ final class WorkspaceUsageTests: XCTestCase {
 
     @MainActor
     func testUsageSettingsCanRenderOffscreenWithoutChangingScopeOrCredentials() async throws {
+        try requireTestDesktop()
         let fixture = try UsageFixture()
         let suite = "WorkspaceUsageTests.\(fixture.ids.beta.uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

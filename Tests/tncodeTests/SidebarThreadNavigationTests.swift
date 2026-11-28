@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class SidebarThreadNavigationTests: XCTestCase {
     func testTraversalAndNumberedJumpsUseVisibleOrderAndVisitHistory() async throws {
+        try requireTestDesktop()
         let ui = try Fixture()
         defer { ui.close() }
         try await ui.ready()
@@ -53,6 +54,7 @@ final class SidebarThreadNavigationTests: XCTestCase {
     }
 
     func testGroupingProjectScopeAndSearchUseTheRowsOnDisplay() async throws {
+        try requireTestDesktop()
         let ui = try Fixture(grouped: true)
         defer { ui.close() }
         try await ui.ready()
@@ -95,6 +97,7 @@ final class SidebarThreadNavigationTests: XCTestCase {
     }
 
     func testNumberedJumpsStopAtNineAndSettledRowsFollowTheirDisclosure() async throws {
+        try requireTestDesktop()
         let ui = try Fixture(additionalCount: 6)
         defer { ui.close() }
         try await ui.ready()
@@ -117,6 +120,7 @@ final class SidebarThreadNavigationTests: XCTestCase {
     }
 
     func testModalMarkedTextAndQueueOwnTheWindowWhileTerminalKeepsBracketKeys() async throws {
+        try requireTestDesktop()
         let ui = try Fixture()
         defer { ui.close() }
         try await ui.ready()
@@ -214,6 +218,7 @@ final class SidebarThreadNavigationTests: XCTestCase {
         var index: URL { root.appending(path: "workspace.json") }
 
         init(grouped: Bool = false, additionalCount: Int = 0) throws {
+            try requireTestDesktop()
             root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
                 .appending(path: "sidebar-thread-navigation-\(UUID())")
             alphaPath = root.appending(path: "Alpha").path

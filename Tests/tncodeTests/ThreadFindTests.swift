@@ -40,6 +40,7 @@ final class ThreadFindTests: XCTestCase {
     }
 
     func testFindRestoresNativeComposerSelection() async throws {
+        try requireTestDesktop()
         let application = NSApplication.shared
         let policy = application.activationPolicy()
         application.setActivationPolicy(.prohibited)
@@ -60,7 +61,7 @@ final class ThreadFindTests: XCTestCase {
             throw WorkspaceError("No helper in this test.")
         }
         defer { model.terminate() }
-        let app = Hosted(WorkspaceView(model: model, chatWidthMode: .comfortable))
+        let app = try Hosted(WorkspaceView(model: model, chatWidthMode: .comfortable))
         defer { app.close() }
         let prompt = "Ask Pi anything"
 
@@ -198,7 +199,7 @@ final class ThreadFindTests: XCTestCase {
         let reloaded = WorkspaceModel(root: savedRoot, keychainService: UUID().uuidString, readCredential: { _ in nil })
         XCTAssertNil(reloaded.startupFailure)
         defer { reloaded.terminate() }
-        let reopened = Hosted(WorkspaceView(model: reloaded, chatWidthMode: .comfortable))
+        let reopened = try Hosted(WorkspaceView(model: reloaded, chatWidthMode: .comfortable))
         defer { reopened.close() }
         try await reopened.until("reloaded composer appeared") { reopened.field(prompt) != nil }
         XCTAssertTrue(reopened.window.makeFirstResponder(try XCTUnwrap(reopened.field(prompt))))
@@ -306,6 +307,7 @@ final class ThreadFindTests: XCTestCase {
     }
 
     func testFindKeysAndRetryWithFreshPiHistories() async throws {
+        try requireTestDesktop()
         _ = NSApplication.shared
         try XCTSkipIf(NSScreen.screens.isEmpty, "Native key events need a WindowServer display.")
         let environment = ProcessInfo.processInfo.environment
@@ -345,7 +347,7 @@ final class ThreadFindTests: XCTestCase {
         let suite = root.lastPathComponent
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let app = Hosted(WorkspaceView(model: model, chatWidthMode: .comfortable).defaultAppStorage(defaults))
+        let app = try Hosted(WorkspaceView(model: model, chatWidthMode: .comfortable).defaultAppStorage(defaults))
         defer { app.close() }
         model.connect()
         try await app.until("Pi history opened") { model.phase == .ready }
@@ -399,7 +401,7 @@ final class ThreadFindTests: XCTestCase {
         try app.type("")
 
         model.openSettings()
-        let settings = Hosted(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+        let settings = try Hosted(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
                                            browserDefaults: defaults, request: try XCTUnwrap(model.settingsRequest),
                                            openWelcome: {}))
         defer { settings.close() }
@@ -414,7 +416,7 @@ final class ThreadFindTests: XCTestCase {
         let contents = CommandPaletteContents(projects: [project], availableProjects: [project], preferredProject: project.id,
                                              threads: [], activeThread: active.id, canStartScratchThread: true, findThread: scope)
         var paletteFinished = false
-        let palette = Hosted(CommandPaletteView(contents: contents, latestMessageID: nil, searchMessages: { _ in [:] }) {
+        let palette = try Hosted(CommandPaletteView(contents: contents, latestMessageID: nil, searchMessages: { _ in [:] }) {
             _ in paletteFinished = true
         })
         defer { palette.close() }
@@ -498,7 +500,8 @@ final class ThreadFindTests: XCTestCase {
     private final class Hosted {
         let window: NSWindow
 
-        init<Content: View>(_ content: Content) {
+        init<Content: View>(_ content: Content) throws {
+            try requireTestDesktop()
             _ = NSApplication.shared
             let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
             window = OffscreenFindPanel(contentRect: NSRect(origin: origin, size: NSSize(width: 1200, height: 720)),

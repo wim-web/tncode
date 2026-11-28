@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class SidebarPersistenceTests: XCTestCase {
     func testSidebarHomeAndThreadRowReturnToTheSameUnsentDraft() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appendingPathComponent("Project")
@@ -21,7 +22,7 @@ final class SidebarPersistenceTests: XCTestCase {
         app.finishLaunching()
         let model = WorkspaceModel(root: root, keychainService: UUID().uuidString, readCredential: { _ in nil })
         defer { model.terminate() }
-        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable))
+        let window = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable))
         defer { window.close() }
         for _ in 0..<50 where window.element("sidebar-home") == nil { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertTrue(window.element("sidebar-home")?.accessibilityPerformPress?() == true)
@@ -88,6 +89,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testProjectNameDistinguishesPlainAndShiftClicks() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -96,7 +98,7 @@ final class SidebarPersistenceTests: XCTestCase {
         let project = Project(id: UUID(), path: "/fixture/alpha", title: "Alpha", inSidebarScope: true)
         var toggles: [Bool] = []
         var exclusiveSelections = 0
-        let window = SidebarOffscreenPanel(SidebarProjectScopeRow(
+        let window = try SidebarOffscreenPanel(SidebarProjectScopeRow(
             project: project, setIncluded: { toggles.append($0) },
             selectOnly: { exclusiveSelections += 1 }
         ).padding())
@@ -116,6 +118,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testPickerSearchAndKeyboardPersistExactScopeWithoutChangingTheDraft() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -167,7 +170,7 @@ final class SidebarPersistenceTests: XCTestCase {
 
             try checkScope([beta.id])
             do {
-                let window = SidebarOffscreenPanel(SidebarPickerFixture(model: model))
+                let window = try SidebarOffscreenPanel(SidebarPickerFixture(model: model))
                 defer { window.close() }
                 let editor = try await searchEditor(in: window, after: "opening")
                 replaceQuery(" CAFE ", in: editor)
@@ -180,7 +183,7 @@ final class SidebarPersistenceTests: XCTestCase {
                 try checkScope([alpha.id])
             }
 
-            let window = SidebarOffscreenPanel(SidebarPickerFixture(model: model))
+            let window = try SidebarOffscreenPanel(SidebarPickerFixture(model: model))
             defer { window.close() }
             let reopenedEditor = try await searchEditor(in: window, after: "reopening")
             XCTAssertEqual(reopenedEditor.string, "")
@@ -232,7 +235,7 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertEqual(restored.sidebarProjectFilter.selection, [alpha.id, beta.id])
         XCTAssertEqual(restored.conversation?.id, draft.id)
         XCTAssertEqual(restored.draft, "Keep me unsent")
-        let restoredWindow = SidebarOffscreenPanel(SidebarPickerFixture(model: restored))
+        let restoredWindow = try SidebarOffscreenPanel(SidebarPickerFixture(model: restored))
         defer { restoredWindow.close() }
         let restoredEditor = try await searchEditor(in: restoredWindow, after: "restoring the workspace")
         XCTAssertEqual(restoredEditor.string, "")
@@ -245,14 +248,17 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testWorkspaceProjectFilterPopoverKeyboard() async throws {
+        try requireTestDesktop()
         try await checkProjectFilterKeyboard(keyParent: false)
     }
 
     func testWorkspaceProjectFilterKeyboardWithKeyParent() async throws {
+        try requireTestDesktop()
         try await checkProjectFilterKeyboard(keyParent: true)
     }
 
     private func checkProjectFilterKeyboard(keyParent: Bool) async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -268,7 +274,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defer { model.terminate() }
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+        let window = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                          workspacePasteboard: pasteboard), allowsKey: keyParent)
         defer { window.close() }
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0,
@@ -332,6 +338,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testWorkspaceDraftProjectPopoverKeyboard() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -352,7 +359,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defer { model.terminate() }
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+        let window = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                          workspacePasteboard: pasteboard), allowsKey: true)
         defer { window.close() }
         try XCTSkipIf(NSScreen.screens.isEmpty && window.windowNumber <= 0, "WindowServer unavailable.")
@@ -363,7 +370,7 @@ final class SidebarPersistenceTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === editor)
         XCTAssertTrue(editor.window === popup)
 
-        let other = SidebarOffscreenPanel(TextField("Other field", text: .constant("")))
+        let other = try SidebarOffscreenPanel(TextField("Other field", text: .constant("")))
         defer { other.close() }
         try other.key(kVK_ANSI_P, "P", modifiers: [.command, .shift])
         XCTAssertTrue(model.projects.allSatisfy { $0.pinned != true })
@@ -406,6 +413,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testEmptyScopedSidebarCanRestoreAllRowsWithoutChangingTheDraft() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -429,7 +437,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defaults.set(true, forKey: SidebarPreference.groupByProject)
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+        let window = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                          workspacePasteboard: pasteboard).defaultAppStorage(defaults))
         defer { window.close() }
         let clear = "sidebar-clear-project-scope"
@@ -447,6 +455,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testCollapsedFolderSurvivesWindowRecreation() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let alphaThread = Conversation(id: UUID(), title: "Work on Alpha")
@@ -468,7 +477,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defaults.set(true, forKey: SidebarPreference.groupByProject)
 
         func checkWindow(model: WorkspaceModel, collapse: Bool) async throws {
-            let window = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable)
+            let window = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable)
                 .defaultAppStorage(defaults))
             defer { window.close() }
             let header = "project-group-\(alpha.id)"
@@ -495,6 +504,7 @@ final class SidebarPersistenceTests: XCTestCase {
     }
 
     func testProjectOverviewKeepsTheClickedScopeAndOpenDraft() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -545,7 +555,7 @@ final class SidebarPersistenceTests: XCTestCase {
         defer { model.terminate() }
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let workspace = SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
+        let workspace = try SidebarOffscreenPanel(WorkspaceView(model: model, chatWidthMode: .comfortable,
                                                              browserDefaults: defaults, workspacePasteboard: pasteboard)
             .defaultAppStorage(defaults))
         defer { workspace.close() }
@@ -556,7 +566,7 @@ final class SidebarPersistenceTests: XCTestCase {
         func openOverview() throws -> SidebarOffscreenPanel {
             let request = try XCTUnwrap(model.settingsRequest)
             XCTAssertEqual(request.page, .project)
-            return SidebarOffscreenPanel(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+            return try SidebarOffscreenPanel(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
                                                       browserDefaults: defaults, request: request, pasteboard: pasteboard,
                                                       openWelcome: {}))
         }
@@ -628,7 +638,8 @@ private struct SidebarPickerFixture: View {
 private final class SidebarOffscreenPanel: NSPanel {
     private var allowsKey = false
 
-    convenience init<Content: View>(_ content: Content, allowsKey: Bool = false) {
+    convenience init<Content: View>(_ content: Content, allowsKey: Bool = false) throws {
+        try requireTestDesktop()
         let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
         self.init(contentRect: NSRect(origin: origin, size: NSSize(width: 1080, height: 720)),
                   styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: true)

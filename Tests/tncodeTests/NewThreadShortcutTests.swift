@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class NewThreadShortcutTests: XCTestCase {
     func testSidebarProjectChoiceFocusesNewDraftAfterWorktreeStorageReset() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2, fromWorktree: true, keyable: true)
         defer { fixture.close() }
         let project = try XCTUnwrap(fixture.model.project)
@@ -28,6 +29,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testSidebarProjectChoiceFocusesSelectedEmptyDraftAndCancelPreservesSearch() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2, keyable: true)
         defer { fixture.close() }
         let project = try XCTUnwrap(fixture.model.project)
@@ -54,6 +56,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testCommandShiftNStartsLocalDraft() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2, fromWorktree: true)
         defer { fixture.close() }
         let project = try XCTUnwrap(fixture.model.project)
@@ -74,6 +77,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testNewThreadKeysChooseAcrossProjectsAndCancelWithoutChanges() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2)
         defer { fixture.close() }
         let projects = fixture.model.projects
@@ -100,6 +104,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testNewThreadKeysWithOneOrZeroProjects() async throws {
+        try requireTestDesktop()
         for (code, characters, modifiers) in Self.newThreadKeys.prefix(2) {
             let fixture = try Fixture(projectCount: 1)
             defer { fixture.close() }
@@ -121,6 +126,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testHeaderAndPaletteUseCurrentProjectThenHomeUsesLastProject() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2, isDraft: true)
         defer { fixture.close() }
         let current = try XCTUnwrap(fixture.model.project)
@@ -153,6 +159,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testScratchRoutesEachRegisterOnePrivateDraft() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2)
         defer { fixture.close() }
         let registered = fixture.model.projects.map(\.id)
@@ -173,6 +180,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testTerminalAndOpenPickerLeaveNewThreadKeysUnclaimed() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2)
         defer { fixture.close() }
         _ = try await fixture.find("thread-project-new-thread")
@@ -198,6 +206,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testNewThreadKeysPreserveQueuedEdit() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 1)
         defer { fixture.close() }
         let queued = try XCTUnwrap(fixture.model.queuedMessages.first)
@@ -214,6 +223,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testScratchHeadlineAddFocusesOriginOnCancelAndNewProjectOnRegistration() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 1, isDraft: true, keyable: true)
         defer { fixture.close() }
         let project = try XCTUnwrap(fixture.model.project)
@@ -281,6 +291,7 @@ final class NewThreadShortcutTests: XCTestCase {
     }
 
     func testAddExistingProjectFromNewProjectForm() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(projectCount: 2)
         defer { fixture.close() }
         let original = try XCTUnwrap(fixture.model.project)
@@ -346,6 +357,7 @@ final class NewThreadShortcutTests: XCTestCase {
         var index: URL { root.appending(path: "workspace/workspace.json") }
 
         init(projectCount: Int, fromWorktree: Bool = false, isDraft: Bool = false, keyable: Bool = false) throws {
+            try requireTestDesktop()
             let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
             self.root = root
             let workspaceRoot = root.appendingPathComponent("workspace")

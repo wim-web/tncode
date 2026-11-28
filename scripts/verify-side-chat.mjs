@@ -4,6 +4,9 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { withSideChatFixture } from "./fixtures/side-chat.mjs";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
+
+requireDedicatedDesktop();
 
 const workspace = join(import.meta.dirname, "..");
 const app = resolve(process.argv[2] ?? join(workspace, "dist", "tncode.app"));

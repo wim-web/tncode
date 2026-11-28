@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class ComposerShortcutTests: XCTestCase {
     func testNativeComposerSettingsAndHeldPiTurn() async throws {
+        try requireTestDesktop()
         let env = ProcessInfo.processInfo.environment
         guard let path = env["PI_COMPOSER_SHORTCUT_ROOT"],
               let endpoint = env["PI_COMPOSER_SHORTCUT_ENDPOINT"],
@@ -49,7 +50,7 @@ final class ComposerShortcutTests: XCTestCase {
             }
         }
 
-        let ui = ComposerShortcutWindow()
+        let ui = try ComposerShortcutWindow()
         defer { ui.close() }
         XCTAssertGreaterThan(ui.window.windowNumber, 0, "AppKit key events require a WindowServer session")
         weak var previousModel: WorkspaceModel?
@@ -245,7 +246,8 @@ private final class ComposerShortcutWindow {
     private let app = NSApplication.shared
     private let previousPolicy: NSApplication.ActivationPolicy
 
-    init() {
+    init() throws {
+        try requireTestDesktop()
         previousPolicy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()

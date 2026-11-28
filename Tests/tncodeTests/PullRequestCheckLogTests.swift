@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class PullRequestCheckLogTests: XCTestCase {
     func testSelectedJobLogIsAccessibleAndDisappearsWhenThePRChanges() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("pi-check-log-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
