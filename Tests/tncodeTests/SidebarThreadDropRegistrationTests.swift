@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class SidebarThreadDropRegistrationTests: XCTestCase {
     func testNativeRowsRegisterThreadDropsAlongsideFileDrops() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Sidebar registration \(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let thread = Conversation(id: UUID(), title: "A thread")
@@ -38,6 +39,7 @@ final class SidebarDragTestWindow {
     }
 
     init(model: WorkspaceModel, grouped: Bool = false) throws {
+        try requireTestDesktop()
         self.model = model
         let app = NSApplication.shared
         policy = app.activationPolicy()

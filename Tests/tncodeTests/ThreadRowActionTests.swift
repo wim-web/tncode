@@ -8,13 +8,14 @@ import XCTest
 @MainActor
 final class ThreadRowActionTests: XCTestCase {
     func testSidebarHistoryReturnsToHomeWorktreeAndDraftAcrossProjects() async throws {
+        try requireTestDesktop()
         let queued = QueuedMessage(text: "Keep this queued follow-up")
         let fixture = try Fixture(queuedMessages: [queued])
         let model = fixture.open()
         defer { model.terminate() }
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         let back = "workspace-history-back"
         let forward = "workspace-history-forward"
@@ -58,12 +59,13 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testHistoryShortcutsYieldToNativeTextTerminalAndBrowser() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         try await host.press("thread-row-\(fixture.linked.id)")
         let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
@@ -185,6 +187,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testCommandSSavesOnlyTheFocusedFile() async throws {
+        try requireTestDesktop()
         let queue = QueuedMessage(text: "Keep queued")
         let fixture = try Fixture(queuedMessages: [queue])
         let file = fixture.repo.appendingPathComponent("shortcut.txt")
@@ -193,7 +196,7 @@ final class ThreadRowActionTests: XCTestCase {
         defer { model.terminate() }
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         if host.element("hide-right-panel") == nil { try await host.press("toggle-right-panel") }
         try await host.press("add-panel-surface")
@@ -219,12 +222,13 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testCommandSInAnotherTextFieldLeavesTheComposerAlone() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         _ = try await host.waitFor("composer") { host.composer }
         let search = NSSearchField(frame: NSRect(x: 0, y: 0, width: 120, height: 24))
@@ -240,6 +244,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testCopyTargetsUseTheirOwnCheckoutAndPasteTheThreadLinkAsText() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
@@ -281,7 +286,7 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertNil(board.string(forType: .fileURL))
         XCTAssertEqual(model.conversation?.id, fixture.local.id)
 
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         let field = try await host.waitFor("active composer") { host.composer }
         XCTAssertTrue(host.window.makeFirstResponder(field))
@@ -293,6 +298,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testOpeningCopiedLinksAfterRelinkingAndRelaunchReadsRealPiHistory() async throws {
+        try requireTestDesktop()
         guard let nodePath = ProcessInfo.processInfo.environment["PI_PALETTE_NODE"] else {
             throw XCTSkip("Set PI_PALETTE_NODE to the absolute path of Node.")
         }
@@ -332,7 +338,7 @@ final class ThreadRowActionTests: XCTestCase {
                           arguments: [sidecar.appendingPathComponent("worker.mjs").path])
         }
         defer { model.terminate() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         XCTAssertEqual(model.conversation?.id, fixture.scratchThread.id)
         await model.openThreadLink(from: board)
@@ -614,13 +620,14 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testRenameArchiveAndRestoreKeepHistoryCheckoutAndDirtyDrafts() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
         model.connect()
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         let id = fixture.linked.id
         let projectID = fixture.project.id
@@ -705,6 +712,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testArchiveWaitsForQueuedEditAndPreservesBothComposersAfterRelaunch() async throws {
+        try requireTestDesktop()
         let item = QueuedMessage(text: "Original queued text")
         let fixture = try Fixture(queuedMessages: [item])
         let id = fixture.local.id
@@ -765,7 +773,7 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertEqual(reopened.conversation?.archived, true)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: reopened, pasteboard: board)
+        let host = try OffscreenWorkspace(model: reopened, pasteboard: board)
         defer { host.close() }
         try await host.press("restore-open-thread")
         XCTAssertEqual(reopened.draft, "Other draft")
@@ -780,6 +788,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testNativeArchiveConfirmationAndRetryPreserveTheOpenQueueEdit() async throws {
+        try requireTestDesktop()
         let workspaceVariable = "PI_ARCHIVE_XCTEST_WORKSPACE"
         if let path = ProcessInfo.processInfo.environment[workspaceVariable] {
             try await verifyArchiveWithConfirmation(at: URL(fileURLWithPath: path))
@@ -844,7 +853,7 @@ final class ThreadRowActionTests: XCTestCase {
         XCTAssertEqual(try histories.map { try Data(contentsOf: $0) }, originalHistories)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.scratch.path))
 
-        let host = OffscreenWorkspace(model: reopened, pasteboard: board)
+        let host = try OffscreenWorkspace(model: reopened, pasteboard: board)
         defer { host.close() }
         try await host.chooseArchive(for: scratchID)
         _ = try await host.waitFor("scratch archived immediately") {
@@ -867,7 +876,7 @@ final class ThreadRowActionTests: XCTestCase {
         let queued = try XCTUnwrap(model.queuedMessages.first)
         let linkedID = try XCTUnwrap(model.project?.conversations.first { $0.title == "Linked thread" }?.id)
         let scratchID = try XCTUnwrap(model.threadProjects.first { $0.isScratch }?.conversations.first?.id)
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         model.connect()
         model.editQueuedMessage(queued.id)
@@ -917,6 +926,7 @@ final class ThreadRowActionTests: XCTestCase {
     }
 
     func testNativeArchiveFailureKeepsSelectedScratchUntilRetry() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let model = fixture.open()
         defer { model.terminate() }
@@ -925,7 +935,7 @@ final class ThreadRowActionTests: XCTestCase {
         try model.updateArchiveConfirmation(true)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let host = OffscreenWorkspace(model: model, pasteboard: board)
+        let host = try OffscreenWorkspace(model: model, pasteboard: board)
         defer { host.close() }
         let backup = fixture.workspace.appendingPathComponent("workspace.previous.json")
         let scratchParent = URL(fileURLWithPath: fixture.scratch.path).deletingLastPathComponent()
@@ -1106,7 +1116,8 @@ final class ThreadRowActionTests: XCTestCase {
         let host: NSView
         let activationPolicy: NSApplication.ActivationPolicy
 
-        init(model: WorkspaceModel, pasteboard: NSPasteboard) {
+        init(model: WorkspaceModel, pasteboard: NSPasteboard) throws {
+            try requireTestDesktop()
             let app = NSApplication.shared
             activationPolicy = app.activationPolicy()
             app.setActivationPolicy(.prohibited)

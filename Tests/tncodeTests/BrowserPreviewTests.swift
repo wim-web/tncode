@@ -189,6 +189,7 @@ final class BrowserPreviewTests: XCTestCase {
 
     @MainActor
     func testFindInPageUsesTheFocusedWebViewAndRejectsResultsFromAReplacedPage() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -335,6 +336,7 @@ final class BrowserPreviewTests: XCTestCase {
 
     @MainActor
     func testMovingTheLiveWebViewPreservesPageHistoryZoomAndAddress() async throws {
+        try requireTestDesktop()
         _ = NSApplication.shared
         let fixture = try LoopbackBrowserPage { path in
             "<title>\(path)</title><input><p id='first'>Movable</p><p id='second'>Movable</p>"

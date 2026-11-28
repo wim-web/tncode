@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class ProjectIconTests: XCTestCase {
     func testScopedOverviewSavesCancelsAndResetsAcrossStoreRelaunch() async throws {
+        try requireTestDesktop()
         let environment = ProcessInfo.processInfo.environment
         if let root = environment["TNCODE_ICON_TEST_ROOT"],
            let phase = environment["TNCODE_ICON_TEST_PHASE"].flatMap(Phase.init(rawValue:)) {
@@ -237,6 +238,7 @@ final class ProjectIconTests: XCTestCase {
         private let pasteboard = NSPasteboard.withUniqueName()
 
         init(root: URL) throws {
+            try requireTestDesktop()
             model = WorkspaceModel(root: root, keychainService: namespace, readCredential: { _ in nil }) { _, _ in
                 throw WorkspaceError("The project icon fixture has no Pi worker.")
             }

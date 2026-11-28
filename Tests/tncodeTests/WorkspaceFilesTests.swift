@@ -267,6 +267,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testLargeTextGoToLineUsesTheOpenCheckoutAndReloadsOffscreen() async throws {
+        try requireTestDesktop()
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let local = try folder("local", in: root)
@@ -368,6 +369,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testMediaUsesLinkedCheckoutBytesAndRecoversAfterReplacement() async throws {
+        try requireTestDesktop()
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let local = try folder("local", in: root)
@@ -456,6 +458,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testMarkdownSourceAndRenderedDraftStayInTheirCheckoutOffscreen() async throws {
+        try requireTestDesktop()
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let local = try folder("local", in: root)
@@ -499,7 +502,7 @@ final class WorkspaceFilesTests: XCTestCase {
         let suite = "RenderedFilesTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let (window, host) = hostFiles(panel, defaults: defaults)
+        let (window, host) = try hostFiles(panel, defaults: defaults)
         defer { window.contentView = nil }
 
         func textView(_ id: String) -> NSTextView? {
@@ -580,6 +583,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testDelimitedTableRendersCellsAndRefreshesAfterParseFailureOffscreen() async throws {
+        try requireTestDesktop()
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let csv = "Name,Notes,Empty\r\n\"A, B\",\"say \"\"hi\"\"\r\nagain 東京\",\r\n"
@@ -595,7 +599,7 @@ final class WorkspaceFilesTests: XCTestCase {
         let suite = "RenderedFilesTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let (window, host) = hostFiles(panel, defaults: defaults)
+        let (window, host) = try hostFiles(panel, defaults: defaults)
         defer { window.contentView = nil }
 
         func table() -> NSTableView? {
@@ -645,6 +649,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testSQLiteTableSelectionPagingAndRetryStayInTheSelectedCheckoutOffscreen() async throws {
+        try requireTestDesktop()
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let repo = try folder("Source", in: root)
@@ -896,6 +901,7 @@ final class WorkspaceFilesTests: XCTestCase {
 
     @MainActor
     func testPDFKitPagingZoomSearchAndRestoringViewOffscreen() async throws {
+        try requireTestDesktop()
         let reader = WorkspacePDFReader()
         _ = NSApplication.shared
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 500, height: 320),
@@ -1438,7 +1444,8 @@ final class WorkspaceFilesTests: XCTestCase {
     }
 
     @MainActor
-    private func hostFiles(_ panel: FilesPanelFixture, defaults: UserDefaults) -> (NSWindow, NSView) {
+    private func hostFiles(_ panel: FilesPanelFixture, defaults: UserDefaults) throws -> (NSWindow, NSView) {
+        try requireTestDesktop()
         _ = NSApplication.shared
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 850, height: 520),
                               styleMask: [.titled], backing: .buffered, defer: false)

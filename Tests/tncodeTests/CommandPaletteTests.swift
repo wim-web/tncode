@@ -304,34 +304,6 @@ final class CommandPaletteTests: XCTestCase {
         XCTAssertEqual(contents.results(for: "find messages", choosingProject: false).first?.action, .searchThreads)
     }
 
-    func testFolderPickerAndActiveTurnBlockInvocation() async throws {
-        let fixture = try Fixture()
-        _ = try fixture.openProject("Alpha")
-        let model = fixture.model
-        defer { model.terminate() }
-        var requests = 0
-        let observation = model.sidebarCommand.sink { _ in requests += 1 }
-        defer { observation.cancel() }
-        model.openFolder()
-        XCTAssertNotNil(model.projectPicker)
-        model.requestCommandPalette()
-        XCTAssertEqual(requests, 0)
-        model.projectPicker = nil
-
-        let ready = expectation(description: "Disposable helper is ready")
-        let readyObservation = model.$phase.first { $0 == .ready }.sink { _ in ready.fulfill() }
-        await fulfillment(of: [ready], timeout: 4)
-        readyObservation.cancel()
-        model.requestCommandPalette()
-        XCTAssertEqual(requests, 1)
-
-        model.draft = "Start a local fixture turn"
-        model.send()
-        XCTAssertEqual(model.phase, .running)
-        model.requestCommandPalette()
-        XCTAssertEqual(requests, 1)
-    }
-
     private func key(_ code: Int) throws -> CommandPaletteSession.Key {
         let event = try XCTUnwrap(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,

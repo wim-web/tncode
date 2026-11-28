@@ -6,8 +6,9 @@
 
 使ってよい確認:
 
-- `swift test`（ウィンドウは画面の外に作られ、Dock にも出ない）
-- `node scripts/verify-headless.mjs`
+- `swift build`、`swift build --build-tests`
+- `swift test`（`--filter` 付きも含む）。ウィンドウを作るテストは、`TNCODE_TEST_DESKTOP=dedicated` がないと最初に skip する
+- `node scripts/verify-headless.mjs`（ウィンドウを作らないテストをすべて走らせ、ウィンドウを作るテスト以外の skip を失敗にする）
 - `./scripts/build-app.sh` でのビルド（起動はしない）
 
 しないこと:
@@ -17,3 +18,7 @@
 - ガードを抜けるために `TNCODE_TEST_DESKTOP=dedicated` を設定する
 
 実機でしか確かめられない変更は、作業の報告で「実機では確認していない項目」として挙げる。
+
+## ウィンドウを作るテストを書くとき
+
+`NSWindow` や `NSPanel` を作るテスト、`finishLaunching()` を呼ぶテストは、テスト関数の最初の行で `try requireTestDesktop()` を呼ぶ（`Tests/tncodeTests/TestDesktop.swift`）。ウィンドウを作るヘルパーや fixture の初期化でも、ウィンドウより前に呼ぶ。ウィンドウを画面の外に置いても、キーの入力先、シート、メニュー、ポップオーバー、子ウィンドウはユーザーの画面とキーボードに届く。

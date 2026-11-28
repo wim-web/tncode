@@ -101,6 +101,7 @@ final class WorkspaceRecoveryTests: XCTestCase {
     }
 
     func testRecoveryValidatesAgainAndPreservesCorruptBytesAndSessions() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         let project = Project(id: UUID(), path: "/fixture", title: "Earlier project")
         let session = try fixture.seedBackup(for: project)
@@ -161,6 +162,7 @@ final class WorkspaceRecoveryTests: XCTestCase {
     }
 
     func testRestorePreservesAnIndexRepairedBeforeTheAction() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         _ = try fixture.seedBackup(for: Project(id: UUID(), path: "/fixture", title: "Previous"))
         let repaired = try Data(contentsOf: fixture.index)
@@ -211,6 +213,7 @@ final class WorkspaceRecoveryTests: XCTestCase {
     }
 
     func testCopyDetailsAndQuitInIsolatedApp() async throws {
+        try requireTestDesktop()
         let environment = ProcessInfo.processInfo.environment
         if let path = environment["TNCODE_RECOVERY_FIXTURE"] {
             let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -286,6 +289,7 @@ final class WorkspaceRecoveryTests: XCTestCase {
     }
 
     private func exerciseRecovery(in root: URL, scenario: String, pasteboard: NSPasteboard) async throws {
+        try requireTestDesktop()
         let model = WorkspaceModel(root: root, keychainService: "dev.tncode.recovery-fixture", readCredential: { _ in
             throw WorkspaceError("Model credentials are unavailable in the recovery fixture.")
         })

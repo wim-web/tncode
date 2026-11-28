@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class ComposerFieldDropTests: XCTestCase {
     func testLargePastesInNativeFieldKeepTheDraftAndQueueOwners() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
@@ -276,6 +277,7 @@ final class ComposerFieldDropTests: XCTestCase {
     }
 
     func testFileDropOnActiveComposerAndQueueFieldPreservesTextAndAttachmentOwner() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)

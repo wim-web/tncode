@@ -187,6 +187,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testNativeIssueDetailsLinkAndLinkedItemsReopenCopyAndUnlink() async throws {
+        try requireTestDesktop()
         let fixture = try ThreadGitHubFixture()
         let model = fixture.open()
         defer { model.terminate() }
@@ -197,7 +198,7 @@ final class ThreadIssueLinkTests: XCTestCase {
 
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -254,6 +255,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testIssueEditsAndCommentsThroughBothNativeEntryPoints() async throws {
+        try requireTestDesktop()
         let fixture = try ThreadGitHubFixture()
         fixture.issueWrites = true
         let model = fixture.open()
@@ -266,7 +268,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         let before = try Data(contentsOf: fixture.index)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -347,6 +349,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testUnconfirmedCommentChecksForNewActivityBeforeAllowingAnotherPost() async throws {
+        try requireTestDesktop()
         let fixture = try ThreadGitHubFixture()
         fixture.issueWrites = true
         let model = fixture.open()
@@ -356,7 +359,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         try await model.linkIssue("#71", in: scope, repository: repository)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -385,6 +388,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testCommentRetryAfterRestart() async throws {
+        try requireTestDesktop()
         let launchRoot = "PI_TEST_COMMENT_FIRST_LAUNCH"
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
@@ -395,7 +399,7 @@ final class ThreadIssueLinkTests: XCTestCase {
             let scope = try XCTUnwrap(model.gitHubScope)
             model.draft = "Keep the chat draft"
             XCTAssertTrue(model.savePendingComposer())
-            let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+            let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
             defer { panel.close() }
             try await panel.press("github-tab-issues")
             try await panel.press("issue-row-71")
@@ -444,7 +448,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         fixture.expectedRepository = "github.com/fixture/other"
         let otherRepository = try await model.gitHubRepository(in: other)
         try await model.linkIssue("#71", in: other, repository: otherRepository)
-        let otherPanel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: other, pasteboard: board))
+        let otherPanel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: other, pasteboard: board))
         try await otherPanel.press("github-tab-linked-items")
         try await otherPanel.press("linked-issue-row-fixture/other-71")
         try await otherPanel.expectDetailText("issue-comment-editor", "")
@@ -453,7 +457,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         fixture.expectedRepository = "github.com/fixture/workspace"
         model.selectConversation(scope.threadID, in: scope.projectID)
         let index = try Data(contentsOf: fixture.index)
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -506,6 +510,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testCommentReceiptStorageFailureKeepsDraftAndBlocksDuplicateDispatch() async throws {
+        try requireTestDesktop()
         let fixture = try ThreadGitHubFixture()
         fixture.issueWrites = true
         let model = fixture.open()
@@ -513,7 +518,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         let scope = try XCTUnwrap(model.gitHubScope)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -545,6 +550,7 @@ final class ThreadIssueLinkTests: XCTestCase {
     }
 
     func testIssueWritePreflightRejectsChangedCheckoutThreadAndIssue() async throws {
+        try requireTestDesktop()
         let fixture = try ThreadGitHubFixture()
         fixture.issueWrites = true
         let model = fixture.open()
@@ -554,7 +560,7 @@ final class ThreadIssueLinkTests: XCTestCase {
         try await model.linkIssue("#71", in: scope, repository: repository)
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
-        let panel = OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
+        let panel = try OffscreenBrowser(GitHubBrowserView(workspace: model, scope: scope, pasteboard: board))
         defer { panel.close() }
         try await panel.press("github-tab-issues")
         try await panel.press("issue-row-71")
@@ -597,7 +603,8 @@ private final class OffscreenBrowser {
     private let policy: NSApplication.ActivationPolicy
     private let window: Panel
 
-    init(_ view: GitHubBrowserView) {
+    init(_ view: GitHubBrowserView) throws {
+        try requireTestDesktop()
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()

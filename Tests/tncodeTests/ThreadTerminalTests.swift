@@ -35,6 +35,7 @@ final class ThreadTerminalTests: XCTestCase {
 
     @MainActor
     func testRightPanelTerminalControlsKeepIndependentPTYs() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("right-terminal-\(UUID())")
         let local = root.appendingPathComponent("local", isDirectory: true)
         let checkout = root.appendingPathComponent("worktree", isDirectory: true)
@@ -397,6 +398,7 @@ final class ThreadTerminalTests: XCTestCase {
 
     @MainActor
     func testDrawerKeepsPTYSessionsThroughLayoutAndThreadChanges() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("terminal-fixture-\(UUID().uuidString)", isDirectory: true)
         let local = root.appendingPathComponent("local", isDirectory: true)

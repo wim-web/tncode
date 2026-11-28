@@ -4,6 +4,9 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withComposerModelFixture } from "./fixtures/composer-models.mjs";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
+
+requireDedicatedDesktop();
 
 const workspace = join(import.meta.dirname, "..");
 const sidecar = join(workspace, "Sidecar");

@@ -63,7 +63,8 @@ final class AppearanceSettingsTests: XCTestCase {
         XCTAssertEqual(settings.chatWidth, .comfortable)
     }
 
-    func testNativeWindowAndSwiftUIHostingInheritAppAppearance() async {
+    func testNativeWindowAndSwiftUIHostingInheritAppAppearance() async throws {
+        try requireTestDesktop()
         let app = NSApplication.shared
         let original = app.appearance
         defer { app.appearance = original }
@@ -98,6 +99,7 @@ final class AppearanceSettingsTests: XCTestCase {
     }
 
     func testWidthChangesResizeHostedComposerAndTranscript() async throws {
+        try requireTestDesktop()
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

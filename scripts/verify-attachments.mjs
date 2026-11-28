@@ -12,6 +12,9 @@ import { withComposerModelFixture } from "./fixtures/composer-models.mjs";
 import { withComposerShortcutFixture } from "./fixtures/composer-shortcuts.mjs";
 import { withModelRoutingFixture } from "./fixtures/model-routing.mjs";
 import { withSideChatFixture } from "./fixtures/side-chat.mjs";
+import { requireDedicatedDesktop } from "./fixtures/desktop-session.mjs";
+
+requireDedicatedDesktop();
 
 const workspace = resolve(import.meta.dirname, "..");
 const { values, positionals } = parseArgs({ options: { "release-suite": { type: "boolean" } }, allowPositionals: true });

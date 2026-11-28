@@ -256,6 +256,7 @@ final class GitChangesTests: XCTestCase {
 
     @MainActor
     func testOffscreenChangesDisplayPreferencesAndOwnership() async throws {
+        try requireTestDesktop()
         let fixture = try ChangesFixture()
         defer { fixture.remove() }
         let longLine = "+long-line-" + String(repeating: "unbroken", count: 20) + "-end"
@@ -349,6 +350,7 @@ final class GitChangesTests: XCTestCase {
 
     @MainActor
     func testNativeChangesComparisonReplay() async throws {
+        try requireTestDesktop()
         let fixture = try ChangesFixture()
         defer { fixture.remove() }
         _ = try fixture.git(fixture.repo, "config", "extensions.worktreeConfig", "true")
@@ -599,6 +601,7 @@ private final class ChangesReplay {
 
     init(_ model: WorkspaceModel, openURL: OpenURLAction? = nil,
          settingsRequest: SettingsRequest? = nil, sharedDefaults: UserDefaults? = nil) throws {
+        try requireTestDesktop()
         policy = app.activationPolicy()
         defaults = try XCTUnwrap(sharedDefaults ?? UserDefaults(suiteName: suite))
         app.setActivationPolicy(.prohibited)

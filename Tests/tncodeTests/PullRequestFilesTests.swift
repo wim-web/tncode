@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class PullRequestFilesTests: XCTestCase {
     func testCodeFilesAndSelectedPatchStayWithTheSelectedPullRequest() async throws {
+        try requireTestDesktop()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("pi-pr-files-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }

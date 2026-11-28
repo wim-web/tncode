@@ -7,12 +7,13 @@ import XCTest
 @MainActor
 final class DraftProjectPickerTests: XCTestCase {
     func testSearchRecoversFromNoMatchesAndDispatchesKeyboardAndAXSelections() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         let model = try fixture.open()
         defer { model.terminate() }
         var selections: [DraftProjectPicker.Destination?] = []
-        let window = DraftPickerOffscreenPanel(model: model) { selections.append($0) }
+        let window = try DraftPickerOffscreenPanel(model: model) { selections.append($0) }
         defer { window.close() }
         try await window.waitFor("focused search") { window.searchEditor != nil }
         XCTAssertNotNil(window.element("draft-project-search"))
@@ -50,6 +51,7 @@ final class DraftProjectPickerTests: XCTestCase {
     }
 
     func testPinActionsKeepQueryOrderHighlightAndSavedDraft() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.close() }
         weak var closedModel: WorkspaceModel?
@@ -61,7 +63,7 @@ final class DraftProjectPickerTests: XCTestCase {
             closedModel = model
             let scope = try XCTUnwrap(model.draftProjectScope)
             var cancellations = 0
-            let window = DraftPickerOffscreenPanel(model: model) { destination in
+            let window = try DraftPickerOffscreenPanel(model: model) { destination in
                 XCTAssertNil(destination)
                 cancellations += 1
             }
@@ -108,7 +110,7 @@ final class DraftProjectPickerTests: XCTestCase {
             XCTAssertEqual(cancellations, 1)
             try fixture.checkSaved(betaPinned: true)
             window.close()
-            let reopened = DraftPickerOffscreenPanel(model: model) { _ in XCTFail("Unexpected destination") }
+            let reopened = try DraftPickerOffscreenPanel(model: model) { _ in XCTFail("Unexpected destination") }
             defer { reopened.close() }
             try await reopened.waitFor("picker reopened in pin order") {
                 reopened.element(betaPin) != nil && reopened.searchEditor != nil
@@ -129,7 +131,7 @@ final class DraftProjectPickerTests: XCTestCase {
         XCTAssertEqual(restored.conversation?.id, fixture.draft.id)
         XCTAssertEqual(restored.draft, fixture.draft.composerText)
         XCTAssertEqual(restored.conversation?.composerAttachments, fixture.draft.composerAttachments)
-        let window = DraftPickerOffscreenPanel(model: restored) { _ in XCTFail("Unexpected destination") }
+        let window = try DraftPickerOffscreenPanel(model: restored) { _ in XCTFail("Unexpected destination") }
         defer { window.close() }
         try await window.waitFor("restored pinned row") { window.element(betaPin)?.accessibilityLabel?() == "Unpin \(fixture.beta.title)" }
         try window.checkOrder(fixture.alphaRow, then: fixture.betaRow)
@@ -137,6 +139,7 @@ final class DraftProjectPickerTests: XCTestCase {
     }
 
     func testScratchPickerWithNoRegisteredProjectOffersAddProject() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(scratchOnly: true)
         defer { fixture.close() }
         let model = try fixture.open()
@@ -144,7 +147,7 @@ final class DraftProjectPickerTests: XCTestCase {
         XCTAssertTrue(model.project?.isScratch == true)
         XCTAssertTrue(model.projects.isEmpty)
         var selections: [DraftProjectPicker.Destination?] = []
-        let window = DraftPickerOffscreenPanel(model: model) { selections.append($0) }
+        let window = try DraftPickerOffscreenPanel(model: model) { selections.append($0) }
         defer { window.close() }
         try await window.waitFor("Add project and focused search") {
             window.element("draft-add-project") != nil && window.searchEditor != nil
@@ -175,6 +178,7 @@ final class DraftProjectPickerTests: XCTestCase {
         var gammaRow: String { "draft-project-\(gamma.id)" }
 
         init(scratchOnly: Bool = false) throws {
+            try requireTestDesktop()
             root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
             let alphaFolder = root.appending(path: "first")
             let betaFolder = root.appending(path: "second")
@@ -230,7 +234,8 @@ final class DraftProjectPickerTests: XCTestCase {
 
 @MainActor
 private final class DraftPickerOffscreenPanel: NSPanel {
-    convenience init(model: WorkspaceModel, finish: @escaping (DraftProjectPicker.Destination?) -> Void) {
+    convenience init(model: WorkspaceModel, finish: @escaping (DraftProjectPicker.Destination?) -> Void) throws {
+        try requireTestDesktop()
         let origin = NSPoint(x: (NSScreen.screens.map(\.frame.minX).min() ?? 0) - 2000, y: 0)
         self.init(contentRect: NSRect(origin: origin, size: CGSize(width: 340, height: 280)),
                   styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)

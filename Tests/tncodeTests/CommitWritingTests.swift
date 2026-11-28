@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class CommitWritingTests: XCTestCase {
     func testCommitWritingThroughOffscreenChangesAndPinnedPi() async throws {
+        try requireTestDesktop()
         let env = ProcessInfo.processInfo.environment
         guard let path = env["PI_COMMIT_WRITING_ROOT"], let origin = env["PI_COMMIT_WRITING_ORIGIN"],
               let node = env["PI_COMMIT_WRITING_NODE"], let worker = env["PI_COMMIT_WRITING_WORKER"] else {
@@ -87,8 +88,8 @@ final class CommitWritingTests: XCTestCase {
                 return try PiProcess(config: config, cwd: cwd, executable: URL(fileURLWithPath: node), arguments: [worker])
             })
         }
-        func changes(_ model: WorkspaceModel) -> OffscreenCommitHost {
-            OffscreenCommitHost(SourceControlView(location: location, model: model, openBranch: {},
+        func changes(_ model: WorkspaceModel) throws -> OffscreenCommitHost {
+            try OffscreenCommitHost(SourceControlView(location: location, model: model, openBranch: {},
                                                    copyBranch: { _ in }, openFile: { _ in }))
         }
         func prepare(_ ui: OffscreenCommitHost) async throws {
@@ -125,7 +126,7 @@ final class CommitWritingTests: XCTestCase {
             if let failure = model.startupFailure { throw failure }
             firstModel = model
             assertOwner(model)
-            let ui = changes(model)
+            let ui = try changes(model)
             defer { ui.close(); XCTAssertTrue(model.terminate()) }
             try await prepare(ui)
             try await ui.setText("Typed subject", id: "git-commit-message")
@@ -158,7 +159,7 @@ final class CommitWritingTests: XCTestCase {
         assertOwner(model)
         XCTAssertEqual(model.commitWritingSettings, .init(style: .custom, customInstructions: "Put two short bullets in the body.",
                                                            writerModel: dedicated))
-        let ui = changes(model)
+        let ui = try changes(model)
         defer { ui.close() }
         try await prepare(ui)
         let customPatch = try await selectedPatch()
@@ -206,7 +207,7 @@ final class CommitWritingTests: XCTestCase {
         model.openSettings(.sourceControl)
         let request = try XCTUnwrap(model.settingsRequest)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "CommitWritingTests.\(UUID())"))
-        let settings = OffscreenCommitHost(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
+        let settings = try OffscreenCommitHost(SettingsView(model: model, appearance: AppearanceSettings(defaults: defaults),
                                                         browserDefaults: defaults, request: request, openWelcome: {}))
         defer { settings.close() }
         try await settings.press("reset-commit-writing-style")
@@ -278,7 +279,8 @@ private final class OffscreenCommitHost {
     private let panel: CommitWritingPanel
     private let host: NSHostingView<AnyView>
 
-    init(_ view: some View) {
+    init(_ view: some View) throws {
+        try requireTestDesktop()
         policy = app.activationPolicy()
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()

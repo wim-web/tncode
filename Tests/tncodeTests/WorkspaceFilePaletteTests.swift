@@ -58,6 +58,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
     }
 
     func testNativePaletteReturnsAndOpensOnlyTheSelectedCheckout() async throws {
+        try requireTestDesktop()
         let fixture = try await Repository()
         defer { fixture.remove() }
         let app = try OffscreenWorkspace(fixture: fixture)
@@ -153,6 +154,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
     }
 
     func testWorkspaceSearchShortcutsSwitchModesAndOpenTheLinkedCheckout() async throws {
+        try requireTestDesktop()
         let fixture = try await Repository()
         defer { fixture.remove() }
         let app = try OffscreenWorkspace(fixture: fixture)
@@ -224,6 +226,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
     }
 
     func testWorkspaceSearchShortcutsRespectTerminalCompositionAndSettingsFocus() async throws {
+        try requireTestDesktop()
         let fixture = try await Repository()
         defer { fixture.remove() }
         let app = try OffscreenWorkspace(fixture: fixture)
@@ -286,6 +289,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
     }
 
     func testNativePaletteOpensTheSelectedSettingWithoutChangingTheDraft() async throws {
+        try requireTestDesktop()
         let fixture = try await Repository()
         defer { fixture.remove() }
         let app = try OffscreenWorkspace(fixture: fixture)
@@ -348,6 +352,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
     }
 
     func testWorkspaceSearchShortcutsReportMissingCheckout() async throws {
+        try requireTestDesktop()
         let fixture = try await Repository()
         defer { fixture.remove() }
         let app = try OffscreenWorkspace(fixture: fixture)
@@ -474,6 +479,7 @@ final class WorkspaceFilePaletteTests: XCTestCase {
         private let pasteboard = NSPasteboard.withUniqueName()
 
         init(fixture: Repository) throws {
+            try requireTestDesktop()
             let state = fixture.root.appending(path: "state")
             try WorkspaceStore(root: state).save(Workspace(projects: [fixture.project], selectedProject: fixture.project.id,
                                                            welcomeCompleted: true))

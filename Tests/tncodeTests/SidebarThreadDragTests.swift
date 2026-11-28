@@ -7,6 +7,7 @@ final class SidebarThreadDragTests: XCTestCase {
     private static let relaunchFixture = "PI_SIDEBAR_DRAG_RELAUNCH_FIXTURE"
 
     func testVisibleDropPlacementAndRelaunchPreserveThreadOwnership() async throws {
+        try requireTestDesktop()
         if let path = ProcessInfo.processInfo.environment[Self.relaunchFixture] {
             try await performDrops(Fixture(opening: URL(fileURLWithPath: path)))
             return
@@ -27,6 +28,7 @@ final class SidebarThreadDragTests: XCTestCase {
     }
 
     func testEmptyShelvesAndDisabledGroupedRows() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture(onlyOneActive: true)
         defer { fixture.remove() }
         do {
@@ -57,6 +59,7 @@ final class SidebarThreadDragTests: XCTestCase {
     }
 
     func testFileURLUsesTheRowAttachmentAndFolderRoutes() async throws {
+        try requireTestDesktop()
         let fixture = try Fixture()
         defer { fixture.remove() }
         let ui = try SidebarDragTestWindow(model: SidebarDragTestWindow.open(fixture.root))

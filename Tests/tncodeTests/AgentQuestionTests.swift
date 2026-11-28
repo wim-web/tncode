@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class AgentQuestionTests: XCTestCase {
     func testLocalPiQuestionsInAnOffscreenWorkspace() async throws {
+        try requireTestDesktop()
         guard let nodePath = ProcessInfo.processInfo.environment["TNCODE_QUESTION_NODE"] else {
             throw XCTSkip("Set TNCODE_QUESTION_NODE to a Node executable to run the loopback test.")
         }
