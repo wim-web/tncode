@@ -3,6 +3,10 @@ import SwiftUI
 
 /// Matches T3 Code's `hiddenInset` window: no visible title bar, content under the title bar area,
 /// and traffic lights centred in the 52pt strip shared by the sidebar and the chat header.
+///
+/// SwiftUI can turn the title bar opaque again after the window opens. On macOS 26 an opaque title bar
+/// draws a blurred band over the whole 52pt strip and hides the chat header, so the probe watches the
+/// window and restores the hidden title bar whenever it changes.
 struct WindowChrome: NSViewRepresentable {
     static let trafficLightOrigin = CGPoint(x: 16, y: 19)
     static let bandHeight: CGFloat = 52
@@ -15,19 +19,27 @@ struct WindowChrome: NSViewRepresentable {
 
     final class Probe: NSView {
         private var observers: [NSObjectProtocol] = []
+        private var chromeObservations: [NSKeyValueObservation] = []
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
+            chromeObservations = []
             guard let window else { return }
             for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification,
-                         NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification] {
+                         NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didBecomeMainNotification] {
                 observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
                     [weak self] _ in
-                    MainActor.assumeIsolated { self?.layoutTrafficLights() }
+                    MainActor.assumeIsolated { self?.apply() }
                 })
             }
+            chromeObservations = [
+                window.observe(\.titlebarAppearsTransparent) { [weak self] _, _ in self?.scheduleReapply() },
+                window.observe(\.titleVisibility) { [weak self] _, _ in self?.scheduleReapply() },
+                window.observe(\.styleMask) { [weak self] _, _ in self?.scheduleReapply() },
+            ]
             apply()
         }
 
@@ -35,14 +47,22 @@ struct WindowChrome: NSViewRepresentable {
             observers.forEach(NotificationCenter.default.removeObserver)
         }
 
+        /// Runs after the change that triggered it, so the window is not edited while it is still notifying.
+        private nonisolated func scheduleReapply() {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.apply() }
+            }
+        }
+
         func apply() {
             guard let window, window.styleMask.contains(.titled) else { return }
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
+            // Only write values that differ, so the observers above do not wake themselves up.
+            if window.titleVisibility != .hidden { window.titleVisibility = .hidden }
+            if !window.titlebarAppearsTransparent { window.titlebarAppearsTransparent = true }
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }
-            window.isMovableByWindowBackground = false
+            if window.isMovableByWindowBackground { window.isMovableByWindowBackground = false }
             layoutTrafficLights()
         }
 
