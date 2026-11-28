@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentQuestions } from "./agent-questions.mjs";
 import { editingTools, installToolApproval, readTools } from "./tool-approval.mjs";
@@ -21,8 +22,17 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 const emit = (event) => { if (connected) write(JSON.stringify(event) + "\n"); };
 const pendingCredentials = new Map();
 const redacted = "[API key removed]";
+const savedLoginProviders = new Map([
+  ["pi:openai", "openai"],
+  ["pi:openai-codex", "openai-codex"],
+  ["pi:anthropic", "anthropic"],
+  ["pi:github-copilot", "github-copilot"],
+]);
+const savedLoginError = "Your saved sign-in is unavailable. Sign in again in Model Settings.";
+const oauthSecrets = new Set();
 let nextRequest = 0;
 let credential;
+let savedLogin;
 let session;
 let manager;
 let inheritedCutoff;
@@ -51,7 +61,10 @@ function requestCredential(operation) {
 }
 
 function redact(text) {
-  return credential && typeof text === "string" ? text.replaceAll(credential, redacted) : text;
+  if (typeof text !== "string") return text;
+  if (credential) text = text.replaceAll(credential, redacted);
+  for (const secret of oauthSecrets) text = text.replaceAll(secret, "[Pi login token removed]");
+  return text;
 }
 
 function redactValue(value) {
@@ -335,8 +348,68 @@ function hasForkHistory(manager, cutoffID) {
   return false;
 }
 
+async function savedLoginStore(provider, profile) {
+  const loginDir = process.env.PI_WORKSPACE_LOGIN_DIR;
+  const authPath = loginDir && isAbsolute(loginDir) ? join(loginDir, "auth.json") : undefined;
+  // The pinned SDK does not export its file backend through the package entry point.
+  const sdk = import.meta.resolve("@earendil-works/pi-coding-agent");
+  const { FileAuthStorageBackend } = await import(new URL("./core/auth-storage.js", sdk));
+  const backend = authPath && new FileAuthStorageBackend(authPath);
+  function parse(contents) {
+    try {
+      const data = JSON.parse(contents?.replace(/^\uFEFF/, "") || "{}");
+      if (data && typeof data === "object" && !Array.isArray(data)) return data;
+    } catch {}
+    throw new Error(savedLoginError);
+  }
+  function matchingLogin(current) {
+    if (current?.type !== "oauth" ||
+        typeof current.access !== "string" || !current.access ||
+        typeof current.refresh !== "string" || !current.refresh ||
+        !Number.isFinite(current.expires) ||
+        (current.accountId != null && typeof current.accountId !== "string")) return;
+    const fingerprint = createHash("sha256").update(loginDir + "\0" + (current.accountId ?? "")).digest("hex");
+    if (profile !== fingerprint) return;
+    oauthSecrets.add(current.access);
+    oauthSecrets.add(current.refresh);
+    return current;
+  }
+  return {
+    provider,
+    async read(id, options) {
+      if (id !== provider || !authPath || !existsSync(authPath)) return;
+      return backend.withLockAsync(async (contents) => ({ result: matchingLogin(parse(contents)[id]) }), options);
+    },
+    async list(options) {
+      return await this.read(provider, options) ? [{ providerId: provider, type: "oauth" }] : [];
+    },
+    async modify(id, refresh, options) {
+      if (id !== provider || !authPath || !existsSync(authPath)) return;
+      return backend.withLockAsync(async (contents) => {
+        const data = parse(contents);
+        const current = matchingLogin(data[id]);
+        if (!current) return { result: undefined };
+        // OAuth errors can contain the token response body.
+        const updated = await refresh(current).catch(() => { throw new Error(savedLoginError); });
+        if (updated === undefined) return { result: current };
+        const next = matchingLogin(updated);
+        if (!next) throw new Error(savedLoginError);
+        return { result: next, next: JSON.stringify({ ...data, [id]: next }, null, 2) };
+      }, options);
+    },
+    async delete() { throw new Error("Sign out of the saved login in Pi."); },
+  };
+}
+
+async function prepareCredential() {
+  if (savedLogin) return Boolean(await savedLogin.read(savedLogin.provider));
+  credential = await requestCredential("read");
+  return Boolean(credential);
+}
+
 async function modelRuntime(config) {
-  if (!["local", "openai", "anthropic"].includes(config.provider) ||
+  const loginProvider = savedLoginProviders.get(config.provider);
+  if ((!loginProvider && !["local", "openai", "anthropic"].includes(config.provider)) ||
       typeof config.model !== "string" || !config.model.trim() ||
       !Number.isInteger(config.contextWindow) || config.contextWindow < 8192) {
     throw new Error("Choose a provider and enter a model ID in Settings.");
@@ -355,19 +428,24 @@ async function modelRuntime(config) {
     async modify() { throw new Error("Credential updates belong to the macOS app"); },
     async delete() { throw new Error("Credential removal belongs to the macOS app"); },
   };
+  if (loginProvider) savedLogin = await savedLoginStore(loginProvider, config.piLoginProfile);
   const runtime = await ModelRuntime.create({
-    credentials,
+    credentials: savedLogin ?? credentials,
     modelsPath: null,
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
+  if (loginProvider) {
+    const provider = runtime.getProvider(loginProvider);
+    runtime.registerNativeProvider({ ...provider, auth: { oauth: provider.auth.oauth } });
+  }
   if (config.provider === "local") localModel(runtime, config);
   guardModelStream(runtime);
   return runtime;
 }
 
 function configuredModel(runtime, config) {
-  const model = runtime.getModel(config.provider, config.model);
+  const model = runtime.getModel(savedLoginProviders.get(config.provider) ?? config.provider, config.model);
   if (!model) throw new Error("This model is unavailable for the selected provider in the bundled Pi catalog.");
   return model;
 }
@@ -418,13 +496,14 @@ async function generateCommitMessage({ config, patch, style, instructions, relat
   commitRequest = new AbortController();
   const runtime = await modelRuntime(config);
   const model = configuredModel(runtime, config);
-  credential = await requestCredential("read");
-  if (!credential) throw new Error("Save an API key for this model in Settings.");
-  if (patch.includes(credential)) throw new Error("The selected changes contain the configured API key.");
+  if (!await prepareCredential()) throw new Error(savedLogin ? savedLoginError : "Save an API key for this model in Settings.");
+  if (redact(patch) !== patch) throw new Error(savedLogin
+    ? "The selected changes contain a saved Pi login token." : "The selected changes contain the configured API key.");
   const guidance = commitInstructions(style, instructions);
   const examples = style === "repo_conventions" ? relatedSubjects : "";
-  if ((style === "custom" && guidance.includes(credential)) || examples.includes(credential)) {
-    throw new Error("The commit writing instructions or examples contain the configured API key.");
+  if ((style === "custom" && redact(guidance) !== guidance) || redact(examples) !== examples) {
+    throw new Error(savedLogin ? "The commit writing instructions or examples contain a saved Pi login token."
+      : "The commit writing instructions or examples contain the configured API key.");
   }
   const systemPrompt = [
     "You write concise git commit messages.",
@@ -495,8 +574,8 @@ async function open(command) {
   const runtime = await modelRuntime(config);
   emit({
     type: "modelCatalog",
-    models: Object.fromEntries(["openai", "anthropic"].map((provider) => [
-      provider, Object.fromEntries(runtime.getModels(provider).map(({ id, name }) => [id, name])),
+    models: Object.fromEntries([["openai", "openai"], ["anthropic", "anthropic"], ...savedLoginProviders].map(([route, provider]) => [
+      route, Object.fromEntries(runtime.getModels(provider).map(({ id, name }) => [id, name])),
     ])),
   });
   const model = configuredModel(runtime, config);
@@ -534,7 +613,7 @@ async function open(command) {
       if (receipt) {
         safeMessage.workspaceQueuedID = receipt.queuedID;
         safeMessage.workspaceSubmissionID = receipt.submissionID;
-        safeMessage.workspaceInput = receipt.input;
+        safeMessage.workspaceInput = redactValue(receipt.input);
         if (active?.receipt === receipt) active.receipt = undefined;
       }
     }
@@ -622,11 +701,11 @@ async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, at
   let error;
   const restoreCompaction = skipCompaction === true && session.autoCompactionEnabled;
   try {
-    credential = await requestCredential("read");
+    const authorized = await prepareCredential();
     if (run.cancelled) {
       return;
-    } else if (!credential) {
-      error = "Save an API key for this provider in Settings.";
+    } else if (!authorized) {
+      error = savedLogin ? savedLoginError : "Save an API key for this provider in Settings.";
     }
     let prepared;
     if (!error) {
@@ -657,7 +736,7 @@ async function prompt({ turnID, text, queuedID, skipCompaction, submissionID, at
       }
     }
   } catch {
-    error = "Pi could not complete the request. Check the provider, model, and Keychain access.";
+    error = savedLogin ? savedLoginError : "Pi could not complete the request. Check the provider, model, and Keychain access.";
   } finally {
     if (restoreCompaction) session.setAutoCompactionEnabled(true);
     session.clearQueue();
