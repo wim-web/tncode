@@ -1,4 +1,0 @@
-[submodule "t3code"]
-	path = reference/t3code
-	url = https://github.com/pingdotgg/t3code.git
-	shallow = true
